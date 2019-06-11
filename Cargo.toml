@@ -1,0 +1,15 @@
+[package]
+name = "listeria"
+version = "0.1.0"
+authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
+edition = "2018"
+
+[dependencies]
+regex = "1"
+lazy_static = "1"
+chrono = "0.4.6"
+config = "0.9.2"
+serde_json = "1.0.39"
+roxmltree = "0.6.0"
+mediawiki = "0.1.7"
+wikibase = "0.3"
