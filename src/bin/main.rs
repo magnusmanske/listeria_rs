@@ -38,7 +38,63 @@ impl ListeriaPage {
             Some(text) => roxmltree::Document::parse(&text).unwrap(),
             None => return Err(format!("No parse tree for {}", &self.page)),
         };
-        println!("{:?}", &doc);
+        doc.root()
+            .descendants()
+            .filter(|n| n.is_element() && n.tag_name().name() == "template")
+            .for_each(|node| {
+                let mut is_wikidata_list = false;
+                let mut parts: HashMap<String, String> = HashMap::new();
+                for n in node.children().filter(|n| n.is_element()) {
+                    if n.tag_name().name() == "title" {
+                        n.children().for_each(|c| {
+                            let t = c.text().unwrap_or("");
+                            let t = t.replace("_", " ");
+                            let t = t.trim();
+                            if t == "Wikidata list" {
+                                is_wikidata_list = true;
+                            }
+                        });
+                    } else if n.tag_name().name() == "part" {
+                        let mut children = n.children();
+                        let k: Vec<String> = match children.next() {
+                            Some(x) => match x.tag_name().name() {
+                                "name" => x
+                                    .children()
+                                    .map(|c| c.text().unwrap_or("").trim().to_string())
+                                    .collect(),
+                                _ => return,
+                            },
+                            None => return,
+                        };
+
+                        match children.next() {
+                            Some(x) => match x.tag_name().name() {
+                                "equals" => {}
+                                _ => return,
+                            },
+                            None => return,
+                        };
+
+                        let v: Vec<String> = match children.next() {
+                            Some(x) => match x.tag_name().name() {
+                                "value" => x
+                                    .children()
+                                    .map(|c| c.text().unwrap_or("").trim().to_string())
+                                    .collect(),
+                                _ => return,
+                            },
+                            None => return,
+                        };
+
+                        parts.insert(k.join(""), v.join(""));
+                    }
+                }
+                if !is_wikidata_list {
+                    return;
+                }
+                println!("{:?}", &parts);
+            });
+        //println!("{:?}", &root);
         Ok(())
     }
 }
