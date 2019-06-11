@@ -47,8 +47,7 @@ impl ListeriaPage {
                 for n in node.children().filter(|n| n.is_element()) {
                     if n.tag_name().name() == "title" {
                         n.children().for_each(|c| {
-                            let t = c.text().unwrap_or("");
-                            let t = t.replace("_", " ");
+                            let t = c.text().unwrap_or("").replace("_", " ");
                             let t = t.trim();
                             if t == "Wikidata list" {
                                 is_wikidata_list = true;
