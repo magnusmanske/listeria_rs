@@ -4,11 +4,12 @@ extern crate mediawiki;
 //#[macro_use]
 extern crate serde_json;
 
-use regex::Regex;
+use regex::{Regex, RegexBuilder};
 use roxmltree;
 use serde_json::Value;
 use std::collections::HashMap;
 use urlencoding;
+use wikibase::entity_container::EntityContainer;
 
 #[derive(Debug, Clone)]
 pub struct LatLon {
@@ -23,13 +24,115 @@ impl LatLon {
 }
 
 #[derive(Debug, Clone)]
+pub enum ColumnType {
+    Number,
+    Label,
+    LabelLang(String),
+    Description,
+    Item,
+    Property(String),
+    PropertyQualifier((String, String)),
+    PropertyQualifierValue((String, String, String)),
+    Field(String),
+    Unknown,
+}
+
+impl ColumnType {
+    pub fn new(s: &String) -> Self {
+        lazy_static! {
+            static ref RE_LABEL_LANG: Regex = RegexBuilder::new(r#"^label/(.+)$"#)
+                .case_insensitive(true)
+                .build()
+                .unwrap();
+            static ref RE_PROPERTY: Regex = Regex::new(r#"^([Pp]\d+)$"#).unwrap();
+            static ref RE_PROP_QUAL: Regex =
+                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#).unwrap();
+            static ref RE_PROP_QUAL_VAL: Regex =
+                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#).unwrap();
+            static ref RE_FIELD: Regex = Regex::new(r#"^\?(.+)$"#).unwrap();
+        }
+        match s.to_lowercase().as_str() {
+            "number" => return ColumnType::Number,
+            "label" => return ColumnType::Label,
+            "description" => return ColumnType::Description,
+            "item" => return ColumnType::Item,
+            _ => {}
+        }
+        match RE_LABEL_LANG.captures(&s) {
+            Some(caps) => {
+                return ColumnType::LabelLang(
+                    caps.get(1).unwrap().as_str().to_lowercase().to_string(),
+                )
+            }
+            None => {}
+        }
+        match RE_PROPERTY.captures(&s) {
+            Some(caps) => {
+                return ColumnType::Property(
+                    caps.get(1).unwrap().as_str().to_uppercase().to_string(),
+                )
+            }
+            None => {}
+        }
+        match RE_PROP_QUAL.captures(&s) {
+            Some(caps) => {
+                return ColumnType::PropertyQualifier((
+                    caps.get(1).unwrap().as_str().to_uppercase().to_string(),
+                    caps.get(2).unwrap().as_str().to_uppercase().to_string(),
+                ))
+            }
+            None => {}
+        }
+        match RE_PROP_QUAL_VAL.captures(&s) {
+            Some(caps) => {
+                return ColumnType::PropertyQualifierValue((
+                    caps.get(1).unwrap().as_str().to_uppercase().to_string(),
+                    caps.get(2).unwrap().as_str().to_uppercase().to_string(),
+                    caps.get(3).unwrap().as_str().to_uppercase().to_string(),
+                ))
+            }
+            None => {}
+        }
+        match RE_FIELD.captures(&s) {
+            Some(caps) => return ColumnType::Field(caps.get(1).unwrap().as_str().to_string()),
+            None => {}
+        }
+        ColumnType::Unknown
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Column {
+    pub obj: ColumnType,
+    pub label: String,
+}
+
+impl Column {
+    pub fn new(s: &String) -> Self {
+        lazy_static! {
+            static ref RE_COLUMN_LABEL: Regex = Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).unwrap();
+        }
+        match RE_COLUMN_LABEL.captures(&s) {
+            Some(caps) => Self {
+                obj: ColumnType::new(&caps.get(1).unwrap().as_str().to_string()),
+                label: caps.get(2).unwrap().as_str().to_string(),
+            },
+            None => Self {
+                obj: ColumnType::new(&s.trim().to_string()),
+                label: s.trim().to_string(),
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum SparqlValue {
     Entity(String),
     File(String),
     Uri(String),
-    Time(String),     // TODO
-    Location(LatLon), // TODO
-    Literal(String),  // TODO
+    Time(String),
+    Location(LatLon),
+    Literal(String),
 }
 
 impl SparqlValue {
@@ -156,30 +259,45 @@ impl Template {
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
     mw_api: mediawiki::api::Api,
+    wd_api: mediawiki::api::Api,
     page: String,
     template_title_start: String,
     language: String,
     template: Option<Template>,
     sparql_values: Vec<HashMap<String, SparqlValue>>,
     sparql_first_variable: Option<String>,
+    columns: Vec<Column>,
+    entities: EntityContainer,
 }
 
 impl ListeriaPage {
     pub fn new(mw_api: &mediawiki::api::Api, page: String) -> Option<Self> {
         let mut ret = Self {
             mw_api: mw_api.clone(),
+            wd_api: mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
+                .expect("Could not connect to Wikidata API"),
             page: page,
             template_title_start: "Wikidata list".to_string(),
             language: mw_api.get_site_info_string("general", "lang").ok()?,
             template: None,
             sparql_values: vec![],
             sparql_first_variable: None,
+            columns: vec![],
+            entities: EntityContainer::new(),
         };
-        ret.load_page().ok();
+        ret.init().ok()?;
         Some(ret)
     }
 
-    pub fn load_page(self: &mut Self) -> Result<(), String> {
+    fn init(self: &mut Self) -> Result<(), String> {
+        self.load_page()?;
+        self.process_template()?;
+        self.run_query()?;
+        self.load_entities()?;
+        Ok(())
+    }
+
+    fn load_page(self: &mut Self) -> Result<(), String> {
         let params: HashMap<String, String> = vec![
             ("action", "parse"),
             ("prop", "parsetree"),
@@ -213,13 +331,32 @@ impl ListeriaPage {
                     None => {}
                 }
             });
-        match &self.template {
-            Some(_) => Ok(()),
-            None => Err(format!(
-                "No template '{}' found",
-                &self.template_title_start
-            )),
+        Ok(())
+    }
+
+    fn process_template(self: &mut Self) -> Result<(), String> {
+        let template = match &self.template {
+            Some(t) => t.clone(),
+            None => {
+                return Err(format!(
+                    "No template '{}' found",
+                    &self.template_title_start
+                ))
+            }
+        };
+
+        match template.params.get("columns") {
+            Some(columns) => {
+                columns.split(",").for_each(|part| {
+                    let s = part.clone().to_string();
+                    self.columns.push(Column::new(&s));
+                });
+            }
+            None => self.columns.push(Column::new(&"item".to_string())),
         }
+
+        println!("Columns: {:?}", &self.columns);
+        Ok(())
     }
 
     pub fn run_query(self: &mut Self) -> Result<(), String> {
@@ -227,16 +364,13 @@ impl ListeriaPage {
             Some(t) => t,
             None => return Err(format!("No template found")),
         };
-        let _sparql = match t.params.get("sparql") {
+        let sparql = match t.params.get("sparql") {
             Some(s) => s,
             None => return Err(format!("No `sparql` parameter in {:?}", &t)),
         };
-        let sparql = r#"SELECT ?q ?img { ?q wdt:P31 wd:Q5 ; wdt:P18 ?img } LIMIT 5"#; // TESTING
 
-        let wd_api = mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
-            .expect("Could not connect to Wikidata API");
         println!("Running SPARQL: {}", &sparql);
-        let j = match wd_api.sparql_query(sparql) {
+        let j = match self.wd_api.sparql_query(sparql) {
             Ok(j) => j,
             Err(e) => return Err(format!("{:?}", &e)),
         };
@@ -276,6 +410,47 @@ impl ListeriaPage {
         }
         println!("FIRST: {}", &first_var);
         println!("{:?}", &self.sparql_values);
+        Ok(())
+    }
+
+    fn load_entities(self: &mut Self) -> Result<(), String> {
+        // Any columns that require entities to be loaded?
+        if self
+            .columns
+            .iter()
+            .filter(|c| match c.obj {
+                ColumnType::Number => false,
+                ColumnType::Item => false,
+                ColumnType::Field(_) => false,
+                _ => true,
+            })
+            .count()
+            == 0
+        {
+            return Ok(());
+        }
+
+        let varname = match &self.sparql_first_variable {
+            Some(v) => v,
+            None => return Err(format!("load_entities: sparql_first_variable is None")),
+        };
+
+        let ids: Vec<String> = self
+            .sparql_values
+            .iter()
+            .filter_map(|row| match row.get(varname) {
+                Some(SparqlValue::Entity(id)) => Some(id.to_string()),
+                _ => None,
+            })
+            .collect();
+        if ids.is_empty() {
+            return Err(format!("No items to show (using variable '{}')", &varname));
+        }
+        match self.entities.load_entities(&self.wd_api, &ids) {
+            Ok(_) => {}
+            Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
+        }
+
         Ok(())
     }
 }

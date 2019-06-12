@@ -8,8 +8,8 @@ use listeria::*;
 
 fn main() {
     let ini_file = "bot.ini";
-    let page_title = "Benutzer:Magnus_Manske/listeria_test2";
-    let api_url = "https://de.wikipedia.org/w/api.php";
+    let page_title = "User:Magnus Manske/listeria test4"; //"Benutzer:Magnus_Manske/listeria_test2";
+    let api_url = "https://en.wikipedia.org/w/api.php";
 
     let mut settings = Config::default();
     settings
@@ -22,9 +22,9 @@ fn main() {
     mw_api.login(user, pass).expect("Could not log in");
 
     //println!("{:?}", mw_api.get_site_info());
-    let mut page = match ListeriaPage::new(&mw_api, page_title.into()) {
+    let _page = match ListeriaPage::new(&mw_api, page_title.into()) {
         Some(p) => p,
         None => panic!("Could not open/parse page '{}'", &page_title),
     };
-    page.run_query().unwrap();
+    //page.run_query().unwrap();
 }
