@@ -7,20 +7,129 @@ use config::{Config, File};
 use roxmltree;
 use std::collections::HashMap;
 
+#[derive(Debug, Clone)]
+pub struct Template {
+    pub title: String,
+    pub params: HashMap<String, String>,
+}
+
+impl Template {
+    pub fn new_from_xml(node: &roxmltree::Node) -> Option<Self> {
+        let mut title: Option<String> = None;
+
+        let mut parts: HashMap<String, String> = HashMap::new();
+        for n in node.children().filter(|n| n.is_element()) {
+            if n.tag_name().name() == "title" {
+                n.children().for_each(|c| {
+                    let t = c.text().unwrap_or("").replace("_", " ");
+                    let t = t.trim();
+                    title = Some(t.to_string());
+                });
+            } else if n.tag_name().name() == "part" {
+                let mut k: Option<String> = None;
+                let mut v: Option<String> = None;
+                n.children().for_each(|c| {
+                    let tag = c.tag_name().name();
+                    match tag {
+                        "name" => {
+                            let txt: Vec<String> = c
+                                .children()
+                                .map(|c| c.text().unwrap_or("").trim().to_string())
+                                .collect();
+                            let txt = txt.join("");
+                            if txt.is_empty() {
+                                match c.attribute("index") {
+                                    Some(i) => k = Some(i.to_string()),
+                                    None => {}
+                                }
+                            } else {
+                                k = Some(txt);
+                            }
+                        }
+                        "value" => {
+                            let txt: Vec<String> = c
+                                .children()
+                                .map(|c| c.text().unwrap_or("").trim().to_string())
+                                .collect();
+                            v = Some(txt.join(""));
+                        }
+                        _ => {}
+                    }
+                });
+
+                /*
+                let mut children = n.children();
+                let k: Vec<String> = match children.next() {
+                    Some(x) => match x.tag_name().name() {
+                        "name" => x
+                            .children()
+                            .map(|c| c.text().unwrap_or("").trim().to_string())
+                            .collect(),
+                        _ => return None,
+                    },
+                    None => return None,
+                };
+
+                match children.next() {
+                    Some(x) => match x.tag_name().name() {
+                        "equals" => {}
+                        _ => return None,
+                    },
+                    None => return None,
+                };
+
+                let v: Vec<String> = match children.next() {
+                    Some(x) => match x.tag_name().name() {
+                        "value" => x
+                            .children()
+                            .map(|c| c.text().unwrap_or("").trim().to_string())
+                            .collect(),
+                        _ => return None,
+                    },
+                    None => return None,
+                };
+                parts.insert(k.join(""), v.join(""));
+                */
+                match (k, v) {
+                    (Some(k), Some(v)) => {
+                        parts.insert(k, v);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        match title {
+            Some(t) => Some(Self {
+                title: t,
+                params: parts,
+            }),
+            None => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ListeriaPage {
     mw_api: mediawiki::api::Api,
     page: String,
+    template_title_start: String,
+    template: Option<Template>,
 }
 
 impl ListeriaPage {
-    pub fn new(mw_api: &mediawiki::api::Api, page: String) -> Self {
-        Self {
+    pub fn new(mw_api: &mediawiki::api::Api, page: String) -> Option<Self> {
+        let mut ret = Self {
             mw_api: mw_api.clone(),
             page: page,
-        }
+            template_title_start: "Wikidata list".to_string(),
+            template: None,
+        };
+        ret.load_page().ok();
+        Some(ret)
     }
 
-    pub fn load_page(&self) -> Result<(), String> {
+    pub fn load_page(self: &mut Self) -> Result<(), String> {
         let params: HashMap<String, String> = vec![
             ("action", "parse"),
             ("prop", "parsetree"),
@@ -42,59 +151,25 @@ impl ListeriaPage {
             .descendants()
             .filter(|n| n.is_element() && n.tag_name().name() == "template")
             .for_each(|node| {
-                let mut is_wikidata_list = false;
-                let mut parts: HashMap<String, String> = HashMap::new();
-                for n in node.children().filter(|n| n.is_element()) {
-                    if n.tag_name().name() == "title" {
-                        n.children().for_each(|c| {
-                            let t = c.text().unwrap_or("").replace("_", " ");
-                            let t = t.trim();
-                            if t == "Wikidata list" {
-                                is_wikidata_list = true;
-                            }
-                        });
-                    } else if n.tag_name().name() == "part" {
-                        let mut children = n.children();
-                        let k: Vec<String> = match children.next() {
-                            Some(x) => match x.tag_name().name() {
-                                "name" => x
-                                    .children()
-                                    .map(|c| c.text().unwrap_or("").trim().to_string())
-                                    .collect(),
-                                _ => return,
-                            },
-                            None => return,
-                        };
-
-                        match children.next() {
-                            Some(x) => match x.tag_name().name() {
-                                "equals" => {}
-                                _ => return,
-                            },
-                            None => return,
-                        };
-
-                        let v: Vec<String> = match children.next() {
-                            Some(x) => match x.tag_name().name() {
-                                "value" => x
-                                    .children()
-                                    .map(|c| c.text().unwrap_or("").trim().to_string())
-                                    .collect(),
-                                _ => return,
-                            },
-                            None => return,
-                        };
-
-                        parts.insert(k.join(""), v.join(""));
-                    }
-                }
-                if !is_wikidata_list {
+                if self.template.is_some() {
                     return;
                 }
-                println!("{:?}", &parts);
+                match Template::new_from_xml(&node) {
+                    Some(t) => {
+                        if t.title == self.template_title_start {
+                            self.template = Some(t);
+                        }
+                    }
+                    None => {}
+                }
             });
-        //println!("{:?}", &root);
-        Ok(())
+        match &self.template {
+            Some(_) => Ok(()),
+            None => Err(format!(
+                "No template '{}' found",
+                &self.template_title_start
+            )),
+        }
     }
 }
 
@@ -112,6 +187,5 @@ fn main() {
     mw_api.login(user, pass).expect("Could not log in");
 
     //println!("{:?}", mw_api.get_site_info());
-    let page = ListeriaPage::new(&mw_api, "Benutzer:Magnus_Manske/listeria_test2".into());
-    page.load_page().expect("Page load failed");
+    let _page = ListeriaPage::new(&mw_api, "Benutzer:Magnus_Manske/listeria_test2".into());
 }
