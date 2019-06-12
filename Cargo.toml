@@ -14,5 +14,5 @@ urlencoding = "1.0.0"
 roxmltree = "0.6.0"
 mediawiki = "0.1.7"
 #wikibase = "0.3"
-#wikibase = { git = "https://gitlab.com/tobias47n9e/wikibase_rs" }
-wikibase = { path='../wikibase_rs' }
+wikibase = { git = "https://gitlab.com/tobias47n9e/wikibase_rs" }
+#wikibase = { path='../wikibase_rs' }

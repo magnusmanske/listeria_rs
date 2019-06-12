@@ -258,8 +258,9 @@ impl Template {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResultCellPart {
+    Number,
     Entity(String),
-    LocalLink(String),
+    LocalLink((String, String)), // Page, label
     Time(String),
     Location((f64, f64)),
     File(String),
@@ -621,14 +622,63 @@ impl ListeriaPage {
                 }
                 None => {}
             },
+            ColumnType::LabelLang(language) => match entity {
+                Some(e) => {
+                    match e.label_in_locale(language) {
+                        Some(s) => {
+                            ret.parts.push(ResultCellPart::Text(s.to_string()));
+                        }
+                        None => match e.label_in_locale(&self.language) {
+                            // Fallback
+                            Some(s) => {
+                                ret.parts.push(ResultCellPart::Text(s.to_string()));
+                            }
+                            None => {} // No label available
+                        },
+                    }
+                }
+                None => {}
+            },
+            ColumnType::Label => match entity {
+                Some(e) => {
+                    let wiki = self
+                        .mw_api
+                        .get_site_info_string("general", "wikiid")
+                        .unwrap();
+                    println!("Wiki:{}", &wiki);
+                    let label = match e.label_in_locale(&self.language) {
+                        Some(s) => s.to_string(),
+                        None => entity_id.to_string(),
+                    };
+                    let local_page = match e.sitelinks() {
+                        Some(sl) => sl
+                            .iter()
+                            .filter(|s| *s.site() == wiki)
+                            .map(|s| s.title().to_string())
+                            .next(),
+                        None => None,
+                    };
+                    match local_page {
+                        Some(page) => {
+                            ret.parts.push(ResultCellPart::LocalLink((page, label)));
+                        }
+                        None => {
+                            ret.parts
+                                .push(ResultCellPart::Entity(entity_id.to_string()));
+                        }
+                    }
+                }
+                None => {}
+            },
+            ColumnType::Unknown => {} // Ignore
+            ColumnType::Number => {
+                ret.parts.push(ResultCellPart::Number);
+            }
             _ => {} /*
-                    Number,
                     Label,
-                    LabelLang(String),
                     PropertyQualifier((String, String)),
                     PropertyQualifierValue((String, String, String)),
-                    Unknown,
-                            */
+                    */
         }
 
         ret
