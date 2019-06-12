@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use urlencoding;
 use wikibase::entity_container::EntityContainer;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LatLon {
     pub lat: f64,
     pub lon: f64,
@@ -125,7 +125,7 @@ impl Column {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SparqlValue {
     Entity(String),
     File(String),
@@ -256,6 +256,89 @@ impl Template {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResultCellPart {
+    Entity(String),
+    LocalLink(String),
+    Time(String),
+    Location((f64, f64)),
+    File(String),
+    Uri(String),
+    ExternalId((String, String)), // Property, ID
+    Text(String),
+}
+
+impl ResultCellPart {
+    pub fn from_sparql_value(v: &SparqlValue) -> Self {
+        match v {
+            SparqlValue::Entity(x) => ResultCellPart::Entity(x.to_owned()),
+            SparqlValue::File(x) => ResultCellPart::File(x.to_owned()),
+            SparqlValue::Uri(x) => ResultCellPart::Uri(x.to_owned()),
+            SparqlValue::Time(x) => ResultCellPart::Text(x.to_owned()),
+            SparqlValue::Location(x) => ResultCellPart::Location((x.lat, x.lon)),
+            SparqlValue::Literal(x) => ResultCellPart::Text(x.to_owned()),
+        }
+    }
+
+    pub fn from_snak(snak: &wikibase::Snak) -> Self {
+        if snak.property() == "P18" {
+            println!("{:?}", &snak);
+        }
+        match &snak.data_value() {
+            Some(dv) => match dv.value() {
+                wikibase::Value::Entity(v) => ResultCellPart::Entity(v.id().to_string()),
+                wikibase::Value::StringValue(v) => match snak.datatype() {
+                    wikibase::SnakDataType::CommonsMedia => ResultCellPart::File(v.to_string()),
+                    wikibase::SnakDataType::ExternalId => ResultCellPart::ExternalId((snak.property().to_string(),v.to_string())),
+                    _ => ResultCellPart::Text(v.to_string())
+                },
+                wikibase::Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
+                wikibase::Value::Time(v) => ResultCellPart::Time(v.time().to_string()),
+                wikibase::Value::Coordinate(v) => {
+                    ResultCellPart::Location((*v.latitude(), *v.longitude()))
+                }
+                wikibase::Value::MonoLingual(v) => {
+                    ResultCellPart::Text(v.language().to_string() + &":" + &v.text())
+                }
+                //_ => ResultCellPart::Text(format!("Snak: {:?}", snak)),
+            },
+            _ => ResultCellPart::Text(format!("No/unknown value")),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResultCell {
+    parts: Vec<ResultCellPart>,
+}
+
+impl ResultCell {
+    pub fn new() -> Self {
+        Self { parts: vec![] }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ResultRow {
+    cells: Vec<ResultCell>,
+}
+
+impl ResultRow {
+    pub fn new() -> Self {
+        Self { cells: vec![] }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum LinksType {
+    All,
+    Local,
+    Red,
+    RedOnly,
+    Text,
+    Reasonator,
+}
+
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
     mw_api: mediawiki::api::Api,
@@ -264,10 +347,12 @@ pub struct ListeriaPage {
     template_title_start: String,
     language: String,
     template: Option<Template>,
-    sparql_values: Vec<HashMap<String, SparqlValue>>,
+    sparql_rows: Vec<HashMap<String, SparqlValue>>,
     sparql_first_variable: Option<String>,
     columns: Vec<Column>,
     entities: EntityContainer,
+    one_row_per_item: bool,
+    links: LinksType,
 }
 
 impl ListeriaPage {
@@ -280,10 +365,12 @@ impl ListeriaPage {
             template_title_start: "Wikidata list".to_string(),
             language: mw_api.get_site_info_string("general", "lang").ok()?,
             template: None,
-            sparql_values: vec![],
+            sparql_rows: vec![],
             sparql_first_variable: None,
             columns: vec![],
             entities: EntityContainer::new(),
+            one_row_per_item: false, // TODO make configurable
+            links: LinksType::All,   // TODO make configurable
         };
         ret.init().ok()?;
         Some(ret)
@@ -294,6 +381,7 @@ impl ListeriaPage {
         self.process_template()?;
         self.run_query()?;
         self.load_entities()?;
+        dbg!(self.get_results()?);
         Ok(())
     }
 
@@ -378,7 +466,7 @@ impl ListeriaPage {
     }
 
     fn parse_sparql(self: &mut Self, j: Value) -> Result<(), String> {
-        self.sparql_values.clear();
+        self.sparql_rows.clear();
         self.sparql_first_variable = None;
 
         // TODO force first_var to be "item" for backwards compatability?
@@ -406,15 +494,16 @@ impl ListeriaPage {
             if row.is_empty() {
                 continue;
             }
-            self.sparql_values.push(row);
+            self.sparql_rows.push(row);
         }
         println!("FIRST: {}", &first_var);
-        println!("{:?}", &self.sparql_values);
+        println!("{:?}", &self.sparql_rows);
         Ok(())
     }
 
     fn load_entities(self: &mut Self) -> Result<(), String> {
         // Any columns that require entities to be loaded?
+        // TODO also force if self.links is redlinks etc.
         if self
             .columns
             .iter()
@@ -430,21 +519,9 @@ impl ListeriaPage {
             return Ok(());
         }
 
-        let varname = match &self.sparql_first_variable {
-            Some(v) => v,
-            None => return Err(format!("load_entities: sparql_first_variable is None")),
-        };
-
-        let ids: Vec<String> = self
-            .sparql_values
-            .iter()
-            .filter_map(|row| match row.get(varname) {
-                Some(SparqlValue::Entity(id)) => Some(id.to_string()),
-                _ => None,
-            })
-            .collect();
+        let ids = self.get_ids_from_sparql_rows()?;
         if ids.is_empty() {
-            return Err(format!("No items to show (using variable '{}')", &varname));
+            return Err(format!("No items to show"));
         }
         match self.entities.load_entities(&self.wd_api, &ids) {
             Ok(_) => {}
@@ -452,6 +529,137 @@ impl ListeriaPage {
         }
 
         Ok(())
+    }
+
+    fn get_ids_from_sparql_rows(&self) -> Result<Vec<String>, String> {
+        let varname = self.get_var_name()?;
+        let mut ids: Vec<String> = self
+            .sparql_rows
+            .iter()
+            .filter_map(|row| match row.get(varname) {
+                Some(SparqlValue::Entity(id)) => Some(id.to_string()),
+                _ => None,
+            })
+            .collect();
+        ids.sort();
+        ids.dedup();
+        Ok(ids)
+    }
+
+    fn get_result_cell(
+        &self,
+        entity_id: &String,
+        sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
+        col: &Column,
+    ) -> ResultCell {
+        let mut ret = ResultCell::new();
+        /*
+        ret.parts.push(ResultCellPart::Text(format!(
+            "{}:{:?} / {:?}",
+            &entity_id, col, sparql_rows
+        )));
+        */
+
+        let entity = self.entities.get_entity(entity_id.to_owned());
+        match &col.obj {
+            ColumnType::Item => {
+                ret.parts.push(ResultCellPart::Entity(entity_id.to_owned()));
+            }
+            ColumnType::Description => match entity {
+                Some(e) => match e.description_in_locale(self.language.as_str()) {
+                    Some(s) => {
+                        ret.parts.push(ResultCellPart::Text(s.to_string()));
+                    }
+                    None => {}
+                },
+                None => {}
+            },
+            ColumnType::Field(varname) => {
+                for row in sparql_rows.iter() {
+                    match row.get(varname) {
+                        Some(x) => {
+                            ret.parts.push(ResultCellPart::from_sparql_value(x));
+                        }
+                        None => {}
+                    }
+                }
+            }
+            ColumnType::Property(property) => match entity {
+                Some(e) => {
+                    e.claims_with_property(property.to_owned())
+                        .iter()
+                        .for_each(|statement| {
+                            ret.parts
+                                .push(ResultCellPart::from_snak(statement.main_snak()));
+                        });
+                }
+                None => {}
+            },
+            _ => {} /*
+                    Number,
+                    Label,
+                    LabelLang(String),
+                    PropertyQualifier((String, String)),
+                    PropertyQualifierValue((String, String, String)),
+                    Unknown,
+                            */
+        }
+
+        ret
+    }
+
+    fn get_result_row(
+        &self,
+        entity_id: &String,
+        sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
+    ) -> Option<ResultRow> {
+        let mut row = ResultRow::new();
+        row.cells = self
+            .columns
+            .iter()
+            .map(|col| self.get_result_cell(entity_id, sparql_rows, col))
+            .collect();
+        Some(row)
+    }
+
+    fn get_var_name(&self) -> Result<&String, String> {
+        match &self.sparql_first_variable {
+            Some(v) => Ok(v),
+            None => return Err(format!("load_entities: sparql_first_variable is None")),
+        }
+    }
+
+    fn get_results(self: &mut Self) -> Result<Vec<ResultRow>, String> {
+        let varname = self.get_var_name()?;
+        Ok(match self.one_row_per_item {
+            true => self
+                .get_ids_from_sparql_rows()?
+                .iter()
+                .filter_map(|id| {
+                    let sparql_rows: Vec<&HashMap<String, SparqlValue>> = self
+                        .sparql_rows
+                        .iter()
+                        .filter(|row| match row.get(varname) {
+                            Some(SparqlValue::Entity(v)) => v == id,
+                            _ => false,
+                        })
+                        .collect();
+                    if !sparql_rows.is_empty() {
+                        self.get_result_row(id, &sparql_rows)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+            false => self
+                .sparql_rows
+                .iter()
+                .filter_map(|row| match row.get(varname) {
+                    Some(SparqlValue::Entity(id)) => self.get_result_row(id, &vec![&row]),
+                    _ => None,
+                })
+                .collect(),
+        })
     }
 }
 
