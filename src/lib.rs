@@ -281,28 +281,54 @@ impl ResultCellPart {
     }
 
     pub fn from_snak(snak: &wikibase::Snak) -> Self {
-        if snak.property() == "P18" {
-            println!("{:?}", &snak);
-        }
         match &snak.data_value() {
             Some(dv) => match dv.value() {
                 wikibase::Value::Entity(v) => ResultCellPart::Entity(v.id().to_string()),
                 wikibase::Value::StringValue(v) => match snak.datatype() {
                     wikibase::SnakDataType::CommonsMedia => ResultCellPart::File(v.to_string()),
-                    wikibase::SnakDataType::ExternalId => ResultCellPart::ExternalId((snak.property().to_string(),v.to_string())),
-                    _ => ResultCellPart::Text(v.to_string())
+                    wikibase::SnakDataType::ExternalId => {
+                        ResultCellPart::ExternalId((snak.property().to_string(), v.to_string()))
+                    }
+                    _ => ResultCellPart::Text(v.to_string()),
                 },
                 wikibase::Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
-                wikibase::Value::Time(v) => ResultCellPart::Time(v.time().to_string()),
+                wikibase::Value::Time(v) => ResultCellPart::Time(ResultCellPart::reduce_time(&v)),
                 wikibase::Value::Coordinate(v) => {
                     ResultCellPart::Location((*v.latitude(), *v.longitude()))
                 }
                 wikibase::Value::MonoLingual(v) => {
                     ResultCellPart::Text(v.language().to_string() + &":" + &v.text())
                 }
-                //_ => ResultCellPart::Text(format!("Snak: {:?}", snak)),
             },
             _ => ResultCellPart::Text(format!("No/unknown value")),
+        }
+    }
+
+    pub fn reduce_time(v: &wikibase::TimeValue) -> String {
+        lazy_static! {
+            static ref RE_DATE: Regex =
+                Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#).unwrap();
+        }
+        let s = v.time().to_string();
+        let (year, month, day) = match RE_DATE.captures(&s) {
+            Some(caps) => (
+                caps.get(1).unwrap().as_str().to_string(),
+                caps.get(2).unwrap().as_str().to_string(),
+                caps.get(3).unwrap().as_str().to_string(),
+            ),
+            None => {
+                println!("BAD TIME: {}/{}", &s, v.precision());
+                return s;
+            }
+        };
+        match v.precision() {
+            6 => format!("{}th millenium", year[0..year.len() - 4].to_string()),
+            7 => format!("{}th century", year[0..year.len() - 3].to_string()),
+            8 => format!("{}0s", year[0..year.len() - 2].to_string()),
+            9 => year,
+            10 => format!("{}-{}", year, month),
+            11 => format!("{}-{}-{}", year, month, day),
+            _ => s,
         }
     }
 }
