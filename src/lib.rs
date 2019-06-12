@@ -259,7 +259,7 @@ impl Template {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResultCellPart {
     Number,
-    Entity(String),
+    Entity((String, bool)),      // ID, try_localize
     LocalLink((String, String)), // Page, label
     Time(String),
     Location((f64, f64)),
@@ -272,7 +272,7 @@ pub enum ResultCellPart {
 impl ResultCellPart {
     pub fn from_sparql_value(v: &SparqlValue) -> Self {
         match v {
-            SparqlValue::Entity(x) => ResultCellPart::Entity(x.to_owned()),
+            SparqlValue::Entity(x) => ResultCellPart::Entity((x.to_owned(), true)),
             SparqlValue::File(x) => ResultCellPart::File(x.to_owned()),
             SparqlValue::Uri(x) => ResultCellPart::Uri(x.to_owned()),
             SparqlValue::Time(x) => ResultCellPart::Text(x.to_owned()),
@@ -284,7 +284,7 @@ impl ResultCellPart {
     pub fn from_snak(snak: &wikibase::Snak) -> Self {
         match &snak.data_value() {
             Some(dv) => match dv.value() {
-                wikibase::Value::Entity(v) => ResultCellPart::Entity(v.id().to_string()),
+                wikibase::Value::Entity(v) => ResultCellPart::Entity((v.id().to_string(), true)),
                 wikibase::Value::StringValue(v) => match snak.datatype() {
                     wikibase::SnakDataType::CommonsMedia => ResultCellPart::File(v.to_string()),
                     wikibase::SnakDataType::ExternalId => {
@@ -590,7 +590,8 @@ impl ListeriaPage {
         let entity = self.entities.get_entity(entity_id.to_owned());
         match &col.obj {
             ColumnType::Item => {
-                ret.parts.push(ResultCellPart::Entity(entity_id.to_owned()));
+                ret.parts
+                    .push(ResultCellPart::Entity((entity_id.to_owned(), false)));
             }
             ColumnType::Description => match entity {
                 Some(e) => match e.description_in_locale(self.language.as_str()) {
@@ -664,7 +665,7 @@ impl ListeriaPage {
                         }
                         None => {
                             ret.parts
-                                .push(ResultCellPart::Entity(entity_id.to_string()));
+                                .push(ResultCellPart::Entity((entity_id.to_string(), false)));
                         }
                     }
                 }
@@ -675,7 +676,6 @@ impl ListeriaPage {
                 ret.parts.push(ResultCellPart::Number);
             }
             _ => {} /*
-                    Label,
                     PropertyQualifier((String, String)),
                     PropertyQualifierValue((String, String, String)),
                     */
