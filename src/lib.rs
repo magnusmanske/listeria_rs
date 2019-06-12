@@ -689,6 +689,20 @@ impl ListeriaPage {
         entity_id: &String,
         sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
     ) -> Option<ResultRow> {
+        match self.links {
+            LinksType::Local => {
+                if !self.entities.has_entity(entity_id.to_owned()) {
+                    return None;
+                }
+            }
+            LinksType::RedOnly => {
+                if self.entities.has_entity(entity_id.to_owned()) {
+                    return None;
+                }
+            }
+            _ => {}
+        }
+
         let mut row = ResultRow::new();
         row.cells = self
             .columns
