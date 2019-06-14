@@ -573,6 +573,9 @@ impl ListeriaPage {
     }
 
     fn load_page(self: &mut Self) -> Result<(), String> {
+        let text = self.load_page_as("parsetree")?.to_owned();
+        let doc = roxmltree::Document::parse(&text).unwrap();
+        /*
         let params: HashMap<String, String> = vec![
             ("action", "parse"),
             ("prop", "parsetree"),
@@ -590,6 +593,7 @@ impl ListeriaPage {
             Some(text) => roxmltree::Document::parse(&text).unwrap(),
             None => return Err(format!("No parse tree for {}", &self.page)),
         };
+        */
         doc.root()
             .descendants()
             .filter(|n| n.is_element() && n.tag_name().name() == "template")
@@ -1059,7 +1063,112 @@ impl ListeriaPage {
             Ok(r) => r,
             Err(e) => return Err(format!("{:?}", e)),
         };
-        // TODO ["edit"]["result"] == "Success"
+        // TODO check ["edit"]["result"] == "Success"
+        Ok(())
+    }
+
+    fn load_page_as(&self, mode: &str) -> Result<String, String> {
+        let params: HashMap<String, String> = vec![
+            ("action", "parse"),
+            ("prop", mode),
+            ("page", self.page.as_str()),
+        ]
+        .iter()
+        .map(|x| (x.0.to_string(), x.1.to_string()))
+        .collect();
+
+        let result = self
+            .mw_api
+            .get_query_api_json(&params)
+            .expect("Loading page failed");
+        match result["parse"][mode]["*"].as_str() {
+            Some(ret) => Ok(ret.to_string()),
+            None => return Err(format!("No parse tree for {}", &self.page)),
+        }
+    }
+
+    fn separate_start_template(&self, blob: &String) -> Option<(String, String)> {
+        let mut split_at: Option<usize> = None;
+        let mut curly_count: i32 = 0;
+        blob.char_indices().for_each(|(pos, c)| {
+            match c {
+                '{' => {
+                    curly_count += 1;
+                }
+                '}' => {
+                    curly_count -= 1;
+                }
+                _ => {}
+            }
+            if curly_count == 0 && split_at.is_none() {
+                split_at = Some(pos + 1);
+            }
+        });
+        match split_at {
+            Some(pos) => {
+                let mut template = blob.clone();
+                let rest = template.split_off(pos);
+                Some((template, rest))
+            }
+            None => None,
+        }
+    }
+
+    pub fn update_source_page(&self) -> Result<(), String> {
+        let wikitext = self.load_page_as("wikitext")?;
+        //println!("{}", &wikitext);
+        // TODO use local template name
+        let pattern =
+            r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#;
+        let re_wikitext: Regex = RegexBuilder::new(pattern)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+
+        let (before, blob, end_template, after) = match re_wikitext.captures(&wikitext) {
+            Some(caps) => (
+                caps.get(1).unwrap().as_str(),
+                caps.get(2).unwrap().as_str(),
+                caps.get(3).unwrap().as_str(),
+                caps.get(4).unwrap().as_str(),
+            ),
+            None => return Err(format!("No template/end template found")),
+        };
+        /*
+        println!("-----\n\n>> BEFORE {}", &before);
+        println!(">> BLOB {}", &blob);
+        println!(">> END {}", &end_template);
+        println!(">> AFTER {}", &after);
+        */
+
+        let (start_template, _) = match self.separate_start_template(&blob.to_string()) {
+            Some(parts) => parts,
+            None => return Err(format!("Can't split start template")),
+        };
+
+        // Remove tabbed data marker
+        let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")
+            .unwrap()
+            .replace(&start_template, "");
+
+        // Add tabbed data marker
+        let start_template = start_template[0..start_template.len() - 2]
+            .trim()
+            .to_string()
+            + "\n|tabbed_data=1}}";
+
+        // Create new wikitext
+        let new_wikitext = before.to_owned() + &start_template + "\n" + end_template + after;
+
+        // Compare to old wikitext
+        if wikitext == new_wikitext {
+            // All is as it should be
+            return Ok(());
+        }
+
+        // TODO edit page
+
         Ok(())
     }
 }

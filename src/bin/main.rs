@@ -29,16 +29,20 @@ fn main() {
         .login(user.to_owned(), pass.to_owned())
         .expect("Could not log in");
 
-    let mut page = match ListeriaPage::new(&mw_api, page_title.into()) {
+    let page = match ListeriaPage::new(&mw_api, page_title.into()) {
         Some(p) => p,
         None => panic!("Could not open/parse page '{}'", &page_title),
     };
+
+    /*
     match page.run() {
         Ok(_) => {}
         Err(e) => panic!("{}", e),
     }
     let j = page.as_tabbed_data().unwrap();
-    //println!("{}", ::serde_json::to_string_pretty(&j).unwrap());
     page.write_tabbed_data(j, &mut commons_api).unwrap();
+    */
+
+    page.update_source_page().unwrap();
     // TODO update source wiki text (if necessary), or action=purge to update
 }
