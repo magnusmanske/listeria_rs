@@ -40,4 +40,5 @@ fn main() {
     let j = page.as_tabbed_data().unwrap();
     //println!("{}", ::serde_json::to_string_pretty(&j).unwrap());
     page.write_tabbed_data(j, &mut commons_api).unwrap();
+    // TODO update source wiki text (if necessary), or action=purge to update
 }

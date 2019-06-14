@@ -383,7 +383,7 @@ impl ResultCellPart {
         self.tabbed_string_safe(match self {
             ResultCellPart::Number => (rownum + 1).to_string(),
             ResultCellPart::Entity((id, try_localize)) => {
-                let entity_id_link = "''[[:d:".to_string() + &id + "]]''";
+                let entity_id_link = "''[[:d:".to_string() + &id + "|" + &id + "]]''";
                 if !try_localize {
                     return entity_id_link;
                 }
@@ -634,7 +634,7 @@ impl ListeriaPage {
         Ok(())
     }
 
-    pub fn run_query(self: &mut Self) -> Result<(), String> {
+    fn run_query(self: &mut Self) -> Result<(), String> {
         let t = match &self.template {
             Some(t) => t,
             None => return Err(format!("No template found")),
@@ -949,7 +949,7 @@ impl ListeriaPage {
                 .next(),
             None => None,
         }?;
-        let label = page.clone(); //
+        let label = self.get_local_entity_label(item).unwrap_or(page.clone());
         Some(ResultCellPart::LocalLink((page, label)))
     }
 
