@@ -21,10 +21,14 @@ fn main() {
     let mut mw_api = mediawiki::api::Api::new(api_url).expect("Could not connect to MW API");
     mw_api.login(user, pass).expect("Could not log in");
 
-    //println!("{:?}", mw_api.get_site_info());
-    let _page = match ListeriaPage::new(&mw_api, page_title.into()) {
+    let mut page = match ListeriaPage::new(&mw_api, page_title.into()) {
         Some(p) => p,
         None => panic!("Could not open/parse page '{}'", &page_title),
     };
-    //page.run_query().unwrap();
+    match page.run() {
+        Ok(_) => {}
+        Err(e) => panic!("{}", e),
+    }
+    let j = page.as_tabbed_data().unwrap();
+    println!("{}", ::serde_json::to_string_pretty(&j).unwrap());
 }

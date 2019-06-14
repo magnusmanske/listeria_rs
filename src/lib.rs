@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate lazy_static;
 extern crate mediawiki;
-//#[macro_use]
+#[macro_use]
 extern crate serde_json;
 
 use regex::{Regex, RegexBuilder};
@@ -332,6 +332,46 @@ impl ResultCellPart {
             _ => s,
         }
     }
+
+    fn tabbed_string_safe(&self, s: String) -> String {
+        s.replace("\n", " ").replace("\t", " ")
+    }
+
+    pub fn as_tabbed_data(
+        &self,
+        page: &ListeriaPage,
+        rownum: usize,
+        _colnum: usize,
+        _partnum: usize,
+    ) -> String {
+        //format!("CELL ROW {} COL {} PART {}", rownum, colnum, partnum)
+        self.tabbed_string_safe(match self {
+            ResultCellPart::Number => (rownum + 1).to_string(),
+            ResultCellPart::Entity((id, _try_localize)) => "[[:d:".to_string() + &id + "]]",
+            ResultCellPart::LocalLink((page, label)) => {
+                if page == label {
+                    "[[".to_string() + &page + "]]"
+                } else {
+                    "[[".to_string() + &page + "|" + &label + "]]"
+                }
+            }
+            ResultCellPart::Time(time) => time.to_owned(),
+            ResultCellPart::Location((lat, lon)) => page.get_location_template(*lat, *lon),
+            ResultCellPart::File(file) => {
+                let thumb = page.thumbnail_size();
+                // TODO localize "File" and "thumb"
+                "[[File:".to_string() + &file + "|thumb|" + &thumb.to_string() + "px|]]"
+            }
+            ResultCellPart::Uri(url) => url.to_owned(),
+            ResultCellPart::ExternalId((property, id)) => {
+                match page.external_id_url(property, id) {
+                    Some(url) => "[".to_string() + &url + " " + &id + "]",
+                    None => id.to_owned(),
+                }
+            }
+            ResultCellPart::Text(text) => text.to_owned(),
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -343,16 +383,40 @@ impl ResultCell {
     pub fn new() -> Self {
         Self { parts: vec![] }
     }
+    pub fn as_tabbed_data(&self, page: &ListeriaPage, rownum: usize, colnum: usize) -> Value {
+        let ret: Vec<String> = self
+            .parts
+            .iter()
+            .enumerate()
+            .map(|(partnum, part)| part.as_tabbed_data(page, rownum, colnum, partnum))
+            .collect();
+        json!(ret.join("<br/>"))
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ResultRow {
     cells: Vec<ResultCell>,
+    section: usize,
 }
 
 impl ResultRow {
     pub fn new() -> Self {
-        Self { cells: vec![] }
+        Self {
+            cells: vec![],
+            section: 0,
+        }
+    }
+
+    pub fn as_tabbed_data(&self, page: &ListeriaPage, rownum: usize) -> Value {
+        let mut ret: Vec<Value> = self
+            .cells
+            .iter()
+            .enumerate()
+            .map(|(colnum, cell)| cell.as_tabbed_data(page, rownum, colnum))
+            .collect();
+        ret.insert(0, json!(self.section));
+        json!(ret)
     }
 }
 
@@ -370,6 +434,7 @@ pub enum LinksType {
 pub struct ListeriaPage {
     mw_api: mediawiki::api::Api,
     wd_api: mediawiki::api::Api,
+    wiki: String,
     page: String,
     template_title_start: String,
     language: String,
@@ -378,16 +443,20 @@ pub struct ListeriaPage {
     sparql_first_variable: Option<String>,
     columns: Vec<Column>,
     entities: EntityContainer,
-    one_row_per_item: bool,
+    pub one_row_per_item: bool,
     links: LinksType,
+    results: Vec<ResultRow>,
 }
 
 impl ListeriaPage {
     pub fn new(mw_api: &mediawiki::api::Api, page: String) -> Option<Self> {
-        let mut ret = Self {
+        Some(Self {
             mw_api: mw_api.clone(),
             wd_api: mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
                 .expect("Could not connect to Wikidata API"),
+            wiki: mw_api
+                .get_site_info_string("general", "wikiid")
+                .expect("No wikiid in site info"),
             page: page,
             template_title_start: "Wikidata list".to_string(),
             language: mw_api.get_site_info_string("general", "lang").ok()?,
@@ -396,20 +465,55 @@ impl ListeriaPage {
             sparql_first_variable: None,
             columns: vec![],
             entities: EntityContainer::new(),
-            one_row_per_item: false, // TODO make configurable
-            links: LinksType::All,   // TODO make configurable
-        };
-        ret.init().ok()?;
-        Some(ret)
+            one_row_per_item: false,
+            links: LinksType::All, // TODO make configurable
+            results: vec![],
+        })
     }
 
-    fn init(self: &mut Self) -> Result<(), String> {
+    pub fn run(self: &mut Self) -> Result<(), String> {
         self.load_page()?;
         self.process_template()?;
         self.run_query()?;
         self.load_entities()?;
-        dbg!(self.get_results()?);
+        self.results = dbg!(self.get_results()?);
+        self.patch_results()?;
+        dbg!(&self.results);
         Ok(())
+    }
+
+    pub fn thumbnail_size(&self) -> u64 {
+        let default: u64 = 128;
+        let t = match &self.template {
+            Some(t) => t,
+            None => return default,
+        };
+        match t.params.get("thumb") {
+            Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap(),
+            None => default,
+        }
+    }
+
+    pub fn external_id_url(&self, prop: &String, id: &String) -> Option<String> {
+        let pi = self.entities.get_entity(prop.to_owned())?;
+        pi.claims_with_property("P1630")
+            .iter()
+            .filter_map(|s| {
+                let data_value = s.main_snak().data_value().to_owned()?;
+                match data_value.value() {
+                    wikibase::Value::StringValue(s) => Some(
+                        s.to_owned()
+                            .replace("$1", &urlencoding::decode(&id).ok()?.to_string()),
+                    ),
+                    _ => None,
+                }
+            })
+            .next()
+    }
+
+    pub fn get_location_template(&self, lat: f64, lon: f64) -> String {
+        // TODO use localized geo template
+        format!("({},{})", lat, lon)
     }
 
     fn load_page(self: &mut Self) -> Result<(), String> {
@@ -642,11 +746,6 @@ impl ListeriaPage {
             },
             ColumnType::Label => match entity {
                 Some(e) => {
-                    let wiki = self
-                        .mw_api
-                        .get_site_info_string("general", "wikiid")
-                        .unwrap();
-                    println!("Wiki:{}", &wiki);
                     let label = match e.label_in_locale(&self.language) {
                         Some(s) => s.to_string(),
                         None => entity_id.to_string(),
@@ -654,7 +753,7 @@ impl ListeriaPage {
                     let local_page = match e.sitelinks() {
                         Some(sl) => sl
                             .iter()
-                            .filter(|s| *s.site() == wiki)
+                            .filter(|s| *s.site() == self.wiki)
                             .map(|s| s.title().to_string())
                             .next(),
                         None => None,
@@ -676,6 +775,7 @@ impl ListeriaPage {
                 ret.parts.push(ResultCellPart::Number);
             }
             _ => {} /*
+                    // TODO
                     PropertyQualifier((String, String)),
                     PropertyQualifierValue((String, String, String)),
                     */
@@ -750,6 +850,95 @@ impl ListeriaPage {
                 })
                 .collect(),
         })
+    }
+
+    fn entity_to_local_link(&self, item: &String) -> Option<ResultCellPart> {
+        let entity = match self.entities.get_entity(item.to_owned()) {
+            Some(e) => e,
+            None => return None,
+        };
+        let page = match entity.sitelinks() {
+            Some(sl) => sl
+                .iter()
+                .filter(|s| *s.site() == self.wiki)
+                .map(|s| s.title().to_string())
+                .next(),
+            None => None,
+        }?;
+        let label = page.clone(); //
+        Some(ResultCellPart::LocalLink((page, label)))
+    }
+
+    fn patch_results(self: &mut Self) -> Result<(), String> {
+        // Gather items to load
+        let mut entities_to_load = vec![];
+        for row in self.results.iter() {
+            for cell in &row.cells {
+                for part in &cell.parts {
+                    match part {
+                        ResultCellPart::Entity((item, true)) => {
+                            entities_to_load.push(item.to_owned());
+                        }
+                        ResultCellPart::ExternalId((property, _id)) => {
+                            entities_to_load.push(property.to_owned());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Load items
+        match self.entities.load_entities(&self.wd_api, &entities_to_load) {
+            Ok(_) => {}
+            Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
+        }
+
+        // Try to change items to local link
+        self.results = self
+            .results
+            .iter()
+            .map(|row| ResultRow {
+                cells: row
+                    .cells
+                    .iter()
+                    .map(|cell| ResultCell {
+                        parts: cell
+                            .parts
+                            .iter()
+                            .map(|part| match part {
+                                ResultCellPart::Entity((item, true)) => {
+                                    match self.entity_to_local_link(&item) {
+                                        Some(ll) => ll,
+                                        None => part.to_owned(),
+                                    }
+                                }
+                                _ => part.to_owned(),
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+                section: 0,
+            })
+            .collect();
+        Ok(())
+    }
+
+    pub fn as_tabbed_data(&self) -> Result<Value, String> {
+        let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "string", "title": { self.language.to_owned(): "Section"}}]},"data":[]});
+        self.columns.iter().enumerate().for_each(|(colnum,col)| {
+            ret["schema"]["fields"]
+                .as_array_mut()
+                .unwrap() // OK, this must exist
+                .push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{self.language.to_owned():col.label}}))
+        });
+        ret["data"] = self
+            .results
+            .iter()
+            .enumerate()
+            .map(|(rownum, row)| row.as_tabbed_data(&self, rownum))
+            .collect();
+        Ok(ret)
     }
 }
 
