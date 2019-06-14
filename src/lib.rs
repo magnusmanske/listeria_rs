@@ -493,6 +493,7 @@ pub struct ListeriaPage {
     pub one_row_per_item: bool,
     links: LinksType,
     results: Vec<ResultRow>,
+    data_has_changed: bool,
 }
 
 impl ListeriaPage {
@@ -515,6 +516,7 @@ impl ListeriaPage {
             one_row_per_item: false,
             links: LinksType::All, // TODO make configurable
             results: vec![],
+            data_has_changed: false,
         })
     }
 
@@ -1038,7 +1040,7 @@ impl ListeriaPage {
     }
 
     pub fn write_tabbed_data(
-        &self,
+        self: &mut Self,
         tabbed_data_json: Value,
         commons_api: &mut mediawiki::api::Api,
     ) -> Result<(), String> {
@@ -1064,6 +1066,8 @@ impl ListeriaPage {
             Err(e) => return Err(format!("{:?}", e)),
         };
         // TODO check ["edit"]["result"] == "Success"
+        // TODO set data_has_changed is result is not "same as before"
+        self.data_has_changed = true; // Just to make sure to update including page
         Ok(())
     }
 
@@ -1114,9 +1118,9 @@ impl ListeriaPage {
         }
     }
 
-    pub fn update_source_page(&self) -> Result<(), String> {
+    pub fn update_source_page(self: &mut Self) -> Result<(), String> {
         let wikitext = self.load_page_as("wikitext")?;
-        //println!("{}", &wikitext);
+
         // TODO use local template name
         let pattern =
             r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#;
@@ -1126,7 +1130,9 @@ impl ListeriaPage {
             .build()
             .unwrap();
 
-        let (before, blob, end_template, after) = match re_wikitext.captures(&wikitext) {
+        // TODO alternative: No end template
+
+        let (before, blob, _end_template, after) = match re_wikitext.captures(&wikitext) {
             Some(caps) => (
                 caps.get(1).unwrap().as_str(),
                 caps.get(2).unwrap().as_str(),
@@ -1135,12 +1141,6 @@ impl ListeriaPage {
             ),
             None => return Err(format!("No template/end template found")),
         };
-        /*
-        println!("-----\n\n>> BEFORE {}", &before);
-        println!(">> BLOB {}", &blob);
-        println!(">> END {}", &end_template);
-        println!(">> AFTER {}", &after);
-        */
 
         let (start_template, _) = match self.separate_start_template(&blob.to_string()) {
             Some(parts) => parts,
@@ -1159,15 +1159,33 @@ impl ListeriaPage {
             + "\n|tabbed_data=1}}";
 
         // Create new wikitext
-        let new_wikitext = before.to_owned() + &start_template + "\n" + end_template + after;
+        let new_wikitext = before.to_owned() + &start_template + "\n" + after.trim(); // end_template
 
         // Compare to old wikitext
         if wikitext == new_wikitext {
             // All is as it should be
+            if self.data_has_changed {
+                self.purge_page()?;
+            }
             return Ok(());
         }
 
         // TODO edit page
+
+        Ok(())
+    }
+
+    fn purge_page(self: &mut Self) -> Result<(), String> {
+        let params: HashMap<String, String> =
+            vec![("action", "purge"), ("titles", self.page.as_str())]
+                .iter()
+                .map(|x| (x.0.to_string(), x.1.to_string()))
+                .collect();
+
+        let _result = match self.mw_api.get_query_api_json(&params) {
+            Ok(r) => r,
+            Err(e) => return Err(format!("{:?}", e)),
+        };
 
         Ok(())
     }
