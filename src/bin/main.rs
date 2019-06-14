@@ -7,7 +7,7 @@ use config::{Config, File};
 use listeria::*;
 
 fn main() {
-    let ini_file = "bot.ini";
+    let ini_file = "listeria.ini";
     let page_title = "User:Magnus Manske/listeria test4"; //"Benutzer:Magnus_Manske/listeria_test2";
     let api_url = "https://en.wikipedia.org/w/api.php";
 
@@ -19,7 +19,15 @@ fn main() {
     let pass = settings.get_str("user.pass").expect("No user pass");
 
     let mut mw_api = mediawiki::api::Api::new(api_url).expect("Could not connect to MW API");
-    mw_api.login(user, pass).expect("Could not log in");
+    mw_api
+        .login(user.to_owned(), pass.to_owned())
+        .expect("Could not log in");
+
+    let mut commons_api = mediawiki::api::Api::new("https://commons.wikimedia.org/w/api.php")
+        .expect("Could not connect to Commons API");
+    commons_api
+        .login(user.to_owned(), pass.to_owned())
+        .expect("Could not log in");
 
     let mut page = match ListeriaPage::new(&mw_api, page_title.into()) {
         Some(p) => p,
@@ -30,5 +38,6 @@ fn main() {
         Err(e) => panic!("{}", e),
     }
     let j = page.as_tabbed_data().unwrap();
-    println!("{}", ::serde_json::to_string_pretty(&j).unwrap());
+    //println!("{}", ::serde_json::to_string_pretty(&j).unwrap());
+    page.write_tabbed_data(j, &mut commons_api).unwrap();
 }

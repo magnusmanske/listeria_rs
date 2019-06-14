@@ -123,6 +123,36 @@ impl Column {
             },
         }
     }
+
+    pub fn generate_label(self: &mut Self, page: &ListeriaPage) {
+        self.label = match &self.obj {
+            ColumnType::Property(prop) => page
+                .get_local_entity_label(&prop)
+                .unwrap_or(prop.to_string()),
+            ColumnType::PropertyQualifier((prop, qual)) => {
+                page.get_local_entity_label(&prop)
+                    .unwrap_or(prop.to_string())
+                    + "/"
+                    + &page
+                        .get_local_entity_label(&qual)
+                        .unwrap_or(qual.to_string())
+            }
+            ColumnType::PropertyQualifierValue((prop1, qual, prop2)) => {
+                page.get_local_entity_label(&prop1)
+                    .unwrap_or(prop1.to_string())
+                    + "/"
+                    + &page
+                        .get_local_entity_label(&prop1)
+                        .unwrap_or(qual.to_string())
+                    + "/"
+                    + &page
+                        .get_local_entity_label(&prop1)
+                        .unwrap_or(prop2.to_string())
+            }
+            _ => self.label.to_owned(), // Fallback
+        }
+        .to_owned();
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -318,7 +348,7 @@ impl ResultCellPart {
                 caps.get(3).unwrap().as_str().to_string(),
             ),
             None => {
-                println!("BAD TIME: {}/{}", &s, v.precision());
+                println!("I'M HAVING A BAD TIME: {}/{}", &s, v.precision());
                 return s;
             }
         };
@@ -334,7 +364,12 @@ impl ResultCellPart {
     }
 
     fn tabbed_string_safe(&self, s: String) -> String {
-        s.replace("\n", " ").replace("\t", " ")
+        let ret = s.replace("\n", " ").replace("\t", " ");
+        // 400 chars Max
+        if ret.len() >= 380 {
+            ret[0..380].to_string();
+        }
+        ret
     }
 
     pub fn as_tabbed_data(
@@ -347,7 +382,19 @@ impl ResultCellPart {
         //format!("CELL ROW {} COL {} PART {}", rownum, colnum, partnum)
         self.tabbed_string_safe(match self {
             ResultCellPart::Number => (rownum + 1).to_string(),
-            ResultCellPart::Entity((id, _try_localize)) => "[[:d:".to_string() + &id + "]]",
+            ResultCellPart::Entity((id, try_localize)) => {
+                let entity_id_link = "''[[:d:".to_string() + &id + "]]''";
+                if !try_localize {
+                    return entity_id_link;
+                }
+                match page.get_entity(id.to_owned()) {
+                    Some(e) => match e.label_in_locale(&page.language) {
+                        Some(l) => "''[[:d:".to_string() + &id + "|" + &l.to_string() + "]]''",
+                        None => entity_id_link,
+                    },
+                    None => entity_id_link,
+                }
+            }
             ResultCellPart::LocalLink((page, label)) => {
                 if page == label {
                     "[[".to_string() + &page + "]]"
@@ -476,10 +523,15 @@ impl ListeriaPage {
         self.process_template()?;
         self.run_query()?;
         self.load_entities()?;
-        self.results = dbg!(self.get_results()?);
-        self.patch_results()?;
-        dbg!(&self.results);
-        Ok(())
+        self.results = self.get_results()?;
+        self.patch_results()
+    }
+
+    pub fn get_local_entity_label(&self, entity_id: &String) -> Option<String> {
+        self.entities
+            .get_entity(entity_id.to_owned())?
+            .label_in_locale(&self.language)
+            .map(|s| s.to_string())
     }
 
     pub fn thumbnail_size(&self) -> u64 {
@@ -509,6 +561,10 @@ impl ListeriaPage {
                 }
             })
             .next()
+    }
+
+    pub fn get_entity<S: Into<String>>(&self, entity_id: S) -> Option<&wikibase::Entity> {
+        self.entities.get_entity(entity_id)
     }
 
     pub fn get_location_template(&self, lat: f64, lon: f64) -> String {
@@ -574,7 +630,7 @@ impl ListeriaPage {
             None => self.columns.push(Column::new(&"item".to_string())),
         }
 
-        println!("Columns: {:?}", &self.columns);
+        //println!("Columns: {:?}", &self.columns);
         Ok(())
     }
 
@@ -588,7 +644,7 @@ impl ListeriaPage {
             None => return Err(format!("No `sparql` parameter in {:?}", &t)),
         };
 
-        println!("Running SPARQL: {}", &sparql);
+        //println!("Running SPARQL: {}", &sparql);
         let j = match self.wd_api.sparql_query(sparql) {
             Ok(j) => j,
             Err(e) => return Err(format!("{:?}", &e)),
@@ -627,8 +683,8 @@ impl ListeriaPage {
             }
             self.sparql_rows.push(row);
         }
-        println!("FIRST: {}", &first_var);
-        println!("{:?}", &self.sparql_rows);
+        //println!("FIRST: {}", &first_var);
+        //println!("{:?}", &self.sparql_rows);
         Ok(())
     }
 
@@ -659,11 +715,27 @@ impl ListeriaPage {
             Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
         }
 
+        self.label_columns();
+
         Ok(())
+    }
+
+    fn label_columns(self: &mut Self) {
+        self.columns = self
+            .columns
+            .iter()
+            .map(|c| {
+                let mut c = c.clone();
+                c.generate_label(self);
+                c
+            })
+            .collect();
     }
 
     fn get_ids_from_sparql_rows(&self) -> Result<Vec<String>, String> {
         let varname = self.get_var_name()?;
+
+        // Rows
         let mut ids: Vec<String> = self
             .sparql_rows
             .iter()
@@ -672,6 +744,24 @@ impl ListeriaPage {
                 _ => None,
             })
             .collect();
+
+        // Column headers
+        self.columns.iter().for_each(|c| match &c.obj {
+            ColumnType::Property(prop) => {
+                ids.push(prop.to_owned());
+            }
+            ColumnType::PropertyQualifier((prop, qual)) => {
+                ids.push(prop.to_owned());
+                ids.push(qual.to_owned());
+            }
+            ColumnType::PropertyQualifierValue((prop1, qual, prop2)) => {
+                ids.push(prop1.to_owned());
+                ids.push(qual.to_owned());
+                ids.push(prop2.to_owned());
+            }
+            _ => {}
+        });
+
         ids.sort();
         ids.dedup();
         Ok(ids)
@@ -684,12 +774,6 @@ impl ListeriaPage {
         col: &Column,
     ) -> ResultCell {
         let mut ret = ResultCell::new();
-        /*
-        ret.parts.push(ResultCellPart::Text(format!(
-            "{}:{:?} / {:?}",
-            &entity_id, col, sparql_rows
-        )));
-        */
 
         let entity = self.entities.get_entity(entity_id.to_owned());
         match &col.obj {
@@ -925,7 +1009,7 @@ impl ListeriaPage {
     }
 
     pub fn as_tabbed_data(&self) -> Result<Value, String> {
-        let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "string", "title": { self.language.to_owned(): "Section"}}]},"data":[]});
+        let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { self.language.to_owned(): "Section"}}]},"data":[]});
         self.columns.iter().enumerate().for_each(|(colnum,col)| {
             ret["schema"]["fields"]
                 .as_array_mut()
@@ -939,6 +1023,44 @@ impl ListeriaPage {
             .map(|(rownum, row)| row.as_tabbed_data(&self, rownum))
             .collect();
         Ok(ret)
+    }
+
+    pub fn tabbed_data_page_name(&self) -> Option<String> {
+        let ret = "Data:Listeria/".to_string() + &self.wiki + "/" + &self.page + ".tab";
+        if ret.len() > 250 {
+            return None; // Page title too long
+        }
+        Some(ret)
+    }
+
+    pub fn write_tabbed_data(
+        &self,
+        tabbed_data_json: Value,
+        commons_api: &mut mediawiki::api::Api,
+    ) -> Result<(), String> {
+        let data_page = self
+            .tabbed_data_page_name()
+            .ok_or("Data page name too long")?;
+        let text = ::serde_json::to_string(&tabbed_data_json).unwrap();
+        let params: HashMap<String, String> = vec![
+            ("action", "edit"),
+            ("title", data_page.as_str()),
+            ("summary", "Listeria test"),
+            ("text", text.as_str()),
+            ("minor", "true"),
+            ("recreate", "true"),
+            ("token", commons_api.get_edit_token().unwrap().as_str()),
+        ]
+        .iter()
+        .map(|x| (x.0.to_string(), x.1.to_string()))
+        .collect();
+        // No need to check if this is the same as the existing data; MW API will return OK but not actually edit
+        let _result = match commons_api.post_query_api_json_mut(&params) {
+            Ok(r) => r,
+            Err(e) => return Err(format!("{:?}", e)),
+        };
+        // TODO ["edit"]["result"] == "Success"
+        Ok(())
     }
 }
 
