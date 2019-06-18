@@ -29,7 +29,7 @@ fn main() {
         .login(user.to_owned(), pass.to_owned())
         .expect("Could not log in");
 
-    let page = match ListeriaPage::new(&mw_api, page_title.into()) {
+    let mut page = match ListeriaPage::new(&mw_api, page_title.into()) {
         Some(p) => p,
         None => panic!("Could not open/parse page '{}'", &page_title),
     };
