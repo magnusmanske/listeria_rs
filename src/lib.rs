@@ -1122,29 +1122,52 @@ impl ListeriaPage {
         let wikitext = self.load_page_as("wikitext")?;
 
         // TODO use local template name
-        let pattern =
+
+        // Start/end template
+        let pattern1 =
             r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#;
-        let re_wikitext: Regex = RegexBuilder::new(pattern)
+
+        // No end template
+        let pattern2 = r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)"#;
+
+        let re_wikitext1: Regex = RegexBuilder::new(pattern1)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+        let re_wikitext2: Regex = RegexBuilder::new(pattern2)
             .multi_line(true)
             .dot_matches_new_line(true)
             .build()
             .unwrap();
 
-        // TODO alternative: No end template
-
-        let (before, blob, _end_template, after) = match re_wikitext.captures(&wikitext) {
+        let (before, blob, end_template, after) = match re_wikitext1.captures(&wikitext) {
             Some(caps) => (
                 caps.get(1).unwrap().as_str(),
                 caps.get(2).unwrap().as_str(),
                 caps.get(3).unwrap().as_str(),
                 caps.get(4).unwrap().as_str(),
             ),
-            None => return Err(format!("No template/end template found")),
+            None => match re_wikitext2.captures(&wikitext) {
+                Some(caps) => (
+                    caps.get(1).unwrap().as_str(),
+                    caps.get(2).unwrap().as_str(),
+                    "",
+                    "",
+                ),
+                None => return Err(format!("No template/end template found")),
+            },
         };
 
-        let (start_template, _) = match self.separate_start_template(&blob.to_string()) {
+        let (start_template, rest) = match self.separate_start_template(&blob.to_string()) {
             Some(parts) => parts,
             None => return Err(format!("Can't split start template")),
+        };
+
+        let append = if end_template.is_empty() {
+            rest.to_string()
+        } else {
+            after.to_string()
         };
 
         // Remove tabbed data marker
@@ -1159,7 +1182,7 @@ impl ListeriaPage {
             + "\n|tabbed_data=1}}";
 
         // Create new wikitext
-        let new_wikitext = before.to_owned() + &start_template + "\n" + after.trim(); // end_template
+        let new_wikitext = before.to_owned() + &start_template + "\n" + append.trim();
 
         // Compare to old wikitext
         if wikitext == new_wikitext {
