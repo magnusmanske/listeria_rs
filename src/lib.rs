@@ -421,10 +421,9 @@ impl ResultCellPart {
                                         "[[".to_string() + &l.to_string() + "]]"
                                     }
                                 }
-                                LinksType::Reasonator => format!(
-                                    "[https://tools.wmflabs.org/reasonator/?q={} {}]",
-                                    id, l
-                                ),
+                                LinksType::Reasonator => {
+                                    format!("[https://reasonator.toolforge.org/?q={} {}]", id, l)
+                                }
                                 _ => labeled_entity_link,
                             };
                             return ret;
