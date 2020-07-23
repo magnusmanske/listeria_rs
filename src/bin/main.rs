@@ -1,10 +1,9 @@
 extern crate config;
-//extern crate mediawiki;
-//#[macro_use]
 extern crate serde_json;
 
 use config::{Config, File};
-use listeria::*;
+use listeria;
+use crate::listeria::listeria_page::ListeriaPage;
 
 #[tokio::main]
 async fn main() {
@@ -36,7 +35,7 @@ async fn main() {
         .await
         .expect("Could not log in");
 
-    let mut page = match ListeriaPage::new(&mw_api, page_title.into()).await {
+    let page = match ListeriaPage::new(&mw_api, page_title.into()).await {
         Some(p) => p,
         None => panic!("Could not open/parse page '{}'", &page_title),
     };
