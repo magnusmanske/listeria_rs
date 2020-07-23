@@ -115,6 +115,10 @@ impl ListeriaPage {
         return &self.language;
     }
 
+    pub fn column(&self,column_id:usize) -> Option<&Column> {
+        self.columns.get(column_id)
+    }
+
     pub async fn run(&mut self) -> Result<(), String> {
         self.load_page().await?;
         self.process_template()?;
@@ -767,14 +771,18 @@ impl ListeriaPage {
         }
 
         // Rows
-        wt += &self
+        let rows = self
             .results
             .iter()
             .filter(|row|row.section==section_id)
             .enumerate()
             .map(|(rownum, row)| row.as_wikitext(&self, rownum))
-            .collect::<Vec<String>>()
-            .join("\n|-\n");
+            .collect::<Vec<String>>() ;
+        if self.params.skip_table {
+            wt += &rows.join("\n");
+        } else {
+            wt += &rows.join("\n|-\n");
+        }
 
         // End
         if !self.params.skip_table {
@@ -1096,6 +1104,11 @@ mod tests {
     #[tokio::test]
     async fn header_template() {
         check_fixture_file(PathBuf::from("test_data/header_template.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn header_row_template() {
+        check_fixture_file(PathBuf::from("test_data/header_row_template.fixture")).await;
     }
 
     /*

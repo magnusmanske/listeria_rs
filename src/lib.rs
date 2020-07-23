@@ -101,6 +101,24 @@ impl ColumnType {
         }
         ColumnType::Unknown
     }
+
+    pub fn as_key(&self) -> String {
+        match self {
+            Self::Number => "number".to_string(),
+            Self::Label => "label".to_string(),
+            //Self::LabelLang(s) => {}
+            Self::Description => "desc".to_string(),
+            Self::Item => "item".to_string(),
+            Self::Property(p) => p.to_lowercase(),
+            Self::PropertyQualifier((p, q)) => p.to_lowercase() + "_" + &q.to_lowercase(),
+            Self::PropertyQualifierValue((p, q, v)) => {
+                p.to_lowercase() + "_" + &q.to_lowercase() + "_" + &v.to_lowercase()
+            }
+            Self::Field(f) => f.to_lowercase(),
+            //Self::Unknown => ""
+            _ => "unknown".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -502,9 +520,14 @@ impl ResultRow {
                     + &cells
                         .iter()
                         .enumerate()
-                        .map(|(colnum, cell)| format!("|{}={}", colnum, &cell))
+                        .map(|(colnum, cell)| {
+                            let column = page.column(colnum).unwrap(); // TODO
+                            let key = column.obj.as_key();
+                            format!("{} = {}", key, &cell)
+                        })
                         .collect::<Vec<String>>()
                         .join("\n| ")
+                    + "\n}}"
             }
             None => "| ".to_string() + &cells.join("\n| "),
         }
