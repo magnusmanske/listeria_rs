@@ -1252,12 +1252,17 @@ mod tests {
         check_fixture_file(PathBuf::from("test_data/links_local.fixture")).await;
     }
 
+    #[tokio::test]
+    async fn links_reasonator() {
+        check_fixture_file(PathBuf::from("test_data/links_reasonator.fixture")).await;
+    }
+
     /*
     Links
     all DONE
     local DONE
     red DONE
-    red_only
+    red_only DONE
     text DONE
     reasonator
     */

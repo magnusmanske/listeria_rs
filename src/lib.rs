@@ -403,15 +403,14 @@ impl ResultCellPart {
         match self {
             ResultCellPart::Number => (rownum + 1).to_string(),
             ResultCellPart::Entity((id, try_localize)) => {
-                let entity_id_link = "''[[:d:".to_string() + &id + "|" + &id + "]]''";
+                let entity_id_link = format!("''[[:d:{}|{}]]''", id, id);
                 if !try_localize {
                     return entity_id_link;
                 }
                 match page.get_entity(id.to_owned()) {
                     Some(e) => match e.label_in_locale(page.language()) {
                         Some(l) => {
-                            let labeled_entity_link =
-                                "''[[:d:".to_string() + &id + "|" + &l.to_string() + "]]''";
+                            let labeled_entity_link = format!("''[[:d:{}|{}]]''", id, l);
                             let ret = match page.get_links_type() {
                                 LinksType::Text => l.to_string(),
                                 LinksType::Red | LinksType::RedOnly => {
@@ -422,6 +421,10 @@ impl ResultCellPart {
                                         "[[".to_string() + &l.to_string() + "]]"
                                     }
                                 }
+                                LinksType::Reasonator => format!(
+                                    "[https://tools.wmflabs.org/reasonator/?q={} {}]",
+                                    id, l
+                                ),
                                 _ => labeled_entity_link,
                             };
                             return ret;
