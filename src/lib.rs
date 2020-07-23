@@ -1,6 +1,5 @@
 #[macro_use]
 extern crate lazy_static;
-extern crate mediawiki;
 #[macro_use]
 extern crate serde_json;
 
@@ -9,6 +8,7 @@ use roxmltree;
 use serde_json::Value;
 use std::collections::HashMap;
 use urlencoding;
+use wikibase::entity::*;
 use wikibase::entity_container::EntityContainer;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -479,8 +479,8 @@ pub enum LinksType {
 
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
-    mw_api: mediawiki::api::Api,
-    wd_api: mediawiki::api::Api,
+    mw_api: wikibase::mediawiki::api::Api,
+    wd_api: wikibase::mediawiki::api::Api,
     wiki: String,
     page: String,
     template_title_start: String,
@@ -497,17 +497,22 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub fn new(mw_api: &mediawiki::api::Api, page: String) -> Option<Self> {
+    pub async fn new(mw_api: &wikibase::mediawiki::api::Api, page: String) -> Option<Self> {
         Some(Self {
             mw_api: mw_api.clone(),
-            wd_api: mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
+            wd_api: wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
+                .await
                 .expect("Could not connect to Wikidata API"),
             wiki: mw_api
                 .get_site_info_string("general", "wikiid")
-                .expect("No wikiid in site info"),
+                .expect("No wikiid in site info")
+                .to_string(),
             page: page,
             template_title_start: "Wikidata list".to_string(),
-            language: mw_api.get_site_info_string("general", "lang").ok()?,
+            language: mw_api
+                .get_site_info_string("general", "lang")
+                .ok()?
+                .to_string(),
             template: None,
             sparql_rows: vec![],
             sparql_first_variable: None,
@@ -520,13 +525,13 @@ impl ListeriaPage {
         })
     }
 
-    pub fn run(self: &mut Self) -> Result<(), String> {
-        self.load_page()?;
+    pub async fn run(self: &mut Self) -> Result<(), String> {
+        self.load_page().await?;
         self.process_template()?;
-        self.run_query()?;
-        self.load_entities()?;
+        self.run_query().await?;
+        self.load_entities().await?;
         self.results = self.get_results()?;
-        self.patch_results()
+        self.patch_results().await
     }
 
     pub fn get_local_entity_label(&self, entity_id: &String) -> Option<String> {
@@ -565,7 +570,7 @@ impl ListeriaPage {
             .next()
     }
 
-    pub fn get_entity<S: Into<String>>(&self, entity_id: S) -> Option<&wikibase::Entity> {
+    pub fn get_entity<S: Into<String>>(&self, entity_id: S) -> Option<wikibase::Entity> {
         self.entities.get_entity(entity_id)
     }
 
@@ -574,8 +579,8 @@ impl ListeriaPage {
         format!("({},{})", lat, lon)
     }
 
-    fn load_page(self: &mut Self) -> Result<(), String> {
-        let text = self.load_page_as("parsetree")?.to_owned();
+    async fn load_page(self: &mut Self) -> Result<(), String> {
+        let text = self.load_page_as("parsetree").await?.to_owned();
         let doc = roxmltree::Document::parse(&text).unwrap();
         /*
         let params: HashMap<String, String> = vec![
@@ -640,7 +645,7 @@ impl ListeriaPage {
         Ok(())
     }
 
-    fn run_query(self: &mut Self) -> Result<(), String> {
+    async fn run_query(self: &mut Self) -> Result<(), String> {
         let t = match &self.template {
             Some(t) => t,
             None => return Err(format!("No template found")),
@@ -651,7 +656,7 @@ impl ListeriaPage {
         };
 
         //println!("Running SPARQL: {}", &sparql);
-        let j = match self.wd_api.sparql_query(sparql) {
+        let j = match self.wd_api.sparql_query(sparql).await {
             Ok(j) => j,
             Err(e) => return Err(format!("{:?}", &e)),
         };
@@ -694,7 +699,7 @@ impl ListeriaPage {
         Ok(())
     }
 
-    fn load_entities(self: &mut Self) -> Result<(), String> {
+    async fn load_entities(self: &mut Self) -> Result<(), String> {
         // Any columns that require entities to be loaded?
         // TODO also force if self.links is redlinks etc.
         if self
@@ -716,7 +721,7 @@ impl ListeriaPage {
         if ids.is_empty() {
             return Err(format!("No items to show"));
         }
-        match self.entities.load_entities(&self.wd_api, &ids) {
+        match self.entities.load_entities(&self.wd_api, &ids).await {
             Ok(_) => {}
             Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
         }
@@ -959,7 +964,7 @@ impl ListeriaPage {
         Some(ResultCellPart::LocalLink((page, label)))
     }
 
-    fn patch_results(self: &mut Self) -> Result<(), String> {
+    async fn patch_results(self: &mut Self) -> Result<(), String> {
         // Gather items to load
         let mut entities_to_load = vec![];
         for row in self.results.iter() {
@@ -979,7 +984,7 @@ impl ListeriaPage {
         }
 
         // Load items
-        match self.entities.load_entities(&self.wd_api, &entities_to_load) {
+        match self.entities.load_entities(&self.wd_api, &entities_to_load).await {
             Ok(_) => {}
             Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
         }
@@ -1039,10 +1044,10 @@ impl ListeriaPage {
         Some(ret)
     }
 
-    pub fn write_tabbed_data(
+    pub async fn write_tabbed_data(
         self: &mut Self,
         tabbed_data_json: Value,
-        commons_api: &mut mediawiki::api::Api,
+        commons_api: &mut wikibase::mediawiki::api::Api,
     ) -> Result<(), String> {
         let data_page = self
             .tabbed_data_page_name()
@@ -1055,13 +1060,13 @@ impl ListeriaPage {
             ("text", text.as_str()),
             ("minor", "true"),
             ("recreate", "true"),
-            ("token", commons_api.get_edit_token().unwrap().as_str()),
+            ("token", commons_api.get_edit_token().await.unwrap().as_str()),
         ]
         .iter()
         .map(|x| (x.0.to_string(), x.1.to_string()))
         .collect();
         // No need to check if this is the same as the existing data; MW API will return OK but not actually edit
-        let _result = match commons_api.post_query_api_json_mut(&params) {
+        let _result = match commons_api.post_query_api_json_mut(&params).await {
             Ok(r) => r,
             Err(e) => return Err(format!("{:?}", e)),
         };
@@ -1071,7 +1076,7 @@ impl ListeriaPage {
         Ok(())
     }
 
-    fn load_page_as(&self, mode: &str) -> Result<String, String> {
+    async fn load_page_as(&self, mode: &str) -> Result<String, String> {
         let params: HashMap<String, String> = vec![
             ("action", "parse"),
             ("prop", mode),
@@ -1084,6 +1089,7 @@ impl ListeriaPage {
         let result = self
             .mw_api
             .get_query_api_json(&params)
+            .await
             .expect("Loading page failed");
         match result["parse"][mode]["*"].as_str() {
             Some(ret) => Ok(ret.to_string()),
@@ -1118,8 +1124,8 @@ impl ListeriaPage {
         }
     }
 
-    pub fn update_source_page(self: &mut Self) -> Result<(), String> {
-        let wikitext = self.load_page_as("wikitext")?;
+    pub async fn update_source_page(self: &mut Self) -> Result<(), String> {
+        let wikitext = self.load_page_as("wikitext").await?;
 
         // TODO use local template name
 
@@ -1188,7 +1194,7 @@ impl ListeriaPage {
         if wikitext == new_wikitext {
             // All is as it should be
             if self.data_has_changed {
-                self.purge_page()?;
+                self.purge_page().await?;
             }
             return Ok(());
         }
@@ -1198,14 +1204,14 @@ impl ListeriaPage {
         Ok(())
     }
 
-    fn purge_page(self: &mut Self) -> Result<(), String> {
+    async fn purge_page(self: &mut Self) -> Result<(), String> {
         let params: HashMap<String, String> =
             vec![("action", "purge"), ("titles", self.page.as_str())]
                 .iter()
                 .map(|x| (x.0.to_string(), x.1.to_string()))
                 .collect();
 
-        let _result = match self.mw_api.get_query_api_json(&params) {
+        let _result = match self.mw_api.get_query_api_json(&params).await {
             Ok(r) => r,
             Err(e) => return Err(format!("{:?}", e)),
         };
