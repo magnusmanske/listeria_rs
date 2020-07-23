@@ -6,21 +6,37 @@ use std::collections::HashMap;
 use urlencoding;
 use wikibase::entity::*;
 use wikibase::entity_container::EntityContainer;
+use wikibase::mediawiki::api::Api;
+
+#[derive(Debug, Clone, Default)]
+struct TemplateParams {
+    sort: Option<String>,
+    section: Option<String>,
+    min_section:u64,
+    row_template: Option<String>,
+    header_template: Option<String>,
+    autolist: Option<String>,
+    summary: Option<String>,
+    skip_table: bool,
+    wdedit: bool,
+    references: bool,
+}
 
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
-    mw_api: wikibase::mediawiki::api::Api,
-    wd_api: wikibase::mediawiki::api::Api,
+    mw_api: Api,
+    wd_api: Api,
     wiki: String,
     page: String,
     template_title_start: String,
     language: String,
     template: Option<Template>,
+    params: TemplateParams,
     sparql_rows: Vec<HashMap<String, SparqlValue>>,
     sparql_first_variable: Option<String>,
     columns: Vec<Column>,
     entities: EntityContainer,
-    pub one_row_per_item: bool,
+    one_row_per_item: bool,
     links: LinksType,
     results: Vec<ResultRow>,
     data_has_changed: bool,
@@ -28,10 +44,10 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub async fn new(mw_api: &wikibase::mediawiki::api::Api, page: String) -> Option<Self> {
+    pub async fn new(mw_api: &Api, page: String) -> Option<Self> {
         Some(Self {
             mw_api: mw_api.clone(),
-            wd_api: wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
+            wd_api: Api::new("https://www.wikidata.org/w/api.php")
                 .await
                 .expect("Could not connect to Wikidata API"),
             wiki: mw_api
@@ -45,6 +61,7 @@ impl ListeriaPage {
                 .ok()?
                 .to_string(),
             template: None,
+            params: TemplateParams { min_section:2, ..Default::default() },
             sparql_rows: vec![],
             sparql_first_variable: None,
             columns: vec![],
@@ -57,8 +74,12 @@ impl ListeriaPage {
         })
     }
 
-    pub fn simulate(&mut self) {
+    pub fn do_simulate(&mut self) {
         self.simulate = true ;
+    }
+
+    pub fn set_one_row_per_item(&mut self,one_row_per_item:bool) {
+        self.one_row_per_item = one_row_per_item;
     }
 
     pub fn language(&self) -> &String {
@@ -122,25 +143,6 @@ impl ListeriaPage {
     async fn load_page(&mut self) -> Result<(), String> {
         let text = self.load_page_as("parsetree").await?.to_owned();
         let doc = roxmltree::Document::parse(&text).unwrap();
-        /*
-        let params: HashMap<String, String> = vec![
-            ("action", "parse"),
-            ("prop", "parsetree"),
-            ("page", self.page.as_str()),
-        ]
-        .iter()
-        .map(|x| (x.0.to_string(), x.1.to_string()))
-        .collect();
-
-        let result = self
-            .mw_api
-            .get_query_api_json(&params)
-            .expect("Loading page failed");
-        let doc = match result["parse"]["parsetree"]["*"].as_str() {
-            Some(text) => roxmltree::Document::parse(&text).unwrap(),
-            None => return Err(format!("No parse tree for {}", &self.page)),
-        };
-        */
         doc.root()
             .descendants()
             .filter(|n| n.is_element() && n.tag_name().name() == "template")
@@ -171,6 +173,25 @@ impl ListeriaPage {
             }
         };
 
+        /*
+        sparql DONE
+        columns DONE
+        sort IMPLEMENT?
+        section IMPLEMENT
+        min_section IMPLEMENT
+        autolist IMPLEMENT
+        language done?
+        thumb DONE via thumbnail_size()
+        links IMPLEMENT fully
+        row_template IMPLEMENT
+        header_template IMPLEMENT
+        skip_table IMPLEMENT
+        wdedit IMPLEMENT
+        references IMPLEMENT
+        freq IGNORED
+        summary IMPLEMENT
+        */
+
         match template.params.get("columns") {
             Some(columns) => {
                 columns.split(",").for_each(|part| {
@@ -179,6 +200,35 @@ impl ListeriaPage {
                 });
             }
             None => self.columns.push(Column::new(&"item".to_string())),
+        }
+
+        self.params = TemplateParams {
+            sort: template.params.get("sort").map(|s|s.trim().to_uppercase()),
+            section: template.params.get("section").map(|s|s.trim().to_uppercase()),
+            min_section: template
+                            .params
+                            .get("min_section")
+                            .map(|s|
+                                s.parse::<u64>().ok().or(Some(2)).unwrap_or(2)
+                                )
+                            .unwrap_or(2),
+            row_template: template.params.get("row_template").map(|s|s.trim().to_string()),
+            header_template: template.params.get("header_template").map(|s|s.trim().to_string()),
+            autolist: template.params.get("autolist").map(|s|s.trim().to_uppercase()) ,
+            summary: template.params.get("summary").map(|s|s.trim().to_uppercase()) ,
+            skip_table: template.params.get("skip_table").is_some(),
+            wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
+            references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
+        } ;
+
+        match template.params.get("language") {
+            Some(l) =>  self.language = l.to_lowercase(),
+            None => {}
+        }
+
+        match template.params.get("links") {
+            Some(s) =>  self.links = LinksType::new_from_string(s.to_string()),
+            None => {}
         }
 
         //println!("Columns: {:?}", &self.columns);
@@ -559,6 +609,61 @@ impl ListeriaPage {
         Ok(())
     }
 
+    fn get_section_ids(&self) -> Vec<usize> {
+        let mut ret : Vec<usize> = self
+            .results
+            .iter()
+            .map(|row|{row.section})
+            .collect();
+        ret.sort();
+        ret.dedup();
+        ret
+    }
+
+    fn as_wikitext_section(&self,section_id:usize) -> String {
+        let mut wt = String::new() ;
+
+        // TODO: template rendering
+
+        // Headers
+        wt += "{!\n" ;
+        self.columns.iter().enumerate().for_each(|(_colnum,col)| {
+            wt += "!" ;
+            wt += &col.label ;
+            wt += "\n" ;
+        });
+
+        if !self.results.is_empty() {
+            wt += "|-\n";
+        }
+
+        // Rows
+        wt += &self
+            .results
+            .iter()
+            .filter(|row|row.section==section_id)
+            .enumerate()
+            .map(|(rownum, row)| row.as_wikitext(&self, rownum))
+            .collect::<Vec<String>>()
+            .join("\n|-\n");
+
+        // End
+        wt += "\n|}" ;
+
+        wt
+    }
+
+    pub fn as_wikitext(&self) -> Result<String,String> {
+        let section_ids = self.get_section_ids() ;
+        // TODO section headers?
+        let wt = section_ids
+            .iter()
+            .map(|section_id|self.as_wikitext_section(*section_id))
+            .collect() ;
+
+        Ok(wt)
+    }
+
     pub fn as_tabbed_data(&self) -> Result<Value, String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { self.language.to_owned(): "Section"}}]},"data":[]});
         self.columns.iter().enumerate().for_each(|(colnum,col)| {
@@ -587,7 +692,7 @@ impl ListeriaPage {
     pub async fn write_tabbed_data(
         &mut self,
         tabbed_data_json: Value,
-        commons_api: &mut wikibase::mediawiki::api::Api,
+        commons_api: &mut Api,
     ) -> Result<(), String> {
         let data_page = self
             .tabbed_data_page_name()

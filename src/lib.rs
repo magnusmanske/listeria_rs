@@ -441,6 +441,10 @@ impl ResultCell {
             .collect();
         json!(ret.join("<br/>"))
     }
+
+    pub fn as_wikitext(&self, _page: &ListeriaPage, rownum: usize, colnum: usize) -> String {
+        format!("| CELL row {} col {}", rownum, colnum)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -467,6 +471,15 @@ impl ResultRow {
         ret.insert(0, json!(self.section));
         json!(ret)
     }
+
+    pub fn as_wikitext(&self, page: &ListeriaPage, rownum: usize) -> String {
+        self.cells
+            .iter()
+            .enumerate()
+            .map(|(colnum, cell)| cell.as_wikitext(page, rownum, colnum))
+            .collect::<Vec<String>>()
+            .join("\n")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -477,6 +490,19 @@ pub enum LinksType {
     RedOnly,
     Text,
     Reasonator,
+}
+
+impl LinksType {
+    pub fn new_from_string(s: String) -> Self {
+        match s.trim().to_uppercase().as_str() {
+            "LOCAL" => Self::Local,
+            "RED" => Self::Red,
+            "RED_ONLY" => Self::RedOnly,
+            "TEXT" => Self::Text,
+            "REASONATOR" => Self::Reasonator,
+            _ => Self::All, // Fallback, default
+        }
+    }
 }
 
 #[cfg(test)]
