@@ -459,7 +459,7 @@ impl ResultCell {
             .enumerate()
             .map(|(partnum, part)| part.as_wikitext(page, rownum, colnum, partnum))
             .collect::<Vec<String>>()
-            .join("\n")
+            .join("<br/>\n")
     }
 }
 

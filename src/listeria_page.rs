@@ -62,6 +62,7 @@ pub struct ListeriaPage {
     entities: EntityContainer,
     links: LinksType,
     results: Vec<ResultRow>,
+    shadow_files: Vec<String>,
     data_has_changed: bool,
     simulate: bool,
 }
@@ -91,6 +92,7 @@ impl ListeriaPage {
             entities: EntityContainer::new(),
             links: LinksType::All, // TODO make configurable
             results: vec![],
+            shadow_files: vec![],
             data_has_changed: false,
             simulate: false,
         })
@@ -555,31 +557,7 @@ impl ListeriaPage {
         Some(ResultCellPart::LocalLink((page, label)))
     }
 
-    async fn patch_results(&mut self) -> Result<(), String> {
-        // Gather items to load
-        let mut entities_to_load = vec![];
-        for row in self.results.iter() {
-            for cell in &row.cells {
-                for part in &cell.parts {
-                    match part {
-                        ResultCellPart::Entity((item, true)) => {
-                            entities_to_load.push(item.to_owned());
-                        }
-                        ResultCellPart::ExternalId((property, _id)) => {
-                            entities_to_load.push(property.to_owned());
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-
-        // Load items
-        match self.entities.load_entities(&self.wd_api, &entities_to_load).await {
-            Ok(_) => {}
-            Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
-        }
-
+    fn patch_items_to_local_links(&mut self) -> Result<(), String> {
         // Try to change items to local link
         self.results = self
             .results
@@ -610,13 +588,120 @@ impl ListeriaPage {
         Ok(())
     }
 
+    async fn gather_and_load_items(&mut self) -> Result<(), String> {
+        // Gather items to load
+        let mut entities_to_load = vec![];
+        for row in self.results.iter() {
+            for cell in &row.cells {
+                for part in &cell.parts {
+                    match part {
+                        ResultCellPart::Entity((item, true)) => {
+                            entities_to_load.push(item.to_owned());
+                        }
+                        ResultCellPart::ExternalId((property, _id)) => {
+                            entities_to_load.push(property.to_owned());
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // Load items
+        match self.entities.load_entities(&self.wd_api, &entities_to_load).await {
+            Ok(_) => {}
+            Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
+        }
+
+        Ok(())
+    }
+
+    async fn patch_remove_shadow_files(&mut self) -> Result<(), String> {
+        // TODO check for enwiki
+        let mut files_to_check = vec![] ;
+        for row in self.results.iter() {
+            for cell in &row.cells {
+                for part in &cell.parts {
+                    match part {
+                        ResultCellPart::File(file) => {
+                            files_to_check.push(file);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        files_to_check.sort_unstable();
+        files_to_check.dedup();
+
+        self.shadow_files.clear();
+
+        for filename in files_to_check {
+            let prefixed_filename = format!("File:{}",&filename) ;
+            let params: HashMap<String, String> =
+                vec![("action", "query"), ("titles", prefixed_filename.as_str()),("prop","imageinfo")]
+                    .iter()
+                    .map(|x| (x.0.to_string(), x.1.to_string()))
+                    .collect();
+
+            let j = match self.mw_api.get_query_api_json(&params).await {
+                Ok(j) => j,
+                Err(_e) => json!({})
+            };
+
+            let mut could_be_local = false ;
+            match j["query"]["pages"].as_object() {
+                Some(results) => {
+                    results.iter().for_each(|(_k, o)|{
+                        match o["imagerepository"].as_str() {
+                            Some("shared") => {},
+                            _ => { could_be_local = true ; }
+                        }
+                    })
+                }
+                None => { could_be_local = true ; }
+            };
+
+            if could_be_local {
+                self.shadow_files.push(filename.to_string());
+            }
+        }
+
+        self.shadow_files.sort();
+
+        // Remove shadow files from data table
+        // TODO this is less than ideal in terms of pretty code...
+        let shadow_files = &self.shadow_files;
+        self.results.iter_mut().for_each(|row|{
+            row.cells.iter_mut().for_each(|cell|{
+                cell.parts = cell.parts.iter().filter(|part|{
+                    match part {
+                        ResultCellPart::File(file) => !shadow_files.contains(file),
+                        _ => true
+                    }
+                })
+                .cloned()
+                .collect();
+            });
+        });
+
+        Ok(())
+    }
+
+    async fn patch_results(&mut self) -> Result<(), String> {
+        self.gather_and_load_items().await? ;
+        self.patch_items_to_local_links()?;
+        self.patch_remove_shadow_files().await?;
+        Ok(())
+    }
+
     fn get_section_ids(&self) -> Vec<usize> {
         let mut ret : Vec<usize> = self
             .results
             .iter()
             .map(|row|{row.section})
             .collect();
-        ret.sort();
+        ret.sort_unstable();
         ret.dedup();
         ret
     }
@@ -654,6 +739,10 @@ impl ListeriaPage {
         wt
     }
 
+    fn local_file_namespace_prefix(&self) -> String {
+        "File".to_string() // TODO
+    }
+
     pub fn as_wikitext(&self) -> Result<String,String> {
         let section_ids = self.get_section_ids() ;
         // TODO section headers
@@ -662,7 +751,12 @@ impl ListeriaPage {
             .map(|section_id|self.as_wikitext_section(*section_id))
             .collect() ;
 
-        // TODO local shadow images
+        if !self.shadow_files.is_empty() {
+            wt += "\n----\nThe following local image(s) are not shown in the above list, because they shadow a Commons image of the same name, and might be non-free:\n";
+            for file in &self.shadow_files {
+                wt += format!("# [[:{}:{}|]]\n",self.local_file_namespace_prefix(),file).as_str();
+            }
+        }
 
         match self.params.summary.as_ref().map(|s|s.as_str()) {
             Some("ITEMNUMBER") => {
