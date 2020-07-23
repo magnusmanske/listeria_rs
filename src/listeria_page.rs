@@ -1050,14 +1050,22 @@ mod tests {
     async fn fixtures() {
         let paths = fs::read_dir("./test_data").unwrap();
         for path in paths {
-            let data = read_fixture_from_file ( path.unwrap().path() ) ;
-            //println!("{:?}",data);
+            let path = path.unwrap();
+            println!("Fixture {}",path.path().display());
+            let data = read_fixture_from_file ( path.path() ) ;
             let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
             let mut page = ListeriaPage::new(&mw_api, data["PAGETITLE"].clone()).await.unwrap();
             page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()));
             page.run().await.unwrap();
             let wt = page.as_wikitext().unwrap().trim().to_string();
-            assert_eq!(wt,data["EXPECTED"]);
+            if data.contains_key("EXPECTED") {
+                println!("Checking EXPECTED");
+                assert_eq!(wt,data["EXPECTED"]);
+            }
+            if data.contains_key("EXPECTED_PART") {
+                println!("Checking EXPECTED_PART");
+                assert!(wt.contains(&data["EXPECTED_PART"]));
+            }
         }
     }
 }

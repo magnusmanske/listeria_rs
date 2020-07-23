@@ -1,0 +1,21 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q1 wd:Q12345 } }
+|columns=label:name,P18
+|summary=itemnumber
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED_PART
+
+----
+&sum; 2 items.
