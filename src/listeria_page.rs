@@ -25,9 +25,9 @@ autolist IMPLEMENT
 language done?
 thumb DONE via thumbnail_size()
 links IMPLEMENT fully
-row_template IMPLEMENT
+row_template DONE
 header_template DONE
-skip_table IMPLEMENT
+skip_table DONE
 wdedit IMPLEMENT
 references IMPLEMENT
 freq IGNORED
@@ -96,7 +96,7 @@ impl ListeriaPage {
             sparql_first_variable: None,
             columns: vec![],
             entities: EntityContainer::new(),
-            links: LinksType::All, // TODO make configurable
+            links: LinksType::All,
             results: vec![],
             shadow_files: vec![],
             wikis_to_check_for_shadow_images: vec!["enwiki".to_string()],
@@ -117,6 +117,10 @@ impl ListeriaPage {
 
     pub fn column(&self,column_id:usize) -> Option<&Column> {
         self.columns.get(column_id)
+    }
+
+    pub fn get_links_type(&self) -> &LinksType {
+        &self.links
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
@@ -745,7 +749,7 @@ impl ListeriaPage {
             }
             None => {
                 if !self.params.skip_table {
-                    wt += "{!\n" ;
+                    wt += "{| class='wikitable sortable' style='width:100%'\n" ;
                     self.columns.iter().enumerate().for_each(|(_colnum,col)| {
                         wt += "! " ;
                         wt += &col.label ;
@@ -1110,6 +1114,26 @@ mod tests {
     async fn header_row_template() {
         check_fixture_file(PathBuf::from("test_data/header_row_template.fixture")).await;
     }
+
+    #[tokio::test]
+    async fn links_red() {
+        check_fixture_file(PathBuf::from("test_data/links_red.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn links_text() {
+        check_fixture_file(PathBuf::from("test_data/links_text.fixture")).await;
+    }
+
+    /*
+    Links
+    all
+    local
+    red DONE
+    red_only
+    text
+    reasonator
+    */
 
     /*
     // I want all of them, Molari, ALL OF THEM!

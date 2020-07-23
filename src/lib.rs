@@ -409,7 +409,13 @@ impl ResultCellPart {
                 }
                 match page.get_entity(id.to_owned()) {
                     Some(e) => match e.label_in_locale(page.language()) {
-                        Some(l) => "''[[:d:".to_string() + &id + "|" + &l.to_string() + "]]''",
+                        Some(l) => {
+                            let ret = match page.get_links_type() {
+                                LinksType::Text => l.to_string(),
+                                _ => "''[[:d:".to_string() + &id + "|" + &l.to_string() + "]]''",
+                            };
+                            return ret;
+                        }
                         None => entity_id_link,
                     },
                     None => entity_id_link,
@@ -534,7 +540,7 @@ impl ResultRow {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LinksType {
     All,
     Local,
