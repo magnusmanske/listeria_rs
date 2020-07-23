@@ -374,7 +374,7 @@ impl ResultCellPart {
         ret
     }
 
-    pub fn as_tabbed_data(
+    pub fn as_wikitext(
         &self,
         page: &ListeriaPage,
         rownum: usize,
@@ -382,7 +382,7 @@ impl ResultCellPart {
         _partnum: usize,
     ) -> String {
         //format!("CELL ROW {} COL {} PART {}", rownum, colnum, partnum)
-        self.tabbed_string_safe(match self {
+        match self {
             ResultCellPart::Number => (rownum + 1).to_string(),
             ResultCellPart::Entity((id, try_localize)) => {
                 let entity_id_link = "''[[:d:".to_string() + &id + "|" + &id + "]]''";
@@ -419,7 +419,17 @@ impl ResultCellPart {
                 }
             }
             ResultCellPart::Text(text) => text.to_owned(),
-        })
+        }
+    }
+
+    pub fn as_tabbed_data(
+        &self,
+        page: &ListeriaPage,
+        rownum: usize,
+        colnum: usize,
+        partnum: usize,
+    ) -> String {
+        self.tabbed_string_safe(self.as_wikitext(page, rownum, colnum, partnum))
     }
 }
 
@@ -442,8 +452,14 @@ impl ResultCell {
         json!(ret.join("<br/>"))
     }
 
-    pub fn as_wikitext(&self, _page: &ListeriaPage, rownum: usize, colnum: usize) -> String {
-        format!("| CELL row {} col {}", rownum, colnum)
+    pub fn as_wikitext(&self, page: &ListeriaPage, rownum: usize, colnum: usize) -> String {
+        //format!("| CELL row {} col {}", rownum, colnum)
+        self.parts
+            .iter()
+            .enumerate()
+            .map(|(partnum, part)| part.as_wikitext(page, rownum, colnum, partnum))
+            .collect::<Vec<String>>()
+            .join("\n")
     }
 }
 

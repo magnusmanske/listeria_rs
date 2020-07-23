@@ -8,6 +8,29 @@ use wikibase::entity::*;
 use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 
+/* TODO
+- Show only preffered values (eg P41 in Q43175)
+
+TEMPLATE PARAMETERS
+sparql DONE
+columns DONE
+sort IMPLEMENT?
+section IMPLEMENT
+min_section IMPLEMENT
+autolist IMPLEMENT
+language done?
+thumb DONE via thumbnail_size()
+links IMPLEMENT fully
+row_template IMPLEMENT
+header_template IMPLEMENT
+skip_table IMPLEMENT
+wdedit IMPLEMENT
+references IMPLEMENT
+freq IGNORED
+summary DONE
+*/
+
+
 #[derive(Debug, Clone, Default)]
 struct TemplateParams {
     sort: Option<String>,
@@ -20,6 +43,7 @@ struct TemplateParams {
     skip_table: bool,
     wdedit: bool,
     references: bool,
+    one_row_per_item: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -36,7 +60,6 @@ pub struct ListeriaPage {
     sparql_first_variable: Option<String>,
     columns: Vec<Column>,
     entities: EntityContainer,
-    one_row_per_item: bool,
     links: LinksType,
     results: Vec<ResultRow>,
     data_has_changed: bool,
@@ -66,7 +89,6 @@ impl ListeriaPage {
             sparql_first_variable: None,
             columns: vec![],
             entities: EntityContainer::new(),
-            one_row_per_item: false,
             links: LinksType::All, // TODO make configurable
             results: vec![],
             data_has_changed: false,
@@ -76,10 +98,6 @@ impl ListeriaPage {
 
     pub fn do_simulate(&mut self) {
         self.simulate = true ;
-    }
-
-    pub fn set_one_row_per_item(&mut self,one_row_per_item:bool) {
-        self.one_row_per_item = one_row_per_item;
     }
 
     pub fn language(&self) -> &String {
@@ -173,25 +191,6 @@ impl ListeriaPage {
             }
         };
 
-        /*
-        sparql DONE
-        columns DONE
-        sort IMPLEMENT?
-        section IMPLEMENT
-        min_section IMPLEMENT
-        autolist IMPLEMENT
-        language done?
-        thumb DONE via thumbnail_size()
-        links IMPLEMENT fully
-        row_template IMPLEMENT
-        header_template IMPLEMENT
-        skip_table IMPLEMENT
-        wdedit IMPLEMENT
-        references IMPLEMENT
-        freq IGNORED
-        summary IMPLEMENT
-        */
-
         match template.params.get("columns") {
             Some(columns) => {
                 columns.split(",").for_each(|part| {
@@ -217,6 +216,7 @@ impl ListeriaPage {
             autolist: template.params.get("autolist").map(|s|s.trim().to_uppercase()) ,
             summary: template.params.get("summary").map(|s|s.trim().to_uppercase()) ,
             skip_table: template.params.get("skip_table").is_some(),
+            one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
             wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
             references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
         } ;
@@ -231,6 +231,7 @@ impl ListeriaPage {
             None => {}
         }
 
+        println!("{:?}",&self.params);
         //println!("Columns: {:?}", &self.columns);
         Ok(())
     }
@@ -506,7 +507,7 @@ impl ListeriaPage {
 
     fn get_results(&mut self) -> Result<Vec<ResultRow>, String> {
         let varname = self.get_var_name()?;
-        Ok(match self.one_row_per_item {
+        Ok(match self.params.one_row_per_item {
             true => self
                 .get_ids_from_sparql_rows()?
                 .iter()
@@ -655,11 +656,20 @@ impl ListeriaPage {
 
     pub fn as_wikitext(&self) -> Result<String,String> {
         let section_ids = self.get_section_ids() ;
-        // TODO section headers?
-        let wt = section_ids
+        // TODO section headers
+        let mut wt = section_ids
             .iter()
             .map(|section_id|self.as_wikitext_section(*section_id))
             .collect() ;
+
+        // TODO local shadow images
+
+        match self.params.summary.as_ref().map(|s|s.as_str()) {
+            Some("ITEMNUMBER") => {
+                wt += format!("\n----\n&sum; {} items.",self.results.len()).as_str();
+            }
+            _ => {}
+        }
 
         Ok(wt)
     }
