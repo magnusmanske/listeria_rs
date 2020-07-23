@@ -489,12 +489,26 @@ impl ResultRow {
     }
 
     pub fn as_wikitext(&self, page: &ListeriaPage, rownum: usize) -> String {
-        self.cells
+        let cells = self
+            .cells
             .iter()
             .enumerate()
             .map(|(colnum, cell)| cell.as_wikitext(page, rownum, colnum))
-            .collect::<Vec<String>>()
-            .join("\n")
+            .collect::<Vec<String>>();
+        match page.get_row_template() {
+            Some(t) => {
+                "{{".to_string()
+                    + &t
+                    + "\n| "
+                    + &cells
+                        .iter()
+                        .enumerate()
+                        .map(|(colnum, cell)| format!("|{}={}", colnum, &cell))
+                        .collect::<Vec<String>>()
+                        .join("\n| ")
+            }
+            None => "| ".to_string() + &cells.join("\n| "),
+        }
     }
 }
 
@@ -518,13 +532,5 @@ impl LinksType {
             "REASONATOR" => Self::Reasonator,
             _ => Self::All, // Fallback, default
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
     }
 }

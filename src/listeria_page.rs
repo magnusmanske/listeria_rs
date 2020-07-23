@@ -9,6 +9,7 @@ use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 
 /* TODO
+- Sectioning
 - Show only preffered values (eg P41 in Q43175)
 - Main namespace block
 
@@ -23,7 +24,7 @@ language done?
 thumb DONE via thumbnail_size()
 links IMPLEMENT fully
 row_template IMPLEMENT
-header_template IMPLEMENT
+header_template DONE
 skip_table IMPLEMENT
 wdedit IMPLEMENT
 references IMPLEMENT
@@ -67,6 +68,7 @@ pub struct ListeriaPage {
     wikis_to_check_for_shadow_images: Vec<String>,
     data_has_changed: bool,
     simulate: bool,
+    simulated_text: Option<String>,
 }
 
 impl ListeriaPage {
@@ -98,11 +100,13 @@ impl ListeriaPage {
             wikis_to_check_for_shadow_images: vec!["enwiki".to_string()],
             data_has_changed: false,
             simulate: false,
+            simulated_text: None,
         })
     }
 
-    pub fn do_simulate(&mut self) {
+    pub fn do_simulate(&mut self,text: Option<String>) {
         self.simulate = true ;
+        self.simulated_text = text ;
     }
 
     pub fn language(&self) -> &String {
@@ -161,6 +165,10 @@ impl ListeriaPage {
     pub fn get_location_template(&self, lat: f64, lon: f64) -> String {
         // TODO use localized geo template
         format!("({},{})", lat, lon)
+    }
+
+    pub fn get_row_template(&self) -> &Option<String> {
+        &self.params.row_template
     }
 
     async fn load_page(&mut self) -> Result<(), String> {
@@ -712,21 +720,39 @@ impl ListeriaPage {
         ret
     }
 
+    fn as_wikitext_table_header(&self) -> String {
+        let mut wt = String::new() ;
+        match &self.params.header_template {
+            Some(t) => {
+                wt += "{{" ;
+                wt +=  &t ;
+                wt += "\n" ;
+            }
+            None => {
+                if !self.params.skip_table {
+                    wt += "{!\n" ;
+                    self.columns.iter().enumerate().for_each(|(_colnum,col)| {
+                        wt += "! " ;
+                        wt += &col.label ;
+                        wt += "\n" ;
+                    });
+                }
+            }
+        }
+        wt
+    }
+
     fn as_wikitext_section(&self,section_id:usize) -> String {
         let mut wt = String::new() ;
 
-        // TODO: template rendering
+        // TODO: section header
 
-        // Headers
-        wt += "{!\n" ;
-        self.columns.iter().enumerate().for_each(|(_colnum,col)| {
-            wt += "!" ;
-            wt += &col.label ;
-            wt += "\n" ;
-        });
+        wt += &self.as_wikitext_table_header() ;
 
-        if !self.results.is_empty() {
-            wt += "|-\n";
+        if self.params.row_template.is_none() && !self.params.skip_table {
+            if !self.results.is_empty() {
+                wt += "|-\n";
+            }
         }
 
         // Rows
@@ -740,7 +766,9 @@ impl ListeriaPage {
             .join("\n|-\n");
 
         // End
-        wt += "\n|}" ;
+        if !self.params.skip_table {
+            wt += "\n|}" ;
+        }
 
         wt
     }
@@ -752,15 +780,15 @@ impl ListeriaPage {
     pub fn as_wikitext(&self) -> Result<String,String> {
         let section_ids = self.get_section_ids() ;
         // TODO section headers
-        let mut wt = section_ids
+        let mut wt : String = section_ids
             .iter()
             .map(|section_id|self.as_wikitext_section(*section_id))
             .collect() ;
 
         if !self.shadow_files.is_empty() {
-            wt += "\n----\nThe following local image(s) are not shown in the above list, because they shadow a Commons image of the same name, and might be non-free:\n";
+            wt += "\n----\nThe following local image(s) are not shown in the above list, because they shadow a Commons image of the same name, and might be non-free:";
             for file in &self.shadow_files {
-                wt += format!("# [[:{}:{}|]]\n",self.local_file_namespace_prefix(),file).as_str();
+                wt += format!("\n# [[:{}:{}|]]",self.local_file_namespace_prefix(),file).as_str();
             }
         }
 
@@ -832,14 +860,24 @@ impl ListeriaPage {
     }
 
     async fn load_page_as(&self, mode: &str) -> Result<String, String> {
-        let params: HashMap<String, String> = vec![
+        let mut params: HashMap<String, String> = vec![
             ("action", "parse"),
             ("prop", mode),
-            ("page", self.page.as_str()),
+//            ("page", self.page.as_str()),
         ]
         .iter()
         .map(|x| (x.0.to_string(), x.1.to_string()))
         .collect();
+
+        match &self.simulated_text {
+            Some(t) => {
+                params.insert("title".to_string(),self.page.clone());
+                params.insert("text".to_string(),t.to_string());
+            }
+            None => {
+                params.insert("page".to_string(),self.page.clone());
+            }
+        }
 
         let result = self
             .mw_api
@@ -973,6 +1011,53 @@ impl ListeriaPage {
         match self.mw_api.get_query_api_json(&params).await {
             Ok(_r) => Ok(()),
             Err(e) => return Err(format!("{:?}", e)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::fs ;
+    use crate::* ;
+
+    fn read_fixture_from_file(path:std::path::PathBuf) -> HashMap<String,String> {
+        let text = fs::read_to_string(path).unwrap();
+        let rows = text.split("\n");
+        let mut key = String::new();
+        let mut value = String::new();
+        let mut data : HashMap<String,String> = HashMap::new() ;
+        for row in rows {
+            if row.starts_with("$$$$") {
+                if !key.is_empty() {
+                    data.insert(key,value.trim().to_string()) ;
+                }
+                value.clear() ;
+                key = row.strip_prefix("$$$$").unwrap().trim().to_string().to_uppercase();
+            } else {
+                value += "\n";
+                value += row ;
+            }
+        }
+        if !key.is_empty() {
+            data.insert(key,value.trim().to_string());
+        }
+        data
+    }
+
+
+    #[tokio::test]
+    async fn fixtures() {
+        let paths = fs::read_dir("./test_data").unwrap();
+        for path in paths {
+            let data = read_fixture_from_file ( path.unwrap().path() ) ;
+            //println!("{:?}",data);
+            let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
+            let mut page = ListeriaPage::new(&mw_api, data["PAGETITLE"].clone()).await.unwrap();
+            page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()));
+            page.run().await.unwrap();
+            let wt = page.as_wikitext().unwrap().trim().to_string();
+            assert_eq!(wt,data["EXPECTED"]);
         }
     }
 }

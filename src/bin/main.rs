@@ -32,7 +32,13 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         Some(p) => p,
         None => panic!("Could not open/parse page '{}'", &page_title),
     };
-    page.do_simulate();
+    page.do_simulate(Some("
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q17 } }
+|columns=label:name,P41
+|summary=itemnumber
+}}
+{{Wikidata list end}}".to_string()));
 
     match page.run().await {
         Ok(_) => {}
