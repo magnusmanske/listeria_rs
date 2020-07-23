@@ -10,6 +10,7 @@ use wikibase::mediawiki::api::Api;
 
 /* TODO
 - Show only preffered values (eg P41 in Q43175)
+- Main namespace block
 
 TEMPLATE PARAMETERS
 sparql DONE
@@ -63,6 +64,7 @@ pub struct ListeriaPage {
     links: LinksType,
     results: Vec<ResultRow>,
     shadow_files: Vec<String>,
+    wikis_to_check_for_shadow_images: Vec<String>,
     data_has_changed: bool,
     simulate: bool,
 }
@@ -93,6 +95,7 @@ impl ListeriaPage {
             links: LinksType::All, // TODO make configurable
             results: vec![],
             shadow_files: vec![],
+            wikis_to_check_for_shadow_images: vec!["enwiki".to_string()],
             data_has_changed: false,
             simulate: false,
         })
@@ -617,7 +620,9 @@ impl ListeriaPage {
     }
 
     async fn patch_remove_shadow_files(&mut self) -> Result<(), String> {
-        // TODO check for enwiki
+        if !self.wikis_to_check_for_shadow_images.contains(&self.wiki) {
+            return Ok(())
+        }
         let mut files_to_check = vec![] ;
         for row in self.results.iter() {
             for cell in &row.cells {
@@ -636,6 +641,7 @@ impl ListeriaPage {
 
         self.shadow_files.clear();
 
+        // TODO better async
         for filename in files_to_check {
             let prefixed_filename = format!("File:{}",&filename) ;
             let params: HashMap<String, String> =
