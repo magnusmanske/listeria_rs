@@ -1019,9 +1019,10 @@ impl ListeriaPage {
 mod tests {
     use std::collections::HashMap;
     use std::fs ;
+    use std::path::PathBuf;
     use crate::* ;
 
-    fn read_fixture_from_file(path:std::path::PathBuf) -> HashMap<String,String> {
+    fn read_fixture_from_file(path:PathBuf) -> HashMap<String,String> {
         let text = fs::read_to_string(path).unwrap();
         let rows = text.split("\n");
         let mut key = String::new();
@@ -1045,27 +1046,43 @@ mod tests {
         data
     }
 
+    async fn check_fixture_file(path:PathBuf) {
+        let data = read_fixture_from_file ( path ) ;
+        let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
+        let mut page = ListeriaPage::new(&mw_api, data["PAGETITLE"].clone()).await.unwrap();
+        page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()));
+        page.run().await.unwrap();
+        let wt = page.as_wikitext().unwrap().trim().to_string();
+        if data.contains_key("EXPECTED") {
+            println!("Checking EXPECTED");
+            assert_eq!(wt,data["EXPECTED"]);
+        }
+        if data.contains_key("EXPECTED_PART") {
+            println!("Checking EXPECTED_PART");
+            assert!(wt.contains(&data["EXPECTED_PART"]));
+        }
+    }
 
+    #[tokio::test]
+    async fn shadow_images() {
+        check_fixture_file(PathBuf::from("test_data/shadow_images.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn summary_itemnumber() {
+        check_fixture_file(PathBuf::from("test_data/summary_itemnumber.fixture")).await;
+    }
+
+    /*
+    // I want all of them, Molari, ALL OF THEM!
     #[tokio::test]
     async fn fixtures() {
         let paths = fs::read_dir("./test_data").unwrap();
         for path in paths {
             let path = path.unwrap();
             println!("Fixture {}",path.path().display());
-            let data = read_fixture_from_file ( path.path() ) ;
-            let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
-            let mut page = ListeriaPage::new(&mw_api, data["PAGETITLE"].clone()).await.unwrap();
-            page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()));
-            page.run().await.unwrap();
-            let wt = page.as_wikitext().unwrap().trim().to_string();
-            if data.contains_key("EXPECTED") {
-                println!("Checking EXPECTED");
-                assert_eq!(wt,data["EXPECTED"]);
-            }
-            if data.contains_key("EXPECTED_PART") {
-                println!("Checking EXPECTED_PART");
-                assert!(wt.contains(&data["EXPECTED_PART"]));
-            }
+            check_fixture_file(path.path()).await;
         }
     }
+    */
 }
