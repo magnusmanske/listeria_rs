@@ -12,6 +12,8 @@ use wikibase::mediawiki::api::Api;
 - Sectioning
 - Show only preffered values (eg P41 in Q43175)
 - Main namespace block
+- P/Q/P ?
+- time/loc/quantity?
 
 TEMPLATE PARAMETERS
 sparql DONE
@@ -351,7 +353,7 @@ impl ListeriaPage {
         let varname = self.get_var_name()?;
 
         // Rows
-        let mut ids: Vec<String> = self
+        let ids_tmp: Vec<String> = self
             .sparql_rows
             .iter()
             .filter_map(|row| match row.get(varname) {
@@ -359,6 +361,17 @@ impl ListeriaPage {
                 _ => None,
             })
             .collect();
+
+        let mut ids: Vec<String> = vec![] ;
+        ids_tmp.iter().for_each(|id|{
+            if !ids.contains(id) {
+                ids.push(id.to_string());
+            }
+        });
+
+        // Can't sort/dedup, need to preserve original order
+        //ids.sort();
+        //ids.dedup();
 
         // Column headers
         self.columns.iter().for_each(|c| match &c.obj {
@@ -377,8 +390,6 @@ impl ListeriaPage {
             _ => {}
         });
 
-        ids.sort();
-        ids.dedup();
         Ok(ids)
     }
 
@@ -726,7 +737,7 @@ impl ListeriaPage {
             Some(t) => {
                 wt += "{{" ;
                 wt +=  &t ;
-                wt += "\n" ;
+                wt += "}}\n" ;
             }
             None => {
                 if !self.params.skip_table {
@@ -771,6 +782,15 @@ impl ListeriaPage {
         }
 
         wt
+    }
+
+    pub fn normalize_page_title(&self,s: &String) -> String {
+        // TODO use page to find out about first character capitalization on the current wiki
+        if s.len() < 2 {
+            return s.to_string();
+        }
+        let (first_letter, the_rest) = s.split_at(1);
+        return first_letter.to_uppercase() + the_rest;
     }
 
     fn local_file_namespace_prefix(&self) -> String {
@@ -1071,6 +1091,11 @@ mod tests {
     #[tokio::test]
     async fn summary_itemnumber() {
         check_fixture_file(PathBuf::from("test_data/summary_itemnumber.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn header_template() {
+        check_fixture_file(PathBuf::from("test_data/header_template.fixture")).await;
     }
 
     /*

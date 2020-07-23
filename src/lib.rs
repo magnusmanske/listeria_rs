@@ -397,11 +397,11 @@ impl ResultCellPart {
                     None => entity_id_link,
                 }
             }
-            ResultCellPart::LocalLink((page, label)) => {
-                if page == label {
-                    "[[".to_string() + &page + "]]"
+            ResultCellPart::LocalLink((title, label)) => {
+                if page.normalize_page_title(title) == page.normalize_page_title(label) {
+                    "[[".to_string() + &label + "]]"
                 } else {
-                    "[[".to_string() + &page + "|" + &label + "]]"
+                    "[[".to_string() + &title + "|" + &label + "]]"
                 }
             }
             ResultCellPart::Time(time) => time.to_owned(),
@@ -453,13 +453,12 @@ impl ResultCell {
     }
 
     pub fn as_wikitext(&self, page: &ListeriaPage, rownum: usize, colnum: usize) -> String {
-        //format!("| CELL row {} col {}", rownum, colnum)
         self.parts
             .iter()
             .enumerate()
             .map(|(partnum, part)| part.as_wikitext(page, rownum, colnum, partnum))
             .collect::<Vec<String>>()
-            .join("<br/>\n")
+            .join("<br/>")
     }
 }
 
