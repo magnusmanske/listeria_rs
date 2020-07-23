@@ -1,0 +1,32 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q12345 wd:Q937 } }
+|columns=label:name,P31
+|links=all
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! name
+! instance of
+|-
+| [[Tim Berners-Lee]]
+| [[human]]
+|-
+| [[Count von Count]]
+| ''[[:d:Q30061417|vampire in a work of fiction]]''<br/>''[[:d:Q15773317|television character]]''
+|-
+| [[Albert Einstein]]
+| [[human]]
+|}

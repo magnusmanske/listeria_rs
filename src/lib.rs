@@ -410,9 +410,19 @@ impl ResultCellPart {
                 match page.get_entity(id.to_owned()) {
                     Some(e) => match e.label_in_locale(page.language()) {
                         Some(l) => {
+                            let labeled_entity_link =
+                                "''[[:d:".to_string() + &id + "|" + &l.to_string() + "]]''";
                             let ret = match page.get_links_type() {
                                 LinksType::Text => l.to_string(),
-                                _ => "''[[:d:".to_string() + &id + "|" + &l.to_string() + "]]''",
+                                LinksType::Red | LinksType::RedOnly => {
+                                    //println!("!! {}", l);
+                                    if page.local_page_exists(l) {
+                                        labeled_entity_link
+                                    } else {
+                                        "[[".to_string() + &l.to_string() + "]]"
+                                    }
+                                }
+                                _ => labeled_entity_link,
                             };
                             return ret;
                         }
@@ -488,13 +498,15 @@ impl ResultCell {
 
 #[derive(Debug, Clone)]
 pub struct ResultRow {
+    entity_id: Option<String>,
     cells: Vec<ResultCell>,
     section: usize,
 }
 
 impl ResultRow {
-    pub fn new() -> Self {
+    pub fn new(entity_id: &String) -> Self {
         Self {
+            entity_id: Some(entity_id.to_owned()),
             cells: vec![],
             section: 0,
         }

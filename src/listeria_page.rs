@@ -65,6 +65,7 @@ pub struct ListeriaPage {
     columns: Vec<Column>,
     entities: EntityContainer,
     links: LinksType,
+    local_page_cache: HashMap<String,bool>,
     results: Vec<ResultRow>,
     shadow_files: Vec<String>,
     wikis_to_check_for_shadow_images: Vec<String>,
@@ -97,6 +98,7 @@ impl ListeriaPage {
             columns: vec![],
             entities: EntityContainer::new(),
             links: LinksType::All,
+            local_page_cache: HashMap::new(),
             results: vec![],
             shadow_files: vec![],
             wikis_to_check_for_shadow_images: vec!["enwiki".to_string()],
@@ -181,6 +183,40 @@ impl ListeriaPage {
         &self.params.row_template
     }
 
+    async fn cache_local_page_exists(&mut self,page:String) {
+        let params: HashMap<String, String> = vec![
+            ("action", "query"),
+            ("prop", ""),
+            ("titles", page.as_str()),
+        ]
+        .iter()
+        .map(|x| (x.0.to_string(), x.1.to_string()))
+        .collect();
+
+        let result = match self
+            .mw_api
+            .get_query_api_json(&params)
+            .await {
+                Ok(r) => r,
+                Err(_e) => return
+            };
+            
+        let page_exists = match result["query"]["pages"].as_object() {
+            Some(obj) => {
+                obj
+                .iter()
+                .filter(|(_k,v)|v["missing"].as_str().is_some())
+                .count()==0 // No "missing"=existing
+            }
+            None => false // Dunno
+        };
+        self.local_page_cache.insert(page,page_exists);
+    }
+
+    pub fn local_page_exists(&self,page:&str) -> bool {
+        *self.local_page_cache.get(&page.to_string()).unwrap_or(&false)
+    }
+
     async fn load_page(&mut self) -> Result<(), String> {
         let text = self.load_page_as("parsetree").await?.to_owned();
         let doc = roxmltree::Document::parse(&text).unwrap();
@@ -254,7 +290,7 @@ impl ListeriaPage {
             None => {}
         }
 
-        println!("{:?}",&self.params);
+        //println!("{:?}",&self.params);
         //println!("Columns: {:?}", &self.columns);
         Ok(())
     }
@@ -413,7 +449,7 @@ impl ListeriaPage {
         match &col.obj {
             ColumnType::Item => {
                 ret.parts
-                    .push(ResultCellPart::Entity((entity_id.to_owned(), false)));
+                    .push(ResultCellPart::Entity((entity_id.to_owned(), true)));
             }
             ColumnType::Description => match entity {
                 Some(e) => match e.description_in_locale(self.language.as_str()) {
@@ -482,7 +518,7 @@ impl ListeriaPage {
                         }
                         None => {
                             ret.parts
-                                .push(ResultCellPart::Entity((entity_id.to_string(), false)));
+                                .push(ResultCellPart::Entity((entity_id.to_string(), true)));
                         }
                     }
                 }
@@ -513,15 +549,10 @@ impl ListeriaPage {
                     return None;
                 }
             }
-            LinksType::RedOnly => {
-                if self.entities.has_entity(entity_id.to_owned()) {
-                    return None;
-                }
-            }
             _ => {}
         }
 
-        let mut row = ResultRow::new();
+        let mut row = ResultRow::new(entity_id);
         row.cells = self
             .columns
             .iter()
@@ -593,6 +624,7 @@ impl ListeriaPage {
             .results
             .iter()
             .map(|row| ResultRow {
+                entity_id: row.entity_id.to_owned(),
                 cells: row
                     .cells
                     .iter()
@@ -721,9 +753,89 @@ impl ListeriaPage {
         Ok(())
     }
 
+    fn patch_redlinks_only(&mut self) -> Result<(), String> {
+        if *self.get_links_type() != LinksType::RedOnly {
+            return Ok(())
+        }
+
+        // Remove all rows with existing local page  
+        // TODO better iter things
+        self.results = self.results
+            .iter()
+            .filter(|row|{
+                match &row.entity_id {
+                    Some(entity_id) => {
+                        let entity = self.entities.get_entity(entity_id.to_owned()).unwrap();
+                        match entity.sitelinks() {
+                            Some(sl) => {
+                                sl
+                                .iter()
+                                .filter(|s| *s.site() == self.wiki)
+                                .count() == 0
+                            }
+                            None => true, // No sitelinks, keep
+                        }
+
+                    }
+                    None => true // In doubt, keep
+                }
+            })
+            .cloned()
+            .collect();
+        Ok(())
+    }
+
+    async fn patch_redlinks(&mut self) -> Result<(), String> {
+        if *self.get_links_type() != LinksType::RedOnly && *self.get_links_type() != LinksType::Red {
+            return Ok(())
+        }
+
+        // Cache if local pages exist
+        let mut ids = vec![] ;
+        self.results.iter().for_each(|row|{
+            row.cells.iter().for_each(|cell|{
+                cell.parts
+                    .iter()
+                    .for_each(|part|{
+                    match part {
+                        ResultCellPart::Entity((id, _try_localize)) => {
+                            ids.push(id);
+                        }
+                        _ => {}
+                    }
+                })
+            });
+        });
+
+        ids.sort();
+        ids.dedup();
+        let mut labels = vec![] ;
+        for id in ids {
+            match self.get_entity(id.to_owned()) {
+                Some(e) => match e.label_in_locale(self.language()) {
+                    Some(l) => {
+                        labels.push(l.to_string());
+                    }
+                    None => {}
+                }
+                None => {}
+            }
+        }
+
+        labels.sort();
+        labels.dedup();
+        for label in labels {
+            self.cache_local_page_exists(label).await;
+        }
+
+        Ok(())
+    }
+    
     async fn patch_results(&mut self) -> Result<(), String> {
         self.gather_and_load_items().await? ;
+        self.patch_redlinks_only()?;
         self.patch_items_to_local_links()?;
+        self.patch_redlinks().await?;
         self.patch_remove_shadow_files().await?;
         Ok(())
     }
@@ -1086,11 +1198,11 @@ mod tests {
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap().trim().to_string();
         if data.contains_key("EXPECTED") {
-            println!("Checking EXPECTED");
+            //println!("Checking EXPECTED");
             assert_eq!(wt,data["EXPECTED"]);
         }
         if data.contains_key("EXPECTED_PART") {
-            println!("Checking EXPECTED_PART");
+            //println!("Checking EXPECTED_PART");
             assert!(wt.contains(&data["EXPECTED_PART"]));
         }
     }
@@ -1116,8 +1228,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn links_all() {
+        check_fixture_file(PathBuf::from("test_data/links_all.fixture")).await;
+    }
+
+    #[tokio::test]
     async fn links_red() {
         check_fixture_file(PathBuf::from("test_data/links_red.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn links_red_only() {
+        check_fixture_file(PathBuf::from("test_data/links_red_only.fixture")).await;
     }
 
     #[tokio::test]
@@ -1125,13 +1247,18 @@ mod tests {
         check_fixture_file(PathBuf::from("test_data/links_text.fixture")).await;
     }
 
+    #[tokio::test]
+    async fn links_local() {
+        check_fixture_file(PathBuf::from("test_data/links_local.fixture")).await;
+    }
+
     /*
     Links
-    all
-    local
+    all DONE
+    local DONE
     red DONE
     red_only
-    text
+    text DONE
     reasonator
     */
 
