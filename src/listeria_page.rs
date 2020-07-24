@@ -11,6 +11,7 @@ use wikibase::mediawiki::api::Api;
 
 /* TODO
 - Sort
+- Sort by P/Q/P
 - Sectioning
 - Show only preffered values (eg P41 in Q43175)
 - Main namespace block
@@ -315,7 +316,7 @@ impl ListeriaPage {
             one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
             wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
             references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
-            sort_ascending: true, // TODO parameter
+            sort_ascending: template.params.get("sort_order").map(|s|s.trim().to_uppercase())!=Some("DESC".to_string()),
         } ;
 
         match template.params.get("language") {
@@ -690,28 +691,20 @@ impl ListeriaPage {
         Ok(())
     }
 
-    async fn gather_and_load_items(&mut self) -> Result<(), String> {
-        // Gather items to load
-        let mut entities_to_load = vec![];
-        for row in self.results.iter() {
-            for cell in &row.cells {
-                for part in &cell.parts {
-                    match part {
-                        ResultCellPart::Entity((item, true)) => {
-                            entities_to_load.push(item.to_owned());
-                        }
-                        ResultCellPart::ExternalId((property, _id)) => {
-                            entities_to_load.push(property.to_owned());
-                        }
-                        _ => {}
-                    }
-                }
-            }
+    async fn load_items(&mut self, mut entities_to_load:Vec<String>) -> Result<(), String> {
+        entities_to_load.sort() ;
+        entities_to_load.dedup();
+        match self.entities.load_entities(&self.wd_api, &entities_to_load).await {
+            Ok(_) => {}
+            Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
         }
+        Ok(())
+    }
 
-        // Sort
+    async fn gather_and_load_items_sort(&mut self) -> Result<(), String> {
         match &self.params.sort {
             SortMode::Property(prop) => {
+                let mut entities_to_load = vec![];
                 for row in self.results.iter() {
                     match self.entities.get_entity(row.entity_id.to_owned()) {
                         Some(entity) => {
@@ -732,18 +725,39 @@ impl ListeriaPage {
                         None => {}
                     }
                 }
+                self.load_items(entities_to_load).await?;
             }
             _ => {}
         }
+        Ok(())
+    }
 
-        // Load items
-        entities_to_load.sort() ;
-        entities_to_load.dedup();
-        match self.entities.load_entities(&self.wd_api, &entities_to_load).await {
-            Ok(_) => {}
-            Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
+    async fn gather_and_load_items(&mut self) -> Result<(), String> {
+        // Gather items to load
+        let mut entities_to_load = vec![];
+        for row in self.results.iter() {
+            for cell in &row.cells {
+                for part in &cell.parts {
+                    match part {
+                        ResultCellPart::Entity((item, true)) => {
+                            entities_to_load.push(item.to_owned());
+                        }
+                        ResultCellPart::ExternalId((property, _id)) => {
+                            entities_to_load.push(property.to_owned());
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
-
+        match &self.params.sort {
+            SortMode::Property(prop) => {
+                entities_to_load.push(prop.to_string());
+            }
+            _ => {}
+        }
+        self.load_items(entities_to_load).await?;
+        self.gather_and_load_items_sort().await?;
         Ok(())
     }
 
@@ -905,9 +919,23 @@ impl ListeriaPage {
             }
             SortMode::FamilyName => {} // TODO
             SortMode::Property(prop) => {
+                let is_sorting_by_time = match self.get_entity(prop) {
+                    Some(entity) => {
+                        match entity {
+                            Entity::Property(p) => {
+                                match p.datatype() {
+                                    Some(t) => *t == SnakDataType::Time ,
+                                    None => false
+                                }
+                            }
+                            _ => false
+                        }
+                    }
+                    None => false
+                };
                 sortkeys = self.results
                     .iter()
-                    .map(|row|row.get_sortkey_prop(&prop,&self))
+                    .map(|row|row.get_sortkey_prop(&prop,&self,is_sorting_by_time))
                     .collect();
             }
             _ => return Ok(())
@@ -920,11 +948,14 @@ impl ListeriaPage {
         self.results
             .iter_mut()
             .enumerate()
-            .for_each(|(rownum, row)|{
-                row.set_sortkey(sortkeys[rownum].to_owned());
-            }) ;
+            .for_each(|(rownum, row)|row.set_sortkey(sortkeys[rownum].to_owned())) ;
 
-        self.results.sort_by(|a, b| a.sortkey.partial_cmp(&b.sortkey).unwrap());
+        self.results.sort_by(|a, b| {
+            if a.sortkey == b.sortkey {
+                return a.entity_id.partial_cmp(&b.entity_id).unwrap();
+            }
+            a.sortkey.partial_cmp(&b.sortkey).unwrap()
+        });
         if !self.params.sort_ascending {
             self.results.reverse()
         }
@@ -1374,8 +1405,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sort_prop() {
-        check_fixture_file(PathBuf::from("test_data/sort_prop.fixture")).await;
+    async fn sort_prop_item() {
+        check_fixture_file(PathBuf::from("test_data/sort_prop_item.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sort_prop_time() {
+        check_fixture_file(PathBuf::from("test_data/sort_prop_time.fixture")).await;
     }
 
     /*

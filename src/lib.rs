@@ -528,11 +528,48 @@ impl ResultRow {
         }
     }
 
-    pub fn get_sortkey_prop(&self, _prop: &String, page: &ListeriaPage) -> String {
+    pub fn get_sortkey_prop(
+        &self,
+        prop: &String,
+        page: &ListeriaPage,
+        is_sorting_by_time: bool,
+    ) -> String {
+        let no_value = if is_sorting_by_time {
+            "no time".to_string()
+        } else {
+            String::new()
+        };
         match page.get_entity(self.entity_id.to_owned()) {
-            Some(entity) => match entity.label_in_locale(page.language()) {
-                Some(label) => label.to_string(),
-                None => entity.id().to_string(),
+            Some(entity) => {
+                match entity
+                    .claims()
+                    .iter()
+                    .filter(|statement| statement.property() == prop)
+                    .map(|statement| statement.main_snak())
+                    .next()
+                {
+                    Some(snak) => self.get_sortkey_from_snak(snak),
+                    None => no_value,
+                }
+            }
+            None => no_value,
+        }
+    }
+
+    fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak) -> String {
+        match snak.data_value() {
+            Some(data_value) => match data_value.value() {
+                wikibase::value::Value::Coordinate(c) => format!(
+                    "{}/{}/{}",
+                    c.latitude(),
+                    c.longitude(),
+                    c.precision().unwrap_or(0.0)
+                ),
+                wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
+                wikibase::value::Value::Entity(_entity) => "entity".to_string(),
+                wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
+                wikibase::value::Value::StringValue(s) => s.to_owned(),
+                wikibase::value::Value::Time(t) => t.time().to_owned(),
             },
             None => "".to_string(),
         }
