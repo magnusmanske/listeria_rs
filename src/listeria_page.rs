@@ -921,7 +921,7 @@ impl ListeriaPage {
     }
 
     fn patch_sort_results(&mut self) -> Result<(), String> {
-        let mut sortkeys : Vec<String> = vec![] ;
+        let sortkeys : Vec<String> ;
         let mut datatype = SnakDataType::String ; // Default
         match &self.params.sort {
             SortMode::Label => {
@@ -930,7 +930,12 @@ impl ListeriaPage {
                     .map(|row|row.get_sortkey_label(&self))
                     .collect();
             }
-            SortMode::FamilyName => {} // TODO
+            SortMode::FamilyName => {
+                sortkeys = self.results
+                    .iter()
+                    .map(|row|row.get_sortkey_family_name(&self))
+                    .collect();
+            }
             SortMode::Property(prop) => {
                 datatype = self.get_datatype_for_property(prop);
                 sortkeys = self.results
@@ -955,7 +960,7 @@ impl ListeriaPage {
             self.results.reverse()
         }
 
-        self.results.iter().for_each(|row|println!("{}: {}",&row.entity_id,&row.sortkey));
+        //self.results.iter().for_each(|row|println!("{}: {}",&row.entity_id,&row.sortkey));
         Ok(())
     }
     
@@ -1429,6 +1434,11 @@ mod tests {
     #[tokio::test]
     async fn sort_reverse() {
         check_fixture_file(PathBuf::from("test_data/sort_reverse.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sort_family_name() {
+        check_fixture_file(PathBuf::from("test_data/sort_family_name.fixture")).await;
     }
 
     /*
