@@ -1,0 +1,34 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q12345 wd:Q937 wd:Q94293196 } }
+|columns=label,P735/Q15885954/P1545
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! label
+! given name/given name/given name
+|-
+| [[Tim Berners-Lee]]
+| [[Timothy (given name)|Timothy]] — 1
+|-
+| [[Count von Count]]
+| 
+|-
+| [[Albert Einstein]]
+| 
+|-
+| ''[[:d:Q94293196|NVSS J173625-312612]]''
+| 
+|}

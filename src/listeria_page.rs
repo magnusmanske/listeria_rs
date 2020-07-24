@@ -10,12 +10,10 @@ use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 
 /* TODO
-- check all possible column types
-- Sort by P/Q/P
+- Sort by P/P, P/Q/P
 - Sectioning
 - Show only preffered values (eg P41 in Q43175)
 - Main namespace block
-- P/Q/P ?
 - coords commonswiki CHECK
 - coords dewiki IMPLEMENT region
 - actually edit the page
@@ -476,23 +474,30 @@ impl ListeriaPage {
             .qualifiers()
             .iter()
             .filter(|snak|*snak.property()==*property)
-            .map(|snak|{
-                let ret = ResultCellPart::SnakList (
+            .map(|snak|ResultCellPart::SnakList (
                     vec![
                         ResultCellPart::from_snak(statement.main_snak()),
                         ResultCellPart::from_snak(snak)
                     ]
-                ) ;
-                /*
-                ret.iter().for_each(|rcp|{
-                    match rcp {
-
-                    }self.lazy_load_item()
-                })
-                */
-                ret
-            })
+                )
+            )
             .collect()
+    }
+
+    fn get_parts_p_q_p(&self,statement:&wikibase::statement::Statement,target_item:&String,property:&String) -> Vec<ResultCellPart> {
+        let links_to_target = match statement.main_snak().data_value(){
+            Some(dv) => {
+                match dv.value() {
+                    wikibase::value::Value::Entity(e) => e.id() == target_item,
+                    _ => false
+                }
+            }
+            None => false
+        };
+        if !links_to_target {
+            return vec![];
+        }
+        self.get_parts_p_p(statement,property)
     }
 
     fn get_result_cell(
@@ -551,6 +556,18 @@ impl ListeriaPage {
                 }
                 None => {}
             },
+            ColumnType::PropertyQualifierValue((p1, q1, p2)) => match entity {
+                Some(e) => {
+                    e.claims_with_property(p1.to_owned())
+                        .iter()
+                        .for_each(|statement| {
+                            self.get_parts_p_q_p(statement,q1,p2)
+                                .iter()
+                                .for_each(|part|ret.parts.push(part.to_owned()));
+                        });
+                }
+                None => {}
+            },
             ColumnType::LabelLang(language) => match entity {
                 Some(e) => {
                     match e.label_in_locale(language) {
@@ -598,10 +615,6 @@ impl ListeriaPage {
             ColumnType::Number => {
                 ret.parts.push(ResultCellPart::Number);
             }
-            _ => {} /*
-                    // TODO
-                    PropertyQualifierValue((String, String, String)),
-                    */
         }
 
         ret
@@ -1503,6 +1516,11 @@ mod tests {
     #[tokio::test]
     async fn p_p() {
         check_fixture_file(PathBuf::from("test_data/p_p.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn p_q_p() {
+        check_fixture_file(PathBuf::from("test_data/p_q_p.fixture")).await;
     }
 
     /*
