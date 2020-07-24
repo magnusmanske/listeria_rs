@@ -10,7 +10,7 @@ use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 
 /* TODO
-- Sort
+- check all possible column types
 - Sort by P/Q/P
 - Sectioning
 - Show only preffered values (eg P41 in Q43175)
@@ -23,7 +23,7 @@ use wikibase::mediawiki::api::Api;
 TEMPLATE PARAMETERS
 sparql DONE
 columns DONE
-sort IMPLEMENT?
+sort DONE
 section IMPLEMENT
 min_section IMPLEMENT
 autolist IMPLEMENT
@@ -1439,6 +1439,11 @@ mod tests {
     #[tokio::test]
     async fn sort_family_name() {
         check_fixture_file(PathBuf::from("test_data/sort_family_name.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn columns() {
+        check_fixture_file(PathBuf::from("test_data/columns.fixture")).await;
     }
 
     /*

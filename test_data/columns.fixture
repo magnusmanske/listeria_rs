@@ -1,0 +1,44 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q12345 wd:Q937 wd:Q94293196 } }
+|columns=number,label/de,description,?item
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! number
+! label/de
+! description
+! ?item
+|-
+| style='text-align:right'| 1
+| Tim Berners-Lee
+| British computer scientist, inventor of the World Wide Web
+| [[Tim Berners-Lee]]
+|-
+| style='text-align:right'| 2
+| Graf Zahl
+| character on Sesame Street
+| [[Count von Count]]
+|-
+| style='text-align:right'| 3
+| Albert Einstein
+| German-born theoretical physicist; developer of the theory of relativity (1879-1955)
+| [[Albert Einstein]]
+|-
+| style='text-align:right'| 4
+| NVSS J173625-312612
+| 
+| ''[[:d:Q94293196|NVSS J173625-312612]]''
+|}

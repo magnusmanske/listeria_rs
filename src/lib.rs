@@ -402,7 +402,7 @@ impl ResultCellPart {
     ) -> String {
         //format!("CELL ROW {} COL {} PART {}", rownum, colnum, partnum)
         match self {
-            ResultCellPart::Number => (rownum + 1).to_string(),
+            ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
                 let entity_id_link = format!("''[[:d:{}|{}]]''", id, id);
                 if !try_localize {
