@@ -736,3 +736,25 @@ impl SortMode {
         }
     }
 }
+
+#[derive(Debug, Clone)]
+pub enum SectionType {
+    None,
+    Property(String),
+    SparqlVariable(String),
+}
+
+impl SectionType {
+    pub fn new_from_string(s: &String) -> Self {
+        let s = s.trim();
+        let re_prop = Regex::new(r"^[Pp]\d+$").unwrap();
+        if re_prop.is_match(s) {
+            return Self::Property(s.to_uppercase());
+        }
+        let re_sparql = Regex::new(r"^@.+$").unwrap();
+        if re_sparql.is_match(s) {
+            return Self::SparqlVariable(s.to_uppercase());
+        }
+        return Self::None;
+    }
+}

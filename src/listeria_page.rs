@@ -41,7 +41,7 @@ summary DONE
 #[derive(Debug, Clone)]
 struct TemplateParams {
     sort: SortMode,
-    section: Option<String>,
+    section: Option<String>, // TODO SectionType
     min_section:u64,
     row_template: Option<String>,
     header_template: Option<String>,
