@@ -518,6 +518,26 @@ impl ResultRow {
         self.sortkey = sortkey;
     }
 
+    pub fn get_sortkey_label(&self, page: &ListeriaPage) -> String {
+        match page.get_entity(self.entity_id.to_owned()) {
+            Some(entity) => match entity.label_in_locale(&page.language()) {
+                Some(label) => label.to_string(),
+                None => entity.id().to_string(),
+            },
+            None => "".to_string(),
+        }
+    }
+
+    pub fn get_sortkey_prop(&self, _prop: &String, page: &ListeriaPage) -> String {
+        match page.get_entity(self.entity_id.to_owned()) {
+            Some(entity) => match entity.label_in_locale(page.language()) {
+                Some(label) => label.to_string(),
+                None => entity.id().to_string(),
+            },
+            None => "".to_string(),
+        }
+    }
+
     pub fn as_tabbed_data(&self, page: &ListeriaPage, rownum: usize) -> Value {
         let mut ret: Vec<Value> = self
             .cells

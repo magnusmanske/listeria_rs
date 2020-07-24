@@ -894,44 +894,20 @@ impl ListeriaPage {
         Ok(())
     }
 
-    fn get_sortkey_label(&self,entity_id:&String) -> String {
-        match self.entities.get_entity(entity_id.to_owned()) {
-            Some(entity) => {
-                match entity.label_in_locale(&self.language) {
-                    Some(label) => label.to_string(),
-                    None => entity.id().to_string()
-                }
-            }
-            None => "".to_string()
-        }
-    }
-
-    fn get_sortkey_prop(&self,_prop:&String,entity_id:&String) -> String {
-        match self.entities.get_entity(entity_id.to_owned()) {
-            Some(entity) => {
-                match entity.label_in_locale(&self.language) {
-                    Some(label) => label.to_string(),
-                    None => entity.id().to_string()
-                }
-            }
-            None => "".to_string()
-        }
-    }
-
     fn patch_sort_results(&mut self) -> Result<(), String> {
         let mut sortkeys : Vec<String> = vec![] ;
         match &self.params.sort {
             SortMode::Label => {
                 sortkeys = self.results
                     .iter()
-                    .map(|row|self.get_sortkey_label(&row.entity_id))
+                    .map(|row|row.get_sortkey_label(&self))
                     .collect();
             }
             SortMode::FamilyName => {} // TODO
             SortMode::Property(prop) => {
                 sortkeys = self.results
                     .iter()
-                    .map(|row|self.get_sortkey_prop(&prop,&row.entity_id))
+                    .map(|row|row.get_sortkey_prop(&prop,&self))
                     .collect();
             }
             _ => return Ok(())
