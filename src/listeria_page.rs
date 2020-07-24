@@ -14,6 +14,7 @@ use wikibase::mediawiki::api::Api;
 - Main namespace block
 - P/Q/P ?
 - time/loc/quantity?
+- actually edit the page
 
 TEMPLATE PARAMETERS
 sparql DONE
@@ -160,7 +161,8 @@ impl ListeriaPage {
             .filter_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
                 match data_value.value() {
-                    wikibase::Value::StringValue(s) => Some(
+                    wikibase::Value::StringValue(s) => 
+                        Some(
                         s.to_owned()
                             .replace("$1", &urlencoding::decode(&id).ok()?.to_string()),
                     ),
@@ -1257,18 +1259,13 @@ mod tests {
         check_fixture_file(PathBuf::from("test_data/links_reasonator.fixture")).await;
     }
 
-    /*
-    Links
-    all DONE
-    local DONE
-    red DONE
-    red_only DONE
-    text DONE
-    reasonator
-    */
+    #[tokio::test]
+    async fn date_extid_quantity() {
+        check_fixture_file(PathBuf::from("test_data/date_extid_quantity.fixture")).await;
+    }
 
     /*
-    // I want all of them, Molari, ALL OF THEM!
+    // I want all of it, Molari, ALL OF IT!
     #[tokio::test]
     async fn fixtures() {
         let paths = fs::read_dir("./test_data").unwrap();
