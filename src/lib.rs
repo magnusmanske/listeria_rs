@@ -9,9 +9,11 @@ pub use crate::listeria_page::ListeriaPage;
 use regex::{Regex, RegexBuilder};
 use roxmltree;
 use serde_json::Value;
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use urlencoding;
 use wikibase::entity::EntityTrait;
+use wikibase::SnakDataType;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LatLon {
@@ -368,7 +370,6 @@ impl ResultCellPart {
                 caps.get(3).unwrap().as_str().to_string(),
             ),
             None => {
-                println!("I'M HAVING A BAD TIME: {}/{}", &s, v.precision());
                 return s;
             }
         };
@@ -414,7 +415,6 @@ impl ResultCellPart {
                             let ret = match page.get_links_type() {
                                 LinksType::Text => l.to_string(),
                                 LinksType::Red | LinksType::RedOnly => {
-                                    //println!("!! {}", l);
                                     if page.local_page_exists(l) {
                                         labeled_entity_link
                                     } else {
@@ -528,17 +528,20 @@ impl ResultRow {
         }
     }
 
+    fn no_value(&self, datatype: &SnakDataType) -> String {
+        match *datatype {
+            SnakDataType::Time => "no time",
+            _ => "",
+        }
+        .to_string()
+    }
+
     pub fn get_sortkey_prop(
         &self,
         prop: &String,
         page: &ListeriaPage,
-        is_sorting_by_time: bool,
+        datatype: &SnakDataType,
     ) -> String {
-        let no_value = if is_sorting_by_time {
-            "no time".to_string()
-        } else {
-            String::new()
-        };
         match page.get_entity(self.entity_id.to_owned()) {
             Some(entity) => {
                 match entity
@@ -549,10 +552,10 @@ impl ResultRow {
                     .next()
                 {
                     Some(snak) => self.get_sortkey_from_snak(snak),
-                    None => no_value,
+                    None => self.no_value(datatype),
                 }
             }
-            None => no_value,
+            None => self.no_value(datatype),
         }
     }
 
@@ -572,6 +575,41 @@ impl ResultRow {
                 wikibase::value::Value::Time(t) => t.time().to_owned(),
             },
             None => "".to_string(),
+        }
+    }
+
+    fn compare_entiry_ids(&self, other: &ResultRow) -> Ordering {
+        let id1 = self.entity_id[1..]
+            .parse::<usize>()
+            .ok()
+            .or(Some(0))
+            .unwrap_or(0);
+        let id2 = other.entity_id[1..]
+            .parse::<usize>()
+            .ok()
+            .or(Some(0))
+            .unwrap_or(0);
+        id1.partial_cmp(&id2).unwrap()
+    }
+
+    pub fn compare_to(&self, other: &ResultRow, datatype: &SnakDataType) -> Ordering {
+        match datatype {
+            SnakDataType::Quantity => {
+                let va = self.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
+                let vb = other.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
+                if va == 0 && vb == 0 {
+                    self.compare_entiry_ids(other)
+                } else {
+                    va.partial_cmp(&vb).unwrap()
+                }
+            }
+            _ => {
+                if self.sortkey == other.sortkey {
+                    self.compare_entiry_ids(other)
+                } else {
+                    self.sortkey.partial_cmp(&other.sortkey).unwrap()
+                }
+            }
         }
     }
 

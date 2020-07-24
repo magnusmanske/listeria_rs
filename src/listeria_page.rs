@@ -329,8 +329,6 @@ impl ListeriaPage {
             None => {}
         }
 
-        //println!("{:?}",&self.params);
-        //println!("Columns: {:?}", &self.columns);
         Ok(())
     }
 
@@ -344,7 +342,6 @@ impl ListeriaPage {
             None => return Err(format!("No `sparql` parameter in {:?}", &t)),
         };
 
-        //println!("Running SPARQL: {}", &sparql);
         let j = match self.wd_api.sparql_query(sparql).await {
             Ok(j) => j,
             Err(e) => return Err(format!("{:?}", &e)),
@@ -383,8 +380,6 @@ impl ListeriaPage {
             }
             self.sparql_rows.push(row);
         }
-        //println!("FIRST: {}", &first_var);
-        //println!("{:?}", &self.sparql_rows);
         Ok(())
     }
 
@@ -908,8 +903,26 @@ impl ListeriaPage {
         Ok(())
     }
 
+    fn get_datatype_for_property(&self,prop:&String) -> SnakDataType {
+        match self.get_entity(prop) {
+            Some(entity) => {
+                match entity {
+                    Entity::Property(p) => {
+                        match p.datatype() {
+                            Some(t) => t.to_owned(),
+                            None => SnakDataType::String
+                        }
+                    }
+                    _ => SnakDataType::String
+                }
+            }
+            None => SnakDataType::String
+        }
+    }
+
     fn patch_sort_results(&mut self) -> Result<(), String> {
         let mut sortkeys : Vec<String> = vec![] ;
+        let mut datatype = SnakDataType::String ; // Default
         match &self.params.sort {
             SortMode::Label => {
                 sortkeys = self.results
@@ -919,23 +932,10 @@ impl ListeriaPage {
             }
             SortMode::FamilyName => {} // TODO
             SortMode::Property(prop) => {
-                let is_sorting_by_time = match self.get_entity(prop) {
-                    Some(entity) => {
-                        match entity {
-                            Entity::Property(p) => {
-                                match p.datatype() {
-                                    Some(t) => *t == SnakDataType::Time ,
-                                    None => false
-                                }
-                            }
-                            _ => false
-                        }
-                    }
-                    None => false
-                };
+                datatype = self.get_datatype_for_property(prop);
                 sortkeys = self.results
                     .iter()
-                    .map(|row|row.get_sortkey_prop(&prop,&self,is_sorting_by_time))
+                    .map(|row|row.get_sortkey_prop(&prop,&self,&datatype))
                     .collect();
             }
             _ => return Ok(())
@@ -950,15 +950,11 @@ impl ListeriaPage {
             .enumerate()
             .for_each(|(rownum, row)|row.set_sortkey(sortkeys[rownum].to_owned())) ;
 
-        self.results.sort_by(|a, b| {
-            if a.sortkey == b.sortkey {
-                return a.entity_id.partial_cmp(&b.entity_id).unwrap();
-            }
-            a.sortkey.partial_cmp(&b.sortkey).unwrap()
-        });
+        self.results.sort_by(|a, b| a.compare_to(b,&datatype));
         if !self.params.sort_ascending {
             self.results.reverse()
         }
+
         Ok(())
     }
     
@@ -1412,6 +1408,16 @@ mod tests {
     #[tokio::test]
     async fn sort_prop_time() {
         check_fixture_file(PathBuf::from("test_data/sort_prop_time.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sort_prop_string() {
+        check_fixture_file(PathBuf::from("test_data/sort_prop_string.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sort_prop_quantity() {
+        check_fixture_file(PathBuf::from("test_data/sort_prop_quantity.fixture")).await;
     }
 
     /*
