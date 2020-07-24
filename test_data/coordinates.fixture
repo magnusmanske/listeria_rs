@@ -1,0 +1,25 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q58976 } }
+|columns=label:name,P625
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! name
+! coordinate location
+|-
+| [[Piraeus]]
+| {{Coord|37.943|23.646944444444|display=inline}}
+|}

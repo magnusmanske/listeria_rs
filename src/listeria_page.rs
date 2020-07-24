@@ -5,15 +5,18 @@ use serde_json::Value;
 use std::collections::HashMap;
 use urlencoding;
 use wikibase::entity::*;
+use wikibase::snak::SnakDataType;
 use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 
 /* TODO
+- Sort
 - Sectioning
 - Show only preffered values (eg P41 in Q43175)
 - Main namespace block
 - P/Q/P ?
-- time/loc/quantity?
+- coords commonswiki CHECK
+- coords dewiki IMPLEMENT region
 - actually edit the page
 
 TEMPLATE PARAMETERS
@@ -36,9 +39,9 @@ summary DONE
 */
 
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 struct TemplateParams {
-    sort: Option<String>,
+    sort: SortMode,
     section: Option<String>,
     min_section:u64,
     row_template: Option<String>,
@@ -49,6 +52,26 @@ struct TemplateParams {
     wdedit: bool,
     references: bool,
     one_row_per_item: bool,
+    sort_ascending: bool,
+}
+
+impl TemplateParams {
+    pub fn new() -> Self {
+         Self {
+            sort:SortMode::None,
+            section: None,
+            min_section:2,
+            row_template: None,
+            header_template: None,
+            autolist: None,
+            summary: None,
+            skip_table: false,
+            wdedit: false,
+            references: false,
+            one_row_per_item: false,
+            sort_ascending: true,
+         }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -93,7 +116,7 @@ impl ListeriaPage {
                 .ok()?
                 .to_string(),
             template: None,
-            params: TemplateParams { min_section:2, ..Default::default() },
+            params: TemplateParams::new(),
             sparql_rows: vec![],
             sparql_first_variable: None,
             columns: vec![],
@@ -177,8 +200,20 @@ impl ListeriaPage {
     }
 
     pub fn get_location_template(&self, lat: f64, lon: f64) -> String {
-        // TODO use localized geo template
-        format!("({},{})", lat, lon)
+        // Hardcoded special cases!!1!
+        if self.wiki == "wikidatawiki" {
+            return format!("{}/{}",lat,lon);
+        }
+        if self.wiki == "commonswiki" {
+            return format!("{{Inline coordinates|{}|{}|display=inline}}}}",lat,lon);
+        }
+        if self.wiki == "dewiki" {
+            // TODO get region for item
+            let q = "" ;
+            let region = "" ;
+            return format!("{{{{Coordinate|text=DMS|NS={}|EW={}|name={}|simple=y|type=landmark|region={}}}}}",lat,lon,q,region);
+        }
+        format!("{{{{Coord|{}|{}|display=inline}}}}", lat, lon) // en; default
     }
 
     pub fn get_row_template(&self) -> &Option<String> {
@@ -263,7 +298,7 @@ impl ListeriaPage {
         }
 
         self.params = TemplateParams {
-            sort: template.params.get("sort").map(|s|s.trim().to_uppercase()),
+            sort: SortMode::new(template.params.get("sort")),
             section: template.params.get("section").map(|s|s.trim().to_uppercase()),
             min_section: template
                             .params
@@ -280,6 +315,7 @@ impl ListeriaPage {
             one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
             wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
             references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
+            sort_ascending: true, // TODO parameter
         } ;
 
         match template.params.get("language") {
@@ -622,6 +658,7 @@ impl ListeriaPage {
 
     fn patch_items_to_local_links(&mut self) -> Result<(), String> {
         // Try to change items to local link
+        // TODO mutate in place; fn in ResultRow. This is pathetic.
         self.results = self
             .results
             .iter()
@@ -646,7 +683,8 @@ impl ListeriaPage {
                             .collect(),
                     })
                     .collect(),
-                section: 0,
+                section:row.section,
+                sortkey: row.sortkey.to_owned()
             })
             .collect();
         Ok(())
@@ -671,7 +709,36 @@ impl ListeriaPage {
             }
         }
 
+        // Sort
+        match &self.params.sort {
+            SortMode::Property(prop) => {
+                for row in self.results.iter() {
+                    match self.entities.get_entity(row.entity_id.to_owned()) {
+                        Some(entity) => {
+                            entity
+                                .claims()
+                                .iter()
+                                .filter(|statement|statement.property()==prop)
+                                .map(|statement|statement.main_snak())
+                                .filter(|snak|*snak.datatype()==SnakDataType::WikibaseItem)
+                                .filter_map(|snak|snak.data_value().to_owned())
+                                .map(|datavalue|datavalue.value().to_owned())
+                                .filter_map(|value|match value {
+                                    wikibase::value::Value::Entity(v) => Some(v.id().to_owned()),
+                                    _ => None
+                                })
+                                .for_each(|id|entities_to_load.push(id.to_string()));
+                        }
+                        None => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+
         // Load items
+        entities_to_load.sort() ;
+        entities_to_load.dedup();
         match self.entities.load_entities(&self.wd_api, &entities_to_load).await {
             Ok(_) => {}
             Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
@@ -765,21 +832,15 @@ impl ListeriaPage {
         self.results = self.results
             .iter()
             .filter(|row|{
-                match &row.entity_id {
-                    Some(entity_id) => {
-                        let entity = self.entities.get_entity(entity_id.to_owned()).unwrap();
-                        match entity.sitelinks() {
-                            Some(sl) => {
-                                sl
-                                .iter()
-                                .filter(|s| *s.site() == self.wiki)
-                                .count() == 0
-                            }
-                            None => true, // No sitelinks, keep
-                        }
-
+                let entity = self.entities.get_entity(row.entity_id.to_owned()).unwrap();
+                match entity.sitelinks() {
+                    Some(sl) => {
+                        sl
+                        .iter()
+                        .filter(|s| *s.site() == self.wiki)
+                        .count() == 0
                     }
-                    None => true // In doubt, keep
+                    None => true, // No sitelinks, keep
                 }
             })
             .cloned()
@@ -832,6 +893,67 @@ impl ListeriaPage {
 
         Ok(())
     }
+
+    fn get_sortkey_label(&self,entity_id:&String) -> String {
+        match self.entities.get_entity(entity_id.to_owned()) {
+            Some(entity) => {
+                match entity.label_in_locale(&self.language) {
+                    Some(label) => label.to_string(),
+                    None => entity.id().to_string()
+                }
+            }
+            None => "".to_string()
+        }
+    }
+
+    fn get_sortkey_prop(&self,_prop:&String,entity_id:&String) -> String {
+        match self.entities.get_entity(entity_id.to_owned()) {
+            Some(entity) => {
+                match entity.label_in_locale(&self.language) {
+                    Some(label) => label.to_string(),
+                    None => entity.id().to_string()
+                }
+            }
+            None => "".to_string()
+        }
+    }
+
+    fn patch_sort_results(&mut self) -> Result<(), String> {
+        let mut sortkeys : Vec<String> = vec![] ;
+        match &self.params.sort {
+            SortMode::Label => {
+                sortkeys = self.results
+                    .iter()
+                    .map(|row|self.get_sortkey_label(&row.entity_id))
+                    .collect();
+            }
+            SortMode::FamilyName => {} // TODO
+            SortMode::Property(prop) => {
+                sortkeys = self.results
+                    .iter()
+                    .map(|row|self.get_sortkey_prop(&prop,&row.entity_id))
+                    .collect();
+            }
+            _ => return Ok(())
+        }
+
+        // Apply sortkeys
+        if self.results.len() != sortkeys.len() { // Paranoia
+            return Err(format!("patch_sort_results: sortkeys length mismatch"));
+        }
+        self.results
+            .iter_mut()
+            .enumerate()
+            .for_each(|(rownum, row)|{
+                row.set_sortkey(sortkeys[rownum].to_owned());
+            }) ;
+
+        self.results.sort_by(|a, b| a.sortkey.partial_cmp(&b.sortkey).unwrap());
+        if !self.params.sort_ascending {
+            self.results.reverse()
+        }
+        Ok(())
+    }
     
     async fn patch_results(&mut self) -> Result<(), String> {
         self.gather_and_load_items().await? ;
@@ -839,6 +961,7 @@ impl ListeriaPage {
         self.patch_items_to_local_links()?;
         self.patch_redlinks().await?;
         self.patch_remove_shadow_files().await?;
+        self.patch_sort_results()?;
         Ok(())
     }
 
@@ -1262,6 +1385,21 @@ mod tests {
     #[tokio::test]
     async fn date_extid_quantity() {
         check_fixture_file(PathBuf::from("test_data/date_extid_quantity.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn coordinates() {
+        check_fixture_file(PathBuf::from("test_data/coordinates.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sort_label() {
+        check_fixture_file(PathBuf::from("test_data/sort_label.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sort_prop() {
+        check_fixture_file(PathBuf::from("test_data/sort_prop.fixture")).await;
     }
 
     /*

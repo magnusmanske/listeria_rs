@@ -498,20 +498,24 @@ impl ResultCell {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ResultRow {
-    entity_id: Option<String>,
+    entity_id: String,
     cells: Vec<ResultCell>,
     section: usize,
+    sortkey: String,
 }
 
 impl ResultRow {
     pub fn new(entity_id: &String) -> Self {
         Self {
-            entity_id: Some(entity_id.to_owned()),
-            cells: vec![],
-            section: 0,
+            entity_id: entity_id.to_owned(),
+            ..Default::default()
         }
+    }
+
+    pub fn set_sortkey(&mut self, sortkey: String) {
+        self.sortkey = sortkey;
     }
 
     pub fn as_tabbed_data(&self, page: &ListeriaPage, rownum: usize) -> Value {
@@ -573,6 +577,35 @@ impl LinksType {
             "TEXT" => Self::Text,
             "REASONATOR" => Self::Reasonator,
             _ => Self::All, // Fallback, default
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum SortMode {
+    Label,
+    FamilyName,
+    Property(String),
+    None,
+}
+
+impl SortMode {
+    pub fn new(os: Option<&String>) -> Self {
+        let os = os.map(|s| s.trim().to_uppercase());
+        match os {
+            Some(s) => match s.as_str() {
+                "LABEL" => Self::Label,
+                "FAMILY_NAME" => Self::FamilyName,
+                prop => {
+                    let re_prop = Regex::new(r"^P\d+$").unwrap();
+                    if re_prop.is_match(prop) {
+                        Self::Property(prop.to_string())
+                    } else {
+                        Self::None
+                    }
+                }
+            },
+            _ => Self::None,
         }
     }
 }
