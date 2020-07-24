@@ -955,6 +955,7 @@ impl ListeriaPage {
             self.results.reverse()
         }
 
+        self.results.iter().for_each(|row|println!("{}: {}",&row.entity_id,&row.sortkey));
         Ok(())
     }
     
@@ -1418,6 +1419,16 @@ mod tests {
     #[tokio::test]
     async fn sort_prop_quantity() {
         check_fixture_file(PathBuf::from("test_data/sort_prop_quantity.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sort_prop_monolingual() {
+        check_fixture_file(PathBuf::from("test_data/sort_prop_monolingual.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sort_reverse() {
+        check_fixture_file(PathBuf::from("test_data/sort_reverse.fixture")).await;
     }
 
     /*

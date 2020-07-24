@@ -531,6 +531,7 @@ impl ResultRow {
     fn no_value(&self, datatype: &SnakDataType) -> String {
         match *datatype {
             SnakDataType::Time => "no time",
+            SnakDataType::MonolingualText => "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
             _ => "",
         }
         .to_string()
