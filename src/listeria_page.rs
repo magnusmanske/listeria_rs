@@ -471,6 +471,30 @@ impl ListeriaPage {
         Ok(ids)
     }
 
+    fn get_parts_p_p(&self,statement:&wikibase::statement::Statement,property:&String) -> Vec<ResultCellPart> {
+        statement
+            .qualifiers()
+            .iter()
+            .filter(|snak|*snak.property()==*property)
+            .map(|snak|{
+                let ret = ResultCellPart::SnakList (
+                    vec![
+                        ResultCellPart::from_snak(statement.main_snak()),
+                        ResultCellPart::from_snak(snak)
+                    ]
+                ) ;
+                /*
+                ret.iter().for_each(|rcp|{
+                    match rcp {
+
+                    }self.lazy_load_item()
+                })
+                */
+                ret
+            })
+            .collect()
+    }
+
     fn get_result_cell(
         &self,
         entity_id: &String,
@@ -511,6 +535,18 @@ impl ListeriaPage {
                         .for_each(|statement| {
                             ret.parts
                                 .push(ResultCellPart::from_snak(statement.main_snak()));
+                        });
+                }
+                None => {}
+            },
+            ColumnType::PropertyQualifier((p1, p2)) => match entity {
+                Some(e) => {
+                    e.claims_with_property(p1.to_owned())
+                        .iter()
+                        .for_each(|statement| {
+                            self.get_parts_p_p(statement,p2)
+                                .iter()
+                                .for_each(|part|ret.parts.push(part.to_owned()));
                         });
                 }
                 None => {}
@@ -564,7 +600,6 @@ impl ListeriaPage {
             }
             _ => {} /*
                     // TODO
-                    PropertyQualifier((String, String)),
                     PropertyQualifierValue((String, String, String)),
                     */
         }
@@ -652,6 +687,23 @@ impl ListeriaPage {
         Some(ResultCellPart::LocalLink((page, label)))
     }
 
+    fn localize_item_links_in_parts(&self,parts:&Vec<ResultCellPart>) -> Vec<ResultCellPart> {
+        parts.iter()
+        .map(|part| match part {
+            ResultCellPart::Entity((item, true)) => {
+                match self.entity_to_local_link(&item) {
+                    Some(ll) => ll,
+                    None => part.to_owned(),
+                }
+            }
+            ResultCellPart::SnakList(v) => {
+                ResultCellPart::SnakList(self.localize_item_links_in_parts(v))
+            }
+            _ => part.to_owned(),
+        })
+        .collect()
+    }
+
     fn patch_items_to_local_links(&mut self) -> Result<(), String> {
         // Try to change items to local link
         // TODO mutate in place; fn in ResultRow. This is pathetic.
@@ -664,19 +716,7 @@ impl ListeriaPage {
                     .cells
                     .iter()
                     .map(|cell| ResultCell {
-                        parts: cell
-                            .parts
-                            .iter()
-                            .map(|part| match part {
-                                ResultCellPart::Entity((item, true)) => {
-                                    match self.entity_to_local_link(&item) {
-                                        Some(ll) => ll,
-                                        None => part.to_owned(),
-                                    }
-                                }
-                                _ => part.to_owned(),
-                            })
-                            .collect(),
+                        parts: self.localize_item_links_in_parts(&cell.parts),
                     })
                     .collect(),
                 section:row.section,
@@ -727,22 +767,35 @@ impl ListeriaPage {
         Ok(())
     }
 
+    fn gather_entities_and_external_properties(&self,parts:&Vec<ResultCellPart>) -> Vec<String> {
+        let mut entities_to_load = vec![];
+        for part in parts {
+            match part {
+                ResultCellPart::Entity((item, true)) => {
+                    entities_to_load.push(item.to_owned());
+                }
+                ResultCellPart::ExternalId((property, _id)) => {
+                    entities_to_load.push(property.to_owned());
+                }
+                ResultCellPart::SnakList(v) => {
+                    self.gather_entities_and_external_properties(&v)
+                        .iter()
+                        .for_each(|entity_id|entities_to_load.push(entity_id.to_string()))
+                }
+                _ => {}
+            }
+        }
+        entities_to_load
+    }
+
     async fn gather_and_load_items(&mut self) -> Result<(), String> {
         // Gather items to load
-        let mut entities_to_load = vec![];
+        let mut entities_to_load : Vec<String> = vec![];
         for row in self.results.iter() {
             for cell in &row.cells {
-                for part in &cell.parts {
-                    match part {
-                        ResultCellPart::Entity((item, true)) => {
-                            entities_to_load.push(item.to_owned());
-                        }
-                        ResultCellPart::ExternalId((property, _id)) => {
-                            entities_to_load.push(property.to_owned());
-                        }
-                        _ => {}
-                    }
-                }
+                self.gather_entities_and_external_properties(&cell.parts)
+                    .iter()
+                    .for_each(|entity_id|entities_to_load.push(entity_id.to_string()));
             }
         }
         match &self.params.sort {
@@ -780,7 +833,7 @@ impl ListeriaPage {
 
         // TODO better async
         for filename in files_to_check {
-            let prefixed_filename = format!("File:{}",&filename) ;
+            let prefixed_filename = format!("{}:{}",self.local_file_namespace_prefix(),&filename) ;
             let params: HashMap<String, String> =
                 vec![("action", "query"), ("titles", prefixed_filename.as_str()),("prop","imageinfo")]
                     .iter()
@@ -1051,7 +1104,7 @@ impl ListeriaPage {
         return first_letter.to_uppercase() + the_rest;
     }
 
-    fn local_file_namespace_prefix(&self) -> String {
+    pub fn local_file_namespace_prefix(&self) -> String {
         "File".to_string() // TODO
     }
 
@@ -1333,6 +1386,7 @@ mod tests {
         let wt = page.as_wikitext().unwrap().trim().to_string();
         if data.contains_key("EXPECTED") {
             //println!("Checking EXPECTED");
+            //println!("{}",&wt);
             assert_eq!(wt,data["EXPECTED"]);
         }
         if data.contains_key("EXPECTED_PART") {
@@ -1444,6 +1498,11 @@ mod tests {
     #[tokio::test]
     async fn columns() {
         check_fixture_file(PathBuf::from("test_data/columns.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn p_p() {
+        check_fixture_file(PathBuf::from("test_data/p_p.fixture")).await;
     }
 
     /*

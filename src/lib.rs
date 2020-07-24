@@ -319,6 +319,7 @@ pub enum ResultCellPart {
     Uri(String),
     ExternalId((String, String)), // Property, ID
     Text(String),
+    SnakList(Vec<ResultCellPart>), // PP and PQP
 }
 
 impl ResultCellPart {
@@ -397,8 +398,8 @@ impl ResultCellPart {
         &self,
         page: &ListeriaPage,
         rownum: usize,
-        _colnum: usize,
-        _partnum: usize,
+        colnum: usize,
+        partnum: usize,
     ) -> String {
         //format!("CELL ROW {} COL {} PART {}", rownum, colnum, partnum)
         match self {
@@ -444,8 +445,12 @@ impl ResultCellPart {
             ResultCellPart::Location((lat, lon)) => page.get_location_template(*lat, *lon),
             ResultCellPart::File(file) => {
                 let thumb = page.thumbnail_size();
-                // TODO localize "File" and "thumb"
-                "[[File:".to_string() + &file + "|thumb|" + &thumb.to_string() + "px|]]"
+                format!(
+                    "[[{}:{}|thumb|{}px|]]",
+                    page.local_file_namespace_prefix(),
+                    &file,
+                    thumb
+                )
             }
             ResultCellPart::Uri(url) => url.to_owned(),
             ResultCellPart::ExternalId((property, id)) => {
@@ -455,6 +460,11 @@ impl ResultCellPart {
                 }
             }
             ResultCellPart::Text(text) => text.to_owned(),
+            ResultCellPart::SnakList(v) => v
+                .iter()
+                .map(|rcp| rcp.as_wikitext(page, rownum, colnum, partnum))
+                .collect::<Vec<String>>()
+                .join(" — "),
         }
     }
 
@@ -644,6 +654,19 @@ impl ResultRow {
         json!(ret)
     }
 
+    fn cells_as_wikitext(&self, page: &ListeriaPage, cells: &Vec<String>) -> String {
+        cells
+            .iter()
+            .enumerate()
+            .map(|(colnum, cell)| {
+                let column = page.column(colnum).unwrap(); // TODO
+                let key = column.obj.as_key();
+                format!("{} = {}", key, &cell)
+            })
+            .collect::<Vec<String>>()
+            .join("\n| ")
+    }
+
     pub fn as_wikitext(&self, page: &ListeriaPage, rownum: usize) -> String {
         let cells = self
             .cells
@@ -652,22 +675,11 @@ impl ResultRow {
             .map(|(colnum, cell)| cell.as_wikitext(page, rownum, colnum))
             .collect::<Vec<String>>();
         match page.get_row_template() {
-            Some(t) => {
-                "{{".to_string()
-                    + &t
-                    + "\n| "
-                    + &cells
-                        .iter()
-                        .enumerate()
-                        .map(|(colnum, cell)| {
-                            let column = page.column(colnum).unwrap(); // TODO
-                            let key = column.obj.as_key();
-                            format!("{} = {}", key, &cell)
-                        })
-                        .collect::<Vec<String>>()
-                        .join("\n| ")
-                    + "\n}}"
-            }
+            Some(t) => format!(
+                "{{{{{}\n| {}\n}}}}",
+                t,
+                self.cells_as_wikitext(page, &cells)
+            ),
             None => "| ".to_string() + &cells.join("\n| "),
         }
     }
