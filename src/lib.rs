@@ -4,8 +4,14 @@ extern crate lazy_static;
 extern crate serde_json;
 
 pub mod listeria_page;
+pub mod listeria_list;
+pub mod render_wikitext;
+pub mod render_tabbed_data;
 
 pub use crate::listeria_page::ListeriaPage;
+pub use crate::listeria_list::ListeriaList;
+pub use crate::render_wikitext::RendererWikitext;
+pub use crate::render_tabbed_data::RendererTabbedData;
 use regex::{Regex, RegexBuilder};
 use roxmltree;
 use serde_json::Value;
@@ -14,6 +20,23 @@ use std::collections::HashMap;
 use urlencoding;
 use wikibase::entity::EntityTrait;
 use wikibase::SnakDataType;
+use wikibase::mediawiki::api::Api;
+
+#[derive(Debug, Clone)]
+pub struct PageParams {
+    pub language: String,
+    pub wiki: String,
+    pub page: String,
+    pub mw_api: Api,
+    pub wd_api: Api,
+}
+
+impl PageParams {
+    pub fn local_file_namespace_prefix(&self) -> String {
+        "File".to_string() // TODO
+    }
+
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LatLon {
@@ -146,7 +169,7 @@ impl Column {
         }
     }
 
-    pub fn generate_label(&mut self, page: &ListeriaPage) {
+    pub fn generate_label(&mut self, page: &ListeriaList) {
         self.label = match &self.obj {
             ColumnType::Property(prop) => page
                 .get_local_entity_label(&prop)
@@ -396,7 +419,7 @@ impl ResultCellPart {
 
     pub fn as_wikitext(
         &self,
-        page: &ListeriaPage,
+        list: &ListeriaList,
         rownum: usize,
         colnum: usize,
         partnum: usize,
@@ -409,14 +432,14 @@ impl ResultCellPart {
                 if !try_localize {
                     return entity_id_link;
                 }
-                match page.get_entity(id.to_owned()) {
-                    Some(e) => match e.label_in_locale(page.language()) {
+                match list.get_entity(id.to_owned()) {
+                    Some(e) => match e.label_in_locale(list.language()) {
                         Some(l) => {
                             let labeled_entity_link = format!("''[[:d:{}|{}]]''", id, l);
-                            let ret = match page.get_links_type() {
+                            let ret = match list.get_links_type() {
                                 LinksType::Text => l.to_string(),
                                 LinksType::Red | LinksType::RedOnly => {
-                                    if page.local_page_exists(l) {
+                                    if list.local_page_exists(l) {
                                         labeled_entity_link
                                     } else {
                                         "[[".to_string() + &l.to_string() + "]]"
@@ -435,26 +458,26 @@ impl ResultCellPart {
                 }
             }
             ResultCellPart::LocalLink((title, label)) => {
-                if page.normalize_page_title(title) == page.normalize_page_title(label) {
+                if list.normalize_page_title(title) == list.normalize_page_title(label) {
                     "[[".to_string() + &label + "]]"
                 } else {
                     "[[".to_string() + &title + "|" + &label + "]]"
                 }
             }
             ResultCellPart::Time(time) => time.to_owned(),
-            ResultCellPart::Location((lat, lon)) => page.get_location_template(*lat, *lon),
+            ResultCellPart::Location((lat, lon)) => list.get_location_template(*lat, *lon),
             ResultCellPart::File(file) => {
-                let thumb = page.thumbnail_size();
+                let thumb = list.thumbnail_size();
                 format!(
                     "[[{}:{}|thumb|{}px|]]",
-                    page.local_file_namespace_prefix(),
+                    list.local_file_namespace_prefix(),
                     &file,
                     thumb
                 )
             }
             ResultCellPart::Uri(url) => url.to_owned(),
             ResultCellPart::ExternalId((property, id)) => {
-                match page.external_id_url(property, id) {
+                match list.external_id_url(property, id) {
                     Some(url) => "[".to_string() + &url + " " + &id + "]",
                     None => id.to_owned(),
                 }
@@ -462,7 +485,7 @@ impl ResultCellPart {
             ResultCellPart::Text(text) => text.to_owned(),
             ResultCellPart::SnakList(v) => v
                 .iter()
-                .map(|rcp| rcp.as_wikitext(page, rownum, colnum, partnum))
+                .map(|rcp| rcp.as_wikitext(list, rownum, colnum, partnum))
                 .collect::<Vec<String>>()
                 .join(" — "),
         }
@@ -470,12 +493,12 @@ impl ResultCellPart {
 
     pub fn as_tabbed_data(
         &self,
-        page: &ListeriaPage,
+        list: &ListeriaList,
         rownum: usize,
         colnum: usize,
         partnum: usize,
     ) -> String {
-        self.tabbed_string_safe(self.as_wikitext(page, rownum, colnum, partnum))
+        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum, partnum))
     }
 }
 
@@ -488,21 +511,21 @@ impl ResultCell {
     pub fn new() -> Self {
         Self { parts: vec![] }
     }
-    pub fn as_tabbed_data(&self, page: &ListeriaPage, rownum: usize, colnum: usize) -> Value {
+    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
         let ret: Vec<String> = self
             .parts
             .iter()
             .enumerate()
-            .map(|(partnum, part)| part.as_tabbed_data(page, rownum, colnum, partnum))
+            .map(|(partnum, part)| part.as_tabbed_data(list, rownum, colnum, partnum))
             .collect();
         json!(ret.join("<br/>"))
     }
 
-    pub fn as_wikitext(&self, page: &ListeriaPage, rownum: usize, colnum: usize) -> String {
+    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         self.parts
             .iter()
             .enumerate()
-            .map(|(partnum, part)| part.as_wikitext(page, rownum, colnum, partnum))
+            .map(|(partnum, part)| part.as_wikitext(list, rownum, colnum, partnum))
             .collect::<Vec<String>>()
             .join("<br/>")
     }
@@ -528,7 +551,7 @@ impl ResultRow {
         self.sortkey = sortkey;
     }
 
-    pub fn get_sortkey_label(&self, page: &ListeriaPage) -> String {
+    pub fn get_sortkey_label(&self, page: &ListeriaList) -> String {
         match page.get_entity(self.entity_id.to_owned()) {
             Some(entity) => match entity.label_in_locale(&page.language()) {
                 Some(label) => label.to_string(),
@@ -538,7 +561,7 @@ impl ResultRow {
         }
     }
 
-    pub fn get_sortkey_family_name(&self, page: &ListeriaPage) -> String {
+    pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
         // TODO lazy
         let re_sr_jr = Regex::new(r", [JS]r\.$").unwrap();
         let re_braces = Regex::new(r"\s+\(.+\)$").unwrap();
@@ -569,10 +592,10 @@ impl ResultRow {
     pub fn get_sortkey_prop(
         &self,
         prop: &String,
-        page: &ListeriaPage,
+        list: &ListeriaList,
         datatype: &SnakDataType,
     ) -> String {
-        match page.get_entity(self.entity_id.to_owned()) {
+        match list.get_entity(self.entity_id.to_owned()) {
             Some(entity) => {
                 match entity
                     .claims()
@@ -643,23 +666,23 @@ impl ResultRow {
         }
     }
 
-    pub fn as_tabbed_data(&self, page: &ListeriaPage, rownum: usize) -> Value {
+    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
         let mut ret: Vec<Value> = self
             .cells
             .iter()
             .enumerate()
-            .map(|(colnum, cell)| cell.as_tabbed_data(page, rownum, colnum))
+            .map(|(colnum, cell)| cell.as_tabbed_data(list, rownum, colnum))
             .collect();
         ret.insert(0, json!(self.section));
         json!(ret)
     }
 
-    fn cells_as_wikitext(&self, page: &ListeriaPage, cells: &Vec<String>) -> String {
+    fn cells_as_wikitext(&self, list: &ListeriaList, cells: &Vec<String>) -> String {
         cells
             .iter()
             .enumerate()
             .map(|(colnum, cell)| {
-                let column = page.column(colnum).unwrap(); // TODO
+                let column = list.column(colnum).unwrap(); // TODO
                 let key = column.obj.as_key();
                 format!("{} = {}", key, &cell)
             })
@@ -667,18 +690,18 @@ impl ResultRow {
             .join("\n| ")
     }
 
-    pub fn as_wikitext(&self, page: &ListeriaPage, rownum: usize) -> String {
+    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
         let cells = self
             .cells
             .iter()
             .enumerate()
-            .map(|(colnum, cell)| cell.as_wikitext(page, rownum, colnum))
+            .map(|(colnum, cell)| cell.as_wikitext(list, rownum, colnum))
             .collect::<Vec<String>>();
-        match page.get_row_template() {
+        match list.get_row_template() {
             Some(t) => format!(
                 "{{{{{}\n| {}\n}}}}",
                 t,
-                self.cells_as_wikitext(page, &cells)
+                self.cells_as_wikitext(list, &cells)
             ),
             None => "| ".to_string() + &cells.join("\n| "),
         }
@@ -737,6 +760,45 @@ impl SortMode {
     }
 }
 
+
+#[derive(Debug, Clone)]
+pub struct TemplateParams {
+    links: LinksType,
+    sort: SortMode,
+    section: Option<String>, // TODO SectionType
+    min_section:u64,
+    row_template: Option<String>,
+    header_template: Option<String>,
+    autolist: Option<String>,
+    summary: Option<String>,
+    skip_table: bool,
+    wdedit: bool,
+    references: bool,
+    one_row_per_item: bool,
+    sort_ascending: bool,
+}
+
+impl TemplateParams {
+    pub fn new() -> Self {
+         Self {
+            links:LinksType::All,
+            sort:SortMode::None,
+            section: None,
+            min_section:2,
+            row_template: None,
+            header_template: None,
+            autolist: None,
+            summary: None,
+            skip_table: false,
+            wdedit: false,
+            references: false,
+            one_row_per_item: false,
+            sort_ascending: true,
+         }
+    }
+}
+
+
 #[derive(Debug, Clone)]
 pub enum SectionType {
     None,
@@ -757,4 +819,9 @@ impl SectionType {
         }
         return Self::None;
     }
+}
+
+pub trait Renderer {
+    fn new() -> Self ;
+    fn render(&mut self,page:&ListeriaList) -> Result<String,String> ;
 }
