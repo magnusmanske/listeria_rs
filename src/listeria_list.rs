@@ -7,12 +7,12 @@ use wikibase::entity_container::EntityContainer;
 pub struct ListeriaList {
     page_params: PageParams,
     template: Template,
-    pub columns: Vec<Column>,
+    columns: Vec<Column>,
     pub params: TemplateParams,
     sparql_rows: Vec<HashMap<String, SparqlValue>>,
     sparql_first_variable: Option<String>,
     entities: EntityContainer,
-    pub results:Vec<ResultRow>,
+    results:Vec<ResultRow>,
     wikis_to_check_for_shadow_images: Vec<String>,
     shadow_files: Vec<String>,
     local_page_cache: HashMap<String,bool>,
@@ -33,6 +33,14 @@ impl ListeriaList {
             shadow_files: vec![],
             local_page_cache: HashMap::new(),
         }
+    }
+
+    pub fn results(&self) -> &Vec<ResultRow> {
+        &self.results
+    }
+
+    pub fn columns(&self) -> &Vec<Column> {
+        &self.columns
     }
 
     pub fn shadow_files(&self) -> &Vec<String> {

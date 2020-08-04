@@ -25,7 +25,7 @@ impl Renderer for RendererWikitext {
 
         match list.params.summary.as_ref().map(|s|s.as_str()) {
             Some("ITEMNUMBER") => {
-                wt += format!("\n----\n&sum; {} items.",list.results.len()).as_str();
+                wt += format!("\n----\n&sum; {} items.",list.results().len()).as_str();
             }
             _ => {}
         }
@@ -43,14 +43,14 @@ impl RendererWikitext {
         wt += &self.as_wikitext_table_header(list) ;
 
         if list.get_row_template().is_none() && !list.skip_table() {
-            if !list.results.is_empty() {
+            if !list.results().is_empty() {
                 wt += "|-\n";
             }
         }
 
         // Rows
         let rows = list
-            .results
+            .results()
             .iter()
             .filter(|row|row.section==section_id)
             .enumerate()
@@ -81,7 +81,7 @@ impl RendererWikitext {
             None => {
                 if !list.params.skip_table {
                     wt += "{| class='wikitable sortable' style='width:100%'\n" ;
-                    list.columns.iter().enumerate().for_each(|(_colnum,col)| {
+                    list.columns().iter().enumerate().for_each(|(_colnum,col)| {
                         wt += "! " ;
                         wt += &col.label ;
                         wt += "\n" ;
