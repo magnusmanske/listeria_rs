@@ -29,6 +29,9 @@ pub struct PageParams {
     pub page: String,
     pub mw_api: Api,
     pub wd_api: Api,
+    pub simulate: bool,
+    pub simulated_text: Option<String>,
+    pub simulated_sparql_results: Option<String>,
 }
 
 impl PageParams {

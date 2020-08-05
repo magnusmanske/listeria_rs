@@ -19,3 +19,7 @@ $$$$ EXPECTED_PART
 
 ----
 &sum; 2 items.
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q1"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}}]}}

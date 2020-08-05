@@ -23,3 +23,7 @@ $$$$ EXPECTED
 | [[Piraeus]]
 | {{Coord|37.943|23.646944444444|display=inline}}
 |}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q58976"}}]}}

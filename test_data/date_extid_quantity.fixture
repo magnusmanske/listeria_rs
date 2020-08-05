@@ -37,3 +37,7 @@ $$$$ EXPECTED
 | [https://viaf.org/viaf/75121530 75121530]
 | 
 |}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q42"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}}]}}

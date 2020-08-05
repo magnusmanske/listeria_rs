@@ -33,3 +33,7 @@ $$$$ EXPECTED
 | ''[[:d:Q94293196|NVSS J173625-312612]]''
 | [[astronomical radio source]]
 |}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q94293196"}}]}}

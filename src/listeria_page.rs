@@ -41,8 +41,6 @@ pub struct ListeriaPage {
     results: Vec<ResultRow>,
     data_has_changed: bool,
     lists:Vec<ListeriaList>,
-    simulate: bool,
-    simulated_text: Option<String>,
 }
 
 impl ListeriaPage {
@@ -61,6 +59,9 @@ impl ListeriaPage {
             wd_api: Api::new("https://www.wikidata.org/w/api.php")
                 .await
                 .expect("Could not connect to Wikidata API"),
+            simulate: false,
+            simulated_text: None,
+            simulated_sparql_results: None,
             } ;
         Some(Self {
             page_params: page_params,
@@ -69,14 +70,13 @@ impl ListeriaPage {
             results: vec![],
             data_has_changed: false,
             lists:vec![],
-            simulate: false,
-            simulated_text: None,
         })
     }
 
-    pub fn do_simulate(&mut self,text: Option<String>) {
-        self.simulate = true ;
-        self.simulated_text = text ;
+    pub fn do_simulate(&mut self,text: Option<String>, sparql_results:Option<String>) {
+        self.page_params.simulate = true ;
+        self.page_params.simulated_text = text ;
+        self.page_params.simulated_sparql_results = sparql_results ;
     }
 
     pub fn language(&self) -> &String {
@@ -174,7 +174,7 @@ impl ListeriaPage {
         .map(|x| (x.0.to_string(), x.1.to_string()))
         .collect();
 
-        match &self.simulated_text {
+        match &self.page_params.simulated_text {
             Some(t) => {
                 params.insert("title".to_string(),self.page_params.page.clone());
                 params.insert("text".to_string(),t.to_string());
@@ -313,7 +313,7 @@ impl ListeriaPage {
     }
 
     async fn purge_page(&self) -> Result<(), String> {
-        if self.simulate {
+        if self.page_params.simulate {
             println!("SIMULATING: purging [[{}]] on {}", &self.page_params.page,self.page_params.wiki);
             return Ok(())
         }
@@ -362,10 +362,11 @@ mod tests {
     }
 
     async fn check_fixture_file(path:PathBuf) {
+        //println!("{:?}",&path);
         let data = read_fixture_from_file ( path ) ;
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap(); // TODO reuse existing one?
         let mut page = ListeriaPage::new(&mw_api, data["PAGETITLE"].clone()).await.unwrap();
-        page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()));
+        page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap().trim().to_string();
         if data.contains_key("EXPECTED") {

@@ -32,3 +32,7 @@ $$$$ EXPECTED
 | label = [[Albert Einstein]]
 | p31 = [[human]]
 }}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}}]}}

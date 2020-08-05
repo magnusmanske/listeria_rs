@@ -38,7 +38,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
 |columns=label:name,P41
 |summary=itemnumber
 }}
-{{Wikidata list end}}".to_string()));
+{{Wikidata list end}}".to_string()),None);
 
     match page.run().await {
         Ok(_) => {}

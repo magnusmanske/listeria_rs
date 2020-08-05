@@ -162,10 +162,24 @@ impl ListeriaList {
             None => return Err(format!("No `sparql` parameter in {:?}", &self.template)),
         };
 
+        // Return simulated results
+        if self.page_params.simulate {
+            match &self.page_params.simulated_sparql_results {
+                Some(json_text) => {
+                    let j = serde_json::from_str(&json_text).unwrap();
+                    return self.parse_sparql(j);
+                }
+                None => {}
+            }
+        }
+
         let j = match self.page_params.wd_api.sparql_query(sparql).await {
             Ok(j) => j,
             Err(e) => return Err(format!("{:?}", &e)),
         };
+        if self.page_params.simulate {
+            println!("{}\n{}\n",&sparql,&j);
+        }
         self.parse_sparql(j)
     }
 
