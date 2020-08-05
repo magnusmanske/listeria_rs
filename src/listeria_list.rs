@@ -355,7 +355,7 @@ impl ListeriaList {
     pub fn get_result_cell(
         &self,
         entity_id: &String,
-        sparql_rows: &Vec<HashMap<String, SparqlValue>>,
+        sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
         col: &Column,
     ) -> ResultCell {
         let mut ret = ResultCell::new();
@@ -475,7 +475,7 @@ impl ListeriaList {
     fn get_result_row(
         &self,
         entity_id: &String,
-        _sparql_rows: &Vec<&HashMap<String, SparqlValue>>, // TODO why th
+        sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
     ) -> Option<ResultRow> {
         match self.params.links {
             LinksType::Local => {
@@ -487,7 +487,7 @@ impl ListeriaList {
         }
 
         let mut row = ResultRow::new(entity_id);
-        row.from_columns(self);
+        row.from_columns(self,sparql_rows);
         Some(row)
     }
 
@@ -507,7 +507,7 @@ impl ListeriaList {
                         })
                         .collect();
                     if !sparql_rows.is_empty() {
-                        self.get_result_row(id, &sparql_rows)
+                        self.get_result_row(id,&sparql_rows)
                     } else {
                         None
                     }
@@ -560,7 +560,7 @@ impl ListeriaList {
                 .collect();
                 new_row.set_cells(new_cells);
                 new_row
-    })
+            })
             .collect();
         Ok(())
     }
