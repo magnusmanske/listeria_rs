@@ -47,6 +47,10 @@ impl ListeriaList {
         &self.shadow_files
     }
 
+    pub fn sparql_rows(&self) -> &Vec<HashMap<String, SparqlValue>> {
+        &self.sparql_rows
+    }
+
     pub fn local_file_namespace_prefix(&self) -> String {
         self.page_params.local_file_namespace_prefix()
     }
@@ -63,27 +67,7 @@ impl ListeriaList {
             None => self.columns.push(Column::new(&"item".to_string())),
         }
 
-        self.params = TemplateParams {
-            links:LinksType::All,
-            sort: SortMode::new(template.params.get("sort")),
-            section: template.params.get("section").map(|s|s.trim().to_uppercase()),
-            min_section: template
-                            .params
-                            .get("min_section")
-                            .map(|s|
-                                s.parse::<u64>().ok().or(Some(2)).unwrap_or(2)
-                                )
-                            .unwrap_or(2),
-            row_template: template.params.get("row_template").map(|s|s.trim().to_string()),
-            header_template: template.params.get("header_template").map(|s|s.trim().to_string()),
-            autolist: template.params.get("autolist").map(|s|s.trim().to_uppercase()) ,
-            summary: template.params.get("summary").map(|s|s.trim().to_uppercase()) ,
-            skip_table: template.params.get("skip_table").is_some(),
-            one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
-            wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
-            references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
-            sort_ascending: template.params.get("sort_order").map(|s|s.trim().to_uppercase())!=Some("DESC".to_string()),
-        } ;
+        self.params = TemplateParams::new_from_params(&template) ;
 
         match template.params.get("language") {
             Some(l) =>  self.page_params.language = l.to_lowercase(),
@@ -368,10 +352,10 @@ impl ListeriaList {
         self.get_parts_p_p(statement,property)
     }
 
-    fn get_result_cell(
+    pub fn get_result_cell(
         &self,
         entity_id: &String,
-        sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
+        sparql_rows: &Vec<HashMap<String, SparqlValue>>,
         col: &Column,
     ) -> ResultCell {
         let mut ret = ResultCell::new();
@@ -491,7 +475,7 @@ impl ListeriaList {
     fn get_result_row(
         &self,
         entity_id: &String,
-        sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
+        _sparql_rows: &Vec<&HashMap<String, SparqlValue>>, // TODO why th
     ) -> Option<ResultRow> {
         match self.params.links {
             LinksType::Local => {
@@ -503,11 +487,7 @@ impl ListeriaList {
         }
 
         let mut row = ResultRow::new(entity_id);
-        row.cells = self
-            .columns
-            .iter()
-            .map(|col| self.get_result_cell(entity_id, sparql_rows, col))
-            .collect();
+        row.from_columns(self);
         Some(row)
     }
 
@@ -569,18 +549,18 @@ impl ListeriaList {
         self.results = self
             .results
             .iter()
-            .map(|row| ResultRow {
-                entity_id: row.entity_id.to_owned(),
-                cells: row
-                    .cells
-                    .iter()
-                    .map(|cell| ResultCell {
-                        parts: self.localize_item_links_in_parts(&cell.parts),
-                    })
-                    .collect(),
-                section:row.section,
-                sortkey: row.sortkey.to_owned()
-            })
+            .map(|row|{
+                let mut new_row = row.clone();
+                let new_cells = row
+                .cells()
+                .iter()
+                .map(|cell| ResultCell {
+                    parts: self.localize_item_links_in_parts(&cell.parts),
+                })
+                .collect();
+                new_row.set_cells(new_cells);
+                new_row
+    })
             .collect();
         Ok(())
     }
@@ -592,7 +572,7 @@ impl ListeriaList {
         }
         let mut files_to_check = vec![] ;
         for row in self.results.iter() {
-            for cell in &row.cells {
+            for cell in row.cells() {
                 for part in &cell.parts {
                     match part {
                         ResultCellPart::File(file) => {
@@ -644,18 +624,9 @@ impl ListeriaList {
 
         // Remove shadow files from data table
         // TODO this is less than ideal in terms of pretty code...
-        let shadow_files = &self.shadow_files;
+        let shadow_files = self.shadow_files.clone();
         self.results.iter_mut().for_each(|row|{
-            row.cells.iter_mut().for_each(|cell|{
-                cell.parts = cell.parts.iter().filter(|part|{
-                    match part {
-                        ResultCellPart::File(file) => !shadow_files.contains(file),
-                        _ => true
-                    }
-                })
-                .cloned()
-                .collect();
-            });
+            row.remove_shadow_files(&shadow_files);
         });
 
         Ok(())
@@ -671,7 +642,7 @@ impl ListeriaList {
         self.results = self.results
             .iter()
             .filter(|row|{
-                let entity = self.entities.get_entity(row.entity_id.to_owned()).unwrap();
+                let entity = self.entities.get_entity(row.entity_id().to_owned()).unwrap();
                 match entity.sitelinks() {
                     Some(sl) => {
                         sl
@@ -695,7 +666,7 @@ impl ListeriaList {
         // Cache if local pages exist
         let mut ids = vec![] ;
         self.results.iter().for_each(|row|{
-            row.cells.iter().for_each(|cell|{
+            row.cells().iter().for_each(|cell|{
                 cell.parts
                     .iter()
                     .for_each(|part|{
@@ -850,7 +821,7 @@ impl ListeriaList {
             SortMode::Property(prop) => {
                 let mut entities_to_load = vec![];
                 for row in self.results.iter() {
-                    match self.entities.get_entity(row.entity_id.to_owned()) {
+                    match self.entities.get_entity(row.entity_id().to_owned()) {
                         Some(entity) => {
                             entity
                                 .claims()
@@ -880,7 +851,7 @@ impl ListeriaList {
         // Gather items to load
         let mut entities_to_load : Vec<String> = vec![];
         for row in self.results.iter() {
-            for cell in &row.cells {
+            for cell in row.cells() {
                 self.gather_entities_and_external_properties(&cell.parts)
                     .iter()
                     .for_each(|entity_id|entities_to_load.push(entity_id.to_string()));
@@ -931,7 +902,7 @@ impl ListeriaList {
         let mut ret : Vec<usize> = self
             .results
             .iter()
-            .map(|row|{row.section})
+            .map(|row|{row.section()})
             .collect();
         ret.sort_unstable();
         ret.dedup();

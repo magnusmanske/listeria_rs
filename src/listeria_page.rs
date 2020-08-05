@@ -3,7 +3,6 @@ use regex::{Regex, RegexBuilder};
 use roxmltree;
 use serde_json::Value;
 use std::collections::HashMap;
-use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 
 /* TODO
@@ -39,10 +38,6 @@ pub struct ListeriaPage {
     pub page_params: PageParams,
     template_title_start: String,
     template: Option<Template>,
-    params: TemplateParams,//
-    sparql_rows: Vec<HashMap<String, SparqlValue>>,//
-    columns: Vec<Column>, //
-    entities: EntityContainer,//
     results: Vec<ResultRow>,
     data_has_changed: bool,
     lists:Vec<ListeriaList>,
@@ -71,10 +66,6 @@ impl ListeriaPage {
             page_params: page_params,
             template_title_start: "Wikidata list".to_string(),
             template: None,
-            params: TemplateParams::new(),
-            sparql_rows: vec![],
-            columns: vec![],
-            entities: EntityContainer::new(),
             results: vec![],
             data_has_changed: false,
             lists:vec![],
@@ -90,10 +81,6 @@ impl ListeriaPage {
 
     pub fn language(&self) -> &String {
         &self.page_params.language
-    }
-
-    pub fn get_links_type(&self) -> &LinksType {
-        &self.params.links // TODO duplicate code
     }
 
     pub async fn run(&mut self) -> Result<(), String> {

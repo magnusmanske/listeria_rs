@@ -7,19 +7,19 @@ pub mod listeria_page;
 pub mod listeria_list;
 pub mod render_wikitext;
 pub mod render_tabbed_data;
+pub mod result_row;
 
 pub use crate::listeria_page::ListeriaPage;
 pub use crate::listeria_list::ListeriaList;
 pub use crate::render_wikitext::RendererWikitext;
 pub use crate::render_tabbed_data::RendererTabbedData;
+pub use crate::result_row::ResultRow;
 use regex::{Regex, RegexBuilder};
 use roxmltree;
 use serde_json::Value;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use urlencoding;
 use wikibase::entity::EntityTrait;
-use wikibase::SnakDataType;
 use wikibase::mediawiki::api::Api;
 
 #[derive(Debug, Clone)]
@@ -531,183 +531,6 @@ impl ResultCell {
     }
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct ResultRow {
-    entity_id: String,
-    cells: Vec<ResultCell>,
-    section: usize,
-    sortkey: String,
-}
-
-impl ResultRow {
-    pub fn new(entity_id: &String) -> Self {
-        Self {
-            entity_id: entity_id.to_owned(),
-            ..Default::default()
-        }
-    }
-
-    pub fn set_sortkey(&mut self, sortkey: String) {
-        self.sortkey = sortkey;
-    }
-
-    pub fn get_sortkey_label(&self, page: &ListeriaList) -> String {
-        match page.get_entity(self.entity_id.to_owned()) {
-            Some(entity) => match entity.label_in_locale(&page.language()) {
-                Some(label) => label.to_string(),
-                None => entity.id().to_string(),
-            },
-            None => "".to_string(),
-        }
-    }
-
-    pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
-        // TODO lazy
-        let re_sr_jr = Regex::new(r", [JS]r\.$").unwrap();
-        let re_braces = Regex::new(r"\s+\(.+\)$").unwrap();
-        let re_last_first = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").unwrap();
-        match page.get_entity(self.entity_id.to_owned()) {
-            Some(entity) => match entity.label_in_locale(&page.language()) {
-                Some(label) => {
-                    let ret = re_sr_jr.replace_all(label, "");
-                    let ret = re_braces.replace_all(&ret, "");
-                    let ret = re_last_first.replace_all(&ret, "$l, $f");
-                    ret.to_string()
-                }
-                None => entity.id().to_string(),
-            },
-            None => "".to_string(),
-        }
-    }
-
-    fn no_value(&self, datatype: &SnakDataType) -> String {
-        match *datatype {
-            SnakDataType::Time => "no time",
-            SnakDataType::MonolingualText => "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
-            _ => "",
-        }
-        .to_string()
-    }
-
-    pub fn get_sortkey_prop(
-        &self,
-        prop: &String,
-        list: &ListeriaList,
-        datatype: &SnakDataType,
-    ) -> String {
-        match list.get_entity(self.entity_id.to_owned()) {
-            Some(entity) => {
-                match entity
-                    .claims()
-                    .iter()
-                    .filter(|statement| statement.property() == prop)
-                    .map(|statement| statement.main_snak())
-                    .next()
-                {
-                    Some(snak) => self.get_sortkey_from_snak(snak),
-                    None => self.no_value(datatype),
-                }
-            }
-            None => self.no_value(datatype),
-        }
-    }
-
-    fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak) -> String {
-        match snak.data_value() {
-            Some(data_value) => match data_value.value() {
-                wikibase::value::Value::Coordinate(c) => format!(
-                    "{}/{}/{}",
-                    c.latitude(),
-                    c.longitude(),
-                    c.precision().unwrap_or(0.0)
-                ),
-                wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
-                wikibase::value::Value::Entity(_entity) => "entity".to_string(),
-                wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
-                wikibase::value::Value::StringValue(s) => s.to_owned(),
-                wikibase::value::Value::Time(t) => t.time().to_owned(),
-            },
-            None => "".to_string(),
-        }
-    }
-
-    fn compare_entiry_ids(&self, other: &ResultRow) -> Ordering {
-        let id1 = self.entity_id[1..]
-            .parse::<usize>()
-            .ok()
-            .or(Some(0))
-            .unwrap_or(0);
-        let id2 = other.entity_id[1..]
-            .parse::<usize>()
-            .ok()
-            .or(Some(0))
-            .unwrap_or(0);
-        id1.partial_cmp(&id2).unwrap()
-    }
-
-    pub fn compare_to(&self, other: &ResultRow, datatype: &SnakDataType) -> Ordering {
-        match datatype {
-            SnakDataType::Quantity => {
-                let va = self.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
-                let vb = other.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
-                if va == 0 && vb == 0 {
-                    self.compare_entiry_ids(other)
-                } else {
-                    va.partial_cmp(&vb).unwrap()
-                }
-            }
-            _ => {
-                if self.sortkey == other.sortkey {
-                    self.compare_entiry_ids(other)
-                } else {
-                    self.sortkey.partial_cmp(&other.sortkey).unwrap()
-                }
-            }
-        }
-    }
-
-    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
-        let mut ret: Vec<Value> = self
-            .cells
-            .iter()
-            .enumerate()
-            .map(|(colnum, cell)| cell.as_tabbed_data(list, rownum, colnum))
-            .collect();
-        ret.insert(0, json!(self.section));
-        json!(ret)
-    }
-
-    fn cells_as_wikitext(&self, list: &ListeriaList, cells: &Vec<String>) -> String {
-        cells
-            .iter()
-            .enumerate()
-            .map(|(colnum, cell)| {
-                let column = list.column(colnum).unwrap(); // TODO
-                let key = column.obj.as_key();
-                format!("{} = {}", key, &cell)
-            })
-            .collect::<Vec<String>>()
-            .join("\n| ")
-    }
-
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
-        let cells = self
-            .cells
-            .iter()
-            .enumerate()
-            .map(|(colnum, cell)| cell.as_wikitext(list, rownum, colnum))
-            .collect::<Vec<String>>();
-        match list.get_row_template() {
-            Some(t) => format!(
-                "{{{{{}\n| {}\n}}}}",
-                t,
-                self.cells_as_wikitext(list, &cells)
-            ),
-            None => "| ".to_string() + &cells.join("\n| "),
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum LinksType {
     All,
@@ -795,6 +618,30 @@ impl TemplateParams {
             one_row_per_item: false,
             sort_ascending: true,
          }
+    }
+
+    pub fn new_from_params(template:&Template) -> Self {
+        Self {
+            links:LinksType::All,
+            sort: SortMode::new(template.params.get("sort")),
+            section: template.params.get("section").map(|s|s.trim().to_uppercase()),
+            min_section: template
+                            .params
+                            .get("min_section")
+                            .map(|s|
+                                s.parse::<u64>().ok().or(Some(2)).unwrap_or(2)
+                                )
+                            .unwrap_or(2),
+            row_template: template.params.get("row_template").map(|s|s.trim().to_string()),
+            header_template: template.params.get("header_template").map(|s|s.trim().to_string()),
+            autolist: template.params.get("autolist").map(|s|s.trim().to_uppercase()) ,
+            summary: template.params.get("summary").map(|s|s.trim().to_uppercase()) ,
+            skip_table: template.params.get("skip_table").is_some(),
+            one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
+            wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
+            references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
+            sort_ascending: template.params.get("sort_order").map(|s|s.trim().to_uppercase())!=Some("DESC".to_string()),
+        }
     }
 }
 

@@ -52,7 +52,7 @@ impl RendererWikitext {
         let rows = list
             .results()
             .iter()
-            .filter(|row|row.section==section_id)
+            .filter(|row|row.section()==section_id)
             .enumerate()
             .map(|(rownum, row)| row.as_wikitext(list, rownum))
             .collect::<Vec<String>>() ;
