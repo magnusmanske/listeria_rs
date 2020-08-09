@@ -1,0 +1,63 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q183 wd:Q142 wd:Q12345 wd:Q29 wd:Q937 wd:Q94293196 } }
+|columns=label,P735/P1545
+|section=P31
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+== human ==
+{| class='wikitable sortable' style='width:100%'
+!label
+!p735/p1545
+|-
+| [[Tim Berners-Lee]]
+| Array
+|-
+| [[Albert Einstein]]
+| Array
+|}
+
+
+== sovereign state ==
+{| class='wikitable sortable' style='width:100%'
+!label
+!p735/p1545
+|-
+| [[Germany]]
+| 
+|-
+| [[France]]
+| 
+|-
+| [[Spain]]
+| 
+|}
+
+
+== Misc ==
+{| class='wikitable sortable' style='width:100%'
+!label
+!p735/p1545
+|-
+| [[Count von Count]]
+| 
+|-
+| ''[[:d:Q94293196|NVSS J173625-312612]]''
+| 
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q183"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q142"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q29"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q94293196"}}]}}

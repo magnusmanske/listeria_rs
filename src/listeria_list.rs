@@ -778,6 +778,74 @@ impl ListeriaList {
         //self.results.iter().for_each(|row|println!("{}: {}",&row.entity_id,&row.sortkey));
         Ok(())
     }
+
+    pub fn patch_assign_sections(&mut self) -> Result<(), String> {
+        let section_property = match &self.params.section {
+            Some(p) => p ,
+            None => return Ok(()) // Nothing to do
+        } ;
+        let datatype = self.get_datatype_for_property(section_property);
+
+        // TODO check if Pxxx
+
+        let section_names = self.results
+            .iter()
+            .map(|row|row.get_sortkey_prop(section_property,self,&datatype))
+            .collect::<Vec<String>>();
+        println!("{:?}/{:?}/{:?}",&section_property,&datatype,&section_names);
+        
+        // Count names
+        let mut section_count = HashMap::new();
+        section_names
+            .iter()
+            .for_each(|name|{
+                let counter = section_count.entry(name).or_insert(0);
+                *counter += 1 ;
+            });
+        
+        // Remove low counts
+        section_count.retain(|&_name,&mut count|count>=self.params.min_section);
+
+        // Sort by section name
+        let mut valid_section_names : Vec<String> = section_count.iter().map(|(k,_v)|k.to_string()).collect();
+        valid_section_names.sort();
+        /*
+        // Sort by count, largest first
+        valid_section_names.sort_by(|a, b| {
+            let va = section_count.get(a).unwrap() ;
+            let vb = section_count.get(b).unwrap() ;
+            vb.partial_cmp(va).unwrap()
+        } );
+        */
+        let misc_id = valid_section_names.len();
+        valid_section_names.push("Misc".to_string());
+
+        // name to id
+        let name2id : HashMap<String,usize> = valid_section_names
+            .iter()
+            .enumerate()
+            .map(|(num,name)|(name.to_string(),num))
+            .collect();
+        
+            println!("{:?}",&valid_section_names);
+
+        self.results
+            .iter_mut()
+            .enumerate()
+            .for_each(|(num,row)|{
+                let section_name = match section_names.get(num) {
+                    Some(name) => name,
+                    None => return // Err(format!("patch_assign_sections: No name for {}", num)),
+                };
+                let section_id = match name2id.get(section_name) {
+                    Some(id) => *id,
+                    None => misc_id,
+                } ;
+                row.set_section(section_id);
+            });
+        
+        Ok(())
+    }
     
     pub async fn patch_results(&mut self) -> Result<(), String> {
         self.gather_and_load_items().await? ;
@@ -786,6 +854,7 @@ impl ListeriaList {
         self.patch_redlinks().await?;
         self.patch_remove_shadow_files().await?;
         self.patch_sort_results()?;
+        self.patch_assign_sections()?;
         Ok(())
     }
 
@@ -830,35 +899,45 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn gather_and_load_items_sort(&mut self) -> Result<(), String> {
-        match &self.params.sort {
-            SortMode::Property(prop) => {
-                let mut entities_to_load = vec![];
-                for row in self.results.iter() {
-                    match self.entities.get_entity(row.entity_id().to_owned()) {
-                        Some(entity) => {
-                            entity
-                                .claims()
-                                .iter()
-                                .filter(|statement|statement.property()==prop)
-                                .map(|statement|statement.main_snak())
-                                .filter(|snak|*snak.datatype()==SnakDataType::WikibaseItem)
-                                .filter_map(|snak|snak.data_value().to_owned())
-                                .map(|datavalue|datavalue.value().to_owned())
-                                .filter_map(|value|match value {
-                                    wikibase::value::Value::Entity(v) => Some(v.id().to_owned()),
-                                    _ => None
-                                })
-                                .for_each(|id|entities_to_load.push(id.to_string()));
-                        }
-                        None => {}
-                    }
+    async fn gather_and_load_items_for_property(&mut self,prop:&String) -> Result<(),String> {
+        let mut entities_to_load = vec![];
+        for row in self.results.iter() {
+            match self.entities.get_entity(row.entity_id().to_owned()) {
+                Some(entity) => {
+                    entity
+                        .claims()
+                        .iter()
+                        .filter(|statement|statement.property()==prop)
+                        .map(|statement|statement.main_snak())
+                        .filter(|snak|*snak.datatype()==SnakDataType::WikibaseItem)
+                        .filter_map(|snak|snak.data_value().to_owned())
+                        .map(|datavalue|datavalue.value().to_owned())
+                        .filter_map(|value|match value {
+                            wikibase::value::Value::Entity(v) => Some(v.id().to_owned()),
+                            _ => None
+                        })
+                        .for_each(|id|entities_to_load.push(id.to_string()));
                 }
-                self.load_items(entities_to_load).await?;
+                None => {}
             }
-            _ => {}
         }
-        Ok(())
+        self.load_items(entities_to_load).await
+    }
+
+    async fn gather_and_load_items_section(&mut self) -> Result<(),String> {
+        let prop = match &self.params.section {
+            Some(p) => p.clone() ,
+            None => return Ok(()) // Nothing to do
+        } ;
+        self.gather_and_load_items_for_property(&prop).await
+    }
+
+    async fn gather_and_load_items_sort(&mut self) -> Result<(), String> {
+        let prop = match &self.params.sort {
+            SortMode::Property(prop) => prop.clone(),
+            _ => return Ok(())
+        };
+        self.gather_and_load_items_for_property(&prop).await
     }
 
     async fn gather_and_load_items(&mut self) -> Result<(), String> {
@@ -877,8 +956,15 @@ impl ListeriaList {
             }
             _ => {}
         }
+        match &self.params.section {
+            Some(prop) => {
+                entities_to_load.push(prop.to_owned());
+            }
+            _ => {}
+        }
         self.load_items(entities_to_load).await?;
         self.gather_and_load_items_sort().await?;
+        self.gather_and_load_items_section().await?;
         Ok(())
     }
 

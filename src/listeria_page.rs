@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use wikibase::mediawiki::api::Api;
 
 /* TODO
-- Sort by P/P, P/Q/P
+- Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
 - Sectioning
 - Show only preffered values (eg P41 in Q43175)
 - Main namespace block
@@ -15,21 +15,22 @@ use wikibase::mediawiki::api::Api;
 - actually edit the page
 
 TEMPLATE PARAMETERS
-sparql DONE
-columns DONE
-sort DONE
 section IMPLEMENT
 min_section IMPLEMENT
 autolist IMPLEMENT
-language done?
-thumb DONE via thumbnail_size()
 links IMPLEMENT fully
-row_template DONE
-header_template DONE
-skip_table DONE
 wdedit IMPLEMENT
 references IMPLEMENT
 freq IGNORED
+
+sparql DONE
+columns DONE
+sort DONE
+language done?
+thumb DONE via thumbnail_size()
+row_template DONE
+header_template DONE
+skip_table DONE
 summary DONE
 */
 
@@ -493,6 +494,11 @@ mod tests {
     #[tokio::test]
     async fn p_q_p() {
         check_fixture_file(PathBuf::from("test_data/p_q_p.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn sections() {
+        check_fixture_file(PathBuf::from("test_data/sections.fixture")).await;
     }
 
     /*
