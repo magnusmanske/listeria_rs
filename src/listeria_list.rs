@@ -899,7 +899,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn gather_and_load_items_for_property(&mut self,prop:&String) -> Result<(),String> {
+    fn gather_items_for_property(&mut self,prop:&String) -> Result<Vec<String>,String> {
         let mut entities_to_load = vec![];
         for row in self.results.iter() {
             match self.entities.get_entity(row.entity_id().to_owned()) {
@@ -921,23 +921,23 @@ impl ListeriaList {
                 None => {}
             }
         }
-        self.load_items(entities_to_load).await
+        Ok(entities_to_load)
     }
 
-    async fn gather_and_load_items_section(&mut self) -> Result<(),String> {
+    fn gather_items_section(&mut self) -> Result<Vec<String>,String> {
         let prop = match &self.params.section {
             Some(p) => p.clone() ,
-            None => return Ok(()) // Nothing to do
+            None => return Ok(vec![]) // Nothing to do
         } ;
-        self.gather_and_load_items_for_property(&prop).await
+        self.gather_items_for_property(&prop)
     }
 
-    async fn gather_and_load_items_sort(&mut self) -> Result<(), String> {
+    fn gather_items_sort(&mut self) -> Result<Vec<String>, String> {
         let prop = match &self.params.sort {
             SortMode::Property(prop) => prop.clone(),
-            _ => return Ok(())
+            _ => return Ok(vec![])
         };
-        self.gather_and_load_items_for_property(&prop).await
+        self.gather_items_for_property(&prop)
     }
 
     async fn gather_and_load_items(&mut self) -> Result<(), String> {
@@ -963,9 +963,11 @@ impl ListeriaList {
             _ => {}
         }
         self.load_items(entities_to_load).await?;
-        self.gather_and_load_items_sort().await?;
-        self.gather_and_load_items_section().await?;
-        Ok(())
+
+        entities_to_load = self.gather_items_sort()?;
+        let mut v2 = self.gather_items_section()? ;
+        entities_to_load.append(&mut v2);
+        self.load_items(entities_to_load).await
     }
 
 
