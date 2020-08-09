@@ -38,7 +38,13 @@ impl RendererWikitext {
     fn as_wikitext_section(&self,list:&ListeriaList,section_id:usize) -> String {
         let mut wt = String::new() ;
 
-        // TODO: section header
+        match list.section_name(section_id) {
+            Some(name) => {
+                let header = format!("\n\n\n== {} ==\n",name) ;
+                wt += &header;
+            }
+            None => {}
+        }
 
         wt += &self.as_wikitext_table_header(list) ;
 

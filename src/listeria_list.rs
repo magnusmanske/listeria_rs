@@ -16,6 +16,7 @@ pub struct ListeriaList {
     wikis_to_check_for_shadow_images: Vec<String>,
     shadow_files: Vec<String>,
     local_page_cache: HashMap<String,bool>,
+    section_id_to_name: HashMap<usize,String>,
 }
 
 impl ListeriaList {
@@ -32,6 +33,7 @@ impl ListeriaList {
             wikis_to_check_for_shadow_images: vec!["enwiki".to_string()],
             shadow_files: vec![],
             local_page_cache: HashMap::new(),
+            section_id_to_name: HashMap::new(),
         }
     }
 
@@ -53,6 +55,10 @@ impl ListeriaList {
 
     pub fn local_file_namespace_prefix(&self) -> String {
         self.page_params.local_file_namespace_prefix()
+    }
+
+    pub fn section_name(&self,id:usize) -> Option<&String> {
+        self.section_id_to_name.get(&id)
     }
 
     pub fn process_template(&mut self) -> Result<(), String> {
@@ -792,7 +798,7 @@ impl ListeriaList {
             .iter()
             .map(|row|row.get_sortkey_prop(section_property,self,&datatype))
             .collect::<Vec<String>>();
-        println!("{:?}/{:?}/{:?}",&section_property,&datatype,&section_names);
+        //println!("{:?}/{:?}/{:?}",&section_property,&datatype,&section_names);
         
         // Count names
         let mut section_count = HashMap::new();
@@ -820,6 +826,8 @@ impl ListeriaList {
         let misc_id = valid_section_names.len();
         valid_section_names.push("Misc".to_string());
 
+        // TODO skip if no/one section?
+
         // name to id
         let name2id : HashMap<String,usize> = valid_section_names
             .iter()
@@ -827,7 +835,12 @@ impl ListeriaList {
             .map(|(num,name)|(name.to_string(),num))
             .collect();
         
-            println!("{:?}",&valid_section_names);
+        self.section_id_to_name = name2id
+            .iter()
+            .map(|x|(x.1.to_owned(),x.0.to_owned()))
+            .collect();
+        
+        // println!("{:?}",&self.section_id_to_name);
 
         self.results
             .iter_mut()

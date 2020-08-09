@@ -10,7 +10,7 @@ $$$$ WIKITEXT
 
 {{Wikidata list
 |sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q183 wd:Q142 wd:Q12345 wd:Q29 wd:Q937 wd:Q94293196 } }
-|columns=label,P735/P1545
+|columns=label,P569
 |section=P31
 }}
 {{Wikidata list end}}
@@ -19,21 +19,21 @@ $$$$ EXPECTED
 
 == human ==
 {| class='wikitable sortable' style='width:100%'
-!label
-!p735/p1545
+! label
+! date of birth
 |-
 | [[Tim Berners-Lee]]
-| Array
+| 1955-06-08
 |-
 | [[Albert Einstein]]
-| Array
+| 1879-03-14
 |}
 
 
 == sovereign state ==
 {| class='wikitable sortable' style='width:100%'
-!label
-!p735/p1545
+! label
+! date of birth
 |-
 | [[Germany]]
 | 
@@ -48,8 +48,8 @@ $$$$ EXPECTED
 
 == Misc ==
 {| class='wikitable sortable' style='width:100%'
-!label
-!p735/p1545
+! label
+! date of birth
 |-
 | [[Count von Count]]
 | 
