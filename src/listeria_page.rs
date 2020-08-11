@@ -1,4 +1,5 @@
 use crate::*;
+use std::sync::Arc;
 use regex::{Regex, RegexBuilder};
 use roxmltree;
 use serde_json::Value;
@@ -7,7 +8,6 @@ use wikibase::mediawiki::api::Api;
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
-- Sectioning
 - Show only preffered values (eg P41 in Q43175)
 - Main namespace block
 - coords commonswiki CHECK
@@ -15,14 +15,14 @@ use wikibase::mediawiki::api::Api;
 - actually edit the page
 
 TEMPLATE PARAMETERS
-section IMPLEMENT
-min_section IMPLEMENT
 autolist IMPLEMENT
 links IMPLEMENT fully
 wdedit IMPLEMENT
 references IMPLEMENT
 freq IGNORED
 
+min_section DONE
+section DONE
 sparql DONE
 columns DONE
 sort DONE
@@ -45,7 +45,7 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub async fn new(mw_api: &Api, page: String) -> Option<Self> {
+    pub async fn new(mw_api: Arc<Api>, page: String, wb_api:Arc<Api>) -> Option<Self> {
         let page_params = PageParams {
             wiki: mw_api
                 .get_site_info_string("general", "wikiid")
@@ -57,9 +57,7 @@ impl ListeriaPage {
                 .ok()?
                 .to_string(),
             mw_api: mw_api.clone(),
-            wd_api: Api::new("https://www.wikidata.org/w/api.php")
-                .await
-                .expect("Could not connect to Wikidata API"),
+            wb_api: wb_api.clone(),
             simulate: false,
             simulated_text: None,
             simulated_sparql_results: None,
@@ -366,7 +364,10 @@ mod tests {
         //println!("{:?}",&path);
         let data = read_fixture_from_file ( path ) ;
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap(); // TODO reuse existing one?
-        let mut page = ListeriaPage::new(&mw_api, data["PAGETITLE"].clone()).await.unwrap();
+        let wb_api = Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
+        let mw_api = Arc::new(mw_api);
+        let wb_api = Arc::new(wb_api);
+        let mut page = ListeriaPage::new(mw_api, data["PAGETITLE"].clone(),wb_api).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap().trim().to_string();

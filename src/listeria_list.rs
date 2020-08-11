@@ -179,7 +179,7 @@ impl ListeriaList {
             }
         }
 
-        let j = match self.page_params.wd_api.sparql_query(sparql).await {
+        let j = match self.page_params.wb_api.sparql_query(sparql).await {
             Ok(j) => j,
             Err(e) => return Err(format!("{:?}", &e)),
         };
@@ -245,7 +245,7 @@ impl ListeriaList {
         if ids.is_empty() {
             return Err(format!("No items to show"));
         }
-        match self.entities.load_entities(&self.page_params.wd_api, &ids).await {
+        match self.entities.load_entities(&self.page_params.wb_api, &ids).await {
             Ok(_) => {}
             Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
         }
@@ -905,7 +905,7 @@ impl ListeriaList {
     async fn load_items(&mut self, mut entities_to_load:Vec<String>) -> Result<(), String> {
         entities_to_load.sort() ;
         entities_to_load.dedup();
-        match self.entities.load_entities(&self.page_params.wd_api, &entities_to_load).await {
+        match self.entities.load_entities(&self.page_params.wb_api, &entities_to_load).await {
             Ok(_) => {}
             Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
         }

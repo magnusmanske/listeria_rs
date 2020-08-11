@@ -1,6 +1,7 @@
 extern crate config;
 extern crate serde_json;
 
+use std::sync::Arc;
 use config::{Config, File};
 use listeria;
 use crate::listeria::listeria_page::ListeriaPage;
@@ -16,6 +17,11 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         .login(user.to_owned(), pass.to_owned())
         .await
         .expect("Could not log in");
+    let mw_api = Arc::new(mw_api);
+    
+    let wb_api = Arc::new(wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
+            .await
+            .expect("Could not connect to MW API"));
 
     /*
     let mut commons_api =
@@ -28,7 +34,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         .expect("Could not log in");
     */
 
-    let mut page = match ListeriaPage::new(&mw_api, page_title.into()).await {
+    let mut page = match ListeriaPage::new(mw_api, page_title.into(),wb_api).await {
         Some(p) => p,
         None => panic!("Could not open/parse page '{}'", &page_title),
     };

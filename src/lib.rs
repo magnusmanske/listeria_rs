@@ -14,6 +14,7 @@ pub use crate::listeria_list::ListeriaList;
 pub use crate::render_wikitext::RendererWikitext;
 pub use crate::render_tabbed_data::RendererTabbedData;
 pub use crate::result_row::ResultRow;
+use std::sync::Arc;
 use regex::{Regex, RegexBuilder};
 use roxmltree;
 use serde_json::Value;
@@ -27,8 +28,8 @@ pub struct PageParams {
     pub language: String,
     pub wiki: String,
     pub page: String,
-    pub mw_api: Api,
-    pub wd_api: Api,
+    pub mw_api: Arc<Api>,
+    pub wb_api: Arc<Api>,
     pub simulate: bool,
     pub simulated_text: Option<String>,
     pub simulated_sparql_results: Option<String>,
