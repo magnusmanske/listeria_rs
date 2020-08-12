@@ -8,11 +8,11 @@ use wikibase::mediawiki::api::Api;
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
-- Show only preffered values (eg P41 in Q43175)
 - Main namespace block
 - coords commonswiki CHECK
 - coords dewiki IMPLEMENT region
 - api parameter to override default
+- template_title_start by wiki?
 - actually edit the page
 
 TEMPLATE PARAMETERS
@@ -20,7 +20,7 @@ autolist IMPLEMENT
 links IMPLEMENT fully
 wdedit IMPLEMENT
 references IMPLEMENT
-freq IGNORED
+freq IGNORED => bot manager
 
 min_section DONE
 section DONE
@@ -364,12 +364,28 @@ mod tests {
 
     async fn check_fixture_file(path:PathBuf) {
         //println!("{:?}",&path);
-        let data = read_fixture_from_file ( path ) ;
+        let data = read_fixture_from_file ( path.clone() ) ;
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap(); // TODO reuse existing one?
         //let wb_api = Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
         let mw_api = Arc::new(mw_api);
         //let wb_api = Arc::new(wb_api);
-        let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
+        let mut j = json!({
+            "apis":{
+                "wikidata" : "https://www.wikidata.org/w/api.php",
+                "commons" : "https://commons.wikimedia.org/w/api.php"
+            } ,
+            "default_api":"wikidata",
+            "prefer_prefixed":true,
+            "namespace_blocks":{
+                "dewiki":[0],
+                "enwiki":[0],
+                "frwiki":[0]
+            }
+        });
+        if path.to_str().unwrap() == "test_data/shadow_images.fixture" { // HACKISH
+            j["prefer_prefixed"] = json!(false) ;
+        }
+        let config = Arc::new(Configuration::new_from_json(j).unwrap());
         let mut page = ListeriaPage::new(config,mw_api, data["PAGETITLE"].clone()).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
@@ -503,6 +519,11 @@ mod tests {
     #[tokio::test]
     async fn sections() {
         check_fixture_file(PathBuf::from("test_data/sections.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn preferred_rank() {
+        check_fixture_file(PathBuf::from("test_data/preferred_rank.fixture")).await;
     }
 
     /*

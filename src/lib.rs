@@ -46,6 +46,7 @@ pub struct Configuration {
     wb_apis: HashMap<String,String>,
     namespace_blocks: HashMap<String,NamespaceGroup>,
     default_api:String,
+    prefer_prefixed: bool,
 }
 
 impl Configuration {
@@ -109,7 +110,16 @@ impl Configuration {
             None => {}
         }
 
+        match j["prefer_prefixed"].as_bool() {
+            Some(b) => ret.prefer_prefixed = b,
+            None => {}
+        }
+
         Ok(ret)
+    }
+
+    pub fn prefer_prefixed(&self) -> bool {
+        self.prefer_prefixed
     }
 
     pub async fn get_default_wbapi(&self) -> Api {

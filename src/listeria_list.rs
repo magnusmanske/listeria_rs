@@ -372,6 +372,24 @@ impl ListeriaList {
         self.get_parts_p_p(statement,property)
     }
 
+    pub fn get_filtered_claims(&self,e:&wikibase::entity::Entity,property:&str) -> Vec<wikibase::statement::Statement> {
+        let mut ret : Vec<wikibase::statement::Statement> = e
+            .claims_with_property(property)
+            .iter()
+            .map(|x|(*x).clone())
+            .collect();
+
+        if self.page_params.config.prefer_prefixed {
+            let has_preferred = ret.iter().any(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
+            if has_preferred {
+                ret.retain(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
+            }
+            ret
+        } else {
+            ret
+        }
+    }
+
     pub fn get_result_cell(
         &self,
         entity_id: &String,
@@ -407,7 +425,8 @@ impl ListeriaList {
             }
             ColumnType::Property(property) => match entity {
                 Some(e) => {
-                    e.claims_with_property(property.to_owned())
+                    self.get_filtered_claims(&e,property)
+                    //e.claims_with_property(property.to_owned())
                         .iter()
                         .for_each(|statement| {
                             ret.parts
@@ -418,7 +437,8 @@ impl ListeriaList {
             },
             ColumnType::PropertyQualifier((p1, p2)) => match entity {
                 Some(e) => {
-                    e.claims_with_property(p1.to_owned())
+                    self.get_filtered_claims(&e,p1)
+                    //e.claims_with_property(p1.to_owned())
                         .iter()
                         .for_each(|statement| {
                             self.get_parts_p_p(statement,p2)
@@ -430,7 +450,8 @@ impl ListeriaList {
             },
             ColumnType::PropertyQualifierValue((p1, q1, p2)) => match entity {
                 Some(e) => {
-                    e.claims_with_property(p1.to_owned())
+                    self.get_filtered_claims(&e,p1)
+                    //e.claims_with_property(p1.to_owned())
                         .iter()
                         .for_each(|statement| {
                             self.get_parts_p_q_p(statement,q1,p2)
@@ -917,8 +938,8 @@ impl ListeriaList {
         for row in self.results.iter() {
             match self.entities.get_entity(row.entity_id().to_owned()) {
                 Some(entity) => {
-                    entity
-                        .claims()
+                    self.get_filtered_claims(&entity,prop)
+                    //entity.claims()
                         .iter()
                         .filter(|statement|statement.property()==prop)
                         .map(|statement|statement.main_snak())

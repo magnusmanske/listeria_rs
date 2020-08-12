@@ -115,8 +115,7 @@ impl ResultRow {
     ) -> String {
         match list.get_entity(self.entity_id.to_owned()) {
             Some(entity) => {
-                match entity
-                    .claims()
+                match list.get_filtered_claims(&entity,prop) // entity.claims()
                     .iter()
                     .filter(|statement| statement.property() == prop)
                     .map(|statement| statement.main_snak())

@@ -1,0 +1,29 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q42 } }
+|columns=label,P735
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! label
+! given name
+|-
+| [[Douglas Adams]]
+| [[Douglas (given name)|Douglas]]
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q42"}}]}}
