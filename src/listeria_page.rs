@@ -8,7 +8,6 @@ use wikibase::mediawiki::api::Api;
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
-- Main namespace block
 - coords commonswiki CHECK
 - coords dewiki IMPLEMENT region
 - api parameter to override default
@@ -234,11 +233,11 @@ impl ListeriaPage {
         }
     }
 
-    pub fn as_wikitext(&self) -> Result<String,String> {
-        let mut ret = String::new();
+    pub fn as_wikitext(&self) -> Result<Vec<String>,String> {
+        let mut ret : Vec<String> = vec!();
         for list in &self.lists {
             let mut renderer = RendererWikitext::new();
-            ret += &renderer.render(&list)?;
+            ret.push(renderer.render(&list)?);
         }
         Ok(ret)
     }
@@ -389,7 +388,9 @@ mod tests {
         let mut page = ListeriaPage::new(config,mw_api, data["PAGETITLE"].clone()).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
-        let wt = page.as_wikitext().unwrap().trim().to_string();
+        let wt = page.as_wikitext().unwrap();
+        let wt = wt.join("\n----\n");
+        let wt = wt.trim().to_string();
         if data.contains_key("EXPECTED") {
             assert_eq!(wt,data["EXPECTED"]);
         }

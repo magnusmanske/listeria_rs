@@ -56,7 +56,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         Err(e) => panic!("{}", e),
     }
     let wt = page.as_wikitext().unwrap();
-    println!("{}",wt);
+    println!("{:?}",wt);
     //let j = page.as_tabbed_data().unwrap();
     //page.write_tabbed_data(j, &mut commons_api).unwrap();
 
