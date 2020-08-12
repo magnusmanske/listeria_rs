@@ -379,7 +379,7 @@ impl ListeriaList {
             .map(|x|(*x).clone())
             .collect();
 
-        if self.page_params.config.prefer_prefixed {
+        if self.page_params.config.prefer_preferred {
             let has_preferred = ret.iter().any(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
             if has_preferred {
                 ret.retain(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);

@@ -4,6 +4,7 @@
         "commons" : "https://commons.wikimedia.org/w/api.php"
     } ,
     "default_api":"wikidata",
+    "prefer_preferred":true,
     "namespace_blocks":{
         "dewiki":[0],
         "enwiki":[0],

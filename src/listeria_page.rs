@@ -375,7 +375,7 @@ mod tests {
                 "commons" : "https://commons.wikimedia.org/w/api.php"
             } ,
             "default_api":"wikidata",
-            "prefer_prefixed":true,
+            "prefer_preferred":true,
             "namespace_blocks":{
                 "dewiki":[0],
                 "enwiki":[0],
@@ -383,7 +383,7 @@ mod tests {
             }
         });
         if path.to_str().unwrap() == "test_data/shadow_images.fixture" { // HACKISH
-            j["prefer_prefixed"] = json!(false) ;
+            j["prefer_preferred"] = json!(false) ;
         }
         let config = Arc::new(Configuration::new_from_json(j).unwrap());
         let mut page = ListeriaPage::new(config,mw_api, data["PAGETITLE"].clone()).await.unwrap();
