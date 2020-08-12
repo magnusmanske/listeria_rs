@@ -5,10 +5,13 @@ use std::sync::Arc;
 use config::{Config, File};
 use listeria;
 use crate::listeria::listeria_page::ListeriaPage;
+use crate::listeria::Configuration;
 
 async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
     let user = settings.get_str("user.user").expect("No user name");
     let pass = settings.get_str("user.pass").expect("No user pass");
+
+    let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
 
     let mut mw_api = wikibase::mediawiki::api::Api::new(api_url)
         .await
@@ -19,9 +22,11 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         .expect("Could not log in");
     let mw_api = Arc::new(mw_api);
     
+    /*
     let wb_api = Arc::new(wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
             .await
             .expect("Could not connect to MW API"));
+    */
 
     /*
     let mut commons_api =
@@ -34,7 +39,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         .expect("Could not log in");
     */
 
-    let mut page = match ListeriaPage::new(mw_api, page_title.into(),wb_api).await {
+    let mut page = match ListeriaPage::new(config, mw_api, page_title.into()).await {
         Some(p) => p,
         None => panic!("Could not open/parse page '{}'", &page_title),
     };

@@ -104,13 +104,20 @@ impl Configuration {
                         }
                         None => {}
                     }
-                    return Err(format!("Unrecognized value for namespace_blocks[{}]:{}",k,v));
                 }
             }
             None => {}
         }
 
         Ok(ret)
+    }
+
+    pub async fn get_default_wbapi(&self) -> Api {
+        let url = match self.wb_apis.get(&self.default_api) {
+            Some(url) => url.to_string(),
+            None => "https://www.wikidata.org/w/api.php".to_string()
+        };
+        wikibase::mediawiki::api::Api::new(&url).await.unwrap()
     }
 }
 
@@ -120,17 +127,17 @@ pub struct PageParams {
     pub wiki: String,
     pub page: String,
     pub mw_api: Arc<Api>,
-    pub wb_api: Arc<Api>,
+    pub wb_api: Api,
     pub simulate: bool,
     pub simulated_text: Option<String>,
     pub simulated_sparql_results: Option<String>,
+    pub config: Arc<Configuration>,
 }
 
 impl PageParams {
     pub fn local_file_namespace_prefix(&self) -> String {
         "File".to_string() // TODO
     }
-
 }
 
 #[derive(Debug, Clone, PartialEq)]

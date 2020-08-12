@@ -12,6 +12,7 @@ use wikibase::mediawiki::api::Api;
 - Main namespace block
 - coords commonswiki CHECK
 - coords dewiki IMPLEMENT region
+- api parameter to override default
 - actually edit the page
 
 TEMPLATE PARAMETERS
@@ -45,7 +46,7 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub async fn new(mw_api: Arc<Api>, page: String, wb_api:Arc<Api>) -> Option<Self> {
+    pub async fn new(config: Arc<Configuration>, mw_api: Arc<Api>, page: String) -> Option<Self> {
         let page_params = PageParams {
             wiki: mw_api
                 .get_site_info_string("general", "wikiid")
@@ -57,10 +58,11 @@ impl ListeriaPage {
                 .ok()?
                 .to_string(),
             mw_api: mw_api.clone(),
-            wb_api: wb_api.clone(),
+            wb_api: config.get_default_wbapi().await,
             simulate: false,
             simulated_text: None,
             simulated_sparql_results: None,
+            config: config.clone(),
             } ;
         Some(Self {
             page_params: page_params,
@@ -364,10 +366,11 @@ mod tests {
         //println!("{:?}",&path);
         let data = read_fixture_from_file ( path ) ;
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap(); // TODO reuse existing one?
-        let wb_api = Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
+        //let wb_api = Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
         let mw_api = Arc::new(mw_api);
-        let wb_api = Arc::new(wb_api);
-        let mut page = ListeriaPage::new(mw_api, data["PAGETITLE"].clone(),wb_api).await.unwrap();
+        //let wb_api = Arc::new(wb_api);
+        let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
+        let mut page = ListeriaPage::new(config,mw_api, data["PAGETITLE"].clone()).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap().trim().to_string();
