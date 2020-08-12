@@ -389,7 +389,7 @@ mod tests {
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap();
-        let wt = wt.join("\n----\n");
+        let wt = wt.join("\n\n----\n\n");
         let wt = wt.trim().to_string();
         if data.contains_key("EXPECTED") {
             assert_eq!(wt,data["EXPECTED"]);
@@ -522,6 +522,11 @@ mod tests {
     #[tokio::test]
     async fn preferred_rank() {
         check_fixture_file(PathBuf::from("test_data/preferred_rank.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn multiple_lists() {
+        check_fixture_file(PathBuf::from("test_data/multiple_lists.fixture")).await;
     }
 
     /*
