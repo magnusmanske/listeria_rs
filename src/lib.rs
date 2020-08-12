@@ -29,14 +29,14 @@ use wikibase::mediawiki::api::Api;
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
     All, // All namespaces forbidden
-    List(Vec<u64>), // List of forbidden namespaces
+    List(Vec<i64>), // List of forbidden namespaces
 }
 
 impl NamespaceGroup {
-    pub fn can_edit_namespace(&self,nsid: u64) -> bool {
+    pub fn can_edit_namespace(&self,nsid: i64) -> bool {
         match self {
             Self::All => false ,
-            Self::List(list) => !list.contains(&nsid)
+            Self::List(list) => nsid>=0 && !list.contains(&nsid)
         }
     }
 }
@@ -55,6 +55,13 @@ impl Configuration {
         let reader = BufReader::new(file);
         let j = serde_json::from_reader(reader).map_err(|e|format!("{:?}",e))?;
         Self::new_from_json(j)
+    }
+
+    pub fn can_edit_namespace(&self, wiki:&String, nsid:i64) -> bool {
+        match self.namespace_blocks.get(wiki) {
+            Some(nsg) => nsg.can_edit_namespace(nsid),
+            None => true // Default
+        }
     }
 
     pub fn new_from_json ( j:Value ) -> Result<Self,String> {
@@ -100,7 +107,7 @@ impl Configuration {
                     // Check for array of integers
                     match v.as_array() {
                         Some(a) => {
-                            let nsids : Vec<u64> = a.iter().filter_map(|v|v.as_u64()).collect();
+                            let nsids : Vec<i64> = a.iter().filter_map(|v|v.as_u64()).map(|x|x as i64).collect();
                             ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::List(nsids));
                         }
                         None => {}

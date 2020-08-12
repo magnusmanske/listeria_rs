@@ -84,7 +84,17 @@ impl ListeriaPage {
         &self.page_params.language
     }
 
+    pub fn check_namespace(&self) -> Result<(),String> {
+        let title = wikibase::mediawiki::title::Title::new_from_full(&self.page_params.page,&self.page_params.mw_api);
+        if self.page_params.config.can_edit_namespace(&self.page_params.wiki,title.namespace_id()) {
+            Ok(())
+        } else {
+            Err(format!("Namespace {} not allowed for edit on {}",title.namespace_id(),&self.page_params.wiki))
+        }
+    }
+
     pub async fn run(&mut self) -> Result<(), String> {
+        self.check_namespace()?;
         self.lists.clear();
         let templates = self.load_page().await?;
         for template in templates {
@@ -365,23 +375,13 @@ mod tests {
     async fn check_fixture_file(path:PathBuf) {
         //println!("{:?}",&path);
         let data = read_fixture_from_file ( path.clone() ) ;
-        let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap(); // TODO reuse existing one?
-        //let wb_api = Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
+        let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
         let mw_api = Arc::new(mw_api);
-        //let wb_api = Arc::new(wb_api);
-        let mut j = json!({
-            "apis":{
-                "wikidata" : "https://www.wikidata.org/w/api.php",
-                "commons" : "https://commons.wikimedia.org/w/api.php"
-            } ,
-            "default_api":"wikidata",
-            "prefer_preferred":true,
-            "namespace_blocks":{
-                "dewiki":[0],
-                "enwiki":[0],
-                "frwiki":[0]
-            }
-        });
+
+        let file = File::open("config.json").unwrap();
+        let reader = BufReader::new(file);
+        let mut j : Value = serde_json::from_reader(reader).unwrap();
+        j["namespace_blocks"] = json!({}); // Allow all namespaces, everywhere
         if path.to_str().unwrap() == "test_data/shadow_images.fixture" { // HACKISH
             j["prefer_preferred"] = json!(false) ;
         }
@@ -391,12 +391,9 @@ mod tests {
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap().trim().to_string();
         if data.contains_key("EXPECTED") {
-            //println!("Checking EXPECTED");
-            //println!("{}",&wt);
             assert_eq!(wt,data["EXPECTED"]);
         }
         if data.contains_key("EXPECTED_PART") {
-            //println!("Checking EXPECTED_PART");
             assert!(wt.contains(&data["EXPECTED_PART"]));
         }
     }
