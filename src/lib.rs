@@ -14,6 +14,9 @@ pub use crate::listeria_list::ListeriaList;
 pub use crate::render_wikitext::RendererWikitext;
 pub use crate::render_tabbed_data::RendererTabbedData;
 pub use crate::result_row::ResultRow;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
 use std::sync::Arc;
 use regex::{Regex, RegexBuilder};
 use roxmltree;
@@ -22,6 +25,94 @@ use std::collections::HashMap;
 use urlencoding;
 use wikibase::entity::EntityTrait;
 use wikibase::mediawiki::api::Api;
+
+#[derive(Debug, Clone)]
+pub enum NamespaceGroup {
+    All, // All namespaces forbidden
+    List(Vec<u64>), // List of forbidden namespaces
+}
+
+impl NamespaceGroup {
+    pub fn can_edit_namespace(&self,nsid: u64) -> bool {
+        match self {
+            Self::All => false ,
+            Self::List(list) => !list.contains(&nsid)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Configuration {
+    wb_apis: HashMap<String,String>,
+    namespace_blocks: HashMap<String,NamespaceGroup>,
+    default_api:String,
+}
+
+impl Configuration {
+    pub fn new_from_file<P: AsRef<Path>>(path: P) -> Result<Self,String> {
+        let file = File::open(path).map_err(|e|format!("{:?}",e))?;
+        let reader = BufReader::new(file);
+        let j = serde_json::from_reader(reader).map_err(|e|format!("{:?}",e))?;
+        Self::new_from_json(j)
+    }
+
+    pub fn new_from_json ( j:Value ) -> Result<Self,String> {
+        let mut ret : Self = Default::default();
+
+        match j["default_api"].as_str() {
+            Some(s) => ret.default_api = s.to_string(),
+            None => {}
+        }
+
+        // valid WikiBase APIs
+        match j["apis"].as_object() {
+            Some(o) => {
+                for (k,v) in o.iter() {
+                    match (k.as_str(),v.as_str()) {
+                        (k,Some(v)) => {
+                            ret.wb_apis.insert(k.to_string(),v.to_string());
+                        }
+                        _ => {}
+                    }
+                    
+                }
+            }
+            None => {}
+        }
+
+        // Namespace blocks on wikis
+        match j["namespace_blocks"].as_object() {
+            Some(o) => {
+                for (k,v) in o.iter() {
+                    // Check for string value ("*")
+                    match v.as_str() {
+                        Some(s) => {
+                            if s == "*" { // All namespaces
+                                ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::All);
+                            } else {
+                                return Err(format!("Unrecognized string value for namespace_blocks[{}]:{}",k,v));
+                            }
+                        }
+                        None => {}
+                    }
+
+                    // Check for array of integers
+                    match v.as_array() {
+                        Some(a) => {
+                            let nsids : Vec<u64> = a.iter().filter_map(|v|v.as_u64()).collect();
+                            ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::List(nsids));
+                        }
+                        None => {}
+                    }
+                    return Err(format!("Unrecognized value for namespace_blocks[{}]:{}",k,v));
+                }
+            }
+            None => {}
+        }
+
+        Ok(ret)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct PageParams {
