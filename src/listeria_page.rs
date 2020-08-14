@@ -43,16 +43,14 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub async fn new(config: Arc<Configuration>, mw_api: Arc<Api>, page: String) -> Option<Self> {
+    pub async fn new(config: Arc<Configuration>, mw_api: Arc<Api>, page: String) -> Result<Self,String> {
         let page_params = PageParams {
             wiki: mw_api
-                .get_site_info_string("general", "wikiid")
-                .expect("No wikiid in site info")
+                .get_site_info_string("general", "wikiid")?
                 .to_string(),
             page: page,
             language: mw_api
-                .get_site_info_string("general", "lang")
-                .ok()?
+                .get_site_info_string("general", "lang")?
                 .to_string(),
             mw_api: mw_api.clone(),
             wb_api: config.get_default_wbapi().await,
@@ -61,9 +59,10 @@ impl ListeriaPage {
             simulated_sparql_results: None,
             config: config.clone(),
             } ;
-        Some(Self {
+        let template_title_start = page_params.get_local_template_title().await?;
+        Ok(Self {
             page_params: page_params,
-            template_title_start: "Wikidata list".to_string(),
+            template_title_start: template_title_start,
             template: None,
             results: vec![],
             data_has_changed: false,

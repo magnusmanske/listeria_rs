@@ -155,6 +155,23 @@ impl PageParams {
     pub fn local_file_namespace_prefix(&self) -> String {
         "File".to_string() // TODO
     }
+
+    pub async fn get_local_template_title(&self) -> Result<String,String> {
+        let entity_id = "Q19860885".to_string();
+        let entities = wikibase::entity_container::EntityContainer::new();
+        entities.load_entities(&self.wb_api, &vec![entity_id.clone()]).await.map_err(|e|e.to_string())?;
+        let entity = entities.get_entity(entity_id.to_owned()).ok_or(format!("Entity {} not found",&entity_id))?;
+        match entity.sitelinks() {
+            Some(sl) => sl.iter()
+                .filter(|s|*s.site()==self.wiki)
+                .map(|s|s.title())
+                .map(|s|wikibase::mediawiki::title::Title::new_from_full(s,&self.wb_api))
+                .map(|t|t.pretty().to_string())
+                .next()
+                .ok_or(format!("No sitelink to {} in {}",&self.wiki,&entity_id)),
+            None => Err(format!("No sitelink in {}",&entity_id))
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

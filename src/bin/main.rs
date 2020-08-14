@@ -40,8 +40,8 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
     */
 
     let mut page = match ListeriaPage::new(config, mw_api, page_title.into()).await {
-        Some(p) => p,
-        None => panic!("Could not open/parse page '{}'", &page_title),
+        Ok(p) => p,
+        Err(e) => panic!("Could not open/parse page '{}': {}", &page_title,e),
     };
     page.do_simulate(Some("
 {{Wikidata list
