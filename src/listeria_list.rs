@@ -1078,4 +1078,11 @@ impl ListeriaList {
         ret
     }
 
+    pub fn wiki(&self) -> &String {
+        &self.page_params.wiki
+    }
+
+    pub fn page_title(&self) -> &String {
+        &self.page_params.page
+    }
 }

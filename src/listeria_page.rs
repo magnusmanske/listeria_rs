@@ -2,7 +2,6 @@ use crate::*;
 use std::sync::Arc;
 use regex::{Regex, RegexBuilder};
 use roxmltree;
-use serde_json::Value;
 use std::collections::HashMap;
 use wikibase::mediawiki::api::Api;
 
@@ -129,48 +128,6 @@ impl ListeriaPage {
             })
             .collect::<Vec<Template>>();
         Ok(ret)
-    }
-
-
-
-    pub fn tabbed_data_page_name(&self) -> Option<String> {
-        let ret = "Data:Listeria/".to_string() + &self.page_params.wiki + "/" + &self.page_params.page + ".tab";
-        if ret.len() > 250 {
-            return None; // Page title too long
-        }
-        Some(ret)
-    }
-
-    pub async fn write_tabbed_data(
-        &mut self,
-        tabbed_data_json: Value,
-        commons_api: &mut Api,
-    ) -> Result<(), String> {
-        let data_page = self
-            .tabbed_data_page_name()
-            .ok_or("Data page name too long")?;
-        let text = ::serde_json::to_string(&tabbed_data_json).unwrap();
-        let params: HashMap<String, String> = vec![
-            ("action", "edit"),
-            ("title", data_page.as_str()),
-            ("summary", "Listeria test"),
-            ("text", text.as_str()),
-            ("minor", "true"),
-            ("recreate", "true"),
-            ("token", commons_api.get_edit_token().await.unwrap().as_str()),
-        ]
-        .iter()
-        .map(|x| (x.0.to_string(), x.1.to_string()))
-        .collect();
-        // No need to check if this is the same as the existing data; MW API will return OK but not actually edit
-        let _result = match commons_api.post_query_api_json_mut(&params).await {
-            Ok(r) => r,
-            Err(e) => return Err(format!("{:?}", e)),
-        };
-        // TODO check ["edit"]["result"] == "Success"
-        // TODO set data_has_changed is result is not "same as before"
-        self.data_has_changed = true; // Just to make sure to update including page
-        Ok(())
     }
 
     async fn load_page_as(&self, mode: &str) -> Result<String, String> {
