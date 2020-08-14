@@ -390,7 +390,25 @@ impl ListeriaList {
         }
     }
 
-    pub fn get_result_cell(
+    async fn get_autodesc_description(&self, e:&Entity) -> Result<String,String> {
+        if self.params.autodesc != Some("FALLBACK".to_string()) {
+            return Err(format!("Not used"));
+        }
+        let url = format!("https://tools.wmflabs.org/autodesc/?q={}&lang={}&mode=short&links=wiki&format=json",e.id(),self.page_params.language);
+        let body = self
+            .page_params
+            .mw_api
+            .query_raw(&url,&self.page_params.mw_api.no_params(),"GET")
+            .await
+            .map_err(|e|e.to_string())?;
+        let json : Value= serde_json::from_str(&body).unwrap(); // TODO
+        match json["result"].as_str() {
+            Some(result) => Ok(result.to_string()),
+            None => Err(format!("Not a valid autodesc result"))
+        }
+    }
+
+    pub async fn get_result_cell(
         &self,
         entity_id: &String,
         sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
@@ -409,7 +427,14 @@ impl ListeriaList {
                     Some(s) => {
                         ret.parts.push(ResultCellPart::Text(s.to_string()));
                     }
-                    None => {}
+                    None => {
+                        match self.get_autodesc_description(&e).await {
+                            Ok(s) => {
+                                ret.parts.push(ResultCellPart::Text(s.to_string()));
+                            }
+                            _ => {}
+                        }
+                    }
                 },
                 None => {}
             },
@@ -513,7 +538,7 @@ impl ListeriaList {
         ret
     }
 
-    fn get_result_row(
+    async fn get_result_row(
         &self,
         entity_id: &String,
         sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
@@ -528,17 +553,17 @@ impl ListeriaList {
         }
 
         let mut row = ResultRow::new(entity_id);
-        row.from_columns(self,sparql_rows);
+        row.from_columns(self,sparql_rows).await;
         Some(row)
     }
 
-    pub fn generate_results(&mut self) -> Result<(), String> {
+    pub async fn generate_results(&mut self) -> Result<(), String> {
         let varname = self.get_var_name()?;
-        self.results = match self.params.one_row_per_item {
-            true => self
-                .get_ids_from_sparql_rows()?
-                .iter()
-                .filter_map(|id| {
+        let orpi = self.params.one_row_per_item ;
+        let mut results : Vec<ResultRow> = vec![] ;
+        match orpi {
+            true => {
+                for id in self.get_ids_from_sparql_rows()?.iter() {
                     let sparql_rows: Vec<&HashMap<String, SparqlValue>> = self
                         .sparql_rows
                         .iter()
@@ -548,21 +573,29 @@ impl ListeriaList {
                         })
                         .collect();
                     if !sparql_rows.is_empty() {
-                        self.get_result_row(id,&sparql_rows)
-                    } else {
-                        None
+                        let tmp = self.get_result_row(id,&sparql_rows).await ;
+                        match tmp {
+                            Some(x) => {results.push(x);}
+                            None => {}
+                        }
                     }
-                })
-                .collect(),
-            false => self
-                .sparql_rows
-                .iter()
-                .filter_map(|row| match row.get(varname) {
-                    Some(SparqlValue::Entity(id)) => self.get_result_row(id, &vec![&row]),
-                    _ => None,
-                })
-                .collect(),
+                }
+            }
+            false => {
+                for row in self.sparql_rows.iter() {
+                    match row.get(varname) {
+                        Some(SparqlValue::Entity(id)) => {
+                            match self.get_result_row(id, &vec![&row]).await {
+                                Some(x) => {results.push(x);}
+                                None => {}
+                                }
+                        }
+                        _ => {},
+                    }
+                }
+            }
         } ;
+        self.results = results ;
         Ok(())
     }
 

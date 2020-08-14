@@ -58,11 +58,18 @@ impl ResultRow {
         });
     }
 
-    pub fn from_columns(&mut self, list:&ListeriaList, sparql_rows: &Vec<&HashMap<String, SparqlValue>>) {
+    pub async fn from_columns(&mut self, list:&ListeriaList, sparql_rows: &Vec<&HashMap<String, SparqlValue>>) {
+        self.cells.clear();
+        for column in list.columns().iter() {
+            let x = list.get_result_cell(&self.entity_id, sparql_rows, column).await;
+            self.cells.push(x);
+        }
+        /*
         self.cells = list.columns()
         .iter()
-        .map(|col| list.get_result_cell(&self.entity_id, sparql_rows, col))
+        .map(|col| list.get_result_cell(&self.entity_id, sparql_rows, col).await)
         .collect();
+        */
     }
 
     pub fn set_sortkey(&mut self, sortkey: String) {

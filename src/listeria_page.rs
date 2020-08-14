@@ -15,7 +15,6 @@ use wikibase::mediawiki::api::Api;
 - actually edit the page
 
 TEMPLATE PARAMETERS
-autolist IMPLEMENT
 links IMPLEMENT fully
 wdedit IMPLEMENT
 references IMPLEMENT
@@ -102,7 +101,7 @@ impl ListeriaPage {
             list.process_template()?;
             list.run_query().await?;
             list.load_entities().await?;
-            list.generate_results()?;
+            list.generate_results().await?;
             list.patch_results().await?;
             self.lists.push(list);
         }
@@ -527,6 +526,11 @@ mod tests {
     #[tokio::test]
     async fn multiple_lists() {
         check_fixture_file(PathBuf::from("test_data/multiple_lists.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn autodesc() {
+        check_fixture_file(PathBuf::from("test_data/autodesc.fixture")).await;
     }
 
     /*
