@@ -116,7 +116,8 @@ impl ListeriaPage {
             .filter_map(|node| {
                 match Template::new_from_xml(&node) {
                     Some(t) => {
-                        if t.title == self.template_title_start {
+                        // HARDCODED EN AS FALLBACK
+                        if t.title == self.template_title_start || t.title == "Wikidata list".to_string() {
                             Some(t)
                         } else {
                             None
@@ -487,6 +488,11 @@ mod tests {
     #[tokio::test]
     async fn autodesc() {
         check_fixture_file(PathBuf::from("test_data/autodesc.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn dewiki() {
+        check_fixture_file(PathBuf::from("test_data/dewiki.fixture")).await;
     }
 
     /*

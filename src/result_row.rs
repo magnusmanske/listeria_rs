@@ -150,7 +150,16 @@ impl ResultRow {
                     let entity_id = entity.id().to_string();
                     match list.get_entity(&entity_id) {
                         Some(entity) => {
-                            entity.label_in_locale("en").map(|s|s.to_string()).unwrap_or(entity_id.to_string())
+                            match entity.label_in_locale(list.language()).map(|s|s.to_string()) {
+                                Some(s) => s,
+                                None => {
+                                    // Fallback to en
+                                    match entity.label_in_locale("en").map(|s|s.to_string()) {
+                                        Some(s) => s,
+                                        None => entity_id.to_string()
+                                    }
+                                }
+                            }
                         }
                         None => entity_id // Fallback
                     }
