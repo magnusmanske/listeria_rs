@@ -8,21 +8,21 @@ pub mod listeria_list;
 pub mod render_wikitext;
 pub mod render_tabbed_data;
 pub mod result_row;
+pub mod column;
 
 pub use crate::listeria_page::ListeriaPage;
 pub use crate::listeria_list::ListeriaList;
 pub use crate::render_wikitext::RendererWikitext;
 pub use crate::render_tabbed_data::RendererTabbedData;
 pub use crate::result_row::ResultRow;
+pub use crate::column::*;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 use std::sync::Arc;
-use regex::{Regex, RegexBuilder};
-use roxmltree;
+use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
-use urlencoding;
 use wikibase::entity::EntityTrait;
 use wikibase::mediawiki::api::Api;
 
@@ -57,7 +57,7 @@ impl Configuration {
         Self::new_from_json(j)
     }
 
-    pub fn can_edit_namespace(&self, wiki:&String, nsid:i64) -> bool {
+    pub fn can_edit_namespace(&self, wiki:&str, nsid:i64) -> bool {
         match self.namespace_blocks.get(wiki) {
             Some(nsg) => nsg.can_edit_namespace(nsid),
             None => true // Default
@@ -67,60 +67,39 @@ impl Configuration {
     pub fn new_from_json ( j:Value ) -> Result<Self,String> {
         let mut ret : Self = Default::default();
 
-        match j["default_api"].as_str() {
-            Some(s) => ret.default_api = s.to_string(),
-            None => {}
-        }
+        if let Some(s) = j["default_api"].as_str() { ret.default_api = s.to_string() }
 
         // valid WikiBase APIs
-        match j["apis"].as_object() {
-            Some(o) => {
-                for (k,v) in o.iter() {
-                    match (k.as_str(),v.as_str()) {
-                        (k,Some(v)) => {
-                            ret.wb_apis.insert(k.to_string(),v.to_string());
-                        }
-                        _ => {}
-                    }
-                    
+        if let Some(o) = j["apis"].as_object() {
+            for (k,v) in o.iter() {
+                if let (k,Some(v)) = (k.as_str(),v.as_str()) {
+                    ret.wb_apis.insert(k.to_string(),v.to_string());
                 }
+                
             }
-            None => {}
         }
 
         // Namespace blocks on wikis
-        match j["namespace_blocks"].as_object() {
-            Some(o) => {
-                for (k,v) in o.iter() {
-                    // Check for string value ("*")
-                    match v.as_str() {
-                        Some(s) => {
-                            if s == "*" { // All namespaces
-                                ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::All);
-                            } else {
-                                return Err(format!("Unrecognized string value for namespace_blocks[{}]:{}",k,v));
-                            }
-                        }
-                        None => {}
-                    }
-
-                    // Check for array of integers
-                    match v.as_array() {
-                        Some(a) => {
-                            let nsids : Vec<i64> = a.iter().filter_map(|v|v.as_u64()).map(|x|x as i64).collect();
-                            ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::List(nsids));
-                        }
-                        None => {}
+        if let Some(o) = j["namespace_blocks"].as_object() {
+            for (k,v) in o.iter() {
+                // Check for string value ("*")
+                if let Some(s) = v.as_str() {
+                    if s == "*" { // All namespaces
+                        ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::All);
+                    } else {
+                        return Err(format!("Unrecognized string value for namespace_blocks[{}]:{}",k,v));
                     }
                 }
+
+                // Check for array of integers
+                if let Some(a) = v.as_array() {
+                    let nsids : Vec<i64> = a.iter().filter_map(|v|v.as_u64()).map(|x|x as i64).collect();
+                    ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::List(nsids));
+                }
             }
-            None => {}
         }
 
-        match j["prefer_preferred"].as_bool() {
-            Some(b) => ret.prefer_preferred = b,
-            None => {}
-        }
+        if let Some(b) = j["prefer_preferred"].as_bool() { ret.prefer_preferred = b }
 
         Ok(ret)
     }
@@ -183,156 +162,6 @@ pub struct LatLon {
 impl LatLon {
     pub fn new(lat: f64, lon: f64) -> Self {
         Self { lat, lon }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ColumnType {
-    Number,
-    Label,
-    LabelLang(String),
-    Description,
-    Item,
-    Property(String),
-    PropertyQualifier((String, String)),
-    PropertyQualifierValue((String, String, String)),
-    Field(String),
-    Unknown,
-}
-
-impl ColumnType {
-    pub fn new(s: &String) -> Self {
-        lazy_static! {
-            static ref RE_LABEL_LANG: Regex = RegexBuilder::new(r#"^label/(.+)$"#)
-                .case_insensitive(true)
-                .build()
-                .unwrap();
-            static ref RE_PROPERTY: Regex = Regex::new(r#"^([Pp]\d+)$"#).unwrap();
-            static ref RE_PROP_QUAL: Regex =
-                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#).unwrap();
-            static ref RE_PROP_QUAL_VAL: Regex =
-                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#).unwrap();
-            static ref RE_FIELD: Regex = Regex::new(r#"^\?(.+)$"#).unwrap();
-        }
-        match s.to_lowercase().as_str() {
-            "number" => return ColumnType::Number,
-            "label" => return ColumnType::Label,
-            "description" => return ColumnType::Description,
-            "item" => return ColumnType::Item,
-            _ => {}
-        }
-        match RE_LABEL_LANG.captures(&s) {
-            Some(caps) => {
-                return ColumnType::LabelLang(
-                    caps.get(1).unwrap().as_str().to_lowercase().to_string(),
-                )
-            }
-            None => {}
-        }
-        match RE_PROPERTY.captures(&s) {
-            Some(caps) => {
-                return ColumnType::Property(
-                    caps.get(1).unwrap().as_str().to_uppercase().to_string(),
-                )
-            }
-            None => {}
-        }
-        match RE_PROP_QUAL.captures(&s) {
-            Some(caps) => {
-                return ColumnType::PropertyQualifier((
-                    caps.get(1).unwrap().as_str().to_uppercase().to_string(),
-                    caps.get(2).unwrap().as_str().to_uppercase().to_string(),
-                ))
-            }
-            None => {}
-        }
-        match RE_PROP_QUAL_VAL.captures(&s) {
-            Some(caps) => {
-                return ColumnType::PropertyQualifierValue((
-                    caps.get(1).unwrap().as_str().to_uppercase().to_string(),
-                    caps.get(2).unwrap().as_str().to_uppercase().to_string(),
-                    caps.get(3).unwrap().as_str().to_uppercase().to_string(),
-                ))
-            }
-            None => {}
-        }
-        match RE_FIELD.captures(&s) {
-            Some(caps) => return ColumnType::Field(caps.get(1).unwrap().as_str().to_string()),
-            None => {}
-        }
-        ColumnType::Unknown
-    }
-
-    pub fn as_key(&self) -> String {
-        match self {
-            Self::Number => "number".to_string(),
-            Self::Label => "label".to_string(),
-            //Self::LabelLang(s) => {}
-            Self::Description => "desc".to_string(),
-            Self::Item => "item".to_string(),
-            Self::Property(p) => p.to_lowercase(),
-            Self::PropertyQualifier((p, q)) => p.to_lowercase() + "_" + &q.to_lowercase(),
-            Self::PropertyQualifierValue((p, q, v)) => {
-                p.to_lowercase() + "_" + &q.to_lowercase() + "_" + &v.to_lowercase()
-            }
-            Self::Field(f) => f.to_lowercase(),
-            //Self::Unknown => ""
-            _ => "unknown".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Column {
-    pub obj: ColumnType,
-    pub label: String,
-}
-
-impl Column {
-    pub fn new(s: &String) -> Self {
-        lazy_static! {
-            static ref RE_COLUMN_LABEL: Regex = Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).unwrap();
-        }
-        match RE_COLUMN_LABEL.captures(&s) {
-            Some(caps) => Self {
-                obj: ColumnType::new(&caps.get(1).unwrap().as_str().to_string()),
-                label: caps.get(2).unwrap().as_str().to_string(),
-            },
-            None => Self {
-                obj: ColumnType::new(&s.trim().to_string()),
-                label: s.trim().to_string(),
-            },
-        }
-    }
-
-    pub fn generate_label(&mut self, page: &ListeriaList) {
-        self.label = match &self.obj {
-            ColumnType::Property(prop) => page
-                .get_local_entity_label(&prop)
-                .unwrap_or(prop.to_string()),
-            ColumnType::PropertyQualifier((prop, qual)) => {
-                page.get_local_entity_label(&prop)
-                    .unwrap_or(prop.to_string())
-                    + "/"
-                    + &page
-                        .get_local_entity_label(&qual)
-                        .unwrap_or(qual.to_string())
-            }
-            ColumnType::PropertyQualifierValue((prop1, qual, prop2)) => {
-                page.get_local_entity_label(&prop1)
-                    .unwrap_or(prop1.to_string())
-                    + "/"
-                    + &page
-                        .get_local_entity_label(&prop1)
-                        .unwrap_or(qual.to_string())
-                    + "/"
-                    + &page
-                        .get_local_entity_label(&prop1)
-                        .unwrap_or(prop2.to_string())
-            }
-            _ => self.label.to_owned(), // Fallback
-        }
-        .to_owned();
     }
 }
 
@@ -429,10 +258,7 @@ impl Template {
                                 .collect();
                             let txt = txt.join("");
                             if txt.is_empty() {
-                                match c.attribute("index") {
-                                    Some(i) => k = Some(i.to_string()),
-                                    None => {}
-                                }
+                                if let Some(i) = c.attribute("index") { k = Some(i.to_string()) }
                             } else {
                                 k = Some(txt);
                             }
@@ -448,11 +274,8 @@ impl Template {
                     }
                 });
 
-                match (k, v) {
-                    (Some(k), Some(v)) => {
-                        parts.insert(k, v);
-                    }
-                    _ => {}
+                if let (Some(k), Some(v)) = (k, v) {
+                    parts.insert(k, v);
                 }
             }
         }
@@ -510,10 +333,10 @@ impl ResultCellPart {
                     ResultCellPart::Location((*v.latitude(), *v.longitude()))
                 }
                 wikibase::Value::MonoLingual(v) => {
-                    ResultCellPart::Text(v.language().to_string() + &":" + &v.text())
+                    ResultCellPart::Text(v.language().to_string() + ":" + v.text())
                 }
             },
-            _ => ResultCellPart::Text(format!("No/unknown value")),
+            _ => ResultCellPart::Text("No/unknown value".to_string()),
         }
     }
 
@@ -572,7 +395,7 @@ impl ResultCellPart {
                     Some(e) => match e.label_in_locale(list.language()) {
                         Some(l) => {
                             let labeled_entity_link = format!("''[[:d:{}|{}]]''", id, l);
-                            let ret = match list.get_links_type() {
+                            match list.get_links_type() {
                                 LinksType::Text => l.to_string(),
                                 LinksType::Red | LinksType::RedOnly => {
                                     if list.local_page_exists(l) {
@@ -585,8 +408,7 @@ impl ResultCellPart {
                                     format!("[https://reasonator.toolforge.org/?q={} {}]", id, l)
                                 }
                                 _ => labeled_entity_link,
-                            };
-                            return ret;
+                            }
                         }
                         None => entity_id_link,
                     },
@@ -770,7 +592,7 @@ impl TemplateParams {
                             .unwrap_or(2),
             row_template: template.params.get("row_template").map(|s|s.trim().to_string()),
             header_template: template.params.get("header_template").map(|s|s.trim().to_string()),
-            autodesc: template.params.get("autolist").map(|s|s.trim().to_uppercase()).or(template.params.get("autodesc").map(|s|s.trim().to_uppercase())) ,
+            autodesc: template.params.get("autolist").map(|s|s.trim().to_uppercase()).or_else(|| template.params.get("autodesc").map(|s|s.trim().to_uppercase())) ,
             summary: template.params.get("summary").map(|s|s.trim().to_uppercase()) ,
             skip_table: template.params.get("skip_table").is_some(),
             one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
@@ -790,7 +612,7 @@ pub enum SectionType {
 }
 
 impl SectionType {
-    pub fn new_from_string(s: &String) -> Self {
+    pub fn new_from_string(s: &str) -> Self {
         let s = s.trim();
         let re_prop = Regex::new(r"^[Pp]\d+$").unwrap();
         if re_prop.is_match(s) {
@@ -800,7 +622,7 @@ impl SectionType {
         if re_sparql.is_match(s) {
             return Self::SparqlVariable(s.to_uppercase());
         }
-        return Self::None;
+        Self::None
     }
 }
 

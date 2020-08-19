@@ -23,11 +23,8 @@ impl Renderer for RendererWikitext {
             }
         }
 
-        match list.params.summary.as_ref().map(|s|s.as_str()) {
-            Some("ITEMNUMBER") => {
-                wt += format!("\n----\n&sum; {} items.",list.results().len()).as_str();
-            }
-            _ => {}
+        if let Some("ITEMNUMBER") = list.params.summary.as_deref() {
+            wt += format!("\n----\n&sum; {} items.",list.results().len()).as_str();
         }
 
         Ok(wt)
@@ -38,20 +35,15 @@ impl RendererWikitext {
     fn as_wikitext_section(&self,list:&ListeriaList,section_id:usize) -> String {
         let mut wt = String::new() ;
 
-        match list.section_name(section_id) {
-            Some(name) => {
-                let header = format!("\n\n\n== {} ==\n",name) ;
-                wt += &header;
-            }
-            None => {}
+        if let Some(name) = list.section_name(section_id) {
+            let header = format!("\n\n\n== {} ==\n",name) ;
+            wt += &header;
         }
 
         wt += &self.as_wikitext_table_header(list) ;
 
-        if list.get_row_template().is_none() && !list.skip_table() {
-            if !list.results().is_empty() {
-                wt += "|-\n";
-            }
+        if list.get_row_template().is_none() && !list.skip_table() && !list.results().is_empty() {
+            wt += "|-\n";
         }
 
         // Rows

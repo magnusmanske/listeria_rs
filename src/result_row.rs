@@ -14,7 +14,7 @@ pub struct ResultRow {
 }
 
 impl ResultRow {
-    pub fn new(entity_id: &String) -> Self {
+    pub fn new(entity_id: &str) -> Self {
         Self {
             entity_id: entity_id.to_owned(),
             ..Default::default()
@@ -45,7 +45,7 @@ impl ResultRow {
         self.cells = cells;
     }
 
-    pub fn remove_shadow_files(&mut self,shadow_files:&Vec<String>) {
+    pub fn remove_shadow_files(&mut self,shadow_files:&[String]) {
         self.cells.iter_mut().for_each(|cell|{
             cell.parts = cell.parts.iter().filter(|part|{
                 match part {
@@ -58,18 +58,12 @@ impl ResultRow {
         });
     }
 
-    pub async fn from_columns(&mut self, list:&ListeriaList, sparql_rows: &Vec<&HashMap<String, SparqlValue>>) {
+    pub async fn from_columns(&mut self, list:&ListeriaList, sparql_rows: &[&HashMap<String, SparqlValue>]) {
         self.cells.clear();
         for column in list.columns().iter() {
             let x = list.get_result_cell(&self.entity_id, sparql_rows, column).await;
             self.cells.push(x);
         }
-        /*
-        self.cells = list.columns()
-        .iter()
-        .map(|col| list.get_result_cell(&self.entity_id, sparql_rows, col).await)
-        .collect();
-        */
     }
 
     pub fn set_sortkey(&mut self, sortkey: String) {
@@ -116,7 +110,7 @@ impl ResultRow {
 
     pub fn get_sortkey_prop(
         &self,
-        prop: &String,
+        prop: &str,
         list: &ListeriaList,
         datatype: &SnakDataType,
     ) -> String {
@@ -147,22 +141,7 @@ impl ResultRow {
                 ),
                 wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
                 wikibase::value::Value::Entity(entity) => {// TODO language
-                    let entity_id = entity.id().to_string();
-                    match list.get_entity(&entity_id) {
-                        Some(entity) => {
-                            match entity.label_in_locale(list.language()).map(|s|s.to_string()) {
-                                Some(s) => s,
-                                None => {
-                                    // Fallback to en
-                                    match entity.label_in_locale("en").map(|s|s.to_string()) {
-                                        Some(s) => s,
-                                        None => entity_id.to_string()
-                                    }
-                                }
-                            }
-                        }
-                        None => entity_id // Fallback
-                    }
+                    list.get_label_with_fallback(&entity.id())
                 }
                 wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikibase::value::Value::StringValue(s) => s.to_owned(),
@@ -218,7 +197,7 @@ impl ResultRow {
         json!(ret)
     }
 
-    fn cells_as_wikitext(&self, list: &ListeriaList, cells: &Vec<String>) -> String {
+    fn cells_as_wikitext(&self, list: &ListeriaList, cells: &[String]) -> String {
         cells
             .iter()
             .enumerate()

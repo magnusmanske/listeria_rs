@@ -71,7 +71,7 @@ async fn main() {
     let mut settings = Config::default();
     settings
         .merge(File::with_name(ini_file))
-        .expect(format!("INI file '{}' can't be opened", ini_file).as_str());
+        .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 
     update_page(&settings,
         "User:Magnus Manske/listeria test5",

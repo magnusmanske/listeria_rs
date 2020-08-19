@@ -1,7 +1,6 @@
 use crate::*;
 use std::sync::Arc;
 use regex::{Regex, RegexBuilder};
-use roxmltree;
 use std::collections::HashMap;
 use wikibase::mediawiki::api::Api;
 
@@ -48,7 +47,7 @@ impl ListeriaPage {
             wiki: mw_api
                 .get_site_info_string("general", "wikiid")?
                 .to_string(),
-            page: page,
+            page,
             language: mw_api
                 .get_site_info_string("general", "lang")?
                 .to_string(),
@@ -61,8 +60,8 @@ impl ListeriaPage {
             } ;
         let template_title_start = page_params.get_local_template_title().await?;
         Ok(Self {
-            page_params: page_params,
-            template_title_start: template_title_start,
+            page_params,
+            template_title_start,
             template: None,
             results: vec![],
             data_has_changed: false,
@@ -108,7 +107,7 @@ impl ListeriaPage {
 
 
     async fn load_page(&mut self) -> Result<Vec<Template>, String> {
-        let text = self.load_page_as("parsetree").await?.to_owned();
+        let text = self.load_page_as("parsetree").await?;
         let doc = roxmltree::Document::parse(&text).unwrap();
         let ret = doc.root()
             .descendants()
@@ -117,7 +116,7 @@ impl ListeriaPage {
                 match Template::new_from_xml(&node) {
                     Some(t) => {
                         // HARDCODED EN AS FALLBACK
-                        if t.title == self.template_title_start || t.title == "Wikidata list".to_string() {
+                        if t.title == self.template_title_start || t.title == "Wikidata list" {
                             Some(t)
                         } else {
                             None
@@ -158,11 +157,11 @@ impl ListeriaPage {
             .expect("Loading page failed");
         match result["parse"][mode]["*"].as_str() {
             Some(ret) => Ok(ret.to_string()),
-            None => return Err(format!("No parse tree for {}", &self.page_params.page)),
+            None => Err(format!("No parse tree for {}", &self.page_params.page)),
         }
     }
 
-    fn separate_start_template(&self, blob: &String) -> Option<(String, String)> {
+    fn separate_start_template(&self, blob: &str) -> Option<(String, String)> {
         let mut split_at: Option<usize> = None;
         let mut curly_count: i32 = 0;
         blob.char_indices().for_each(|(pos, c)| {
@@ -181,7 +180,7 @@ impl ListeriaPage {
         });
         match split_at {
             Some(pos) => {
-                let mut template = blob.clone();
+                let mut template = blob.to_string();
                 let rest = template.split_off(pos);
                 Some((template, rest))
             }
@@ -235,13 +234,13 @@ impl ListeriaPage {
                     "",
                     "",
                 ),
-                None => return Err(format!("No template/end template found")),
+                None => return Err("No template/end template found".to_string()),
             },
         };
 
         let (start_template, rest) = match self.separate_start_template(&blob.to_string()) {
             Some(parts) => parts,
-            None => return Err(format!("Can't split start template")),
+            None => return Err("Can\'t split start template".to_string()),
         };
 
         let append = if end_template.is_empty() {
@@ -291,7 +290,7 @@ impl ListeriaPage {
 
         match self.page_params.mw_api.get_query_api_json(&params).await {
             Ok(_r) => Ok(()),
-            Err(e) => return Err(format!("{:?}", e)),
+            Err(e) => Err(e.to_string()),
         }
     }
 }
@@ -305,7 +304,7 @@ mod tests {
 
     fn read_fixture_from_file(path:PathBuf) -> HashMap<String,String> {
         let text = fs::read_to_string(path).unwrap();
-        let rows = text.split("\n");
+        let rows = text.split('\n');
         let mut key = String::new();
         let mut value = String::new();
         let mut data : HashMap<String,String> = HashMap::new() ;

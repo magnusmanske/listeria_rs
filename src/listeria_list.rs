@@ -22,8 +22,8 @@ pub struct ListeriaList {
 impl ListeriaList {
     pub fn new(template:Template,page_params:PageParams) -> Self {
         Self {
-            page_params:page_params,
-            template: template,
+            page_params,
+            template,
             columns: vec![],
             params:TemplateParams::new(),
             sparql_rows: vec![],
@@ -65,8 +65,8 @@ impl ListeriaList {
         let template = self.template.clone();
         match template.params.get("columns") {
             Some(columns) => {
-                columns.split(",").for_each(|part| {
-                    let s = part.clone().to_string();
+                columns.split(',').for_each(|part| {
+                    let s = part.to_string();
                     self.columns.push(Column::new(&s));
                 });
             }
@@ -74,16 +74,8 @@ impl ListeriaList {
         }
 
         self.params = TemplateParams::new_from_params(&template) ;
-
-        match template.params.get("language") {
-            Some(l) =>  self.page_params.language = l.to_lowercase(),
-            None => {}
-        }
-
-        match template.params.get("links") {
-            Some(s) =>  self.params.links = LinksType::new_from_string(s.to_string()),
-            None => {}
-        }
+        if let Some(l) = template.params.get("language") { self.page_params.language = l.to_lowercase() }
+        if let Some(s) = template.params.get("links") { self.params.links = LinksType::new_from_string(s.to_string()) }
 
         Ok(())
     }
@@ -128,13 +120,13 @@ impl ListeriaList {
         *self.local_page_cache.get(&page.to_string()).unwrap_or(&false)
     }
 
-    pub fn normalize_page_title(&self,s: &String) -> String {
+    pub fn normalize_page_title(&self,s: &str) -> String {
         // TODO use page to find out about first character capitalization on the current wiki
         if s.len() < 2 {
             return s.to_string();
         }
         let (first_letter, the_rest) = s.split_at(1);
-        return first_letter.to_uppercase() + the_rest;
+        first_letter.to_uppercase() + the_rest
     }
 
     pub fn get_location_template(&self, lat: f64, lon: f64) -> String {
@@ -198,11 +190,11 @@ impl ListeriaList {
         let first_var = match j["head"]["vars"].as_array() {
             Some(a) => match a.get(0) {
                 Some(v) => v.as_str().ok_or("Can't parse first variable")?.to_string(),
-                None => return Err(format!("Bad SPARQL head.vars")),
+                None => return Err("Bad SPARQL head.vars".to_string()),
             },
-            None => return Err(format!("Bad SPARQL head.vars")),
+            None => return Err("Bad SPARQL head.vars".to_string()),
         };
-        self.sparql_first_variable = Some(first_var.clone());
+        self.sparql_first_variable = Some(first_var);
 
         let bindings = j["results"]["bindings"]
             .as_array()
@@ -243,7 +235,7 @@ impl ListeriaList {
 
         let ids = self.get_ids_from_sparql_rows()?;
         if ids.is_empty() {
-            return Err(format!("No items to show"));
+            return Err("No items to show".to_string());
         }
         match self.entities.load_entities(&self.page_params.wb_api, &ids).await {
             Ok(_) => {}
@@ -312,18 +304,18 @@ impl ListeriaList {
     fn get_var_name(&self) -> Result<&String, String> {
         match &self.sparql_first_variable {
             Some(v) => Ok(v),
-            None => return Err(format!("load_entities: sparql_first_variable is None")),
+            None => Err("load_entities: sparql_first_variable is None".to_string()),
         }
     }
 
-    pub fn get_local_entity_label(&self, entity_id: &String) -> Option<String> {
+    pub fn get_local_entity_label(&self, entity_id: &str) -> Option<String> {
         self.entities
             .get_entity(entity_id.to_owned())?
             .label_in_locale(&self.page_params.language)
             .map(|s| s.to_string())
     }
 
-    fn entity_to_local_link(&self, item: &String) -> Option<ResultCellPart> {
+    fn entity_to_local_link(&self, item: &str) -> Option<ResultCellPart> {
         let entity = match self.entities.get_entity(item.to_owned()) {
             Some(e) => e,
             None => return None,
@@ -336,12 +328,12 @@ impl ListeriaList {
                 .next(),
             None => None,
         }?;
-        let label = self.get_local_entity_label(item).unwrap_or(page.clone());
+        let label = self.get_local_entity_label(item).unwrap_or_else(|| page.clone());
         Some(ResultCellPart::LocalLink((page, label)))
     }
 
 
-    fn get_parts_p_p(&self,statement:&wikibase::statement::Statement,property:&String) -> Vec<ResultCellPart> {
+    fn get_parts_p_p(&self,statement:&wikibase::statement::Statement,property:&str) -> Vec<ResultCellPart> {
         statement
             .qualifiers()
             .iter()
@@ -356,7 +348,7 @@ impl ListeriaList {
             .collect()
     }
 
-    fn get_parts_p_q_p(&self,statement:&wikibase::statement::Statement,target_item:&String,property:&String) -> Vec<ResultCellPart> {
+    fn get_parts_p_q_p(&self,statement:&wikibase::statement::Statement,target_item:&str,property:&str) -> Vec<ResultCellPart> {
         let links_to_target = match statement.main_snak().data_value(){
             Some(dv) => {
                 match dv.value() {
@@ -392,7 +384,7 @@ impl ListeriaList {
 
     async fn get_autodesc_description(&self, e:&Entity) -> Result<String,String> {
         if self.params.autodesc != Some("FALLBACK".to_string()) {
-            return Err(format!("Not used"));
+            return Err("Not used".to_string());
         }
         let url = format!("https://tools.wmflabs.org/autodesc/?q={}&lang={}&mode=short&links=wiki&format=json",e.id(),self.page_params.language);
         let body = self
@@ -404,14 +396,14 @@ impl ListeriaList {
         let json : Value= serde_json::from_str(&body).unwrap(); // TODO
         match json["result"].as_str() {
             Some(result) => Ok(result.to_string()),
-            None => Err(format!("Not a valid autodesc result"))
+            None => Err("Not a valid autodesc result".to_string())
         }
     }
 
     pub async fn get_result_cell(
         &self,
-        entity_id: &String,
-        sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
+        entity_id: &str,
+        sparql_rows: &[&HashMap<String, SparqlValue>],
         col: &Column,
     ) -> ResultCell {
         let mut ret = ResultCell::new();
@@ -422,112 +414,84 @@ impl ListeriaList {
                 ret.parts
                     .push(ResultCellPart::Entity((entity_id.to_owned(), true)));
             }
-            ColumnType::Description => match entity {
-                Some(e) => match e.description_in_locale(self.page_params.language.as_str()) {
-                    Some(s) => {
-                        ret.parts.push(ResultCellPart::Text(s.to_string()));
+            ColumnType::Description => if let Some(e) = entity { match e.description_in_locale(self.page_params.language.as_str()) {
+                Some(s) => {
+                    ret.parts.push(ResultCellPart::Text(s.to_string()));
+                }
+                None => {
+                    if let Ok(s) = self.get_autodesc_description(&e).await {
+                        ret.parts.push(ResultCellPart::Text(s));
                     }
-                    None => {
-                        match self.get_autodesc_description(&e).await {
-                            Ok(s) => {
-                                ret.parts.push(ResultCellPart::Text(s.to_string()));
-                            }
-                            _ => {}
-                        }
-                    }
-                },
-                None => {}
-            },
+                }
+            } },
             ColumnType::Field(varname) => {
                 for row in sparql_rows.iter() {
-                    match row.get(varname) {
-                        Some(x) => {
-                            ret.parts.push(ResultCellPart::from_sparql_value(x));
-                        }
-                        None => {}
+                    if let Some(x) = row.get(varname) {
+                        ret.parts.push(ResultCellPart::from_sparql_value(x));
                     }
                 }
             }
-            ColumnType::Property(property) => match entity {
-                Some(e) => {
-                    self.get_filtered_claims(&e,property)
-                    //e.claims_with_property(property.to_owned())
-                        .iter()
-                        .for_each(|statement| {
-                            ret.parts
-                                .push(ResultCellPart::from_snak(statement.main_snak()));
-                        });
-                }
-                None => {}
+            ColumnType::Property(property) => if let Some(e) = entity {
+                self.get_filtered_claims(&e,property)
+                //e.claims_with_property(property.to_owned())
+                    .iter()
+                    .for_each(|statement| {
+                        ret.parts
+                            .push(ResultCellPart::from_snak(statement.main_snak()));
+                    });
             },
-            ColumnType::PropertyQualifier((p1, p2)) => match entity {
-                Some(e) => {
-                    self.get_filtered_claims(&e,p1)
-                    //e.claims_with_property(p1.to_owned())
-                        .iter()
-                        .for_each(|statement| {
-                            self.get_parts_p_p(statement,p2)
-                                .iter()
-                                .for_each(|part|ret.parts.push(part.to_owned()));
-                        });
-                }
-                None => {}
-            },
-            ColumnType::PropertyQualifierValue((p1, q1, p2)) => match entity {
-                Some(e) => {
-                    self.get_filtered_claims(&e,p1)
-                    //e.claims_with_property(p1.to_owned())
-                        .iter()
-                        .for_each(|statement| {
-                            self.get_parts_p_q_p(statement,q1,p2)
-                                .iter()
-                                .for_each(|part|ret.parts.push(part.to_owned()));
-                        });
-                }
-                None => {}
-            },
-            ColumnType::LabelLang(language) => match entity {
-                Some(e) => {
-                    match e.label_in_locale(language) {
-                        Some(s) => {
-                            ret.parts.push(ResultCellPart::Text(s.to_string()));
-                        }
-                        None => match e.label_in_locale(&self.page_params.language) {
-                            // Fallback
-                            Some(s) => {
-                                ret.parts.push(ResultCellPart::Text(s.to_string()));
-                            }
-                            None => {} // No label available
-                        },
-                    }
-                }
-                None => {}
-            },
-            ColumnType::Label => match entity {
-                Some(e) => {
-                    let label = match e.label_in_locale(&self.page_params.language) {
-                        Some(s) => s.to_string(),
-                        None => entity_id.to_string(),
-                    };
-                    let local_page = match e.sitelinks() {
-                        Some(sl) => sl
+            ColumnType::PropertyQualifier((p1, p2)) => if let Some(e) = entity {
+                self.get_filtered_claims(&e,p1)
+                //e.claims_with_property(p1.to_owned())
+                    .iter()
+                    .for_each(|statement| {
+                        self.get_parts_p_p(statement,p2)
                             .iter()
-                            .filter(|s| *s.site() == self.page_params.wiki)
-                            .map(|s| s.title().to_string())
-                            .next(),
-                        None => None,
-                    };
-                    match local_page {
-                        Some(page) => {
-                            ret.parts.push(ResultCellPart::LocalLink((page, label)));
-                        }
-                        None => {
-                            ret.parts
-                                .push(ResultCellPart::Entity((entity_id.to_string(), true)));
-                        }
+                            .for_each(|part|ret.parts.push(part.to_owned()));
+                    });
+            },
+            ColumnType::PropertyQualifierValue((p1, q1, p2)) => if let Some(e) = entity {
+                self.get_filtered_claims(&e,p1)
+                //e.claims_with_property(p1.to_owned())
+                    .iter()
+                    .for_each(|statement| {
+                        self.get_parts_p_q_p(statement,q1,p2)
+                            .iter()
+                            .for_each(|part|ret.parts.push(part.to_owned()));
+                    });
+            },
+            ColumnType::LabelLang(language) => if let Some(e) = entity {
+                match e.label_in_locale(language) {
+                    Some(s) => {
+                        ret.parts.push(ResultCellPart::Text(s.to_string()));
+                    }
+                    None => if let Some(s) = e.label_in_locale(&self.page_params.language) {
+                        ret.parts.push(ResultCellPart::Text(s.to_string()));
+                    },
+                }
+            },
+            ColumnType::Label => if let Some(e) = entity {
+                let label = match e.label_in_locale(&self.page_params.language) {
+                    Some(s) => s.to_string(),
+                    None => entity_id.to_string(),
+                };
+                let local_page = match e.sitelinks() {
+                    Some(sl) => sl
+                        .iter()
+                        .filter(|s| *s.site() == self.page_params.wiki)
+                        .map(|s| s.title().to_string())
+                        .next(),
+                    None => None,
+                };
+                match local_page {
+                    Some(page) => {
+                        ret.parts.push(ResultCellPart::LocalLink((page, label)));
+                    }
+                    None => {
+                        ret.parts
+                            .push(ResultCellPart::Entity((entity_id.to_string(), true)));
                     }
                 }
-                None => {}
             },
             ColumnType::Unknown => {} // Ignore
             ColumnType::Number => {
@@ -540,16 +504,13 @@ impl ListeriaList {
 
     async fn get_result_row(
         &self,
-        entity_id: &String,
-        sparql_rows: &Vec<&HashMap<String, SparqlValue>>,
+        entity_id: &str,
+        sparql_rows: &[&HashMap<String, SparqlValue>],
     ) -> Option<ResultRow> {
-        match self.params.links {
-            LinksType::Local => {
-                if !self.entities.has_entity(entity_id.to_owned()) {
-                    return None;
-                }
+        if let LinksType::Local = self.params.links {
+            if !self.entities.has_entity(entity_id.to_owned()) {
+                return None;
             }
-            _ => {}
         }
 
         let mut row = ResultRow::new(entity_id);
@@ -574,23 +535,14 @@ impl ListeriaList {
                         .collect();
                     if !sparql_rows.is_empty() {
                         let tmp = self.get_result_row(id,&sparql_rows).await ;
-                        match tmp {
-                            Some(x) => {results.push(x);}
-                            None => {}
-                        }
+                        if let Some(x) = tmp {results.push(x);}
                     }
                 }
             }
             false => {
                 for row in self.sparql_rows.iter() {
-                    match row.get(varname) {
-                        Some(SparqlValue::Entity(id)) => {
-                            match self.get_result_row(id, &vec![&row]).await {
-                                Some(x) => {results.push(x);}
-                                None => {}
-                                }
-                        }
-                        _ => {},
+                    if let Some(SparqlValue::Entity(id)) = row.get(varname) {
+                        if let Some(x) = self.get_result_row(id, &[&row]).await {results.push(x);}
                     }
                 }
             }
@@ -599,7 +551,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn localize_item_links_in_parts(&self,parts:&Vec<ResultCellPart>) -> Vec<ResultCellPart> {
+    fn localize_item_links_in_parts(&self,parts:&[ResultCellPart]) -> Vec<ResultCellPart> {
         parts.iter()
         .map(|part| match part {
             ResultCellPart::Entity((item, true)) => {
@@ -648,11 +600,8 @@ impl ListeriaList {
         for row in self.results.iter() {
             for cell in row.cells() {
                 for part in &cell.parts {
-                    match part {
-                        ResultCellPart::File(file) => {
-                            files_to_check.push(file);
-                        }
-                        _ => {}
+                    if let ResultCellPart::File(file) = part {
+                        files_to_check.push(file);
                     }
                 }
             }
@@ -744,11 +693,8 @@ impl ListeriaList {
                 cell.parts
                     .iter()
                     .for_each(|part|{
-                    match part {
-                        ResultCellPart::Entity((id, _try_localize)) => {
-                            ids.push(id);
-                        }
-                        _ => {}
+                    if let ResultCellPart::Entity((id, _try_localize)) = part {
+                        ids.push(id);
                     }
                 })
             });
@@ -758,14 +704,8 @@ impl ListeriaList {
         ids.dedup();
         let mut labels = vec![] ;
         for id in ids {
-            match self.get_entity(id.to_owned()) {
-                Some(e) => match e.label_in_locale(self.language()) {
-                    Some(l) => {
-                        labels.push(l.to_string());
-                    }
-                    None => {}
-                }
-                None => {}
+            if let Some(e) = self.get_entity(id.to_owned()) {
+                if let Some(l) = e.label_in_locale(self.language()) { labels.push(l.to_string()); }
             }
         }
 
@@ -778,7 +718,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn get_datatype_for_property(&self,prop:&String) -> SnakDataType {
+    fn get_datatype_for_property(&self,prop:&str) -> SnakDataType {
         match self.get_entity(prop) {
             Some(entity) => {
                 match entity {
@@ -823,7 +763,7 @@ impl ListeriaList {
 
         // Apply sortkeys
         if self.results.len() != sortkeys.len() { // Paranoia
-            return Err(format!("patch_sort_results: sortkeys length mismatch"));
+            return Err("patch_sort_results: sortkeys length mismatch".to_string());
         }
         self.results
             .iter_mut()
@@ -933,7 +873,7 @@ impl ListeriaList {
         self.entities.get_entity(entity_id)
     }
 
-    pub fn external_id_url(&self, prop: &String, id: &String) -> Option<String> {
+    pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
         let pi = self.entities.get_entity(prop.to_owned())?;
         pi.claims_with_property("P1630")
             .iter()
@@ -943,7 +883,7 @@ impl ListeriaList {
                     wikibase::Value::StringValue(s) => 
                         Some(
                         s.to_owned()
-                            .replace("$1", &urlencoding::decode(&id).ok()?.to_string()),
+                            .replace("$1", &urlencoding::decode(&id).ok()?),
                     ),
                     _ => None,
                 }
@@ -966,26 +906,23 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn gather_items_for_property(&mut self,prop:&String) -> Result<Vec<String>,String> {
+    fn gather_items_for_property(&mut self,prop:&str) -> Result<Vec<String>,String> {
         let mut entities_to_load = vec![];
         for row in self.results.iter() {
-            match self.entities.get_entity(row.entity_id().to_owned()) {
-                Some(entity) => {
-                    self.get_filtered_claims(&entity,prop)
-                    //entity.claims()
-                        .iter()
-                        .filter(|statement|statement.property()==prop)
-                        .map(|statement|statement.main_snak())
-                        .filter(|snak|*snak.datatype()==SnakDataType::WikibaseItem)
-                        .filter_map(|snak|snak.data_value().to_owned())
-                        .map(|datavalue|datavalue.value().to_owned())
-                        .filter_map(|value|match value {
-                            wikibase::value::Value::Entity(v) => Some(v.id().to_owned()),
-                            _ => None
-                        })
-                        .for_each(|id|entities_to_load.push(id.to_string()));
-                }
-                None => {}
+            if let Some(entity) = self.entities.get_entity(row.entity_id().to_owned()) {
+                self.get_filtered_claims(&entity,prop)
+                //entity.claims()
+                    .iter()
+                    .filter(|statement|statement.property()==prop)
+                    .map(|statement|statement.main_snak())
+                    .filter(|snak|*snak.datatype()==SnakDataType::WikibaseItem)
+                    .filter_map(|snak|snak.data_value().to_owned())
+                    .map(|datavalue|datavalue.value().to_owned())
+                    .filter_map(|value|match value {
+                        wikibase::value::Value::Entity(v) => Some(v.id().to_owned()),
+                        _ => None
+                    })
+                    .for_each(|id|entities_to_load.push(id));
             }
         }
         Ok(entities_to_load)
@@ -1017,17 +954,11 @@ impl ListeriaList {
                     .for_each(|entity_id|entities_to_load.push(entity_id.to_string()));
             }
         }
-        match &self.params.sort {
-            SortMode::Property(prop) => {
-                entities_to_load.push(prop.to_string());
-            }
-            _ => {}
+        if let SortMode::Property(prop) = &self.params.sort {
+            entities_to_load.push(prop.to_string());
         }
-        match &self.params.section {
-            Some(prop) => {
-                entities_to_load.push(prop.to_owned());
-            }
-            _ => {}
+        if let Some(prop) = &self.params.section {
+            entities_to_load.push(prop.to_owned());
         }
         self.load_items(entities_to_load).await?;
 
@@ -1038,7 +969,7 @@ impl ListeriaList {
     }
 
 
-    fn gather_entities_and_external_properties(&self,parts:&Vec<ResultCellPart>) -> Vec<String> {
+    fn gather_entities_and_external_properties(&self,parts:&[ResultCellPart]) -> Vec<String> {
         let mut entities_to_load = vec![];
         for part in parts {
             match part {
@@ -1085,4 +1016,23 @@ impl ListeriaList {
     pub fn page_title(&self) -> &String {
         &self.page_params.page
     }
+
+    pub fn get_label_with_fallback(&self,entity_id:&str) -> String {
+        match self.get_entity(entity_id) {
+            Some(entity) => {
+                match entity.label_in_locale(self.language()).map(|s|s.to_string()) {
+                    Some(s) => s,
+                    None => {
+                        // Fallback to en
+                        match entity.label_in_locale("en").map(|s|s.to_string()) {
+                            Some(s) => s,
+                            None => entity_id.to_string()
+                        }
+                    }
+                }
+            }
+            None => entity_id.to_string() // Fallback
+        }
+    }
+
 }
