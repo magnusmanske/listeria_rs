@@ -43,6 +43,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         Ok(p) => p,
         Err(e) => panic!("Could not open/parse page '{}': {}", &page_title,e),
     };
+    /*
     page.do_simulate(Some("
 {{Wikidata list
 |sparql=SELECT ?item { VALUES ?item { wd:Q17 } }
@@ -50,13 +51,15 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
 |summary=itemnumber
 }}
 {{Wikidata list end}}".to_string()),None);
+    */
 
     match page.run().await {
         Ok(_) => {}
         Err(e) => panic!("{}", e),
     }
-    let wt = page.as_wikitext().unwrap();
-    println!("{:?}",wt);
+    let old_wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
+    let new_wikitext = page.get_new_wikitext(&old_wikitext).unwrap().unwrap();
+    println!("{:?}",&new_wikitext);
     //let j = page.as_tabbed_data().unwrap();
     //page.write_tabbed_data(j, &mut commons_api).unwrap();
 

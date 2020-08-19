@@ -271,6 +271,11 @@ impl ListeriaPage {
                 }
             }
         }
+
+        if template_counter != self.lists.len() {
+            return Err(format!("Replaced {} lists but there are {}",&template_counter,self.lists.len())) ;
+        }
+
         Ok(Some(new_wikitext))
     }
 
