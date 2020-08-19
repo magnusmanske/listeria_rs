@@ -215,11 +215,16 @@ impl ListeriaPage {
     }
 
     pub fn get_new_wikitext2(&self,wikitext: &str) -> Result<Option<String>,String> {
-        let pattern_string = r#"\{\{([Ww]ikidata[ _]list|"#.to_string() + &self.template_title_start.replace(" ","[ _]")  + r#")\b.+?\}\}"# ;
+        let pattern_string = r#"\{\{([Ww]ikidata[ _]list|"#.to_string() + &self.template_title_start.replace(" ","[ _]")  + r#")\s*(\|.*?\}\}|\}\})"# ;
         println!("> {}",&pattern_string);
-        let seperator = Regex::new(&pattern_string).expect("Invalid regex");
+        let seperator: Regex = RegexBuilder::new(&pattern_string)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+
         let result = Self::split_keep(&seperator,wikitext);
-        println!("{:?}",&result);
+        println!("{:#?}",&result);
         Ok(None)
     }
 
@@ -537,7 +542,8 @@ mod tests {
         let mw_api = Arc::new(mw_api);
         let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
         let mut page = ListeriaPage::new(config,mw_api, "User:Magnus Manske/listeria test5".to_string()).await.unwrap();
-        page.do_simulate(None,None);
+        let sparql_results = r#"{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q83764640"}}]}}"# ;
+        page.do_simulate(None,Some(sparql_results.to_string()));
         page.run().await.unwrap();
         let wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
         let new_wikitext = page.get_new_wikitext2(&wikitext).expect("FAILED get_new_wikitext");
