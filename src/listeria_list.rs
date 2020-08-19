@@ -2,6 +2,7 @@ use crate::*;
 use wikibase::entity::*;
 use wikibase::snak::SnakDataType;
 use wikibase::entity_container::EntityContainer;
+use result_cell::*;
 
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
@@ -333,37 +334,6 @@ impl ListeriaList {
     }
 
 
-    fn get_parts_p_p(&self,statement:&wikibase::statement::Statement,property:&str) -> Vec<ResultCellPart> {
-        statement
-            .qualifiers()
-            .iter()
-            .filter(|snak|*snak.property()==*property)
-            .map(|snak|ResultCellPart::SnakList (
-                    vec![
-                        ResultCellPart::from_snak(statement.main_snak()),
-                        ResultCellPart::from_snak(snak)
-                    ]
-                )
-            )
-            .collect()
-    }
-
-    fn get_parts_p_q_p(&self,statement:&wikibase::statement::Statement,target_item:&str,property:&str) -> Vec<ResultCellPart> {
-        let links_to_target = match statement.main_snak().data_value(){
-            Some(dv) => {
-                match dv.value() {
-                    wikibase::value::Value::Entity(e) => e.id() == target_item,
-                    _ => false
-                }
-            }
-            None => false
-        };
-        if !links_to_target {
-            return vec![];
-        }
-        self.get_parts_p_p(statement,property)
-    }
-
     pub fn get_filtered_claims(&self,e:&wikibase::entity::Entity,property:&str) -> Vec<wikibase::statement::Statement> {
         let mut ret : Vec<wikibase::statement::Statement> = e
             .claims_with_property(property)
@@ -382,7 +352,7 @@ impl ListeriaList {
         }
     }
 
-    async fn get_autodesc_description(&self, e:&Entity) -> Result<String,String> {
+    pub async fn get_autodesc_description(&self, e:&Entity) -> Result<String,String> {
         if self.params.autodesc != Some("FALLBACK".to_string()) {
             return Err("Not used".to_string());
         }
@@ -398,108 +368,6 @@ impl ListeriaList {
             Some(result) => Ok(result.to_string()),
             None => Err("Not a valid autodesc result".to_string())
         }
-    }
-
-    pub async fn get_result_cell(
-        &self,
-        entity_id: &str,
-        sparql_rows: &[&HashMap<String, SparqlValue>],
-        col: &Column,
-    ) -> ResultCell {
-        let mut ret = ResultCell::new();
-
-        let entity = self.entities.get_entity(entity_id.to_owned());
-        match &col.obj {
-            ColumnType::Item => {
-                ret.parts
-                    .push(ResultCellPart::Entity((entity_id.to_owned(), true)));
-            }
-            ColumnType::Description => if let Some(e) = entity { match e.description_in_locale(self.page_params.language.as_str()) {
-                Some(s) => {
-                    ret.parts.push(ResultCellPart::Text(s.to_string()));
-                }
-                None => {
-                    if let Ok(s) = self.get_autodesc_description(&e).await {
-                        ret.parts.push(ResultCellPart::Text(s));
-                    }
-                }
-            } },
-            ColumnType::Field(varname) => {
-                for row in sparql_rows.iter() {
-                    if let Some(x) = row.get(varname) {
-                        ret.parts.push(ResultCellPart::from_sparql_value(x));
-                    }
-                }
-            }
-            ColumnType::Property(property) => if let Some(e) = entity {
-                self.get_filtered_claims(&e,property)
-                //e.claims_with_property(property.to_owned())
-                    .iter()
-                    .for_each(|statement| {
-                        ret.parts
-                            .push(ResultCellPart::from_snak(statement.main_snak()));
-                    });
-            },
-            ColumnType::PropertyQualifier((p1, p2)) => if let Some(e) = entity {
-                self.get_filtered_claims(&e,p1)
-                //e.claims_with_property(p1.to_owned())
-                    .iter()
-                    .for_each(|statement| {
-                        self.get_parts_p_p(statement,p2)
-                            .iter()
-                            .for_each(|part|ret.parts.push(part.to_owned()));
-                    });
-            },
-            ColumnType::PropertyQualifierValue((p1, q1, p2)) => if let Some(e) = entity {
-                self.get_filtered_claims(&e,p1)
-                //e.claims_with_property(p1.to_owned())
-                    .iter()
-                    .for_each(|statement| {
-                        self.get_parts_p_q_p(statement,q1,p2)
-                            .iter()
-                            .for_each(|part|ret.parts.push(part.to_owned()));
-                    });
-            },
-            ColumnType::LabelLang(language) => if let Some(e) = entity {
-                match e.label_in_locale(language) {
-                    Some(s) => {
-                        ret.parts.push(ResultCellPart::Text(s.to_string()));
-                    }
-                    None => if let Some(s) = e.label_in_locale(&self.page_params.language) {
-                        ret.parts.push(ResultCellPart::Text(s.to_string()));
-                    },
-                }
-            },
-            ColumnType::Label => if let Some(e) = entity {
-                let label = match e.label_in_locale(&self.page_params.language) {
-                    Some(s) => s.to_string(),
-                    None => entity_id.to_string(),
-                };
-                let local_page = match e.sitelinks() {
-                    Some(sl) => sl
-                        .iter()
-                        .filter(|s| *s.site() == self.page_params.wiki)
-                        .map(|s| s.title().to_string())
-                        .next(),
-                    None => None,
-                };
-                match local_page {
-                    Some(page) => {
-                        ret.parts.push(ResultCellPart::LocalLink((page, label)));
-                    }
-                    None => {
-                        ret.parts
-                            .push(ResultCellPart::Entity((entity_id.to_string(), true)));
-                    }
-                }
-            },
-            ColumnType::Unknown => {} // Ignore
-            ColumnType::Number => {
-                ret.parts.push(ResultCellPart::Number);
-            }
-        }
-
-        ret
     }
 
     async fn get_result_row(
@@ -580,9 +448,9 @@ impl ListeriaList {
                 let new_cells = row
                 .cells()
                 .iter()
-                .map(|cell| ResultCell {
-                    parts: self.localize_item_links_in_parts(&cell.parts),
-                })
+                .map(|cell|
+                    ResultCell::new_from_parts ( self.localize_item_links_in_parts(cell.parts()) )
+                )
                 .collect();
                 new_row.set_cells(new_cells);
                 new_row
@@ -599,7 +467,7 @@ impl ListeriaList {
         let mut files_to_check = vec![] ;
         for row in self.results.iter() {
             for cell in row.cells() {
-                for part in &cell.parts {
+                for part in cell.parts() {
                     if let ResultCellPart::File(file) = part {
                         files_to_check.push(file);
                     }
@@ -690,7 +558,7 @@ impl ListeriaList {
         let mut ids = vec![] ;
         self.results.iter().for_each(|row|{
             row.cells().iter().for_each(|cell|{
-                cell.parts
+                cell.parts()
                     .iter()
                     .for_each(|part|{
                     if let ResultCellPart::Entity((id, _try_localize)) = part {
@@ -949,7 +817,7 @@ impl ListeriaList {
         let mut entities_to_load : Vec<String> = vec![];
         for row in self.results.iter() {
             for cell in row.cells() {
-                self.gather_entities_and_external_properties(&cell.parts)
+                self.gather_entities_and_external_properties(cell.parts())
                     .iter()
                     .for_each(|entity_id|entities_to_load.push(entity_id.to_string()));
             }

@@ -7,6 +7,7 @@ pub mod listeria_page;
 pub mod listeria_list;
 pub mod render_wikitext;
 pub mod render_tabbed_data;
+pub mod result_cell;
 pub mod result_row;
 pub mod column;
 
@@ -15,6 +16,7 @@ pub use crate::listeria_list::ListeriaList;
 pub use crate::render_wikitext::RendererWikitext;
 pub use crate::render_tabbed_data::RendererTabbedData;
 pub use crate::result_row::ResultRow;
+pub use crate::result_row::*;
 pub use crate::column::*;
 use std::fs::File;
 use std::io::BufReader;
@@ -287,212 +289,6 @@ impl Template {
             }),
             None => None,
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ResultCellPart {
-    Number,
-    Entity((String, bool)),      // ID, try_localize
-    LocalLink((String, String)), // Page, label
-    Time(String),
-    Location((f64, f64)),
-    File(String),
-    Uri(String),
-    ExternalId((String, String)), // Property, ID
-    Text(String),
-    SnakList(Vec<ResultCellPart>), // PP and PQP
-}
-
-impl ResultCellPart {
-    pub fn from_sparql_value(v: &SparqlValue) -> Self {
-        match v {
-            SparqlValue::Entity(x) => ResultCellPart::Entity((x.to_owned(), true)),
-            SparqlValue::File(x) => ResultCellPart::File(x.to_owned()),
-            SparqlValue::Uri(x) => ResultCellPart::Uri(x.to_owned()),
-            SparqlValue::Time(x) => ResultCellPart::Text(x.to_owned()),
-            SparqlValue::Location(x) => ResultCellPart::Location((x.lat, x.lon)),
-            SparqlValue::Literal(x) => ResultCellPart::Text(x.to_owned()),
-        }
-    }
-
-    pub fn from_snak(snak: &wikibase::Snak) -> Self {
-        match &snak.data_value() {
-            Some(dv) => match dv.value() {
-                wikibase::Value::Entity(v) => ResultCellPart::Entity((v.id().to_string(), true)),
-                wikibase::Value::StringValue(v) => match snak.datatype() {
-                    wikibase::SnakDataType::CommonsMedia => ResultCellPart::File(v.to_string()),
-                    wikibase::SnakDataType::ExternalId => {
-                        ResultCellPart::ExternalId((snak.property().to_string(), v.to_string()))
-                    }
-                    _ => ResultCellPart::Text(v.to_string()),
-                },
-                wikibase::Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
-                wikibase::Value::Time(v) => ResultCellPart::Time(ResultCellPart::reduce_time(&v)),
-                wikibase::Value::Coordinate(v) => {
-                    ResultCellPart::Location((*v.latitude(), *v.longitude()))
-                }
-                wikibase::Value::MonoLingual(v) => {
-                    ResultCellPart::Text(v.language().to_string() + ":" + v.text())
-                }
-            },
-            _ => ResultCellPart::Text("No/unknown value".to_string()),
-        }
-    }
-
-    pub fn reduce_time(v: &wikibase::TimeValue) -> String {
-        lazy_static! {
-            static ref RE_DATE: Regex =
-                Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#).unwrap();
-        }
-        let s = v.time().to_string();
-        let (year, month, day) = match RE_DATE.captures(&s) {
-            Some(caps) => (
-                caps.get(1).unwrap().as_str().to_string(),
-                caps.get(2).unwrap().as_str().to_string(),
-                caps.get(3).unwrap().as_str().to_string(),
-            ),
-            None => {
-                return s;
-            }
-        };
-        match v.precision() {
-            6 => format!("{}th millenium", year[0..year.len() - 4].to_string()),
-            7 => format!("{}th century", year[0..year.len() - 3].to_string()),
-            8 => format!("{}0s", year[0..year.len() - 2].to_string()),
-            9 => year,
-            10 => format!("{}-{}", year, month),
-            11 => format!("{}-{}-{}", year, month, day),
-            _ => s,
-        }
-    }
-
-    fn tabbed_string_safe(&self, s: String) -> String {
-        let ret = s.replace("\n", " ").replace("\t", " ");
-        // 400 chars Max
-        if ret.len() >= 380 {
-            ret[0..380].to_string();
-        }
-        ret
-    }
-
-    pub fn as_wikitext(
-        &self,
-        list: &ListeriaList,
-        rownum: usize,
-        colnum: usize,
-        partnum: usize,
-    ) -> String {
-        //format!("CELL ROW {} COL {} PART {}", rownum, colnum, partnum)
-        match self {
-            ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
-            ResultCellPart::Entity((id, try_localize)) => {
-                let entity_id_link = format!("''[[:d:{}|{}]]''", id, id);
-                if !try_localize {
-                    return entity_id_link;
-                }
-                match list.get_entity(id.to_owned()) {
-                    Some(e) => {
-                        let use_language = match e.label_in_locale(list.language()) {
-                            Some(_) => list.language(),
-                            None => "en"
-                        } ;
-
-                        match e.label_in_locale(use_language) {
-                            Some(l) => {
-                                let labeled_entity_link = format!("''[[:d:{}|{}]]''", id, l);
-                                match list.get_links_type() {
-                                    LinksType::Text => l.to_string(),
-                                    LinksType::Red | LinksType::RedOnly => {
-                                        if list.local_page_exists(l) {
-                                            labeled_entity_link
-                                        } else {
-                                            "[[".to_string() + &l.to_string() + "]]"
-                                        }
-                                    }
-                                    LinksType::Reasonator => {
-                                        format!("[https://reasonator.toolforge.org/?q={} {}]", id, l)
-                                    }
-                                    _ => labeled_entity_link,
-                                }
-                            }
-                            None => entity_id_link,
-                        }
-                    },
-                    None => entity_id_link,
-                }
-            }
-            ResultCellPart::LocalLink((title, label)) => {
-                if list.normalize_page_title(title) == list.normalize_page_title(label) {
-                    "[[".to_string() + &label + "]]"
-                } else {
-                    "[[".to_string() + &title + "|" + &label + "]]"
-                }
-            }
-            ResultCellPart::Time(time) => time.to_owned(),
-            ResultCellPart::Location((lat, lon)) => list.get_location_template(*lat, *lon),
-            ResultCellPart::File(file) => {
-                let thumb = list.thumbnail_size();
-                format!(
-                    "[[{}:{}|thumb|{}px|]]",
-                    list.local_file_namespace_prefix(),
-                    &file,
-                    thumb
-                )
-            }
-            ResultCellPart::Uri(url) => url.to_owned(),
-            ResultCellPart::ExternalId((property, id)) => {
-                match list.external_id_url(property, id) {
-                    Some(url) => "[".to_string() + &url + " " + &id + "]",
-                    None => id.to_owned(),
-                }
-            }
-            ResultCellPart::Text(text) => text.to_owned(),
-            ResultCellPart::SnakList(v) => v
-                .iter()
-                .map(|rcp| rcp.as_wikitext(list, rownum, colnum, partnum))
-                .collect::<Vec<String>>()
-                .join(" — "),
-        }
-    }
-
-    pub fn as_tabbed_data(
-        &self,
-        list: &ListeriaList,
-        rownum: usize,
-        colnum: usize,
-        partnum: usize,
-    ) -> String {
-        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum, partnum))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ResultCell {
-    parts: Vec<ResultCellPart>,
-}
-
-impl ResultCell {
-    pub fn new() -> Self {
-        Self { parts: vec![] }
-    }
-    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
-        let ret: Vec<String> = self
-            .parts
-            .iter()
-            .enumerate()
-            .map(|(partnum, part)| part.as_tabbed_data(list, rownum, colnum, partnum))
-            .collect();
-        json!(ret.join("<br/>"))
-    }
-
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
-        self.parts
-            .iter()
-            .enumerate()
-            .map(|(partnum, part)| part.as_wikitext(list, rownum, colnum, partnum))
-            .collect::<Vec<String>>()
-            .join("<br/>")
     }
 }
 

@@ -1,4 +1,5 @@
-use crate::{serde_json, HashMap, ListeriaList, ResultCell, ResultCellPart, SparqlValue};
+use crate::{serde_json, HashMap, ListeriaList, SparqlValue};
+use crate::result_cell::{ResultCell, ResultCellPart};
 use regex::Regex;
 use serde_json::Value;
 use std::cmp::Ordering;
@@ -47,21 +48,21 @@ impl ResultRow {
 
     pub fn remove_shadow_files(&mut self,shadow_files:&[String]) {
         self.cells.iter_mut().for_each(|cell|{
-            cell.parts = cell.parts.iter().filter(|part|{
+            cell.set_parts ( cell.parts().iter().filter(|part|{
                 match part {
                     ResultCellPart::File(file) => !shadow_files.contains(file),
                     _ => true
                 }
             })
             .cloned()
-            .collect();
+            .collect());
         });
     }
 
     pub async fn from_columns(&mut self, list:&ListeriaList, sparql_rows: &[&HashMap<String, SparqlValue>]) {
         self.cells.clear();
         for column in list.columns().iter() {
-            let x = list.get_result_cell(&self.entity_id, sparql_rows, column).await;
+            let x = ResultCell::new(list, &self.entity_id, sparql_rows, column).await;
             self.cells.push(x);
         }
     }
