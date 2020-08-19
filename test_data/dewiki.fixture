@@ -1,0 +1,30 @@
+$$$$ API
+
+https://de.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q83764640 } }
+|columns=label,description
+|autolist=fallback
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! label
+! description
+|-
+| ''[[:d:Q83764640|[ISQ96] 382K 12]]''
+| [[Stern]] und Infrarotquelle im Sternbild [[Zentaur (Sternbild)|Zentaur]]
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q83764640"}}]}}
