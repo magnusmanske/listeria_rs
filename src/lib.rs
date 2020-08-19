@@ -137,10 +137,17 @@ impl PageParams {
         "File".to_string() // TODO
     }
 
-    pub async fn get_local_template_title(&self) -> Result<String,String> {
-        let entity_id = "Q19860885".to_string();
+    pub async fn get_local_template_title_start(&self) -> Result<String,String> {
+        self.get_local_template_title("Q19860885").await
+    }
+
+    pub async fn get_local_template_title_end(&self) -> Result<String,String> {
+        self.get_local_template_title("Q19860887").await
+    }
+
+    async fn get_local_template_title(&self,entity_id: &str) -> Result<String,String> {
         let entities = wikibase::entity_container::EntityContainer::new();
-        entities.load_entities(&self.wb_api, &vec![entity_id.clone()]).await.map_err(|e|e.to_string())?;
+        entities.load_entities(&self.wb_api, &vec![entity_id.to_string()]).await.map_err(|e|e.to_string())?;
         let entity = entities.get_entity(entity_id.to_owned()).ok_or(format!("Entity {} not found",&entity_id))?;
         match entity.sitelinks() {
             Some(sl) => sl.iter()
@@ -360,6 +367,12 @@ pub struct TemplateParams {
     references: bool,
     one_row_per_item: bool,
     sort_ascending: bool,
+}
+
+impl Default for TemplateParams {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TemplateParams {

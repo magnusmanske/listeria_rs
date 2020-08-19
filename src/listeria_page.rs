@@ -9,7 +9,6 @@ use wikibase::mediawiki::api::Api;
 - coords commonswiki CHECK
 - coords dewiki IMPLEMENT region
 - api parameter to override default
-- template_title_start by wiki?
 - actually edit the page
 
 TEMPLATE PARAMETERS
@@ -35,6 +34,7 @@ summary DONE
 pub struct ListeriaPage {
     pub page_params: PageParams,
     template_title_start: String,
+    template_title_end: String,
     template: Option<Template>,
     results: Vec<ResultRow>,
     data_has_changed: bool,
@@ -58,10 +58,12 @@ impl ListeriaPage {
             simulated_sparql_results: None,
             config: config.clone(),
             } ;
-        let template_title_start = page_params.get_local_template_title().await?;
+        let template_title_start = page_params.get_local_template_title_start().await?;
+        let template_title_end = page_params.get_local_template_title_end().await?;
         Ok(Self {
             page_params,
             template_title_start,
+            template_title_end,
             template: None,
             results: vec![],
             data_has_changed: false,
@@ -197,8 +199,7 @@ impl ListeriaPage {
         Ok(ret)
     }
 
-    pub async fn update_source_page(&self) -> Result<(), String> {
-        let wikitext = self.load_page_as("wikitext").await?;
+    fn get_new_wikitext(&self,wikitext: &str) -> Result<Option<String>,String> {
 
         // TODO use local template name
 
@@ -244,7 +245,7 @@ impl ListeriaPage {
         };
 
         let append = if end_template.is_empty() {
-            rest.to_string()
+            rest
         } else {
             after.to_string()
         };
@@ -266,12 +267,25 @@ impl ListeriaPage {
         // Compare to old wikitext
         if wikitext == new_wikitext {
             // All is as it should be
-            if self.data_has_changed {
-                self.purge_page().await?;
-            }
-            return Ok(());
+            return Ok(None);
         }
 
+        Ok(Some(new_wikitext))
+    }
+
+    pub async fn update_source_page(&self) -> Result<(), String> {
+        let wikitext = self.load_page_as("wikitext").await?;
+
+        let new_wikitext = self.get_new_wikitext(&wikitext)? ;
+
+        match new_wikitext {
+            Some(_wikitext) => {}
+            None => {
+                if self.data_has_changed {
+                    self.purge_page().await?;
+                }    
+            }
+        }
         // TODO edit page
 
         Ok(())
