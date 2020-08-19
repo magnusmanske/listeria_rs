@@ -1,0 +1,58 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+P569 time
+P214 string
+P1971 quantity
+P1559 monolingual
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q83764640 } }
+|columns=label,description
+|autolist=fallback
+}}
+{| class='wikitable sortable' style='width:100%'
+!label
+!description
+|-
+| ''[[:d:Q83764640|[ISQ96] 382K 12]]''
+| [[Star|star]] and infrared source in the constellation [[Centaurus]]
+|}
+
+{{Wikidata list end}}
+
+This is the end
+
+$$$$ EXPECTED
+
+P569 time
+P214 string
+P1971 quantity
+P1559 monolingual
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q83764640 } }
+|columns=label,description
+|autolist=fallback
+}}
+{| class='wikitable sortable' style='width:100%'
+! label
+! description
+|-
+| ''[[:d:Q83764640|[ISQ96] 382K 12]]''
+| [[Star|star]] and infrared source in the constellation [[Centaurus]]
+|}
+{{Wikidata list end}}
+
+This is the end
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q83764640"}}]}}

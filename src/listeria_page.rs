@@ -162,7 +162,7 @@ impl ListeriaPage {
         }
     }
 
-    fn separate_start_template(&self, blob: &str) -> Option<(String, String)> {
+    fn _separate_start_template(&self, blob: &str) -> Option<(String, String)> {
         let mut split_at: Option<usize> = None;
         let mut curly_count: i32 = 0;
         blob.char_indices().for_each(|(pos, c)| {
@@ -214,21 +214,67 @@ impl ListeriaPage {
         result
     }
 
-    pub fn get_new_wikitext2(&self,wikitext: &str) -> Result<Option<String>,String> {
-        let pattern_string = r#"\{\{([Ww]ikidata[ _]list|"#.to_string() + &self.template_title_start.replace(" ","[ _]")  + r#")\s*(\|.*?\}\}|\}\})"# ;
-        println!("> {}",&pattern_string);
-        let seperator: Regex = RegexBuilder::new(&pattern_string)
+    pub fn get_new_wikitext(&self,wikitext: &str) -> Result<Option<String>,String> {
+        let pattern_string_start = r#"\{\{([Ww]ikidata[ _]list|"#.to_string() + &self.template_title_start.replace(" ","[ _]")  + r#")\s*(\|.*?\}\}|\}\})"# ;
+        let pattern_string_end = r#"^(.*?)\{\{([Ww]ikidata[ _]list[ _]end|"#.to_string() + &self.template_title_end.replace(" ","[ _]")  + r#")(\s*\}\}.*)$"# ;
+        let seperator_start: Regex = RegexBuilder::new(&pattern_string_start)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+        let seperator_end: Regex = RegexBuilder::new(&pattern_string_end)
             .multi_line(true)
             .dot_matches_new_line(true)
             .build()
             .unwrap();
 
-        let result = Self::split_keep(&seperator,wikitext);
-        println!("{:#?}",&result);
-        Ok(None)
+        // TODO cover non-closed templates for data
+
+        let result_start = Self::split_keep(&seperator_start,wikitext);
+        //println!("START:\n{:#?}",&result_start);
+        let mut new_wikitext = String::new() ;
+        let mut last_was_template_open = false ;
+        let mut template_counter = 0 ;
+        for part in result_start {
+            if seperator_start.is_match_at(part,0) {
+                last_was_template_open = true ;
+                new_wikitext += part ; // TODO modify?
+                new_wikitext += "\n" ;
+                continue ;
+            }
+            if !last_was_template_open {
+                new_wikitext += part ;
+                continue ;
+            }
+            last_was_template_open = false ;
+            let result_end = seperator_end.captures(&part);
+            //println!("END:\n{:#?}",&result_end);
+            match result_end {
+                Some(caps) => {
+                    let (_before,template_name,template_end_after) = (
+                        caps.get(1).unwrap().as_str(),
+                        caps.get(2).unwrap().as_str(),
+                        caps.get(3).unwrap().as_str(),
+                    ) ;
+                    if self.lists.len() <= template_counter {
+                        return Err("More lists than templates".to_string());
+                    }
+                    let mut renderer = RendererWikitext::new();
+                    new_wikitext += &renderer.render(&self.lists[template_counter])?;
+                    new_wikitext += "\n{{" ;
+                    new_wikitext += template_name ;
+                    new_wikitext += template_end_after ;
+                    template_counter += 1 ;
+                }
+                None => {
+                    new_wikitext += part ;
+                }
+            }
+        }
+        Ok(Some(new_wikitext))
     }
 
-    fn get_new_wikitext(&self,wikitext: &str) -> Result<Option<String>,String> {
+    fn _get_new_wikitext_obsolete(&self,wikitext: &str) -> Result<Option<String>,String> {
 
         // TODO use local template name
 
@@ -268,7 +314,7 @@ impl ListeriaPage {
             },
         };
 
-        let (start_template, rest) = match self.separate_start_template(&blob.to_string()) {
+        let (start_template, rest) = match self._separate_start_template(&blob.to_string()) {
             Some(parts) => parts,
             None => return Err("Can\'t split start template".to_string()),
         };
@@ -538,17 +584,17 @@ mod tests {
 
     #[tokio::test]
     async fn edit_wikitext() {
+        let data = read_fixture_from_file ( PathBuf::from("test_data/edit_wikitext.fixture") ) ;
         let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php").await.unwrap();
         let mw_api = Arc::new(mw_api);
         let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
         let mut page = ListeriaPage::new(config,mw_api, "User:Magnus Manske/listeria test5".to_string()).await.unwrap();
-        let sparql_results = r#"{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q83764640"}}]}}"# ;
-        page.do_simulate(None,Some(sparql_results.to_string()));
+        page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
         let wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
-        let new_wikitext = page.get_new_wikitext2(&wikitext).expect("FAILED get_new_wikitext");
-        let new_wikitext = new_wikitext.expect("new_wikitext not Some()") ;
-        println!("\n----\n{}\n----",new_wikitext);
+        let wt = page.get_new_wikitext(&wikitext).expect("FAILED get_new_wikitext").expect("new_wikitext not Some()");
+        let wt = wt.trim().to_string();
+        assert_eq!(wt,data["EXPECTED"]);
     }
 
     /*
