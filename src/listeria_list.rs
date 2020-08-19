@@ -1018,16 +1018,20 @@ impl ListeriaList {
     }
 
     pub fn get_label_with_fallback(&self,entity_id:&str) -> String {
+        println!("get_label_with_fallback: {}",entity_id);
         match self.get_entity(entity_id) {
             Some(entity) => {
                 match entity.label_in_locale(self.language()).map(|s|s.to_string()) {
                     Some(s) => s,
                     None => {
+                        entity_id.to_string() // Fallback
+                        /*
                         // Fallback to en
                         match entity.label_in_locale("en").map(|s|s.to_string()) {
                             Some(s) => s,
                             None => entity_id.to_string()
                         }
+                        */
                     }
                 }
             }

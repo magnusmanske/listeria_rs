@@ -392,25 +392,32 @@ impl ResultCellPart {
                     return entity_id_link;
                 }
                 match list.get_entity(id.to_owned()) {
-                    Some(e) => match e.label_in_locale(list.language()) {
-                        Some(l) => {
-                            let labeled_entity_link = format!("''[[:d:{}|{}]]''", id, l);
-                            match list.get_links_type() {
-                                LinksType::Text => l.to_string(),
-                                LinksType::Red | LinksType::RedOnly => {
-                                    if list.local_page_exists(l) {
-                                        labeled_entity_link
-                                    } else {
-                                        "[[".to_string() + &l.to_string() + "]]"
+                    Some(e) => {
+                        let use_language = match e.label_in_locale(list.language()) {
+                            Some(_) => list.language(),
+                            None => "en"
+                        } ;
+
+                        match e.label_in_locale(use_language) {
+                            Some(l) => {
+                                let labeled_entity_link = format!("''[[:d:{}|{}]]''", id, l);
+                                match list.get_links_type() {
+                                    LinksType::Text => l.to_string(),
+                                    LinksType::Red | LinksType::RedOnly => {
+                                        if list.local_page_exists(l) {
+                                            labeled_entity_link
+                                        } else {
+                                            "[[".to_string() + &l.to_string() + "]]"
+                                        }
                                     }
+                                    LinksType::Reasonator => {
+                                        format!("[https://reasonator.toolforge.org/?q={} {}]", id, l)
+                                    }
+                                    _ => labeled_entity_link,
                                 }
-                                LinksType::Reasonator => {
-                                    format!("[https://reasonator.toolforge.org/?q={} {}]", id, l)
-                                }
-                                _ => labeled_entity_link,
                             }
+                            None => entity_id_link,
                         }
-                        None => entity_id_link,
                     },
                     None => entity_id_link,
                 }
