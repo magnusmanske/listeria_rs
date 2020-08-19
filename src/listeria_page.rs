@@ -131,11 +131,10 @@ impl ListeriaPage {
         Ok(ret)
     }
 
-    async fn load_page_as(&self, mode: &str) -> Result<String, String> {
+    pub async fn load_page_as(&self, mode: &str) -> Result<String, String> {
         let mut params: HashMap<String, String> = vec![
             ("action", "parse"),
             ("prop", mode),
-//            ("page", self.page.as_str()),
         ]
         .iter()
         .map(|x| (x.0.to_string(), x.1.to_string()))
@@ -197,6 +196,31 @@ impl ListeriaPage {
             ret.push(renderer.render(&list)?);
         }
         Ok(ret)
+    }
+
+    fn split_keep<'a>(r: &Regex, text: &'a str) -> Vec<&'a str> {
+        let mut result = Vec::new();
+        let mut last = 0;
+        for (index, matched) in text.match_indices(r) {
+            if last != index {
+                result.push(&text[last..index]);
+            }
+            result.push(matched);
+            last = index + matched.len();
+        }
+        if last < text.len() {
+            result.push(&text[last..]);
+        }
+        result
+    }
+
+    pub fn get_new_wikitext2(&self,wikitext: &str) -> Result<Option<String>,String> {
+        let pattern_string = r#"\{\{([Ww]ikidata[ _]list|"#.to_string() + &self.template_title_start.replace(" ","[ _]")  + r#")\b.+?\}\}"# ;
+        println!("> {}",&pattern_string);
+        let seperator = Regex::new(&pattern_string).expect("Invalid regex");
+        let result = Self::split_keep(&seperator,wikitext);
+        println!("{:?}",&result);
+        Ok(None)
     }
 
     fn get_new_wikitext(&self,wikitext: &str) -> Result<Option<String>,String> {
@@ -330,8 +354,7 @@ mod tests {
                 value.clear() ;
                 key = row.strip_prefix("$$$$").unwrap().trim().to_string().to_uppercase();
             } else {
-                value += "\n";
-                value += row ;
+                value += &format!("\n{}",row);
             }
         }
         if !key.is_empty() {
@@ -508,10 +531,24 @@ mod tests {
         check_fixture_file(PathBuf::from("test_data/dewiki.fixture")).await;
     }
 
+    #[tokio::test]
+    async fn edit_wikitext() {
+        let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php").await.unwrap();
+        let mw_api = Arc::new(mw_api);
+        let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
+        let mut page = ListeriaPage::new(config,mw_api, "User:Magnus Manske/listeria test5".to_string()).await.unwrap();
+        page.do_simulate(None,None);
+        page.run().await.unwrap();
+        let wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
+        let new_wikitext = page.get_new_wikitext2(&wikitext).expect("FAILED get_new_wikitext");
+        let new_wikitext = new_wikitext.expect("new_wikitext not Some()") ;
+        println!("\n----\n{}\n----",new_wikitext);
+    }
+
     /*
     // I want all of it, Molari, ALL OF IT!
     #[tokio::test]
-    async fn fixtures() {
+    async fn all_fixtures() {
         let paths = fs::read_dir("./test_data").unwrap();
         for path in paths {
             let path = path.unwrap();
