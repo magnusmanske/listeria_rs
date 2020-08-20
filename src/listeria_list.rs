@@ -52,7 +52,7 @@ impl ListeriaList {
         &self.sparql_rows
     }
 
-    pub fn local_file_namespace_prefix(&self) -> String {
+    pub fn local_file_namespace_prefix(&self) -> &String {
         self.page_params.local_file_namespace_prefix()
     }
 
@@ -362,7 +362,7 @@ impl ListeriaList {
             .query_raw(&url,&api.no_params(),"GET")
             .await
             .map_err(|e|e.to_string())?;
-        let json : Value= serde_json::from_str(&body).unwrap(); // TODO
+        let json : Value = serde_json::from_str(&body).map_err(|e|e.to_string())?;
         match json["result"].as_str() {
             Some(result) => Ok(result.to_string()),
             None => Err("Not a valid autodesc result".to_string())

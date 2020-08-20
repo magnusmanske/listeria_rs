@@ -41,6 +41,7 @@ pub struct PageParams {
     pub simulated_text: Option<String>,
     pub simulated_sparql_results: Option<String>,
     pub config: Arc<Configuration>,
+    local_file_namespace_prefix: String,
 }
 
 impl PageParams {
@@ -56,12 +57,13 @@ impl PageParams {
             simulated_text: None,
             simulated_sparql_results: None,
             config: config.clone(),
+            local_file_namespace_prefix: api.get_canonical_namespace_name(6).unwrap_or("File").to_string()
         } ;
         Ok(ret)
     }
 
-    pub fn local_file_namespace_prefix(&self) -> String {
-        "File".to_string() // TODO
+    pub fn local_file_namespace_prefix(&self) -> &String {
+        &self.local_file_namespace_prefix
     }
 
 }
