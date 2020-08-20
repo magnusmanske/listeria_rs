@@ -1,6 +1,5 @@
 use crate::*;
 use std::sync::Arc;
-use regex::{Regex, RegexBuilder};
 use std::collections::HashMap;
 use wikibase::mediawiki::api::Api;
 
@@ -33,8 +32,6 @@ summary DONE
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
     pub page_params: PageParams,
-    template_title_start: String,
-    template_title_end: String,
     template: Option<Template>,
     results: Vec<ResultRow>,
     data_has_changed: bool,
@@ -43,27 +40,9 @@ pub struct ListeriaPage {
 
 impl ListeriaPage {
     pub async fn new(config: Arc<Configuration>, mw_api: Arc<Api>, page: String) -> Result<Self,String> {
-        let page_params = PageParams {
-            wiki: mw_api
-                .get_site_info_string("general", "wikiid")?
-                .to_string(),
-            page,
-            language: mw_api
-                .get_site_info_string("general", "lang")?
-                .to_string(),
-            mw_api: mw_api.clone(),
-            wb_api: config.get_default_wbapi().await,
-            simulate: false,
-            simulated_text: None,
-            simulated_sparql_results: None,
-            config: config.clone(),
-            } ;
-        let template_title_start = page_params.get_local_template_title_start().await?;
-        let template_title_end = page_params.get_local_template_title_end().await?;
+        let page_params = PageParams::new(config, mw_api, page).await? ;
         Ok(Self {
             page_params,
-            template_title_start,
-            template_title_end,
             template: None,
             results: vec![],
             data_has_changed: false,
@@ -111,6 +90,7 @@ impl ListeriaPage {
     async fn load_page(&mut self) -> Result<Vec<Template>, String> {
         let text = self.load_page_as("parsetree").await?;
         let doc = roxmltree::Document::parse(&text).unwrap();
+        let template_start = self.page_params.get_local_template_title_start()? ;
         let ret = doc.root()
             .descendants()
             .filter(|n| n.is_element() && n.tag_name().name() == "template")
@@ -118,7 +98,7 @@ impl ListeriaPage {
                 match Template::new_from_xml(&node) {
                     Some(t) => {
                         // HARDCODED EN AS FALLBACK
-                        if t.title == self.template_title_start || t.title == "Wikidata list" {
+                        if t.title == template_start || t.title == "Wikidata list" {
                             Some(t)
                         } else {
                             None
@@ -162,33 +142,6 @@ impl ListeriaPage {
         }
     }
 
-    fn _separate_start_template(&self, blob: &str) -> Option<(String, String)> {
-        let mut split_at: Option<usize> = None;
-        let mut curly_count: i32 = 0;
-        blob.char_indices().for_each(|(pos, c)| {
-            match c {
-                '{' => {
-                    curly_count += 1;
-                }
-                '}' => {
-                    curly_count -= 1;
-                }
-                _ => {}
-            }
-            if curly_count == 0 && split_at.is_none() {
-                split_at = Some(pos + 1);
-            }
-        });
-        match split_at {
-            Some(pos) => {
-                let mut template = blob.to_string();
-                let rest = template.split_off(pos);
-                Some((template, rest))
-            }
-            None => None,
-        }
-    }
-
     pub fn as_wikitext(&self) -> Result<Vec<String>,String> {
         let mut ret : Vec<String> = vec!();
         for list in &self.lists {
@@ -198,165 +151,15 @@ impl ListeriaPage {
         Ok(ret)
     }
 
-    fn split_keep<'a>(r: &Regex, text: &'a str) -> Vec<&'a str> {
-        let mut result = Vec::new();
-        let mut last = 0;
-        for (index, matched) in text.match_indices(r) {
-            if last != index {
-                result.push(&text[last..index]);
-            }
-            result.push(matched);
-            last = index + matched.len();
-        }
-        if last < text.len() {
-            result.push(&text[last..]);
-        }
-        result
+    pub fn lists(&self) -> &Vec<ListeriaList> {
+        &self.lists
     }
 
-    pub fn get_new_wikitext(&self,wikitext: &str) -> Result<Option<String>,String> {
-        let pattern_string_start = r#"\{\{([Ww]ikidata[ _]list|"#.to_string() + &self.template_title_start.replace(" ","[ _]")  + r#")\s*(\|.*?\}\}|\}\})"# ;
-        let pattern_string_end = r#"^(.*?)\{\{([Ww]ikidata[ _]list[ _]end|"#.to_string() + &self.template_title_end.replace(" ","[ _]")  + r#")(\s*\}\}.*)$"# ;
-        let seperator_start: Regex = RegexBuilder::new(&pattern_string_start)
-            .multi_line(true)
-            .dot_matches_new_line(true)
-            .build()
-            .unwrap();
-        let seperator_end: Regex = RegexBuilder::new(&pattern_string_end)
-            .multi_line(true)
-            .dot_matches_new_line(true)
-            .build()
-            .unwrap();
 
-        // TODO cover non-closed templates for data
-
-        let result_start = Self::split_keep(&seperator_start,wikitext);
-        //println!("START:\n{:#?}",&result_start);
-        let mut new_wikitext = String::new() ;
-        let mut last_was_template_open = false ;
-        let mut template_counter = 0 ;
-        for part in result_start {
-            if seperator_start.is_match_at(part,0) {
-                last_was_template_open = true ;
-                new_wikitext += part ; // TODO modify?
-                new_wikitext += "\n" ;
-                continue ;
-            }
-            if !last_was_template_open {
-                new_wikitext += part ;
-                continue ;
-            }
-            last_was_template_open = false ;
-            let result_end = seperator_end.captures(&part);
-            //println!("END:\n{:#?}",&result_end);
-            match result_end {
-                Some(caps) => {
-                    let (_before,template_name,template_end_after) = (
-                        caps.get(1).unwrap().as_str(),
-                        caps.get(2).unwrap().as_str(),
-                        caps.get(3).unwrap().as_str(),
-                    ) ;
-                    if self.lists.len() <= template_counter {
-                        return Err("More lists than templates".to_string());
-                    }
-                    let mut renderer = RendererWikitext::new();
-                    new_wikitext += &renderer.render(&self.lists[template_counter])?;
-                    new_wikitext += "\n{{" ;
-                    new_wikitext += template_name ;
-                    new_wikitext += template_end_after ;
-                    template_counter += 1 ;
-                }
-                None => {
-                    new_wikitext += part ;
-                }
-            }
-        }
-
-        if template_counter != self.lists.len() {
-            return Err(format!("Replaced {} lists but there are {}",&template_counter,self.lists.len())) ;
-        }
-
-        Ok(Some(new_wikitext))
-    }
-
-    fn _get_new_wikitext_obsolete(&self,wikitext: &str) -> Result<Option<String>,String> {
-
-        // TODO use local template name
-
-        // Start/end template
-        let pattern1 =
-            r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#;
-
-        // No end template
-        let pattern2 = r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)"#;
-
-        let re_wikitext1: Regex = RegexBuilder::new(pattern1)
-            .multi_line(true)
-            .dot_matches_new_line(true)
-            .build()
-            .unwrap();
-        let re_wikitext2: Regex = RegexBuilder::new(pattern2)
-            .multi_line(true)
-            .dot_matches_new_line(true)
-            .build()
-            .unwrap();
-
-        let (before, blob, end_template, after) = match re_wikitext1.captures(&wikitext) {
-            Some(caps) => (
-                caps.get(1).unwrap().as_str(),
-                caps.get(2).unwrap().as_str(),
-                caps.get(3).unwrap().as_str(),
-                caps.get(4).unwrap().as_str(),
-            ),
-            None => match re_wikitext2.captures(&wikitext) {
-                Some(caps) => (
-                    caps.get(1).unwrap().as_str(),
-                    caps.get(2).unwrap().as_str(),
-                    "",
-                    "",
-                ),
-                None => return Err("No template/end template found".to_string()),
-            },
-        };
-
-        let (start_template, rest) = match self._separate_start_template(&blob.to_string()) {
-            Some(parts) => parts,
-            None => return Err("Can\'t split start template".to_string()),
-        };
-
-        let append = if end_template.is_empty() {
-            rest
-        } else {
-            after.to_string()
-        };
-
-        // Remove tabbed data marker
-        let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")
-            .unwrap()
-            .replace(&start_template, "");
-
-        // Add tabbed data marker
-        let start_template = start_template[0..start_template.len() - 2]
-            .trim()
-            .to_string()
-            + "\n|tabbed_data=1}}";
-
-        // Create new wikitext
-        let new_wikitext = before.to_owned() + &start_template + "\n" + append.trim();
-
-        // Compare to old wikitext
-        if wikitext == new_wikitext {
-            // All is as it should be
-            return Ok(None);
-        }
-
-        Ok(Some(new_wikitext))
-    }
-
-    pub async fn update_source_page(&self) -> Result<(), String> {
+    pub async fn update_source_page(&self,renderer: &impl Renderer) -> Result<(), String> {
         let wikitext = self.load_page_as("wikitext").await?;
 
-        let new_wikitext = self.get_new_wikitext(&wikitext)? ;
+        let new_wikitext = renderer.get_new_wikitext(&wikitext,self)? ;
 
         match new_wikitext {
             Some(_wikitext) => {}
@@ -597,7 +400,8 @@ mod tests {
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
         let wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
-        let wt = page.get_new_wikitext(&wikitext).expect("FAILED get_new_wikitext").expect("new_wikitext not Some()");
+        let renderer = RendererWikitext::new();
+        let wt = renderer.get_new_wikitext(&wikitext,&page).expect("FAILED get_new_wikitext").expect("new_wikitext not Some()");
         let wt = wt.trim().to_string();
         assert_eq!(wt,data["EXPECTED"]);
     }

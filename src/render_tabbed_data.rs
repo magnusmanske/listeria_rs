@@ -1,3 +1,4 @@
+use regex::RegexBuilder;
 use crate::*;
 
 pub struct RendererTabbedData {
@@ -24,6 +25,81 @@ impl Renderer for RendererTabbedData {
             .collect();
         Ok(format!("{}",ret))
         }
+
+
+    fn get_new_wikitext(&self,wikitext: &str, _page:&ListeriaPage ) -> Result<Option<String>,String> {
+
+        // TODO use local template name
+
+        // Start/end template
+        let pattern1 =
+            r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#;
+
+        // No end template
+        let pattern2 = r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)"#;
+
+        let re_wikitext1: Regex = RegexBuilder::new(pattern1)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+        let re_wikitext2: Regex = RegexBuilder::new(pattern2)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+
+        let (before, blob, end_template, after) = match re_wikitext1.captures(&wikitext) {
+            Some(caps) => (
+                caps.get(1).unwrap().as_str(),
+                caps.get(2).unwrap().as_str(),
+                caps.get(3).unwrap().as_str(),
+                caps.get(4).unwrap().as_str(),
+            ),
+            None => match re_wikitext2.captures(&wikitext) {
+                Some(caps) => (
+                    caps.get(1).unwrap().as_str(),
+                    caps.get(2).unwrap().as_str(),
+                    "",
+                    "",
+                ),
+                None => return Err("No template/end template found".to_string()),
+            },
+        };
+
+        let (start_template, rest) = match self.separate_start_template(&blob.to_string()) {
+            Some(parts) => parts,
+            None => return Err("Can\'t split start template".to_string()),
+        };
+
+        let append = if end_template.is_empty() {
+            rest
+        } else {
+            after.to_string()
+        };
+
+        // Remove tabbed data marker
+        let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")
+            .unwrap()
+            .replace(&start_template, "");
+
+        // Add tabbed data marker
+        let start_template = start_template[0..start_template.len() - 2]
+            .trim()
+            .to_string()
+            + "\n|tabbed_data=1}}";
+
+        // Create new wikitext
+        let new_wikitext = before.to_owned() + &start_template + "\n" + append.trim();
+
+        // Compare to old wikitext
+        if wikitext == new_wikitext {
+            // All is as it should be
+            return Ok(None);
+        }
+
+        Ok(Some(new_wikitext))
+    }
 }
 
 impl RendererTabbedData {
@@ -65,4 +141,33 @@ impl RendererTabbedData {
         // TODO check ["edit"]["result"] == "Success"
         Ok(true) //list.data_has_changed = true; // Just to make sure to update including page
     }
+
+
+    fn separate_start_template(&self, blob: &str) -> Option<(String, String)> {
+        let mut split_at: Option<usize> = None;
+        let mut curly_count: i32 = 0;
+        blob.char_indices().for_each(|(pos, c)| {
+            match c {
+                '{' => {
+                    curly_count += 1;
+                }
+                '}' => {
+                    curly_count -= 1;
+                }
+                _ => {}
+            }
+            if curly_count == 0 && split_at.is_none() {
+                split_at = Some(pos + 1);
+            }
+        });
+        match split_at {
+            Some(pos) => {
+                let mut template = blob.to_string();
+                let rest = template.split_off(pos);
+                Some((template, rest))
+            }
+            None => None,
+        }
+    }
+
 }

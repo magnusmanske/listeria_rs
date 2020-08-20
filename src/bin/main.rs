@@ -1,6 +1,8 @@
 extern crate config;
 extern crate serde_json;
 
+use listeria::Renderer;
+use crate::listeria::RendererWikitext;
 use std::sync::Arc;
 use config::{Config, File};
 use listeria;
@@ -22,47 +24,23 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         .expect("Could not log in");
     let mw_api = Arc::new(mw_api);
     
-    /*
-    let wb_api = Arc::new(wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
-            .await
-            .expect("Could not connect to MW API"));
-    */
-
-    /*
-    let mut commons_api =
-        wikibase::mediawiki::api::Api::new("https://commons.wikimedia.org/w/api.php")
-            .await
-            .expect("Could not connect to Commons API");
-    commons_api
-        .login(user.to_owned(), pass.to_owned())
-        .await
-        .expect("Could not log in");
-    */
-
     let mut page = match ListeriaPage::new(config, mw_api, page_title.into()).await {
         Ok(p) => p,
         Err(e) => panic!("Could not open/parse page '{}': {}", &page_title,e),
     };
-    /*
-    page.do_simulate(Some("
-{{Wikidata list
-|sparql=SELECT ?item { VALUES ?item { wd:Q17 } }
-|columns=label:name,P41
-|summary=itemnumber
-}}
-{{Wikidata list end}}".to_string()),None);
-    */
 
     match page.run().await {
         Ok(_) => {}
         Err(e) => panic!("{}", e),
     }
     let old_wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
-    let new_wikitext = page.get_new_wikitext(&old_wikitext).unwrap().unwrap();
+    let renderer = RendererWikitext::new();
+    let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&page).unwrap().unwrap();
     println!("{:?}",&new_wikitext);
+
+
     //let j = page.as_tabbed_data().unwrap();
     //page.write_tabbed_data(j, &mut commons_api).unwrap();
-
     //page.update_source_page().await.unwrap();
     // TODO update source wiki text (if necessary), or action=purge to update
 }

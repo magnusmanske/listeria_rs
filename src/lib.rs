@@ -130,19 +130,50 @@ pub struct PageParams {
     pub simulated_text: Option<String>,
     pub simulated_sparql_results: Option<String>,
     pub config: Arc<Configuration>,
+    template_title_start: Option<String>,
+    template_title_end: Option<String>,
 }
 
 impl PageParams {
+    pub async fn new ( config: Arc<Configuration>, mw_api: Arc<Api>, page: String ) -> Result<Self,String> {
+        let mut ret = Self {
+            wiki: mw_api
+                .get_site_info_string("general", "wikiid")?
+                .to_string(),
+            page,
+            language: mw_api
+                .get_site_info_string("general", "lang")?
+                .to_string(),
+            mw_api: mw_api.clone(),
+            wb_api: config.get_default_wbapi().await,
+            simulate: false,
+            simulated_text: None,
+            simulated_sparql_results: None,
+            config: config.clone(),
+            template_title_start: None,
+            template_title_end: None,
+        } ;
+        ret.template_title_start = Some(ret.get_local_template_title("Q19860885").await?) ;
+        ret.template_title_end = Some(ret.get_local_template_title("Q19860887").await?) ;
+        Ok(ret)
+    }
+
     pub fn local_file_namespace_prefix(&self) -> String {
         "File".to_string() // TODO
     }
 
-    pub async fn get_local_template_title_start(&self) -> Result<String,String> {
-        self.get_local_template_title("Q19860885").await
+    pub fn get_local_template_title_start(&self) -> Result<String,String> {
+        match &self.template_title_start {
+            Some(s) => return Ok(s.to_owned()) ,
+            None => Err("Cannot find local start template".to_string())
+        }
     }
 
-    pub async fn get_local_template_title_end(&self) -> Result<String,String> {
-        self.get_local_template_title("Q19860887").await
+    pub fn get_local_template_title_end(&self) -> Result<String,String> {
+        match &self.template_title_end {
+            Some(s) => return Ok(s.to_owned()) ,
+            None => Err("Cannot find local end template".to_string())
+        }
     }
 
     async fn get_local_template_title(&self,entity_id: &str) -> Result<String,String> {
@@ -445,4 +476,5 @@ impl SectionType {
 pub trait Renderer {
     fn new() -> Self ;
     fn render(&mut self,page:&ListeriaList) -> Result<String,String> ;
+    fn get_new_wikitext(&self,wikitext: &str, page:&ListeriaPage ) -> Result<Option<String>,String> ;
 }
