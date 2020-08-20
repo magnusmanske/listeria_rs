@@ -12,7 +12,6 @@ pub mod result_cell;
 pub mod result_row;
 pub mod column;
 
-use tokio::sync::Mutex;
 pub use crate::configuration::Configuration;
 pub use crate::listeria_page::ListeriaPage;
 pub use crate::listeria_list::ListeriaList;
@@ -21,6 +20,7 @@ pub use crate::render_tabbed_data::RendererTabbedData;
 pub use crate::result_row::ResultRow;
 pub use crate::result_row::*;
 pub use crate::column::*;
+use tokio::sync::Mutex;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;

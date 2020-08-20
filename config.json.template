@@ -11,6 +11,7 @@
         "enwiki":[0],
         "frwiki":[0]
     } ,
+    "default_thumbnail_size" : 128 ,
     "shadow_images_check" : [ "enwiki" ] ,
     "template_start_q" : "Q19860885",
     "template_end_q" : "Q19860887"

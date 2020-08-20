@@ -132,23 +132,21 @@ impl ListeriaList {
 
     pub fn get_location_template(&self, lat: f64, lon: f64) -> String {
         // Hardcoded special cases!!1!
-        if self.page_params.wiki == "wikidatawiki" {
-            return format!("{}/{}",lat,lon);
+        match self.page_params.wiki.as_str() {
+            "wikidatawiki" => format!("{}/{}",lat,lon),
+            "commonswiki" => format!("{{{{Inline coordinates|{}|{}|display=inline}}}}",lat,lon),
+            "dewiki" => {
+                // TODO get region for item
+                let q = "" ;
+                let region = "" ;
+                format!("{{{{Coordinate|text=DMS|NS={}|EW={}|name={}|simple=y|type=landmark|region={}}}}}",lat,lon,q,region)
+            }
+            _ => format!("{{{{Coord|{}|{}|display=inline}}}}", lat, lon) // en; default
         }
-        if self.page_params.wiki == "commonswiki" {
-            return format!("{{Inline coordinates|{}|{}|display=inline}}}}",lat,lon);
-        }
-        if self.page_params.wiki == "dewiki" {
-            // TODO get region for item
-            let q = "" ;
-            let region = "" ;
-            return format!("{{{{Coordinate|text=DMS|NS={}|EW={}|name={}|simple=y|type=landmark|region={}}}}}",lat,lon,q,region);
-        }
-        format!("{{{{Coord|{}|{}|display=inline}}}}", lat, lon) // en; default
     }
 
     pub fn thumbnail_size(&self) -> u64 {
-        let default: u64 = 128;
+        let default = self.page_params.config.default_thumbnail_size();
         match self.template.params.get("thumb") {
             Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap(),
             None => default,
@@ -165,7 +163,7 @@ impl ListeriaList {
         if self.page_params.simulate {
             match &self.page_params.simulated_sparql_results {
                 Some(json_text) => {
-                    let j = serde_json::from_str(&json_text).unwrap();
+                    let j = serde_json::from_str(&json_text).map_err(|e|e.to_string())?;
                     return self.parse_sparql(j);
                 }
                 None => {}

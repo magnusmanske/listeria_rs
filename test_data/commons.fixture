@@ -1,0 +1,40 @@
+$$$$ API
+
+https://commons.wikimedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q350 wd:Q365 wd:Q58976 } }
+|columns=label,description,P625
+|autolist=fallback
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! label
+! description
+! coordinate location
+|-
+| [[Cambridge]]
+| city in Cambridgeshire, England
+| {{Inline coordinates|52.208055555556|0.1225|display=inline}}
+|-
+| [[Köln|Cologne]]
+| city in North Rhine-Westphalia, Germany
+| {{Inline coordinates|50.942222222222|6.9577777777778|display=inline}}
+|-
+| ''[[:d:Q58976|Piraeus]]''
+| port and municipality in Greece, part of Athens urban area
+| {{Inline coordinates|37.943|23.646944444444|display=inline}}
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q350"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q365"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q58976"}}]}}

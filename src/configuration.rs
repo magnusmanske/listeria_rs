@@ -26,6 +26,7 @@ pub struct Configuration {
     template_start_sites: HashMap<String,String>,
     template_end_sites: HashMap<String,String>,
     shadow_images_check: Vec<String>,
+    default_thumbnail_size: Option<u64>,
 }
 
 impl Configuration {
@@ -42,6 +43,7 @@ impl Configuration {
         if let Some(s) = j["default_api"].as_str() { ret.default_api = s.to_string() }
         if let Some(s) = j["default_language"].as_str() { ret.default_language = s.to_string() }
         if let Some(b) = j["prefer_preferred"].as_bool() { ret.prefer_preferred = b }
+        if let Some(i) = j["default_thumbnail_size"].as_u64() { ret.default_thumbnail_size = Some(i) }
         if let Some(sic) = j["shadow_images_check"].as_array() { ret.shadow_images_check = sic.iter().map(|s|s.as_str().unwrap().to_string()).collect() }
 
         // valid WikiBase APIs
@@ -125,6 +127,10 @@ impl Configuration {
 
     pub fn default_language(&self) -> &str {
         &self.default_language
+    }
+
+    pub fn default_thumbnail_size(&self) -> u64 {
+        self.default_thumbnail_size.unwrap_or(128)
     }
 
     pub async fn get_default_wbapi(&self) -> Api {
