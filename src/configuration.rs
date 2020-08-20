@@ -22,6 +22,7 @@ pub struct Configuration {
     namespace_blocks: HashMap<String,NamespaceGroup>,
     default_api:String,
     prefer_preferred: bool,
+    default_language: String,
     template_start_sites: HashMap<String,String>,
     template_end_sites: HashMap<String,String>,
     shadow_images_check: Vec<String>,
@@ -39,6 +40,7 @@ impl Configuration {
         let mut ret : Self = Default::default();
 
         if let Some(s) = j["default_api"].as_str() { ret.default_api = s.to_string() }
+        if let Some(s) = j["default_language"].as_str() { ret.default_language = s.to_string() }
         if let Some(b) = j["prefer_preferred"].as_bool() { ret.prefer_preferred = b }
         if let Some(sic) = j["shadow_images_check"].as_array() { ret.shadow_images_check = sic.iter().map(|s|s.as_str().unwrap().to_string()).collect() }
 
@@ -119,6 +121,10 @@ impl Configuration {
 
     pub fn prefer_preferred(&self) -> bool {
         self.prefer_preferred
+    }
+
+    pub fn default_language(&self) -> &str {
+        &self.default_language
     }
 
     pub async fn get_default_wbapi(&self) -> Api {

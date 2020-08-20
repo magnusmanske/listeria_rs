@@ -893,7 +893,7 @@ impl ListeriaList {
                         entity_id.to_string() // Fallback
                         /*
                         // Fallback to en
-                        match entity.label_in_locale("en").map(|s|s.to_string()) {
+                        match entity.label_in_locale(self.default_language()).map(|s|s.to_string()) {
                             Some(s) => s,
                             None => entity_id.to_string()
                         }
@@ -903,6 +903,10 @@ impl ListeriaList {
             }
             None => entity_id.to_string() // Fallback
         }
+    }
+
+    pub fn default_language(&self) -> &str {
+        &self.page_params.config.default_language()
     }
 
 }

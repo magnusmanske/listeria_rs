@@ -115,7 +115,7 @@ impl ResultCellPart {
                     Some(e) => {
                         let use_language = match e.label_in_locale(list.language()) {
                             Some(_) => list.language(),
-                            None => "en"
+                            None => list.default_language()
                         } ;
 
                         match e.label_in_locale(use_language) {
