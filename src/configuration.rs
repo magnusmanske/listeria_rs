@@ -133,6 +133,11 @@ impl Configuration {
         self.default_thumbnail_size.unwrap_or(128)
     }
 
+    pub async fn get_wbapi(&self,key: &str) -> Option<Api> {
+        let url = self.wb_apis.get(key)?;
+        Some(wikibase::mediawiki::api::Api::new(&url).await.unwrap())
+    }
+
     pub async fn get_default_wbapi(&self) -> Api {
         let url = match self.wb_apis.get(&self.default_api) {
             Some(url) => url.to_string(),

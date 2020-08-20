@@ -78,7 +78,7 @@ impl ListeriaPage {
         for template in templates {
             let mut list = ListeriaList::new(template.clone(),self.page_params.clone()) ;
             self.template = Some(template.clone());
-            list.process_template()?;
+            list.process_template().await?;
             list.run_query().await?;
             list.load_entities().await?;
             list.generate_results().await?;
@@ -424,6 +424,11 @@ mod tests {
     #[tokio::test]
     async fn commons() {
         check_fixture_file(PathBuf::from("test_data/commons.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn commons_sparql() {
+        //check_fixture_file(PathBuf::from("test_data/commons_sparql.fixture")).await; // TODO
     }
 
     #[tokio::test]

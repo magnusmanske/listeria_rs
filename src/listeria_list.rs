@@ -17,10 +17,12 @@ pub struct ListeriaList {
     shadow_files: Vec<String>,
     local_page_cache: HashMap<String,bool>,
     section_id_to_name: HashMap<usize,String>,
+    wb_api: Api, // TODO Arc (and all the other wb_api as well)
 }
 
 impl ListeriaList {
     pub fn new(template:Template,page_params:PageParams) -> Self {
+        let wb_api = page_params.wb_api.clone() ;
         Self {
             page_params,
             template,
@@ -33,6 +35,7 @@ impl ListeriaList {
             shadow_files: vec![],
             local_page_cache: HashMap::new(),
             section_id_to_name: HashMap::new(),
+            wb_api,
         }
     }
 
@@ -60,7 +63,7 @@ impl ListeriaList {
         self.section_id_to_name.get(&id)
     }
 
-    pub fn process_template(&mut self) -> Result<(), String> {
+    pub async fn process_template(&mut self) -> Result<(), String> {
         let template = self.template.clone();
         match template.params.get("columns") {
             Some(columns) => {
@@ -75,6 +78,13 @@ impl ListeriaList {
         self.params = TemplateParams::new_from_params(&template) ;
         if let Some(l) = template.params.get("language") { self.page_params.language = l.to_lowercase() }
         if let Some(s) = template.params.get("links") { self.params.links = LinksType::new_from_string(s.to_string()) }
+
+        let wikibase = &self.params.wikibase ;
+        println!("WIKIBASE: {}",&wikibase);
+        self.wb_api = match self.page_params.config.get_wbapi(&wikibase.to_lowercase()).await {
+            Some(api) => api,
+            None => return Err(format!("No wikibase setup configured for '{}'",&wikibase)),
+        } ;
 
         Ok(())
     }
@@ -170,7 +180,7 @@ impl ListeriaList {
             }
         }
 
-        let endpoint = match self.page_params.wb_api.get_site_info_string("general", "wikibase-sparql") {
+        let endpoint = match self.wb_api.get_site_info_string("general", "wikibase-sparql") {
             Ok(endpoint) => { // SPARQL service given by site
                 endpoint
             }
@@ -178,7 +188,7 @@ impl ListeriaList {
                 "https://wcqs-beta.wmflabs.org/sparql"
             }
         } ;
-        let j = match self.page_params.wb_api.sparql_query_endpoint(sparql,endpoint).await {
+        let j = match self.wb_api.sparql_query_endpoint(sparql,endpoint).await {
             Ok(j) => j,
             Err(e) => return Err(format!("{:?}", &e)),
         } ;
@@ -244,7 +254,7 @@ impl ListeriaList {
         if ids.is_empty() {
             return Err("No items to show".to_string());
         }
-        match self.entities.load_entities(&self.page_params.wb_api, &ids).await {
+        match self.entities.load_entities(&self.wb_api, &ids).await {
             Ok(_) => {}
             Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
         }
@@ -772,7 +782,7 @@ impl ListeriaList {
     async fn load_items(&mut self, mut entities_to_load:Vec<String>) -> Result<(), String> {
         entities_to_load.sort() ;
         entities_to_load.dedup();
-        match self.entities.load_entities(&self.page_params.wb_api, &entities_to_load).await {
+        match self.entities.load_entities(&self.wb_api, &entities_to_load).await {
             Ok(_) => {}
             Err(e) => return Err(format!("Error loading entities: {:?}", &e)),
         }

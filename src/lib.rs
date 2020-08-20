@@ -273,6 +273,7 @@ pub struct TemplateParams {
     references: bool,
     one_row_per_item: bool,
     sort_ascending: bool,
+    wikibase: String,
 }
 
 impl Default for TemplateParams {
@@ -297,6 +298,7 @@ impl TemplateParams {
             references: false,
             one_row_per_item: false,
             sort_ascending: true,
+            wikibase: String::new(),
          }
     }
 
@@ -321,6 +323,7 @@ impl TemplateParams {
             wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
             references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
             sort_ascending: template.params.get("sort_order").map(|s|s.trim().to_uppercase())!=Some("DESC".to_string()),
+            wikibase: template.params.get("wikibase").map(|s|s.trim().to_uppercase()).unwrap_or("wikidata".to_string()) , // TODO config
         }
     }
 }
