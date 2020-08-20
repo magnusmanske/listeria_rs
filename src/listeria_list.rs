@@ -436,7 +436,7 @@ impl ListeriaList {
     }
 
 
-    fn patch_items_to_local_links(&mut self) -> Result<(), String> {
+    fn process_items_to_local_links(&mut self) -> Result<(), String> {
         // Try to change items to local link
         // TODO mutate in place; fn in ResultRow. This is pathetic.
         self.results = self
@@ -459,7 +459,7 @@ impl ListeriaList {
     }
 
 
-    async fn patch_remove_shadow_files(&mut self) -> Result<(), String> {
+    async fn process_remove_shadow_files(&mut self) -> Result<(), String> {
         if !self.page_params.config.check_for_shadow_images(&self.page_params.wiki) {
             return Ok(())
         }
@@ -522,7 +522,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn patch_redlinks_only(&mut self) -> Result<(), String> {
+    fn process_redlinks_only(&mut self) -> Result<(), String> {
         if *self.get_links_type() != LinksType::RedOnly {
             return Ok(())
         }
@@ -548,7 +548,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn patch_redlinks(&mut self) -> Result<(), String> {
+    async fn process_redlinks(&mut self) -> Result<(), String> {
         if *self.get_links_type() != LinksType::RedOnly && *self.get_links_type() != LinksType::Red {
             return Ok(())
         }
@@ -602,7 +602,7 @@ impl ListeriaList {
         }
     }
 
-    fn patch_sort_results(&mut self) -> Result<(), String> {
+    fn process_sort_results(&mut self) -> Result<(), String> {
         let sortkeys : Vec<String> ;
         let mut datatype = SnakDataType::String ; // Default
         match &self.params.sort {
@@ -630,7 +630,7 @@ impl ListeriaList {
 
         // Apply sortkeys
         if self.results.len() != sortkeys.len() { // Paranoia
-            return Err("patch_sort_results: sortkeys length mismatch".to_string());
+            return Err("process_sort_results: sortkeys length mismatch".to_string());
         }
         self.results
             .iter_mut()
@@ -646,7 +646,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    pub fn patch_assign_sections(&mut self) -> Result<(), String> {
+    pub fn process_assign_sections(&mut self) -> Result<(), String> {
         let section_property = match &self.params.section {
             Some(p) => p ,
             None => return Ok(()) // Nothing to do
@@ -709,7 +709,7 @@ impl ListeriaList {
             .for_each(|(num,row)|{
                 let section_name = match section_names.get(num) {
                     Some(name) => name,
-                    None => return // Err(format!("patch_assign_sections: No name for {}", num)),
+                    None => return // Err(format!("process_assign_sections: No name for {}", num)),
                 };
                 let section_id = match name2id.get(section_name) {
                     Some(id) => *id,
@@ -721,14 +721,14 @@ impl ListeriaList {
         Ok(())
     }
     
-    pub async fn patch_results(&mut self) -> Result<(), String> {
+    pub async fn process_results(&mut self) -> Result<(), String> {
         self.gather_and_load_items().await? ;
-        self.patch_redlinks_only()?;
-        self.patch_items_to_local_links()?;
-        self.patch_redlinks().await?;
-        self.patch_remove_shadow_files().await?;
-        self.patch_sort_results()?;
-        self.patch_assign_sections()?;
+        self.process_redlinks_only()?;
+        self.process_items_to_local_links()?;
+        self.process_redlinks().await?;
+        self.process_remove_shadow_files().await?;
+        self.process_sort_results()?;
+        self.process_assign_sections()?;
         Ok(())
     }
 

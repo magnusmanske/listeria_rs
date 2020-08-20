@@ -82,7 +82,7 @@ impl ListeriaPage {
             list.run_query().await?;
             list.load_entities().await?;
             list.generate_results().await?;
-            list.patch_results().await?;
+            list.process_results().await?;
             self.lists.push(list);
         }
         Ok(())
