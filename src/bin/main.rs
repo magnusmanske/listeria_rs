@@ -2,8 +2,6 @@ extern crate config;
 extern crate serde_json;
 
 use tokio::sync::Mutex;
-use listeria::Renderer;
-use crate::listeria::RendererWikitext;
 use std::sync::Arc;
 use config::{Config, File};
 use listeria;
@@ -14,7 +12,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
     let user = settings.get_str("user.user").expect("No user name");
     let pass = settings.get_str("user.pass").expect("No user pass");
 
-    let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
+    let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
 
     let mut mw_api = wikibase::mediawiki::api::Api::new(api_url)
         .await

@@ -9,5 +9,8 @@
         "dewiki":[0],
         "enwiki":[0],
         "frwiki":[0]
-    }
+    } ,
+    "shadow_images_check" : [ "enwiki" ] ,
+    "template_start_q" : "Q19860885",
+    "template_end_q" : "Q19860887"
 }

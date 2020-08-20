@@ -3,6 +3,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate serde_json;
 
+pub mod configuration;
 pub mod listeria_page;
 pub mod listeria_list;
 pub mod render_wikitext;
@@ -12,6 +13,7 @@ pub mod result_row;
 pub mod column;
 
 use tokio::sync::Mutex;
+pub use crate::configuration::Configuration;
 pub use crate::listeria_page::ListeriaPage;
 pub use crate::listeria_list::ListeriaList;
 pub use crate::render_wikitext::RendererWikitext;
@@ -21,104 +23,12 @@ pub use crate::result_row::*;
 pub use crate::column::*;
 use std::fs::File;
 use std::io::BufReader;
-use std::path::Path;
 use std::sync::Arc;
 use regex::Regex;
 use serde_json::Value;
 use std::collections::HashMap;
 use wikibase::entity::EntityTrait;
 use wikibase::mediawiki::api::Api;
-
-#[derive(Debug, Clone)]
-pub enum NamespaceGroup {
-    All, // All namespaces forbidden
-    List(Vec<i64>), // List of forbidden namespaces
-}
-
-impl NamespaceGroup {
-    pub fn can_edit_namespace(&self,nsid: i64) -> bool {
-        match self {
-            Self::All => false ,
-            Self::List(list) => nsid>=0 && !list.contains(&nsid)
-        }
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Configuration {
-    wb_apis: HashMap<String,String>,
-    namespace_blocks: HashMap<String,NamespaceGroup>,
-    default_api:String,
-    prefer_preferred: bool,
-}
-
-impl Configuration {
-    pub fn new_from_file<P: AsRef<Path>>(path: P) -> Result<Self,String> {
-        let file = File::open(path).map_err(|e|format!("{:?}",e))?;
-        let reader = BufReader::new(file);
-        let j = serde_json::from_reader(reader).map_err(|e|format!("{:?}",e))?;
-        Self::new_from_json(j)
-    }
-
-    pub fn can_edit_namespace(&self, wiki:&str, nsid:i64) -> bool {
-        match self.namespace_blocks.get(wiki) {
-            Some(nsg) => nsg.can_edit_namespace(nsid),
-            None => true // Default
-        }
-    }
-
-    pub fn new_from_json ( j:Value ) -> Result<Self,String> {
-        let mut ret : Self = Default::default();
-
-        if let Some(s) = j["default_api"].as_str() { ret.default_api = s.to_string() }
-
-        // valid WikiBase APIs
-        if let Some(o) = j["apis"].as_object() {
-            for (k,v) in o.iter() {
-                if let (k,Some(v)) = (k.as_str(),v.as_str()) {
-                    ret.wb_apis.insert(k.to_string(),v.to_string());
-                }
-                
-            }
-        }
-
-        // Namespace blocks on wikis
-        if let Some(o) = j["namespace_blocks"].as_object() {
-            for (k,v) in o.iter() {
-                // Check for string value ("*")
-                if let Some(s) = v.as_str() {
-                    if s == "*" { // All namespaces
-                        ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::All);
-                    } else {
-                        return Err(format!("Unrecognized string value for namespace_blocks[{}]:{}",k,v));
-                    }
-                }
-
-                // Check for array of integers
-                if let Some(a) = v.as_array() {
-                    let nsids : Vec<i64> = a.iter().filter_map(|v|v.as_u64()).map(|x|x as i64).collect();
-                    ret.namespace_blocks.insert(k.to_string(),NamespaceGroup::List(nsids));
-                }
-            }
-        }
-
-        if let Some(b) = j["prefer_preferred"].as_bool() { ret.prefer_preferred = b }
-
-        Ok(ret)
-    }
-
-    pub fn prefer_preferred(&self) -> bool {
-        self.prefer_preferred
-    }
-
-    pub async fn get_default_wbapi(&self) -> Api {
-        let url = match self.wb_apis.get(&self.default_api) {
-            Some(url) => url.to_string(),
-            None => "https://www.wikidata.org/w/api.php".to_string()
-        };
-        wikibase::mediawiki::api::Api::new(&url).await.unwrap()
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct PageParams {
@@ -131,14 +41,12 @@ pub struct PageParams {
     pub simulated_text: Option<String>,
     pub simulated_sparql_results: Option<String>,
     pub config: Arc<Configuration>,
-    template_title_start: Option<String>,
-    template_title_end: Option<String>,
 }
 
 impl PageParams {
     pub async fn new ( config: Arc<Configuration>, mw_api: Arc<Mutex<Api>>, page: String ) -> Result<Self,String> {
         let api = mw_api.lock().await;
-        let mut ret = Self {
+        let ret = Self {
             wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
             page,
             language: api.get_site_info_string("general", "lang")?.to_string(),
@@ -148,11 +56,7 @@ impl PageParams {
             simulated_text: None,
             simulated_sparql_results: None,
             config: config.clone(),
-            template_title_start: None,
-            template_title_end: None,
         } ;
-        ret.template_title_start = Some(ret.get_local_template_title("Q19860885").await?) ;
-        ret.template_title_end = Some(ret.get_local_template_title("Q19860887").await?) ;
         Ok(ret)
     }
 
@@ -160,35 +64,6 @@ impl PageParams {
         "File".to_string() // TODO
     }
 
-    pub fn get_local_template_title_start(&self) -> Result<String,String> {
-        match &self.template_title_start {
-            Some(s) => return Ok(s.to_owned()) ,
-            None => Err("Cannot find local start template".to_string())
-        }
-    }
-
-    pub fn get_local_template_title_end(&self) -> Result<String,String> {
-        match &self.template_title_end {
-            Some(s) => return Ok(s.to_owned()) ,
-            None => Err("Cannot find local end template".to_string())
-        }
-    }
-
-    async fn get_local_template_title(&self,entity_id: &str) -> Result<String,String> {
-        let entities = wikibase::entity_container::EntityContainer::new();
-        entities.load_entities(&self.wb_api, &vec![entity_id.to_string()]).await.map_err(|e|e.to_string())?;
-        let entity = entities.get_entity(entity_id.to_owned()).ok_or(format!("Entity {} not found",&entity_id))?;
-        match entity.sitelinks() {
-            Some(sl) => sl.iter()
-                .filter(|s|*s.site()==self.wiki)
-                .map(|s|s.title())
-                .map(|s|wikibase::mediawiki::title::Title::new_from_full(s,&self.wb_api))
-                .map(|t|t.pretty().to_string())
-                .next()
-                .ok_or(format!("No sitelink to {} in {}",&self.wiki,&entity_id)),
-            None => Err(format!("No sitelink in {}",&entity_id))
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

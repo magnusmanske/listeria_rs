@@ -35,19 +35,19 @@ impl Renderer for RendererWikitext {
         wikitext: &str,
         page: &ListeriaPage,
     ) -> Result<Option<String>, String> {
+        let start_template = page
+            .page_params
+            .config
+            .get_local_template_title_start(&page.page_params.wiki)?;
+        let end_template = page
+            .page_params
+            .config
+            .get_local_template_title_end(&page.page_params.wiki)?;
         let pattern_string_start = r#"\{\{([Ww]ikidata[ _]list|"#.to_string()
-            + &page
-                .page_params
-                .get_local_template_title_start()
-                .unwrap()
-                .replace(" ", "[ _]")
+            + &start_template.replace(" ", "[ _]")
             + r#")\s*(\|.*?\}\}|\}\})"#;
         let pattern_string_end = r#"^(.*?)\{\{([Ww]ikidata[ _]list[ _]end|"#.to_string()
-            + &page
-                .page_params
-                .get_local_template_title_end()
-                .unwrap()
-                .replace(" ", "[ _]")
+            + &end_template.replace(" ", "[ _]")
             + r#")(\s*\}\}.*)$"#;
         let seperator_start: Regex = RegexBuilder::new(&pattern_string_start)
             .multi_line(true)

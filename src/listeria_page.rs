@@ -92,7 +92,7 @@ impl ListeriaPage {
     async fn load_page(&mut self) -> Result<Vec<Template>, String> {
         let text = self.load_page_as("parsetree").await?;
         let doc = roxmltree::Document::parse(&text).unwrap();
-        let template_start = self.page_params.get_local_template_title_start()? ;
+        let template_start = self.page_params.config.get_local_template_title_start(&self.page_params.wiki)? ;
         let ret = doc.root()
             .descendants()
             .filter(|n| n.is_element() && n.tag_name().name() == "template")
@@ -266,7 +266,7 @@ mod tests {
         if path.to_str().unwrap() == "test_data/shadow_images.fixture" { // HACKISH
             j["prefer_preferred"] = json!(false) ;
         }
-        let config = Arc::new(Configuration::new_from_json(j).unwrap());
+        let config = Arc::new(Configuration::new_from_json(j).await.unwrap());
         let mut page = ListeriaPage::new(config,mw_api, data["PAGETITLE"].clone()).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();
@@ -426,7 +426,7 @@ mod tests {
         let data = read_fixture_from_file ( PathBuf::from("test_data/edit_wikitext.fixture") ) ;
         let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php").await.unwrap();
         let mw_api = Arc::new(Mutex::new(mw_api));
-        let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
+        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let mut page = ListeriaPage::new(config,mw_api, "User:Magnus Manske/listeria test5".to_string()).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();

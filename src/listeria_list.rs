@@ -14,7 +14,6 @@ pub struct ListeriaList {
     sparql_first_variable: Option<String>,
     entities: EntityContainer,
     results:Vec<ResultRow>,
-    wikis_to_check_for_shadow_images: Vec<String>,
     shadow_files: Vec<String>,
     local_page_cache: HashMap<String,bool>,
     section_id_to_name: HashMap<usize,String>,
@@ -31,7 +30,6 @@ impl ListeriaList {
             sparql_first_variable: None,
             entities: EntityContainer::new(),
             results: vec![],
-            wikis_to_check_for_shadow_images: vec!["enwiki".to_string()],
             shadow_files: vec![],
             local_page_cache: HashMap::new(),
             section_id_to_name: HashMap::new(),
@@ -343,7 +341,7 @@ impl ListeriaList {
             .map(|x|(*x).clone())
             .collect();
 
-        if self.page_params.config.prefer_preferred {
+        if self.page_params.config.prefer_preferred() {
             let has_preferred = ret.iter().any(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
             if has_preferred {
                 ret.retain(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
@@ -462,7 +460,7 @@ impl ListeriaList {
 
 
     async fn patch_remove_shadow_files(&mut self) -> Result<(), String> {
-        if !self.wikis_to_check_for_shadow_images.contains(&self.page_params.wiki) {
+        if !self.page_params.config.check_for_shadow_images(&self.page_params.wiki) {
             return Ok(())
         }
         let mut files_to_check = vec![] ;
