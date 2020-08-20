@@ -1,6 +1,7 @@
 extern crate config;
 extern crate serde_json;
 
+use tokio::sync::Mutex;
 use listeria::Renderer;
 use crate::listeria::RendererWikitext;
 use std::sync::Arc;
@@ -22,7 +23,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         .login(user.to_owned(), pass.to_owned())
         .await
         .expect("Could not log in");
-    let mw_api = Arc::new(mw_api);
+    let mw_api = Arc::new(Mutex::new(mw_api));
     
     let mut page = match ListeriaPage::new(config, mw_api, page_title.into()).await {
         Ok(p) => p,
@@ -37,7 +38,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
     let renderer = RendererWikitext::new();
     let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&page).unwrap().unwrap();
     println!("{:?}",&new_wikitext);
-    
+
 
     //let j = page.as_tabbed_data().unwrap();
     //page.write_tabbed_data(j, &mut commons_api).unwrap();
