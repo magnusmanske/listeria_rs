@@ -1,0 +1,22 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item WHERE { ?item wdt:P180 wd:Q42 }
+|columns=item,label
+|wikibase=commons
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+
+#$$$$ SPARQL_RESULTS
+
