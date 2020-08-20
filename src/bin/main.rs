@@ -37,7 +37,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
     let renderer = RendererWikitext::new();
     let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&page).unwrap().unwrap();
     println!("{:?}",&new_wikitext);
-
+    
 
     //let j = page.as_tabbed_data().unwrap();
     //page.write_tabbed_data(j, &mut commons_api).unwrap();

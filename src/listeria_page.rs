@@ -39,7 +39,7 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub async fn new(config: Arc<Configuration>, mw_api: Arc<Api>, page: String) -> Result<Self,String> {
+    pub async fn new(config: Arc<Configuration>, mw_api: Arc<Mutex<Api>>, page: String) -> Result<Self,String> {
         let page_params = PageParams::new(config, mw_api, page).await? ;
         Ok(Self {
             page_params,
@@ -60,8 +60,10 @@ impl ListeriaPage {
         &self.page_params.language
     }
 
-    pub fn check_namespace(&self) -> Result<(),String> {
-        let title = wikibase::mediawiki::title::Title::new_from_full(&self.page_params.page,&self.page_params.mw_api);
+    pub async fn check_namespace(&self) -> Result<(),String> {
+        let api = self.page_params.mw_api.lock().await;
+        let title = wikibase::mediawiki::title::Title::new_from_full(&self.page_params.page,&api);
+        drop(api);
         if self.page_params.config.can_edit_namespace(&self.page_params.wiki,title.namespace_id()) {
             Ok(())
         } else {
@@ -70,7 +72,7 @@ impl ListeriaPage {
     }
 
     pub async fn run(&mut self) -> Result<(), String> {
-        self.check_namespace()?;
+        self.check_namespace().await?;
         self.lists.clear();
         let templates = self.load_page().await?;
         for template in templates {
@@ -133,6 +135,8 @@ impl ListeriaPage {
         let result = self
             .page_params
             .mw_api
+            .lock()
+            .await
             .get_query_api_json(&params)
             .await
             .expect("Loading page failed");
@@ -155,14 +159,24 @@ impl ListeriaPage {
         &self.lists
     }
 
+    async fn save_wikitext_to_page(&self,page:&str,wikitext:&str) -> Result<(),String> {
+        let token = self.page_params.mw_api.lock().await.get_edit_token().await.map_err(|e|e.to_string())?;
+        Ok(())
+    }
 
-    pub async fn update_source_page(&self,renderer: &impl Renderer) -> Result<(), String> {
-        let wikitext = self.load_page_as("wikitext").await?;
 
-        let new_wikitext = renderer.get_new_wikitext(&wikitext,self)? ;
+    pub async fn update_source_page(&mut self,renderer: &impl Renderer) -> Result<(), String> {
+        let old_wikitext = self.load_page_as("wikitext").await?;
+        let new_wikitext = renderer.get_new_wikitext(&old_wikitext,self)? ; // Safe
 
         match new_wikitext {
-            Some(_wikitext) => {}
+            Some(new_wikitext) => {
+                if old_wikitext != new_wikitext {
+                    self.save_wikitext_to_page(&self.page_params.page.clone(),&new_wikitext).await?;
+                } else {
+                    println!("No change, no edit");
+                }
+            }
             None => {
                 if self.data_has_changed {
                     self.purge_page().await?;
@@ -185,7 +199,13 @@ impl ListeriaPage {
                 .map(|x| (x.0.to_string(), x.1.to_string()))
                 .collect();
 
-        match self.page_params.mw_api.get_query_api_json(&params).await {
+        match self
+            .page_params
+            .mw_api
+            .lock()
+            .await
+            .get_query_api_json(&params)
+            .await {
             Ok(_r) => Ok(()),
             Err(e) => Err(e.to_string()),
         }
@@ -226,7 +246,7 @@ mod tests {
         //println!("{:?}",&path);
         let data = read_fixture_from_file ( path.clone() ) ;
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
-        let mw_api = Arc::new(mw_api);
+        let mw_api = Arc::new(Mutex::new(mw_api));
 
         let file = File::open("config.json").unwrap();
         let reader = BufReader::new(file);
@@ -394,7 +414,7 @@ mod tests {
     async fn edit_wikitext() {
         let data = read_fixture_from_file ( PathBuf::from("test_data/edit_wikitext.fixture") ) ;
         let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php").await.unwrap();
-        let mw_api = Arc::new(mw_api);
+        let mw_api = Arc::new(Mutex::new(mw_api));
         let config = Arc::new(Configuration::new_from_file("config.json").unwrap());
         let mut page = ListeriaPage::new(config,mw_api, "User:Magnus Manske/listeria test5".to_string()).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));

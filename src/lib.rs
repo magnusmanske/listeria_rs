@@ -11,6 +11,7 @@ pub mod result_cell;
 pub mod result_row;
 pub mod column;
 
+use tokio::sync::Mutex;
 pub use crate::listeria_page::ListeriaPage;
 pub use crate::listeria_list::ListeriaList;
 pub use crate::render_wikitext::RendererWikitext;
@@ -124,7 +125,7 @@ pub struct PageParams {
     pub language: String,
     pub wiki: String,
     pub page: String,
-    pub mw_api: Arc<Api>,
+    pub mw_api: Arc<Mutex<Api>>,
     pub wb_api: Api,
     pub simulate: bool,
     pub simulated_text: Option<String>,
@@ -135,13 +136,17 @@ pub struct PageParams {
 }
 
 impl PageParams {
-    pub async fn new ( config: Arc<Configuration>, mw_api: Arc<Api>, page: String ) -> Result<Self,String> {
+    pub async fn new ( config: Arc<Configuration>, mw_api: Arc<Mutex<Api>>, page: String ) -> Result<Self,String> {
         let mut ret = Self {
             wiki: mw_api
+                .lock()
+                .await
                 .get_site_info_string("general", "wikiid")?
                 .to_string(),
             page,
             language: mw_api
+                .lock()
+                .await
                 .get_site_info_string("general", "lang")?
                 .to_string(),
             mw_api: mw_api.clone(),

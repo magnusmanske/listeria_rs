@@ -99,6 +99,8 @@ impl ListeriaList {
         let result = match self
             .page_params
             .mw_api
+            .lock()
+            .await
             .get_query_api_json(&params)
             .await {
                 Ok(r) => r,
@@ -360,6 +362,8 @@ impl ListeriaList {
         let body = self
             .page_params
             .mw_api
+            .lock()
+            .await
             .query_raw(&url,&self.page_params.mw_api.no_params(),"GET")
             .await
             .map_err(|e|e.to_string())?;
@@ -488,7 +492,7 @@ impl ListeriaList {
                     .map(|x| (x.0.to_string(), x.1.to_string()))
                     .collect();
 
-            let j = match self.page_params.mw_api.get_query_api_json(&params).await {
+            let j = match self.page_params.mw_api.lock().await.get_query_api_json(&params).await {
                 Ok(j) => j,
                 Err(_e) => json!({})
             };
