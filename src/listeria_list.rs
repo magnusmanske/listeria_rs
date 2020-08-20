@@ -170,10 +170,18 @@ impl ListeriaList {
             }
         }
 
-        let j = match self.page_params.wb_api.sparql_query(sparql).await {
+        let endpoint = match self.page_params.wb_api.get_site_info_string("general", "wikibase-sparql") {
+            Ok(endpoint) => { // SPARQL service given by site
+                endpoint
+            }
+            _ => { // Override SPARQL service (hardcoded for Commons)
+                "https://wcqs-beta.wmflabs.org/sparql"
+            }
+        } ;
+        let j = match self.page_params.wb_api.sparql_query_endpoint(sparql,endpoint).await {
             Ok(j) => j,
             Err(e) => return Err(format!("{:?}", &e)),
-        };
+        } ;
         if self.page_params.simulate {
             println!("{}\n{}\n",&sparql,&j);
         }
