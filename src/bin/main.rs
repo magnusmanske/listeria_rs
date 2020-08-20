@@ -32,11 +32,14 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         Ok(_) => {}
         Err(e) => panic!("{}", e),
     }
-    let renderer = RendererWikitext::new();
+    //let renderer = RendererWikitext::new();
     //let old_wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
     //let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&page).unwrap().unwrap();
     //println!("{:?}",&new_wikitext);
-    page.update_source_page(&renderer).await.expect("update failed");
+    match page.update_source_page().await.expect("update failed") {
+        true => println!("{} edited",&page_title),
+        false => println!("{} not edited",&page_title),
+    }
 
 
     //let j = page.as_tabbed_data().unwrap();

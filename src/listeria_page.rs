@@ -163,20 +163,22 @@ impl ListeriaPage {
         let mut api = self.page_params.mw_api.lock().await ;
         let token = api.get_edit_token().await.map_err(|e|e.to_string())?;
         let params: HashMap<String, String> = vec![
-            ("action".to_string(), "edit".to_string()),
-            ("title".to_string(), title.to_string()),
-            ("text".to_string(), wikitext.to_string()),
-            ("summary".to_string(), "Wikidata list updated".to_string()),
-            ("token".to_string(), token.to_string()),
+            ("action", "edit"),
+            ("title", title),
+            ("text", wikitext),
+            ("summary", "Wikidata list updated"),
+            ("token", &token),
         ]
         .into_iter()
+        .map(|(k,v)|(k.to_string(),v.to_string()))
         .collect();
         api.post_query_api_json(&params).await.map_err(|e|e.to_string())?;
         Ok(())
     }
 
 
-    pub async fn update_source_page(&mut self,renderer: &impl Renderer) -> Result<bool, String> {
+    pub async fn update_source_page(&mut self) -> Result<bool, String> {
+        let renderer = RendererWikitext::new();
         let mut edited = false ;
         let old_wikitext = self.load_page_as("wikitext").await?;
         let new_wikitext = renderer.get_new_wikitext(&old_wikitext,self)? ; // Safe
