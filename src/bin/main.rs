@@ -24,20 +24,19 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         .await
         .expect("Could not log in");
     let mw_api = Arc::new(Mutex::new(mw_api));
-    
     let mut page = match ListeriaPage::new(config, mw_api, page_title.into()).await {
         Ok(p) => p,
         Err(e) => panic!("Could not open/parse page '{}': {}", &page_title,e),
     };
-
     match page.run().await {
         Ok(_) => {}
         Err(e) => panic!("{}", e),
     }
-    let old_wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
     let renderer = RendererWikitext::new();
-    let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&page).unwrap().unwrap();
-    println!("{:?}",&new_wikitext);
+    //let old_wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
+    //let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&page).unwrap().unwrap();
+    //println!("{:?}",&new_wikitext);
+    page.update_source_page(&renderer).await.expect("update failed");
 
 
     //let j = page.as_tabbed_data().unwrap();

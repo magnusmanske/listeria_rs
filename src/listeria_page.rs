@@ -159,22 +159,32 @@ impl ListeriaPage {
         &self.lists
     }
 
-    async fn save_wikitext_to_page(&self,page:&str,wikitext:&str) -> Result<(),String> {
-        let token = self.page_params.mw_api.lock().await.get_edit_token().await.map_err(|e|e.to_string())?;
+    async fn save_wikitext_to_page(&self,title:&str,wikitext:&str) -> Result<(),String> {
+        let mut api = self.page_params.mw_api.lock().await ;
+        let token = api.get_edit_token().await.map_err(|e|e.to_string())?;
+        let params: HashMap<String, String> = vec![
+            ("action".to_string(), "edit".to_string()),
+            ("title".to_string(), title.to_string()),
+            ("text".to_string(), wikitext.to_string()),
+            ("summary".to_string(), "Wikidata list updated".to_string()),
+            ("token".to_string(), token.to_string()),
+        ]
+        .into_iter()
+        .collect();
+        api.post_query_api_json(&params).await.map_err(|e|e.to_string())?;
         Ok(())
     }
 
 
-    pub async fn update_source_page(&mut self,renderer: &impl Renderer) -> Result<(), String> {
+    pub async fn update_source_page(&mut self,renderer: &impl Renderer) -> Result<bool, String> {
+        let mut edited = false ;
         let old_wikitext = self.load_page_as("wikitext").await?;
         let new_wikitext = renderer.get_new_wikitext(&old_wikitext,self)? ; // Safe
-
         match new_wikitext {
             Some(new_wikitext) => {
                 if old_wikitext != new_wikitext {
-                    self.save_wikitext_to_page(&self.page_params.page.clone(),&new_wikitext).await?;
-                } else {
-                    println!("No change, no edit");
+                    self.save_wikitext_to_page(&self.page_params.page,&new_wikitext).await?;
+                    edited = true ;
                 }
             }
             None => {
@@ -183,9 +193,8 @@ impl ListeriaPage {
                 }    
             }
         }
-        // TODO edit page
 
-        Ok(())
+        Ok(edited)
     }
 
     async fn purge_page(&self) -> Result<(), String> {

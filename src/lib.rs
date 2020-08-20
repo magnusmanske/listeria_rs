@@ -137,18 +137,11 @@ pub struct PageParams {
 
 impl PageParams {
     pub async fn new ( config: Arc<Configuration>, mw_api: Arc<Mutex<Api>>, page: String ) -> Result<Self,String> {
+        let api = mw_api.lock().await;
         let mut ret = Self {
-            wiki: mw_api
-                .lock()
-                .await
-                .get_site_info_string("general", "wikiid")?
-                .to_string(),
+            wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
             page,
-            language: mw_api
-                .lock()
-                .await
-                .get_site_info_string("general", "lang")?
-                .to_string(),
+            language: api.get_site_info_string("general", "lang")?.to_string(),
             mw_api: mw_api.clone(),
             wb_api: config.get_default_wbapi().await,
             simulate: false,
