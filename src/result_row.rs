@@ -30,6 +30,10 @@ impl ResultRow {
         &self.cells
     }
 
+    pub fn cells_mut(&mut self) -> &mut Vec<ResultCell> {
+        &mut self.cells
+    }
+
     pub fn section(&self) -> usize {
         self.section
     }

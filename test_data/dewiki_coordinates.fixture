@@ -1,0 +1,40 @@
+$$$$ API
+
+https://de.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q350 wd:Q365 wd:Q58976 } }
+|columns=label,description,P625
+|autolist=fallback
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! label
+! description
+! geographische Koordinaten
+|-
+| [[Cambridge]]
+| Hauptstadt der Grafschaft Cambridgeshire
+| {{Coordinate|text=DMS|NS=52.208055555556|EW=0.1225|name=Q350|simple=y|type=landmark|region=GB-ENG}}
+|-
+| [[Köln]]
+| Großstadt in Nordrhein-Westfalen, Deutschland
+| {{Coordinate|text=DMS|NS=50.942222222222|EW=6.9577777777778|name=Q365|simple=y|type=landmark|region=DE-NW}}
+|-
+| [[Piräus]]
+| gemeente in Athene, Griechenland
+| {{Coordinate|text=DMS|NS=37.943|EW=23.646944444444|name=Q58976|simple=y|type=landmark|region=GR-I}}
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q350"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q365"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q58976"}}]}}

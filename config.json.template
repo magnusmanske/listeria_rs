@@ -11,6 +11,12 @@
         "enwiki":[0],
         "frwiki":[0]
     } ,
+    "location_templates":{
+        "default":"{{Coord|$LAT$|$LON$|display=inline}}",
+        "wikidatawiki":"$LAT$/$LON$",
+        "commonswiki":"{{Inline coordinates|$LAT$|$LON$|display=inline}}",
+        "dewiki":"{{Coordinate|text=DMS|NS=$LAT$|EW=$LON$|name=$ITEM$|simple=y|type=landmark|region=$REGION$}}"
+    },
     "default_thumbnail_size" : 128 ,
     "shadow_images_check" : [ "enwiki" ] ,
     "template_start_q" : "Q19860885",

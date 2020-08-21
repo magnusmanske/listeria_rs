@@ -25,6 +25,7 @@ pub struct Configuration {
     default_language: String,
     template_start_sites: HashMap<String,String>,
     template_end_sites: HashMap<String,String>,
+    location_templates: HashMap<String,String>,
     shadow_images_check: Vec<String>,
     default_thumbnail_size: Option<u64>,
 }
@@ -51,6 +52,16 @@ impl Configuration {
             for (k,v) in o.iter() {
                 if let (k,Some(v)) = (k.as_str(),v.as_str()) {
                     ret.wb_apis.insert(k.to_string(),v.to_string());
+                }
+                
+            }
+        }
+
+        // Location template patterns
+        if let Some(o) = j["location_templates"].as_object() {
+            for (k,v) in o.iter() {
+                if let (k,Some(v)) = (k.as_str(),v.as_str()) {
+                    ret.location_templates.insert(k.to_string(),v.to_string());
                 }
                 
             }
@@ -119,6 +130,10 @@ impl Configuration {
             Some(nsg) => nsg.can_edit_namespace(nsid),
             None => true // Default
         }
+    }
+
+    pub fn get_location_template(&self, wiki:&str) -> String {
+        self.location_templates.get(wiki).unwrap_or(self.location_templates.get(&"default".to_string()).unwrap()).to_string()
     }
 
     pub fn prefer_preferred(&self) -> bool {

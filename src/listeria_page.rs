@@ -5,8 +5,6 @@ use wikibase::mediawiki::api::Api;
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
-- coords commonswiki CHECK
-- coords dewiki IMPLEMENT region
 - api parameter to override default
 - actually edit the page
 
@@ -419,6 +417,11 @@ mod tests {
     #[tokio::test]
     async fn dewiki() {
         check_fixture_file(PathBuf::from("test_data/dewiki.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn dewiki_coordinates() {
+        check_fixture_file(PathBuf::from("test_data/dewiki_coordinates.fixture")).await;
     }
 
     #[tokio::test]

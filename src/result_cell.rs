@@ -16,7 +16,7 @@ pub enum ResultCellPart {
     Entity((String, bool)),      // ID, try_localize
     LocalLink((String, String)), // Page, label
     Time(String),
-    Location((f64, f64)),
+    Location((f64, f64, Option<String>)),
     File(String),
     Uri(String),
     ExternalId((String, String)), // Property, ID
@@ -31,7 +31,7 @@ impl ResultCellPart {
             SparqlValue::File(x) => ResultCellPart::File(x.to_owned()),
             SparqlValue::Uri(x) => ResultCellPart::Uri(x.to_owned()),
             SparqlValue::Time(x) => ResultCellPart::Text(x.to_owned()),
-            SparqlValue::Location(x) => ResultCellPart::Location((x.lat, x.lon)),
+            SparqlValue::Location(x) => ResultCellPart::Location((x.lat, x.lon, None)),
             SparqlValue::Literal(x) => ResultCellPart::Text(x.to_owned()),
         }
     }
@@ -50,7 +50,7 @@ impl ResultCellPart {
                 wikibase::Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
                 wikibase::Value::Time(v) => ResultCellPart::Time(ResultCellPart::reduce_time(&v)),
                 wikibase::Value::Coordinate(v) => {
-                    ResultCellPart::Location((*v.latitude(), *v.longitude()))
+                    ResultCellPart::Location((*v.latitude(), *v.longitude(), None))
                 }
                 wikibase::Value::MonoLingual(v) => {
                     ResultCellPart::Text(v.language().to_string() + ":" + v.text())
@@ -150,7 +150,13 @@ impl ResultCellPart {
                 }
             }
             ResultCellPart::Time(time) => time.to_owned(),
-            ResultCellPart::Location((lat, lon)) => list.get_location_template(*lat, *lon),
+            ResultCellPart::Location((lat, lon, region)) => {
+                let entity_id = match list.results().get(rownum) {
+                    Some(row) => Some(row.entity_id().to_string()),
+                    None => None
+                } ;
+                list.get_location_template(*lat, *lon, entity_id, region.to_owned())
+            }
             ResultCellPart::File(file) => {
                 let thumb = list.thumbnail_size();
                 format!(
@@ -333,6 +339,10 @@ impl ResultCell {
 
     pub fn parts(&self) -> &Vec<ResultCellPart> {
         &self.parts
+    }
+
+    pub fn parts_mut(&mut self) -> &mut Vec<ResultCellPart> {
+        &mut self.parts
     }
 
     pub fn set_parts(&mut self, parts:Vec<ResultCellPart> ) {

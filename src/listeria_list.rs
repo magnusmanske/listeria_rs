@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use crate::*;
 use wikibase::entity::*;
 use wikibase::snak::SnakDataType;
@@ -140,19 +141,15 @@ impl ListeriaList {
         first_letter.to_uppercase() + the_rest
     }
 
-    pub fn get_location_template(&self, lat: f64, lon: f64) -> String {
-        // Hardcoded special cases!!1!
-        match self.page_params.wiki.as_str() {
-            "wikidatawiki" => format!("{}/{}",lat,lon),
-            "commonswiki" => format!("{{{{Inline coordinates|{}|{}|display=inline}}}}",lat,lon),
-            "dewiki" => {
-                // TODO get region for item
-                let q = "" ;
-                let region = "" ;
-                format!("{{{{Coordinate|text=DMS|NS={}|EW={}|name={}|simple=y|type=landmark|region={}}}}}",lat,lon,q,region)
-            }
-            _ => format!("{{{{Coord|{}|{}|display=inline}}}}", lat, lon) // en; default
-        }
+    pub fn get_location_template(&self, lat: f64, lon: f64, entity_id: Option<String>, region: Option<String> ) -> String {
+        self
+            .page_params
+            .config
+            .get_location_template(&self.page_params.wiki)
+            .replace("$LAT$",&format!("{}",lat))
+            .replace("$LON$",&format!("{}",lon))
+            .replace("$ITEM$",&entity_id.unwrap_or(String::new()))
+            .replace("$REGION$",&region.unwrap_or(String::new()))
     }
 
     pub fn thumbnail_size(&self) -> u64 {
@@ -160,6 +157,22 @@ impl ListeriaList {
         match self.template.params.get("thumb") {
             Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap(),
             None => default,
+        }
+    }
+
+    pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value, String> {
+        let endpoint = match self.wb_api.get_site_info_string("general", "wikibase-sparql") {
+            Ok(endpoint) => { // SPARQL service given by site
+                endpoint
+            }
+            _ => { // Override SPARQL service (hardcoded for Commons)
+                "https://wcqs-beta.wmflabs.org/sparql"
+            }
+        } ;
+        //println!("USING ENDPOINT {}",&endpoint);
+        match self.wb_api.sparql_query_endpoint(sparql,endpoint).await {
+            Ok(j) => Ok(j),
+            Err(e) => return Err(format!("{:?}", &e)),
         }
     }
 
@@ -180,18 +193,8 @@ impl ListeriaList {
             }
         }
 
-        let endpoint = match self.wb_api.get_site_info_string("general", "wikibase-sparql") {
-            Ok(endpoint) => { // SPARQL service given by site
-                endpoint
-            }
-            _ => { // Override SPARQL service (hardcoded for Commons)
-                "https://wcqs-beta.wmflabs.org/sparql"
-            }
-        } ;
-        let j = match self.wb_api.sparql_query_endpoint(sparql,endpoint).await {
-            Ok(j) => j,
-            Err(e) => return Err(format!("{:?}", &e)),
-        } ;
+        let j = self.run_sparql_query(&sparql).await? ;
+
         if self.page_params.simulate {
             println!("{}\n{}\n",&sparql,&j);
         }
@@ -736,6 +739,97 @@ impl ListeriaList {
         
         Ok(())
     }
+
+    async fn get_region_for_entity_id(&self, entity_id: &String) -> Option<String> {
+        let sparql = format!("SELECT ?q ?x {{ wd:{} wdt:P131* ?q . ?q wdt:P300 ?x }}", entity_id) ;
+        let j = self.run_sparql_query(&sparql).await.ok()?;
+        match j["results"]["bindings"].as_array() {
+            Some(a) => {
+                let mut region = String::new();
+                a.iter().for_each(|b|{
+                    match b["x"]["type"].as_str() {
+                        Some("literal") => {}
+                        _ => return
+                    }
+                    match b["x"]["value"].as_str() {
+                        Some(r) => {
+                            if r.len() > region.len() {
+                                region = r.to_string();
+                            }
+                        }
+                        None => {}
+                    }
+                });
+                if region.is_empty() { None } else { Some(region) }
+            }
+            None => None
+        }
+        /*
+        $ret = 'x' ;
+        $sparql = "SELECT ?q ?x { wd:Q$q wdt:P131* ?q . ?q wdt:P300 ?x }" ;
+        $j = getSPARQL ( $sparql ) ;
+        if ( !isset($j->results) or !isset($j->results->bindings) or count($j->results->bindings) == 0 ) return $ret ;
+        foreach ( $j->results->bindings AS $b ) {
+            if ( !isset($b->x) ) continue ;
+            if ( $b->x->type != 'literal' ) continue ;
+            $region = $b->x->value ;
+            if ( strlen ( $region ) > strlen ( $ret ) ) $ret = $region ;
+        }
+        return $ret ;
+        */
+    }
+
+    fn do_get_regions(&self) -> bool {
+        self.wiki() == "dewiki" // TODO FIXME HARDCODED
+    }
+
+    pub async fn process_regions(&mut self) -> Result<(), String> {
+        if !self.do_get_regions() {
+            return Ok(());
+        }
+
+        let mut entity_ids = HashSet::new() ;
+        self.results.iter().for_each(|row|{
+            row.cells().iter().for_each(|cell|{
+                cell.parts().iter().for_each(|part|{
+                    match part {
+                        ResultCellPart::Location((_lat,_lon,_region)) => {
+                            entity_ids.insert(row.entity_id().to_string());
+                            //*region = self.get_region_for_entity_id(row.entity_id()).await ;
+                        }
+                        _ => {}
+                    }
+                });
+            });
+        });
+
+        let mut entity_id2region = HashMap::new();
+        for entity_id in entity_ids {
+            match self.get_region_for_entity_id(&entity_id).await {
+                Some(region) => { entity_id2region.insert(entity_id,region); }
+                None => {}
+            }
+        }
+
+        for row in self.results.iter_mut() {
+            let the_region = match entity_id2region.get(row.entity_id()) {
+                Some(r) => r,
+                None => continue,
+            };
+            for cell in row.cells_mut().iter_mut() {
+                for part in cell.parts_mut().iter_mut() {
+                    match part {
+                        ResultCellPart::Location((_lat,_lon,region)) => {
+                            *region = Some(the_region.clone()) ;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
     
     pub async fn process_results(&mut self) -> Result<(), String> {
         self.gather_and_load_items().await? ;
@@ -745,6 +839,7 @@ impl ListeriaList {
         self.process_remove_shadow_files().await?;
         self.process_sort_results()?;
         self.process_assign_sections()?;
+        self.process_regions().await?;
         Ok(())
     }
 
