@@ -118,14 +118,11 @@ impl Column {
                     + "/"
                     + &list.get_label_with_fallback(&qual)
             }
-            ColumnType::PropertyQualifierValue((prop1, _qual, _prop2)) => {
+            ColumnType::PropertyQualifierValue((prop1, _qual, prop2)) => {
                 list.get_label_with_fallback(&prop1)
                     + "/"
                     + &list
-                        .get_label_with_fallback(&prop1) // TODO FIXME
-                    + "/"
-                    + &list
-                        .get_label_with_fallback(&prop1) // TODO FIXME
+                        .get_label_with_fallback(&prop2) // TODO FIXME
             }
             _ => self.label.to_owned(), // Fallback
         } ;
