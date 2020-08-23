@@ -122,7 +122,7 @@ impl Column {
                 list.get_label_with_fallback(&prop1)
                     + "/"
                     + &list
-                        .get_label_with_fallback(&prop2) // TODO FIXME
+                        .get_label_with_fallback(&prop2)
             }
             _ => self.label.to_owned(), // Fallback
         } ;
