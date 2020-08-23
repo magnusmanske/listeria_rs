@@ -262,7 +262,7 @@ impl SortMode {
 pub struct TemplateParams {
     links: LinksType,
     sort: SortMode,
-    section: Option<String>, // TODO SectionType
+    section: SectionType,
     min_section:u64,
     row_template: Option<String>,
     header_template: Option<String>,
@@ -287,7 +287,7 @@ impl TemplateParams {
          Self {
             links:LinksType::All,
             sort:SortMode::None,
-            section: None,
+            section: SectionType::None,
             min_section:2,
             row_template: None,
             header_template: None,
@@ -306,7 +306,7 @@ impl TemplateParams {
         Self {
             links:LinksType::All,
             sort: SortMode::new(template.params.get("sort")),
-            section: template.params.get("section").map(|s|s.trim().to_uppercase()),
+            section: SectionType::new_from_string_option(template.params.get("section")),
             min_section: template
                             .params
                             .get("min_section")
@@ -337,7 +337,11 @@ pub enum SectionType {
 }
 
 impl SectionType {
-    pub fn new_from_string(s: &str) -> Self {
+    pub fn new_from_string_option(s: Option<&String>) -> Self {
+        let s = match s {
+            Some(s) => s,
+            None => return Self::None,
+        };
         let s = s.trim();
         let re_prop = Regex::new(r"^[Pp]\d+$").unwrap();
         if re_prop.is_match(s) {

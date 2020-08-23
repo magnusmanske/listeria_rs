@@ -666,13 +666,13 @@ impl ListeriaList {
     }
 
     pub fn process_assign_sections(&mut self) -> Result<(), String> {
+        // TODO all SectionType options
         let section_property = match &self.params.section {
-            Some(p) => p ,
-            None => return Ok(()) // Nothing to do
+            SectionType::Property(p) => p ,
+            SectionType::SparqlVariable(_v) => return Err("SPARQL variable section type not supported yet".to_string()),
+            SectionType::None => return Ok(()) // Nothing to do
         } ;
         let datatype = self.get_datatype_for_property(section_property);
-
-        // TODO check if Pxxx
 
         let section_names = self.results
             .iter()
@@ -907,9 +907,11 @@ impl ListeriaList {
     }
 
     fn gather_items_section(&mut self) -> Result<Vec<String>,String> {
+        // TODO support all of SectionType
         let prop = match &self.params.section {
-            Some(p) => p.clone() ,
-            None => return Ok(vec![]) // Nothing to do
+            SectionType::Property(p) => p.clone() ,
+            SectionType::SparqlVariable(_v) => return Err("SPARQL variable section type not supported yet".to_string()),
+            SectionType::None => return Ok(vec![]) // Nothing to do
         } ;
         self.gather_items_for_property(&prop)
     }
@@ -935,8 +937,11 @@ impl ListeriaList {
         if let SortMode::Property(prop) = &self.params.sort {
             entities_to_load.push(prop.to_string());
         }
-        if let Some(prop) = &self.params.section {
-            entities_to_load.push(prop.to_owned());
+
+        match &self.params.section {
+            SectionType::Property(prop) => { entities_to_load.push(prop.to_owned()); }
+            SectionType::SparqlVariable(_v) => return Err("SPARQL variable section type not supported yet".to_string()),
+            SectionType::None => {}
         }
         self.load_items(entities_to_load).await?;
 
