@@ -3,6 +3,7 @@ use futures::future::try_join_all;
 use std::sync::Arc;
 use std::collections::HashMap;
 use wikibase::mediawiki::api::Api;
+use crate::column::*;
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
@@ -231,6 +232,8 @@ mod tests {
     use std::fs ;
     use std::path::PathBuf;
     use crate::* ;
+    use crate::render_wikitext::RendererWikitext;
+    use crate::listeria_page::ListeriaPage;
 
     fn read_fixture_from_file(path:PathBuf) -> HashMap<String,String> {
         let text = fs::read_to_string(path).unwrap();

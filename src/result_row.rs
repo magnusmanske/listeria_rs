@@ -1,9 +1,10 @@
-use crate::{serde_json, HashMap, ListeriaList, SparqlValue};
+use crate::{serde_json, HashMap, SparqlValue};
 use crate::result_cell::{ResultCell, ResultCellPart};
+use crate::listeria_list::*;
+use wikibase::entity::EntityTrait;
 use regex::Regex;
 use serde_json::Value;
 use std::cmp::Ordering;
-use wikibase::entity::EntityTrait;
 use wikibase::SnakDataType;
 
 #[derive(Debug, Clone, Default)]

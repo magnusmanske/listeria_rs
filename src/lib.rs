@@ -14,11 +14,6 @@ pub mod column;
 
 pub use crate::configuration::Configuration;
 pub use crate::listeria_page::ListeriaPage;
-pub use crate::listeria_list::ListeriaList;
-pub use crate::render_wikitext::RendererWikitext;
-pub use crate::render_tabbed_data::RendererTabbedData;
-pub use crate::result_row::ResultRow;
-pub use crate::result_row::*;
 pub use crate::column::*;
 use tokio::sync::Mutex;
 use std::fs::File;
@@ -36,7 +31,7 @@ pub struct PageParams {
     pub wiki: String,
     pub page: String,
     pub mw_api: Arc<Mutex<Api>>,
-    pub wb_api: Api,
+    pub wb_api: Arc<Api>,
     pub simulate: bool,
     pub simulated_text: Option<String>,
     pub simulated_sparql_results: Option<String>,
@@ -52,7 +47,7 @@ impl PageParams {
             page,
             language: api.get_site_info_string("general", "lang")?.to_string(),
             mw_api: mw_api.clone(),
-            wb_api: config.get_default_wbapi().await?,
+            wb_api: config.get_default_wbapi().await?.clone(),
             simulate: false,
             simulated_text: None,
             simulated_sparql_results: None,
@@ -278,6 +273,27 @@ impl SortOrder {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReferencesParameter {
+    None,
+    All
+}
+
+impl ReferencesParameter {
+    pub fn new(os: Option<&String>) -> Self {
+        match os {
+            Some(s) => {
+                if s.to_uppercase().trim() == "ALL" {
+                    Self::All
+                } else {
+                    Self::None
+                }
+            }
+            None => Self::None
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TemplateParams {
     links: LinksType,
@@ -290,7 +306,7 @@ pub struct TemplateParams {
     summary: Option<String>,
     skip_table: bool,
     wdedit: bool,
-    references: bool,
+    references: ReferencesParameter,
     one_row_per_item: bool,
     sort_order: SortOrder,
     wikibase: String,
@@ -315,7 +331,7 @@ impl TemplateParams {
             summary: None,
             skip_table: false,
             wdedit: false,
-            references: false,
+            references: ReferencesParameter::None,
             one_row_per_item: false,
             sort_order: SortOrder::Ascending,
             wikibase: String::new(),
@@ -341,7 +357,7 @@ impl TemplateParams {
             skip_table: template.params.get("skip_table").is_some(),
             one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
             wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
-            references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
+            references: ReferencesParameter::new(template.params.get("references")),
             sort_order: SortOrder::new(template.params.get("sort_order")),
             wikibase: template.params.get("wikibase").map(|s|s.trim().to_uppercase()).unwrap_or("wikidata".to_string()) , // TODO config
         }

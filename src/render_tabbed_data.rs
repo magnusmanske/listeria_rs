@@ -1,4 +1,5 @@
 use regex::RegexBuilder;
+pub use crate::column::*;
 use crate::*;
 
 pub struct RendererTabbedData {

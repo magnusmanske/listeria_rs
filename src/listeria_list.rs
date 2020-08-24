@@ -18,7 +18,7 @@ pub struct ListeriaList {
     shadow_files: Vec<String>,
     local_page_cache: HashMap<String,bool>,
     section_id_to_name: HashMap<usize,String>,
-    wb_api: Api, // TODO Arc (and all the other wb_api as well)
+    wb_api: Arc<Api>, // TODO Arc (and all the other wb_api as well)
 }
 
 impl ListeriaList {
@@ -92,7 +92,7 @@ impl ListeriaList {
         let wikibase = &self.params.wikibase ;
         println!("WIKIBASE: {}",&wikibase);
         self.wb_api = match self.page_params.config.get_wbapi(&wikibase.to_lowercase()).await {
-            Some(api) => api,
+            Some(api) => api.clone(),
             None => return Err(format!("No wikibase setup configured for '{}'",&wikibase)),
         } ;
 

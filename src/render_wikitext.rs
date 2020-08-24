@@ -1,5 +1,6 @@
 use crate::*;
 use regex::RegexBuilder;
+use crate::column::*;
 
 pub struct RendererWikitext {}
 

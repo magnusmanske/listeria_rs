@@ -18,7 +18,7 @@ impl NamespaceGroup {
 
 #[derive(Debug, Clone, Default)]
 pub struct Configuration {
-    wb_apis: HashMap<String,String>,
+    wb_apis: HashMap<String,Arc<Api>>,
     namespace_blocks: HashMap<String,NamespaceGroup>,
     default_api:String,
     prefer_preferred: bool,
@@ -52,8 +52,9 @@ impl Configuration {
         // valid WikiBase APIs
         if let Some(o) = j["apis"].as_object() {
             for (k,v) in o.iter() {
-                if let (k,Some(v)) = (k.as_str(),v.as_str()) {
-                    ret.wb_apis.insert(k.to_string(),v.to_string());
+                if let (name,Some(url)) = (k.as_str(),v.as_str()) {
+                    let api = wikibase::mediawiki::api::Api::new(&url).await.unwrap();
+                    ret.wb_apis.insert(name.to_string(),Arc::new(api));
                 }
                 
             }
@@ -154,13 +155,12 @@ impl Configuration {
         &self.location_regions
     }
 
-    pub async fn get_wbapi(&self,key: &str) -> Option<Api> {
-        let url = self.wb_apis.get(key)?;
-        Some(wikibase::mediawiki::api::Api::new(&url).await.unwrap())
+    pub async fn get_wbapi(&self,key: &str) -> Option<&Arc<Api>> {
+        self.wb_apis.get(key)
     }
 
-    pub async fn get_default_wbapi(&self) -> Result<Api,String> {
-        let url = self.wb_apis.get(&self.default_api).ok_or("No default API set in config file".to_string())?;
-        Ok(wikibase::mediawiki::api::Api::new(&url).await.unwrap())
+    pub async fn get_default_wbapi(&self) -> Result<&Arc<Api>,String> {
+        let api = self.wb_apis.get(&self.default_api).ok_or("No default API set in config file".to_string())?;
+        Ok(api)
     }
 }
