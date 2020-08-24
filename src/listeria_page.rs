@@ -28,7 +28,7 @@ summary DONE
 
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
-    pub page_params: PageParams,
+    page_params: PageParams,
     results: Vec<ResultRow>,
     data_has_changed: bool,
     lists:Vec<ListeriaList>,
@@ -43,6 +43,14 @@ impl ListeriaPage {
             data_has_changed: false,
             lists:vec![],
         })
+    }
+
+    pub fn config(&self) -> &Configuration {
+        &self.page_params.config
+    }
+
+    pub fn wiki(&self) -> &String {
+        &self.page_params.wiki
     }
 
     pub fn do_simulate(&mut self,text: Option<String>, sparql_results:Option<String>) {

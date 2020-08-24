@@ -35,13 +35,11 @@ impl Renderer for RendererWikitext {
         page: &ListeriaPage,
     ) -> Result<Option<String>, String> {
         let start_template = page
-            .page_params
-            .config
-            .get_local_template_title_start(&page.page_params.wiki)?;
+            .config()
+            .get_local_template_title_start(&page.wiki())?;
         let end_template = page
-            .page_params
-            .config
-            .get_local_template_title_end(&page.page_params.wiki)?;
+            .config()
+            .get_local_template_title_end(&page.wiki())?;
         let pattern_string_start = r#"\{\{([Ww]ikidata[ _]list|"#.to_string()
             + &start_template.replace(" ", "[ _]")
             + r#")\s*(\|.*?\}\}|\}\})"#;
