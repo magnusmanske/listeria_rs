@@ -234,6 +234,7 @@ mod tests {
     use crate::* ;
     use crate::render_wikitext::RendererWikitext;
     use crate::listeria_page::ListeriaPage;
+    use config::{Config, File};
 
     fn read_fixture_from_file(path:PathBuf) -> HashMap<String,String> {
         let text = fs::read_to_string(path).unwrap();
@@ -264,14 +265,28 @@ mod tests {
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
         let mw_api = Arc::new(Mutex::new(mw_api));
 
-        let file = File::open("config.json").unwrap();
+        let file = std::fs::File::open("config.json").unwrap();
         let reader = BufReader::new(file);
         let mut j : Value = serde_json::from_reader(reader).unwrap();
         j["namespace_blocks"] = json!({}); // Allow all namespaces, everywhere
         if path.to_str().unwrap() == "test_data/shadow_images.fixture" { // HACKISH
             j["prefer_preferred"] = json!(false) ;
         }
-        let config = Arc::new(Configuration::new_from_json(j).await.unwrap());
+        let mut config = Configuration::new_from_json(j).await.unwrap();
+        if path.to_str().unwrap() == "test_data/commons_sparql.fixture" { // HACKISH
+            let ini_file = "listeria.ini";
+
+            let mut settings = Config::default();
+            settings
+                .merge(File::with_name(ini_file))
+                .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
+            let user = settings.get_str("user.user").expect("No user name");
+            let pass = settings.get_str("user.pass").expect("No user pass");
+            let result = config.wbapi_login("commons",&user,&pass).await;
+            println!("LOGIN TO COMMONS: {}",result);
+        }
+        let config = Arc::new(config);
+
         let mut page = ListeriaPage::new(config,mw_api, data["PAGETITLE"].clone()).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
         page.run().await.unwrap();

@@ -91,7 +91,7 @@ impl ListeriaList {
 
         let wikibase = &self.params.wikibase ;
         println!("WIKIBASE: {}",&wikibase);
-        self.wb_api = match self.page_params.config.get_wbapi(&wikibase.to_lowercase()).await {
+        self.wb_api = match self.page_params.config.get_wbapi(&wikibase.to_lowercase()) {
             Some(api) => api.clone(),
             None => return Err(format!("No wikibase setup configured for '{}'",&wikibase)),
         } ;

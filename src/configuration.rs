@@ -91,7 +91,7 @@ impl Configuration {
         }
 
         // Start/end template site/page mappings
-        let api = ret.get_default_wbapi().await?;
+        let api = ret.get_default_wbapi()?;
         let q_start = match j["template_start_q"].as_str() {
             Some(q) => q.to_string(),
             None => return Err("No template_start_q in config".to_string())
@@ -155,12 +155,21 @@ impl Configuration {
         &self.location_regions
     }
 
-    pub async fn get_wbapi(&self,key: &str) -> Option<&Arc<Api>> {
+    pub async fn wbapi_login(&mut self,key: &str,user: &str,pass: &str) -> bool {
+        match self.wb_apis.get_mut(key) {
+            Some(mut api) => {
+                (*Arc::get_mut(&mut api).unwrap()).login(user.to_owned(), pass.to_owned()).await.expect("Could not log in");
+                true
+            }
+            None => false
+        }
+    }
+
+    pub fn get_wbapi(&self,key: &str) -> Option<&Arc<Api>> {
         self.wb_apis.get(key)
     }
 
-    pub async fn get_default_wbapi(&self) -> Result<&Arc<Api>,String> {
-        let api = self.wb_apis.get(&self.default_api).ok_or("No default API set in config file".to_string())?;
-        Ok(api)
+    pub fn get_default_wbapi(&self) -> Result<&Arc<Api>,String> {
+        self.wb_apis.get(&self.default_api).ok_or("No default API set in config file".to_string())
     }
 }

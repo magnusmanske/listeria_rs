@@ -12,9 +12,8 @@ pub mod result_cell;
 pub mod result_row;
 pub mod column;
 
-pub use crate::configuration::Configuration;
-pub use crate::listeria_page::ListeriaPage;
-pub use crate::column::*;
+use crate::column::*;
+use crate::configuration::Configuration;
 use tokio::sync::Mutex;
 use std::fs::File;
 use std::io::BufReader;
@@ -47,7 +46,7 @@ impl PageParams {
             page,
             language: api.get_site_info_string("general", "lang")?.to_string(),
             mw_api: mw_api.clone(),
-            wb_api: config.get_default_wbapi().await?.clone(),
+            wb_api: config.get_default_wbapi()?.clone(),
             simulate: false,
             simulated_text: None,
             simulated_sparql_results: None,

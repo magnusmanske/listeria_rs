@@ -2,13 +2,13 @@ extern crate config;
 extern crate serde_json;
 
 use listeria::Renderer;
-use listeria::RendererWikitext;
+use crate::listeria::render_wikitext::RendererWikitext;
 use tokio::sync::Mutex;
 use std::sync::Arc;
 use config::{Config, File};
 use listeria;
 use crate::listeria::listeria_page::ListeriaPage;
-use crate::listeria::Configuration;
+use crate::listeria::configuration::Configuration;
 
 async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
     let user = settings.get_str("user.user").expect("No user name");
