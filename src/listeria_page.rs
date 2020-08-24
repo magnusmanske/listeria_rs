@@ -1,4 +1,5 @@
 use crate::*;
+use futures::future::try_join_all;
 use std::sync::Arc;
 use std::collections::HashMap;
 use wikibase::mediawiki::api::Api;
@@ -28,7 +29,6 @@ summary DONE
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
     pub page_params: PageParams,
-    template: Option<Template>,
     results: Vec<ResultRow>,
     data_has_changed: bool,
     lists:Vec<ListeriaList>,
@@ -39,7 +39,6 @@ impl ListeriaPage {
         let page_params = PageParams::new(config, mw_api, page).await? ;
         Ok(Self {
             page_params,
-            template: None,
             results: vec![],
             data_has_changed: false,
             lists:vec![],
@@ -72,15 +71,14 @@ impl ListeriaPage {
         self.lists.clear();
         let templates = self.load_page().await?;
         for template in templates {
-            let mut list = ListeriaList::new(template.clone(),self.page_params.clone()) ;
-            self.template = Some(template.clone());
-            list.process_template().await?;
-            list.run_query().await?;
-            list.load_entities().await?;
-            list.generate_results().await?;
-            list.process_results().await?;
-            self.lists.push(list);
+            self.lists.push(ListeriaList::new(template.clone(),self.page_params.clone()));
         }
+
+        let mut promises = Vec::new();
+        for list in &mut self.lists {
+            promises.push(list.process());
+        }
+        try_join_all(promises).await?;
         Ok(())
     }
 

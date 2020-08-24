@@ -10,7 +10,7 @@ pub struct ListeriaList {
     page_params: PageParams,
     template: Template,
     columns: Vec<Column>,
-    pub params: TemplateParams,
+    params: TemplateParams,
     sparql_rows: Vec<HashMap<String, SparqlValue>>,
     sparql_first_variable: Option<String>,
     entities: EntityContainer,
@@ -38,6 +38,15 @@ impl ListeriaList {
             section_id_to_name: HashMap::new(),
             wb_api,
         }
+    }
+
+    pub async fn process(&mut self) -> Result<(),String> {
+        self.process_template().await?;
+        self.run_query().await?;
+        self.load_entities().await?;
+        self.generate_results().await?;
+        self.process_results().await?;
+        Ok(())
     }
 
     pub fn results(&self) -> &Vec<ResultRow> {
@@ -998,6 +1007,14 @@ impl ListeriaList {
 
     pub fn page_title(&self) -> &String {
         &self.page_params.page
+    }
+
+    pub fn summary(&self) -> &Option<String> {
+        &self.params.summary
+    }
+
+    pub fn header_template(&self) -> &Option<String> {
+        &self.params.header_template
     }
 
     pub fn get_label_with_fallback(&self,entity_id:&str) -> String {

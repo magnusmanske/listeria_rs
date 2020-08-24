@@ -9,9 +9,8 @@ impl Renderer for RendererWikitext {
     }
 
     fn render(&mut self, list: &ListeriaList) -> Result<String, String> {
-        let section_ids = list.get_section_ids();
-        // TODO section headers
-        let mut wt: String = section_ids
+        let mut wt: String = list
+            .get_section_ids()
             .iter()
             .map(|section_id| self.as_wikitext_section(list, *section_id))
             .collect();
@@ -23,7 +22,7 @@ impl Renderer for RendererWikitext {
             }
         }
 
-        if let Some("ITEMNUMBER") = list.params.summary.as_deref() {
+        if let Some("ITEMNUMBER") = list.summary().as_deref() {
             wt += format!("\n----\n&sum; {} items.", list.results().len()).as_str();
         }
 
@@ -155,14 +154,14 @@ impl RendererWikitext {
 
     fn as_wikitext_table_header(&self, list: &ListeriaList) -> String {
         let mut wt = String::new();
-        match &list.params.header_template {
+        match &list.header_template() {
             Some(t) => {
                 wt += "{{";
                 wt += &t;
                 wt += "}}\n";
             }
             None => {
-                if !list.params.skip_table {
+                if !list.skip_table() {
                     wt += "{| class='wikitable sortable' style='width:100%'\n";
                     list.columns()
                         .iter()

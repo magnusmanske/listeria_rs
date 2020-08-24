@@ -47,7 +47,6 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
     //let j = page.as_tabbed_data().unwrap();
     //page.write_tabbed_data(j, &mut commons_api).unwrap();
     //page.update_source_page().await.unwrap();
-    // TODO update source wiki text (if necessary), or action=purge to update
 }
 
 #[tokio::main]
