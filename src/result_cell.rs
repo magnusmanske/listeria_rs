@@ -36,6 +36,8 @@ impl ResultCellPart {
         }
     }
 
+
+
     pub fn from_snak(snak: &wikibase::Snak) -> Self {
         match &snak.data_value() {
             Some(dv) => match dv.value() {
@@ -168,7 +170,7 @@ impl ResultCellPart {
             }
             ResultCellPart::Uri(url) => url.to_owned(),
             ResultCellPart::ExternalId((property, id)) => {
-                match list.external_id_url(property, id) {
+                match list.ecw.external_id_url(property, id) {
                     Some(url) => "[".to_string() + &url + " " + &id + "]",
                     None => id.to_owned(),
                 }
@@ -194,8 +196,14 @@ impl ResultCellPart {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct Reference {
+
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ResultCell {
     parts: Vec<ResultCellPart>,
+    references: Vec<Vec<Reference>>,
 }
 
 impl ResultCell {
@@ -205,13 +213,12 @@ impl ResultCell {
         sparql_rows: &[&HashMap<String, SparqlValue>],
         col: &Column,
     ) -> Self {
-        let mut ret = Self { parts:vec![] };
+        let mut ret = Self { parts:vec![] , references:vec![] };
 
         let entity = list.get_entity(entity_id.to_owned());
         match &col.obj {
             ColumnType::Item => {
-                ret.parts
-                    .push(ResultCellPart::Entity((entity_id.to_owned(), true)));
+                ret.parts.push(ResultCellPart::Entity((entity_id.to_owned(), true)));
             }
             ColumnType::Description => if let Some(e) = entity { match e.description_in_locale(list.language()) {
                 Some(s) => {
@@ -301,8 +308,8 @@ impl ResultCell {
         ret
     }
 
-    pub fn new_from_parts ( parts: Vec<ResultCellPart> ) -> Self {
-        Self { parts }
+    pub fn new_from_parts ( parts: Vec<ResultCellPart> , references: Vec<Vec<Reference>> ) -> Self {
+        Self { parts , references }
     }
 
 
@@ -347,6 +354,24 @@ impl ResultCell {
 
     pub fn set_parts(&mut self, parts:Vec<ResultCellPart> ) {
         self.parts = parts ;
+    }
+
+    pub fn localize_item_links_in_parts(list: &ListeriaList, parts: &mut Vec<ResultCellPart>) {
+        for part in parts.iter_mut() {
+            match part {
+                ResultCellPart::Entity((item, true)) => {
+                    *part = match list.entity_to_local_link(&item) {
+                        Some(ll) => ll,
+                        None => part.to_owned(),
+                    } ;
+                }
+                ResultCellPart::SnakList(v) => {
+                    Self::localize_item_links_in_parts(list,v) ;
+                    //ResultCellPart::SnakList(Self::localize_item_links_in_parts(list,v))
+                }
+                _ => {},
+            }
+        }
     }
 
     pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {

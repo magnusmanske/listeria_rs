@@ -29,7 +29,7 @@ summary DONE
 
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
-    page_params: PageParams,
+    page_params: Arc<PageParams>,
     results: Vec<ResultRow>,
     data_has_changed: bool,
     lists:Vec<ListeriaList>,
@@ -38,6 +38,7 @@ pub struct ListeriaPage {
 impl ListeriaPage {
     pub async fn new(config: Arc<Configuration>, mw_api: Arc<Mutex<Api>>, page: String) -> Result<Self,String> {
         let page_params = PageParams::new(config, mw_api, page).await? ;
+        let page_params = Arc::new(page_params);
         Ok(Self {
             page_params,
             results: vec![],
@@ -55,9 +56,16 @@ impl ListeriaPage {
     }
 
     pub fn do_simulate(&mut self,text: Option<String>, sparql_results:Option<String>) {
-        self.page_params.simulate = true ;
-        self.page_params.simulated_text = text ;
-        self.page_params.simulated_sparql_results = sparql_results ;
+        match Arc::get_mut(&mut self.page_params) {
+            Some(pp) => {
+                pp.simulate = true ;
+                pp.simulated_text = text ;
+                pp.simulated_sparql_results = sparql_results ;        
+            }
+            None => {
+                panic!("Cannot simulate")
+            }
+        }
     }
 
     pub fn language(&self) -> &String {
@@ -454,6 +462,11 @@ mod tests {
     #[tokio::test]
     async fn commons_sparql() {
         //check_fixture_file(PathBuf::from("test_data/commons_sparql.fixture")).await; // TODO
+    }
+
+    #[tokio::test]
+    async fn references() {
+        //check_fixture_file(PathBuf::from("test_data/references.fixture")).await;
     }
 
     #[tokio::test]

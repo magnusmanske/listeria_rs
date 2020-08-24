@@ -13,6 +13,7 @@ pub struct ResultRow {
     cells: Vec<ResultCell>,
     section: usize,
     sortkey: String,
+    pub keep: bool,
 }
 
 impl ResultRow {
