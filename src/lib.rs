@@ -27,15 +27,15 @@ use wikibase::mediawiki::api::Api;
 
 #[derive(Debug, Clone)]
 pub struct PageParams {
-    pub language: String,
-    pub wiki: String,
-    pub page: String,
-    pub mw_api: Arc<Mutex<Api>>,
-    pub wb_api: Arc<Api>,
-    pub simulate: bool,
-    pub simulated_text: Option<String>,
-    pub simulated_sparql_results: Option<String>,
-    pub config: Arc<Configuration>,
+    language: String,
+    wiki: String,
+    page: String,
+    mw_api: Arc<Mutex<Api>>,
+    wb_api: Arc<Api>,
+    simulate: bool,
+    simulated_text: Option<String>,
+    simulated_sparql_results: Option<String>,
+    config: Arc<Configuration>,
     local_file_namespace_prefix: String,
 }
 
