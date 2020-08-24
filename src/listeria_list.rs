@@ -780,7 +780,7 @@ impl ListeriaList {
     }
 
     fn do_get_regions(&self) -> bool {
-        self.wiki() == "dewiki" // TODO FIXME HARDCODED
+        self.page_params.config.location_regions().contains(self.wiki())
     }
 
     pub async fn process_regions(&mut self) -> Result<(), String> {

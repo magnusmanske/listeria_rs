@@ -28,6 +28,7 @@ pub struct Configuration {
     location_templates: HashMap<String,String>,
     shadow_images_check: Vec<String>,
     default_thumbnail_size: Option<u64>,
+    location_regions: Vec<String>,
 }
 
 impl Configuration {
@@ -46,6 +47,7 @@ impl Configuration {
         if let Some(b) = j["prefer_preferred"].as_bool() { ret.prefer_preferred = b }
         if let Some(i) = j["default_thumbnail_size"].as_u64() { ret.default_thumbnail_size = Some(i) }
         if let Some(sic) = j["shadow_images_check"].as_array() { ret.shadow_images_check = sic.iter().map(|s|s.as_str().unwrap().to_string()).collect() }
+        if let Some(lr) = j["location_regions"].as_array() { ret.location_regions = lr.iter().map(|s|s.as_str().unwrap().to_string()).collect() }
 
         // valid WikiBase APIs
         if let Some(o) = j["apis"].as_object() {
@@ -146,6 +148,10 @@ impl Configuration {
 
     pub fn default_thumbnail_size(&self) -> u64 {
         self.default_thumbnail_size.unwrap_or(128)
+    }
+
+    pub fn location_regions(&self) -> &Vec<String> {
+        &self.location_regions
     }
 
     pub async fn get_wbapi(&self,key: &str) -> Option<Api> {
