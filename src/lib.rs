@@ -52,7 +52,7 @@ impl PageParams {
             page,
             language: api.get_site_info_string("general", "lang")?.to_string(),
             mw_api: mw_api.clone(),
-            wb_api: config.get_default_wbapi().await,
+            wb_api: config.get_default_wbapi().await?,
             simulate: false,
             simulated_text: None,
             simulated_sparql_results: None,
@@ -94,9 +94,9 @@ impl SparqlValue {
     pub fn new_from_json(j: &Value) -> Option<Self> {
         lazy_static! {
             static ref RE_ENTITY: Regex =
-                Regex::new(r#"^https{0,1}://www.wikidata.org/entity/([A-Z]\d+)$"#).unwrap();
+                Regex::new(r#"^https{0,1}://[^/]+/entity/([A-Z]\d+)$"#).unwrap();
             static ref RE_FILE: Regex =
-                Regex::new(r#"^https{0,1}://commons.wikimedia.org/wiki/Special:FilePath/(.+?)$"#)
+                Regex::new(r#"^https{0,1}://[^/]+/wiki/Special:FilePath/(.+?)$"#)
                     .unwrap();
             static ref RE_POINT: Regex =
                 Regex::new(r#"^Point\((-{0,1}\d+[\.0-9]+) (-{0,1}\d+[\.0-9]+)\)$"#).unwrap();

@@ -88,7 +88,7 @@ impl Configuration {
         }
 
         // Start/end template site/page mappings
-        let api = ret.get_default_wbapi().await;
+        let api = ret.get_default_wbapi().await?;
         let q_start = match j["template_start_q"].as_str() {
             Some(q) => q.to_string(),
             None => return Err("No template_start_q in config".to_string())
@@ -153,11 +153,8 @@ impl Configuration {
         Some(wikibase::mediawiki::api::Api::new(&url).await.unwrap())
     }
 
-    pub async fn get_default_wbapi(&self) -> Api {
-        let url = match self.wb_apis.get(&self.default_api) {
-            Some(url) => url.to_string(),
-            None => "https://www.wikidata.org/w/api.php".to_string()
-        };
-        wikibase::mediawiki::api::Api::new(&url).await.unwrap()
+    pub async fn get_default_wbapi(&self) -> Result<Api,String> {
+        let url = self.wb_apis.get(&self.default_api).ok_or("No default API set in config file".to_string())?;
+        Ok(wikibase::mediawiki::api::Api::new(&url).await.unwrap())
     }
 }

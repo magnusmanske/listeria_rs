@@ -5,8 +5,6 @@ use wikibase::mediawiki::api::Api;
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
-- api parameter to override default
-- actually edit the page
 
 TEMPLATE PARAMETERS
 links IMPLEMENT fully
