@@ -666,7 +666,7 @@ impl ListeriaList {
             .for_each(|(rownum, row)|row.set_sortkey(sortkeys[rownum].to_owned())) ;
 
         self.results.sort_by(|a, b| a.compare_to(b,&datatype));
-        if !self.params.sort_ascending {
+        if self.params.sort_order == SortOrder::Descending {
             self.results.reverse()
         }
 

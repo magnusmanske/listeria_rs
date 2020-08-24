@@ -257,6 +257,26 @@ impl SortMode {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SortOrder {
+    Ascending,
+    Descending
+}
+
+impl SortOrder {
+    pub fn new(os: Option<&String>) -> Self {
+        match os {
+            Some(s) => {
+                if s.to_uppercase().trim() == "DESC" {
+                    Self::Descending
+                } else {
+                    Self::Ascending
+                }
+            }
+            None => Self::Ascending
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct TemplateParams {
@@ -272,7 +292,7 @@ pub struct TemplateParams {
     wdedit: bool,
     references: bool,
     one_row_per_item: bool,
-    sort_ascending: bool,
+    sort_order: SortOrder,
     wikibase: String,
 }
 
@@ -297,7 +317,7 @@ impl TemplateParams {
             wdedit: false,
             references: false,
             one_row_per_item: false,
-            sort_ascending: true,
+            sort_order: SortOrder::Ascending,
             wikibase: String::new(),
          }
     }
@@ -322,7 +342,7 @@ impl TemplateParams {
             one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
             wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
             references: template.params.get("references").map(|s|s.trim().to_uppercase())==Some("ALL".to_string()),
-            sort_ascending: template.params.get("sort_order").map(|s|s.trim().to_uppercase())!=Some("DESC".to_string()),
+            sort_order: SortOrder::new(template.params.get("sort_order")),
             wikibase: template.params.get("wikibase").map(|s|s.trim().to_uppercase()).unwrap_or("wikidata".to_string()) , // TODO config
         }
     }
