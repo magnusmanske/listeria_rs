@@ -11,6 +11,7 @@ pub mod render_tabbed_data;
 pub mod result_cell;
 pub mod result_row;
 pub mod column;
+pub mod entity_container_wrapper;
 
 use crate::column::*;
 use crate::configuration::Configuration;
