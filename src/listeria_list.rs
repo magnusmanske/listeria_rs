@@ -118,7 +118,7 @@ impl ListeriaList {
         let result = match self
             .page_params
             .mw_api
-            .lock()
+            .read()
             .await
             .get_query_api_json(&params)
             .await {
@@ -342,11 +342,12 @@ impl ListeriaList {
             return Err("Not used".to_string());
         }
         let url = format!("https://tools.wmflabs.org/autodesc/?q={}&lang={}&mode=short&links=wiki&format=json",e.id(),self.language);
-        let api = self.page_params.mw_api.lock().await;
+        let api = self.page_params.mw_api.read().await;
         let body = api
             .query_raw(&url,&api.no_params(),"GET")
             .await
             .map_err(|e|e.to_string())?;
+        drop(api);
         let json : Value = serde_json::from_str(&body).map_err(|e|e.to_string())?;
         match json["result"].as_str() {
             Some(result) => Ok(result.to_string()),
@@ -430,7 +431,7 @@ impl ListeriaList {
                     .map(|x| (x.0.to_string(), x.1.to_string()))
                     .collect();
 
-            let j = match self.page_params.mw_api.lock().await.get_query_api_json(&params).await {
+            let j = match self.page_params.mw_api.read().await.get_query_api_json(&params).await {
                 Ok(j) => j,
                 Err(_e) => json!({})
             };
@@ -628,8 +629,6 @@ impl ListeriaList {
             .map(|x|(x.1.to_owned(),x.0.to_owned()))
             .collect();
         
-        // println!("{:?}",&self.section_id_to_name);
-
         self.results
             .iter_mut()
             .enumerate()

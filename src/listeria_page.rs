@@ -36,7 +36,7 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub async fn new(config: Arc<Configuration>, mw_api: Arc<Mutex<Api>>, page: String) -> Result<Self,String> {
+    pub async fn new(config: Arc<Configuration>, mw_api: Arc<RwLock<Api>>, page: String) -> Result<Self,String> {
         let page_params = PageParams::new(config, mw_api, page).await? ;
         let page_params = Arc::new(page_params);
         Ok(Self {
@@ -73,7 +73,7 @@ impl ListeriaPage {
     }
 
     pub async fn check_namespace(&self) -> Result<(),String> {
-        let api = self.page_params.mw_api.lock().await;
+        let api = self.page_params.mw_api.read().await;
         let title = wikibase::mediawiki::title::Title::new_from_full(&self.page_params.page,&api);
         drop(api);
         if self.page_params.config.can_edit_namespace(&self.page_params.wiki,title.namespace_id()) {
@@ -146,7 +146,7 @@ impl ListeriaPage {
         let result = self
             .page_params
             .mw_api
-            .lock()
+            .read()
             .await
             .get_query_api_json(&params)
             .await
@@ -171,7 +171,7 @@ impl ListeriaPage {
     }
 
     async fn save_wikitext_to_page(&self,title:&str,wikitext:&str) -> Result<(),String> {
-        let mut api = self.page_params.mw_api.lock().await ;
+        let mut api = self.page_params.mw_api.write().await ;
         let token = api.get_edit_token().await.map_err(|e|e.to_string())?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
@@ -224,7 +224,7 @@ impl ListeriaPage {
         match self
             .page_params
             .mw_api
-            .lock()
+            .write()
             .await
             .get_query_api_json(&params)
             .await {
@@ -271,7 +271,7 @@ mod tests {
         //println!("{:?}",&path);
         let data = read_fixture_from_file ( path.clone() ) ;
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
-        let mw_api = Arc::new(Mutex::new(mw_api));
+        let mw_api = Arc::new(RwLock::new(mw_api));
 
         let file = std::fs::File::open("config.json").unwrap();
         let reader = BufReader::new(file);
@@ -473,7 +473,7 @@ mod tests {
     async fn edit_wikitext() {
         let data = read_fixture_from_file ( PathBuf::from("test_data/edit_wikitext.fixture") ) ;
         let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php").await.unwrap();
-        let mw_api = Arc::new(Mutex::new(mw_api));
+        let mw_api = Arc::new(RwLock::new(mw_api));
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let mut page = ListeriaPage::new(config,mw_api, "User:Magnus Manske/listeria test5".to_string()).await.unwrap();
         page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
@@ -485,16 +485,4 @@ mod tests {
         assert_eq!(wt,data["EXPECTED"]);
     }
 
-    /*
-    // I want all of it, Molari, ALL OF IT!
-    #[tokio::test]
-    async fn all_fixtures() {
-        let paths = fs::read_dir("./test_data").unwrap();
-        for path in paths {
-            let path = path.unwrap();
-            println!("Fixture {}",path.path().display());
-            check_fixture_file(path.path()).await;
-        }
-    }
-    */
 }

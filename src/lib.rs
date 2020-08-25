@@ -15,7 +15,7 @@ pub mod entity_container_wrapper;
 
 use crate::column::*;
 use crate::configuration::Configuration;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
@@ -30,7 +30,7 @@ pub struct PageParams {
     language: String,
     wiki: String,
     page: String,
-    mw_api: Arc<Mutex<Api>>,
+    mw_api: Arc<RwLock<Api>>,
     wb_api: Arc<Api>,
     simulate: bool,
     simulated_text: Option<String>,
@@ -40,8 +40,8 @@ pub struct PageParams {
 }
 
 impl PageParams {
-    pub async fn new ( config: Arc<Configuration>, mw_api: Arc<Mutex<Api>>, page: String ) -> Result<Self,String> {
-        let api = mw_api.lock().await;
+    pub async fn new ( config: Arc<Configuration>, mw_api: Arc<RwLock<Api>>, page: String ) -> Result<Self,String> {
+        let api = mw_api.read().await;
         let ret = Self {
             wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
             page,

@@ -3,7 +3,7 @@ extern crate serde_json;
 
 use listeria::Renderer;
 use crate::listeria::render_wikitext::RendererWikitext;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use std::sync::Arc;
 use config::{Config, File};
 use listeria;
@@ -23,7 +23,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         .login(user.to_owned(), pass.to_owned())
         .await
         .expect("Could not log in");
-    let mw_api = Arc::new(Mutex::new(mw_api));
+    let mw_api = Arc::new(RwLock::new(mw_api));
     let mut page = match ListeriaPage::new(config, mw_api, page_title.into()).await {
         Ok(p) => p,
         Err(e) => panic!("Could not open/parse page '{}': {}", &page_title,e),
