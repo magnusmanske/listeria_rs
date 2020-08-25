@@ -13,7 +13,7 @@ pub struct ResultRow {
     cells: Vec<ResultCell>,
     section: usize,
     sortkey: String,
-    pub keep: bool,
+    keep: bool,
 }
 
 impl ResultRow {
@@ -22,6 +22,14 @@ impl ResultRow {
             entity_id: entity_id.to_owned(),
             ..Default::default()
         }
+    }
+
+    pub fn set_keep(&mut self, keep:bool ) {
+        self.keep = keep;
+    }
+
+    pub fn keep(&self) -> bool {
+        self.keep
     }
 
     pub fn entity_id(&self) -> &String {

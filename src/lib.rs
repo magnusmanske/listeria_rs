@@ -59,7 +59,6 @@ impl PageParams {
     pub fn local_file_namespace_prefix(&self) -> &String {
         &self.local_file_namespace_prefix
     }
-
 }
 
 #[derive(Debug, Clone, PartialEq)]

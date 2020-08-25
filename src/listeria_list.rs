@@ -103,6 +103,43 @@ impl EntityContainerWrapper {
         }
     }
 
+    fn get_datatype_for_property(&self,prop:&str) -> SnakDataType {
+        match self.entities.get_entity(prop) {
+            Some(entity) => {
+                match entity {
+                    Entity::Property(p) => {
+                        match p.datatype() {
+                            Some(t) => t.to_owned(),
+                            None => SnakDataType::String
+                        }
+                    }
+                    _ => SnakDataType::String
+                }
+            }
+            None => SnakDataType::String
+        }
+    }
+
+    fn gather_entities_and_external_properties(&self,parts:&[ResultCellPart]) -> Vec<String> {
+        let mut entities_to_load = vec![];
+        for part in parts {
+            match part {
+                ResultCellPart::Entity((item, true)) => {
+                    entities_to_load.push(item.to_owned());
+                }
+                ResultCellPart::ExternalId((property, _id)) => {
+                    entities_to_load.push(property.to_owned());
+                }
+                ResultCellPart::SnakList(v) => {
+                    self.gather_entities_and_external_properties(&v)
+                        .iter()
+                        .for_each(|entity_id|entities_to_load.push(entity_id.to_string()))
+                }
+                _ => {}
+            }
+        }
+        entities_to_load
+    }
 
 }
 
@@ -119,7 +156,7 @@ pub struct ListeriaList {
     shadow_files: Vec<String>,
     local_page_cache: HashMap<String,bool>,
     section_id_to_name: HashMap<usize,String>,
-    wb_api: Arc<Api>, // TODO Arc (and all the other wb_api as well)
+    wb_api: Arc<Api>,
     language: String,
 }
 
@@ -193,7 +230,6 @@ impl ListeriaList {
         if let Some(l) = template.params.get("language") { self.language = l.to_lowercase() }
 
         let wikibase = &self.params.wikibase ;
-        println!("WIKIBASE: {}",&wikibase);
         self.wb_api = match self.page_params.config.get_wbapi(&wikibase.to_lowercase()) {
             Some(api) => api.clone(),
             None => return Err(format!("No wikibase setup configured for '{}'",&wikibase)),
@@ -575,7 +611,7 @@ impl ListeriaList {
         // Remove all rows with existing local page  
         let wiki = self.page_params.wiki.to_owned() ;
         for row in self.results.iter_mut() {
-            row.keep = match self.ecw.entities.get_entity(row.entity_id().to_owned()) {
+            row.set_keep ( match self.ecw.entities.get_entity(row.entity_id().to_owned()) {
                 Some(entity) => {
                     match entity.sitelinks() {
                         Some(sl) => {
@@ -588,30 +624,9 @@ impl ListeriaList {
                     }
                 }
                 _ => false
-            } ;
+            } ) ;
         }
-        self.results.retain(|row|row.keep);
-
-
-        // TODO better iter things
-        /*
-        self.results = self.results
-            .iter()
-            .filter(|row|{
-                let entity = self.ecw.entities.get_entity(row.entity_id().to_owned()).unwrap();
-                match entity.sitelinks() {
-                    Some(sl) => {
-                        sl
-                        .iter()
-                        .filter(|s| *s.site() == self.page_params.wiki)
-                        .count() == 0
-                    }
-                    None => true, // No sitelinks, keep
-                }
-            })
-            .cloned()
-            .collect();
-        */
+        self.results.retain(|row|row.keep());
         Ok(())
     }
 
@@ -652,23 +667,6 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn get_datatype_for_property(&self,prop:&str) -> SnakDataType {
-        match self.get_entity(prop) {
-            Some(entity) => {
-                match entity {
-                    Entity::Property(p) => {
-                        match p.datatype() {
-                            Some(t) => t.to_owned(),
-                            None => SnakDataType::String
-                        }
-                    }
-                    _ => SnakDataType::String
-                }
-            }
-            None => SnakDataType::String
-        }
-    }
-
     fn process_sort_results(&mut self) -> Result<(), String> {
         let sortkeys : Vec<String> ;
         let mut datatype = SnakDataType::String ; // Default
@@ -686,7 +684,7 @@ impl ListeriaList {
                     .collect();
             }
             SortMode::Property(prop) => {
-                datatype = self.get_datatype_for_property(prop);
+                datatype = self.ecw.get_datatype_for_property(prop);
                 sortkeys = self.results
                     .iter()
                     .map(|row|row.get_sortkey_prop(&prop,&self,&datatype))
@@ -720,7 +718,7 @@ impl ListeriaList {
             SectionType::SparqlVariable(_v) => return Err("SPARQL variable section type not supported yet".to_string()),
             SectionType::None => return Ok(()) // Nothing to do
         } ;
-        let datatype = self.get_datatype_for_property(section_property);
+        let datatype = self.ecw.get_datatype_for_property(section_property);
 
         let section_names = self.results
             .iter()
@@ -947,7 +945,8 @@ impl ListeriaList {
         let mut entities_to_load : Vec<String> = vec![];
         for row in self.results.iter() {
             for cell in row.cells() {
-                self.gather_entities_and_external_properties(cell.parts())
+                self.ecw
+                    .gather_entities_and_external_properties(cell.parts())
                     .iter()
                     .for_each(|entity_id|entities_to_load.push(entity_id.to_string()));
             }
@@ -967,28 +966,6 @@ impl ListeriaList {
         let mut v2 = self.gather_items_section()? ;
         entities_to_load.append(&mut v2);
         self.load_items(entities_to_load).await
-    }
-
-
-    fn gather_entities_and_external_properties(&self,parts:&[ResultCellPart]) -> Vec<String> {
-        let mut entities_to_load = vec![];
-        for part in parts {
-            match part {
-                ResultCellPart::Entity((item, true)) => {
-                    entities_to_load.push(item.to_owned());
-                }
-                ResultCellPart::ExternalId((property, _id)) => {
-                    entities_to_load.push(property.to_owned());
-                }
-                ResultCellPart::SnakList(v) => {
-                    self.gather_entities_and_external_properties(&v)
-                        .iter()
-                        .for_each(|entity_id|entities_to_load.push(entity_id.to_string()))
-                }
-                _ => {}
-            }
-        }
-        entities_to_load
     }
 
     pub fn column(&self,column_id:usize) -> Option<&Column> {
