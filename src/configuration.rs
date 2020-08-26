@@ -29,6 +29,7 @@ pub struct Configuration {
     shadow_images_check: Vec<String>,
     default_thumbnail_size: Option<u64>,
     location_regions: Vec<String>,
+    mysql: Option<Value>,
 }
 
 impl Configuration {
@@ -48,6 +49,9 @@ impl Configuration {
         if let Some(i) = j["default_thumbnail_size"].as_u64() { ret.default_thumbnail_size = Some(i) }
         if let Some(sic) = j["shadow_images_check"].as_array() { ret.shadow_images_check = sic.iter().map(|s|s.as_str().unwrap().to_string()).collect() }
         if let Some(lr) = j["location_regions"].as_array() { ret.location_regions = lr.iter().map(|s|s.as_str().unwrap().to_string()).collect() }
+        if j["mysql"].is_object() {
+            ret.mysql = Some(j["mysql"].to_owned()) ;
+        }
 
         // valid WikiBase APIs
         if let Some(o) = j["apis"].as_object() {
@@ -106,6 +110,13 @@ impl Configuration {
         ret.template_end_sites = ret.get_sitelink_mapping(&entities,&q_end)?;
 
         Ok(ret)
+    }
+
+    pub fn mysql(&self,key: &str) -> Value {
+        match &self.mysql {
+            Some(mysql) => mysql[key].to_owned(),
+            None => Value::Null,
+        }
     }
 
     fn get_sitelink_mapping(&self, entities:&wikibase::entity_container::EntityContainer, q:&String ) -> Result<HashMap<String,String>,String> {

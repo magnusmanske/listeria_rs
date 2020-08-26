@@ -19,3 +19,4 @@ wikibase = { git = "https://gitlab.com/tobias47n9e/wikibase_rs" , branch="tokio"
 #wikibase = { path='../wikibase_rs' }
 tokio = { version = "^0.2", features = ["macros"] }
 futures = "^0.3"
+mysql_async = "0.24.1"
