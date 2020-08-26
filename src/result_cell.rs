@@ -204,6 +204,7 @@ pub struct Reference {
 pub struct ResultCell {
     parts: Vec<ResultCellPart>,
     references: Vec<Vec<Reference>>,
+    wdedit_class: Option<String>,
 }
 
 impl ResultCell {
@@ -213,7 +214,7 @@ impl ResultCell {
         sparql_rows: &[&HashMap<String, SparqlValue>],
         col: &Column,
     ) -> Self {
-        let mut ret = Self { parts:vec![] , references:vec![] };
+        let mut ret = Self { parts:vec![] , references:vec![] , wdedit_class:None };
 
         let entity = list.get_entity(entity_id.to_owned());
         match &col.obj {
@@ -222,6 +223,7 @@ impl ResultCell {
             }
             ColumnType::Description => if let Some(e) = entity { match e.description_in_locale(list.language()) {
                 Some(s) => {
+                    ret.wdedit_class = Some("wd_desc".to_string());
                     ret.parts.push(ResultCellPart::Text(s.to_string()));
                 }
                 None => {
@@ -238,8 +240,8 @@ impl ResultCell {
                 }
             }
             ColumnType::Property(property) => if let Some(e) = entity {
+                ret.wdedit_class = Some(format!("wd_{}",property.to_lowercase()));
                 list.get_filtered_claims(&e,property)
-                //e.claims_with_property(property.to_owned())
                     .iter()
                     .for_each(|statement| {
                         ret.parts
@@ -248,7 +250,6 @@ impl ResultCell {
             },
             ColumnType::PropertyQualifier((p1, p2)) => if let Some(e) = entity {
                 list.get_filtered_claims(&e,p1)
-                //e.claims_with_property(p1.to_owned())
                     .iter()
                     .for_each(|statement| {
                         ret.get_parts_p_p(statement,p2)
@@ -277,6 +278,7 @@ impl ResultCell {
                 }
             },
             ColumnType::Label => if let Some(e) = entity {
+                ret.wdedit_class = Some("wd_label".to_string());
                 let label = match e.label_in_locale(list.language()) {
                     Some(s) => s.to_string(),
                     None => entity_id.to_string(),
@@ -307,11 +309,6 @@ impl ResultCell {
 
         ret
     }
-
-    pub fn new_from_parts ( parts: Vec<ResultCellPart> , references: Vec<Vec<Reference>> ) -> Self {
-        Self { parts , references }
-    }
-
 
     fn get_parts_p_p(&self,statement:&wikibase::statement::Statement,property:&str) -> Vec<ResultCellPart> {
         statement
@@ -385,11 +382,21 @@ impl ResultCell {
     }
 
     pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
-        self.parts
+        let mut ret ;
+        if list.template_params().wdedit {
+            ret = match &self.wdedit_class {
+                Some(class) => format!("class='{}'| ",class.to_owned()),
+                None => " ".to_string()
+            };
+        } else {
+            ret = " ".to_string();
+        }
+        ret += &self.parts
             .iter()
             .enumerate()
             .map(|(partnum, part)| part.as_wikitext(list, rownum, colnum, partnum))
             .collect::<Vec<String>>()
-            .join("<br/>")
+            .join("<br/>") ;
+        ret
     }
 }

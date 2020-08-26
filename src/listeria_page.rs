@@ -10,7 +10,6 @@ use crate::column::*;
 
 TEMPLATE PARAMETERS
 links IMPLEMENT fully
-wdedit IMPLEMENT
 references IMPLEMENT
 freq IGNORED => bot manager
 
@@ -467,6 +466,11 @@ mod tests {
     #[tokio::test]
     async fn references() {
         //check_fixture_file(PathBuf::from("test_data/references.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn wdedit() {
+        check_fixture_file(PathBuf::from("test_data/wdedit.fixture")).await;
     }
 
     #[tokio::test]

@@ -126,8 +126,18 @@ impl RendererWikitext {
         wt += &self.as_wikitext_table_header(list);
 
         if list.get_row_template().is_none() && !list.skip_table() && !list.results().is_empty() {
-            wt += "|-\n";
+            if !list.template_params().wdedit {
+                wt += "|-\n";
+            }
         }
+
+        let row_entity_ids : Vec<String> = list
+            .results()
+            .iter()
+            .filter(|row| row.section() == section_id)
+            .map(|row|row.entity_id())
+            .cloned()
+            .collect();
 
         // Rows
         let rows = list
@@ -139,6 +149,9 @@ impl RendererWikitext {
             .collect::<Vec<String>>();
         if list.skip_table() {
             wt += &rows.join("\n");
+        } else if list.template_params().wdedit {
+            let x : Vec<String> = row_entity_ids.iter().zip(rows.iter()).map(|(entity_id,row)|format!("\n|- class='wd_{}'\n{}",&entity_id.to_lowercase(),&row)).collect();
+            wt += &x.join("").trim() ;
         } else {
             wt += &rows.join("\n|-\n");
         }
@@ -161,7 +174,11 @@ impl RendererWikitext {
             }
             None => {
                 if !list.skip_table() {
-                    wt += "{| class='wikitable sortable' style='width:100%'\n";
+                    wt += "{| class='wikitable sortable" ;
+                    if list.template_params().wdedit {
+                        wt += " wd_can_edit" ;
+                    }
+                    wt += "' style='width:100%'\n";
                     list.columns()
                         .iter()
                         .enumerate()

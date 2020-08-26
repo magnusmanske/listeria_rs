@@ -219,7 +219,7 @@ impl ResultRow {
             .map(|(colnum, cell)| {
                 let column = list.column(colnum).unwrap(); // TODO
                 let key = column.obj.as_key();
-                format!("{} = {}", key, &cell)
+                format!("{} ={}", key, &cell)
             })
             .collect::<Vec<String>>()
             .join("\n| ")
@@ -238,7 +238,8 @@ impl ResultRow {
                 t,
                 self.cells_as_wikitext(list, &cells)
             ),
-            None => "| ".to_string() + &cells.join("\n| "),
+            //None => "| ".to_string() + &cells.join("\n| "),
+            None => "|".to_string() + &cells.join("\n|"),
         }
     }
 }

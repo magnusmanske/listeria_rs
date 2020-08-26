@@ -304,7 +304,7 @@ pub struct TemplateParams {
     autodesc: Option<String>,
     summary: Option<String>,
     skip_table: bool,
-    wdedit: bool,
+    pub wdedit: bool,
     references: ReferencesParameter,
     one_row_per_item: bool,
     sort_order: SortOrder,
