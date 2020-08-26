@@ -12,6 +12,7 @@ use crate::listeria::listeria_page::ListeriaPage;
 use crate::listeria::configuration::Configuration;
 use wikibase::mediawiki::api::Api;
 use mysql_async::prelude::*;
+use mysql_async::from_row;
 use mysql_async as my;
 
 // ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
@@ -52,12 +53,12 @@ impl ListeriaBot {
 
         let mut conn = ret.pool.get_conn().await.expect("Can't connect to database");
 
-        let test1 : Vec<my::Row> = conn.exec_iter(
+        let test1 = conn.exec_iter(
             "SELECT `id`,`wiki`,`page`,`status` from pagestatus WHERE status!='RUNNING' order by `timestamp` DESC LIMIT 1",
             ()
         ).await
         .map_err(|e|format!("PageList::run_batch_query: SQL query error[1]: {:?}",e))?
-        .collect_and_drop()
+        .map_and_drop(|row| from_row::<(u64,String,String,String)>(row))
         .await
         .map_err(|e|format!("PageList::run_batch_query: SQL query error[2]: {:?}",e))?;
         
