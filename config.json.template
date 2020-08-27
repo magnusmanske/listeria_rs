@@ -18,6 +18,17 @@
         "commonswiki":"{{Inline coordinates|$LAT$|$LON$|display=inline}}",
         "dewiki":"{{Coordinate|text=DMS|NS=$LAT$|EW=$LON$|name=$ITEM$|simple=y|type=landmark|region=$REGION$}}"
     },
+    "wiki_login": {
+        "user": "XXX",
+        "pass": "XXX"
+    } ,
+    "mysql":{
+        "host":"THIS SECTION IS FOR BOT USE ONLY",
+        "user":"XXX",
+        "password":"XXX",
+        "port":3306,
+        "schema":"XXX"
+    },
     "location_regions":["dewiki"],
     "default_thumbnail_size" : 128 ,
     "shadow_images_check" : [ "enwiki" ] ,

@@ -189,6 +189,15 @@ impl Template {
             }
         }
 
+        let sparql = match &parts.get("sparql") {
+            Some(sparql) => Some(Self::fix_sparql(sparql)),
+            None => None
+        } ;
+        match sparql {
+            Some(sparql) => { parts.insert("sparql".to_string(),sparql); }
+            None => {}
+        }
+
         match title {
             Some(t) => Some(Self {
                 title: t,
@@ -196,6 +205,12 @@ impl Template {
             }),
             None => None,
         }
+    }
+
+    // HACKISH
+    fn fix_sparql(sparql: &String) -> String {
+        let sparql = sparql.replace("{{!}}","|");
+        sparql
     }
 }
 
@@ -342,13 +357,7 @@ impl TemplateParams {
             links:LinksType::All,
             sort: SortMode::new(template.params.get("sort")),
             section: SectionType::new_from_string_option(template.params.get("section")),
-            min_section: template
-                            .params
-                            .get("min_section")
-                            .map(|s|
-                                s.parse::<u64>().ok().or(Some(2)).unwrap_or(2)
-                                )
-                            .unwrap_or(2),
+            min_section: template.params.get("min_section").map(|s|s.parse::<u64>().ok().or(Some(2)).unwrap_or(2)).unwrap_or(2),
             row_template: template.params.get("row_template").map(|s|s.trim().to_string()),
             header_template: template.params.get("header_template").map(|s|s.trim().to_string()),
             autodesc: template.params.get("autolist").map(|s|s.trim().to_uppercase()).or_else(|| template.params.get("autodesc").map(|s|s.trim().to_uppercase())) ,

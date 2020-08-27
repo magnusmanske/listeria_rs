@@ -1,0 +1,420 @@
+$$$$ API
+
+https://www.wikidata.org/w/api.php
+
+$$$$ PAGETITLE
+
+User:Daniel Mietchen/Wikidata lists/Corporate authors
+
+$$$$ WIKITEXT
+
+{{Wikidata list|sparql=
+
+SELECT (SAMPLE (?work) AS ?item)
+(COUNT(?work) AS ?count) ?string 
+  (CONCAT(
+      'https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=',
+      ENCODE_FOR_URI(?string)) AS ?resolver_url)
+
+WITH {
+  SELECT DISTINCT ?string
+   { 
+      SERVICE bd:sample { ?paper wdt:P2093 ?string . bd:serviceParam bd:sample.limit 100000 }   
+     FILTER (REGEX(LCASE(?string), "(society{{!}}committee{{!}}association{{!}}academy{{!}}council{{!}}study{{!}}project{{!}}initiative{{!}}institute{{!}}\\bschool\\b{{!}}\\bcenter\\b{{!}}\\bcentre\\b{{!}}\\bhospital\\b{{!}}america{{!}}\\basia\\b{{!}}\\basian\\b{{!}}europe{{!}}africa)"))
+   }
+} AS %strings 
+
+
+WHERE {
+  INCLUDE %strings
+          ?work wdt:P2093 ?string
+  }
+GROUP BY ?count ?string ?resolver_url ?item 
+ORDER BY DESC(?count)
+
+|columns=?count,?string,?resolver_url,?item:Sample_paper 
+|sort=?count
+|min_section=1 
+|wdedit = yes
+|summary=itemnumber
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable wd_can_edit' style='width:100%'
+!?count
+!?string
+!?resolver_url
+!Sample_paper
+|- class='wd_q51437270'
+| 179
+| Coastal Engineering Research Center (U.S.)
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Coastal%20Engineering%20Research%20Center%20%28U.S.%29
+| [[:d:Q51437270|Acceleration and impact of structures moved by tsunamis or flash floods]]
+|- class='wd_q28222693'
+| 32
+| American College of Physicians
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=American%20College%20of%20Physicians
+| [[:d:Q28222693|Prevention of premature discontinuation of dual antiplatelet therapy in patients with coronary artery stents: a science advisory from the American Heart Association, American College of Cardiology, Society for Cardiovascular Angiography and Interven]]
+|- class='wd_q34649664'
+| 30
+| Society for Adolescent Health and Medicine
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Society%20for%20Adolescent%20Health%20and%20Medicine
+| [[:d:Q34649664|Recommendations for promoting the health and well-being of lesbian, gay, bisexual, and transgender adolescents: a position paper of the Society for Adolescent Health and Medicine.]]
+|- class='wd_q33778612'
+| 28
+| Australian Cancer Study
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Australian%20Cancer%20Study
+| [[:d:Q33778612|Genome-wide association study of subtype-specific epithelial ovarian cancer risk alleles using pooled DNA.]]
+|- class='wd_q33729824'
+| 25
+| Osteoporotic Fractures in Men Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Osteoporotic%20Fractures%20in%20Men%20Study%20Group
+| [[:d:Q33729824|Epidemiology of rib fractures in older men: Osteoporotic Fractures in Men (MrOS) prospective cohort study.]]
+|- class='wd_q30415984'
+| 19
+| Muscle Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Muscle%20Study%20Group
+| [[:d:Q30415984|Phase II trial of methotrexate in myasthenia gravis.]]
+|- class='wd_q34022336'
+| 17
+| Israel Study Group on First Acute Myocardial Infarction
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Israel%20Study%20Group%20on%20First%20Acute%20Myocardial%20Infarction
+| [[:d:Q34022336|Sense of coherence predicts post-myocardial infarction trajectory of leisure time physical activity: a prospective cohort study]]
+|- class='wd_q33626374'
+| 16
+| HPTN 071 (PopART) Study Team
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=HPTN%20071%20%28PopART%29%20Study%20Team
+| [[:d:Q33626374|A universal testing and treatment intervention to improve HIV control: One-year results from intervention communities in Zambia in the HPTN 071 (PopART) cluster-randomised trial.]]
+|- class='wd_q30406052'
+| 15
+| A2ALL Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=A2ALL%20Study%20Group
+| [[:d:Q30406052|Hepatitis C disease severity in living versus deceased donor liver transplant recipients: an extended observation study.]]
+|- class='wd_q57474236'
+| 14
+| Hand-Wrist Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Hand-Wrist%20Study%20Group
+| [[:d:Q57474236|Predicting outcome after hand orthosis and hand therapy for thumb carpometacarpal osteoarthritis; a prospective study]]
+|- class='wd_q30307784'
+| 12
+| Cancer Committee, College of American Pathologists
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Cancer%20Committee%2C%20College%20of%20American%20Pathologists
+| [[:d:Q30307784|Protocol for the examination of specimens from patients with carcinomas of the skin, excluding eyelid, vulva, and penis: a basis for checklists.]]
+|- class='wd_q38921050'
+| 11
+| PASTURE study group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=PASTURE%20study%20group
+| [[:d:Q38921050|ω-3 fatty acids contribute to the asthma-protective effect of unprocessed cow's milk.]]
+|- class='wd_q30275850'
+| 10
+| NHLBI GO Exome Sequencing Project
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=NHLBI%20GO%20Exome%20Sequencing%20Project
+| [[:d:Q30275850|Guidelines for Large-Scale Sequence-Based Complex Trait Association Studies: Lessons Learned from the NHLBI Exome Sequencing Project.]]
+|- class='wd_q33782854'
+| 10
+| National Heart, Lung, and Blood Institute's Asthma Clinical Research Network
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=National%20Heart%2C%20Lung%2C%20and%20Blood%20Institute%27s%20Asthma%20Clinical%20Research%20Network
+| [[:d:Q33782854|Airway microbiota and bronchial hyperresponsiveness in patients with suboptimally controlled asthma.]]
+|- class='wd_q51399797'
+| 10
+| American Bulb Company
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=American%20Bulb%20Company
+| [[:d:Q51399797|The 19 best early flowering Spencer orchid, sweet peas for indoor and outdoor planting]]
+|- class='wd_q30585056'
+| 9
+| MedSeq Project
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=MedSeq%20Project
+| [[:d:Q30585056|The MedSeq Project: a randomized trial of integrating whole genome sequencing into clinical medicine]]
+|- class='wd_q30896674'
+| 9
+| Africa García-Orad
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Africa%20Garc%C3%ADa-Orad
+| [[:d:Q30896674|High mitochondrial DNA stability in B-cell chronic lymphocytic leukemia]]
+|- class='wd_q30925594'
+| 9
+| ClinSurv Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=ClinSurv%20Study%20Group
+| [[:d:Q30925594|From pills to patients: an evaluation of data sources to determine the number of people living with HIV who are receiving antiretroviral therapy in Germany.]]
+|- class='wd_q38566987'
+| 8
+| ETHOS Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=ETHOS%20Study%20Group
+| [[:d:Q38566987|Assessment and delivery of treatment for hepatitis C virus infection in an opioid substitution treatment clinic with integrated peer-based support in Newcastle, Australia.]]
+|- class='wd_q44128903'
+| 7
+| J-ROCKET AF Study Investigators
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=J-ROCKET%20AF%20Study%20Investigators
+| [[:d:Q44128903|Net clinical benefit of rivaroxaban versus warfarin in Japanese patients with nonvalvular atrial fibrillation: a subgroup analysis of J-ROCKET AF.]]
+|- class='wd_q29305471'
+| 7
+| American College of Veterinary Internal Medicine
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=American%20College%20of%20Veterinary%20Internal%20Medicine
+| [[:d:Q29305471|Equine Metabolic Syndrome]]
+|- class='wd_q37532994'
+| 7
+| M Hospital
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=M%20Hospital
+| [[:d:Q37532994|Monoclinic uncomplexed double-stranded, antiparallel, left-handed beta 5.6-helix (increases decreases beta 5.6) structure of gramicidin A: alternate patterns of helical association and deformation.]]
+|- class='wd_q46754140'
+| 5
+| Council of Europe. European Court of Human Rights
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Council%20of%20Europe.%20European%20Court%20of%20Human%20Rights
+| [[:d:Q46754140|Berrehab v. Netherlands, 21 June 1988.]]
+|- class='wd_q35034029'
+| 5
+| Professional Practice and Guidelines Committee
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Professional%20Practice%20and%20Guidelines%20Committee
+| [[:d:Q35034029|First trimester diagnosis and screening for fetal aneuploidy.]]
+|- class='wd_q31143915'
+| 4
+| Procalcitonin And Survival Study (PASS) Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Procalcitonin%20And%20Survival%20Study%20%28PASS%29%20Group
+| [[:d:Q31143915|Prediction of non-recovery from ventilator-demanding acute respiratory failure, ARDS and death using lung damage biomarkers: data from a 1200-patient critical care randomized trial.]]
+|- class='wd_q43635809'
+| 4
+| Registry of Dementia of Girona Study Group (ReDeGi Study Group)
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Registry%20of%20Dementia%20of%20Girona%20Study%20Group%20%28ReDeGi%20Study%20Group%29
+| [[:d:Q43635809|Pharmaceutical consumption and cost in patients with dementia: A longitudinal study by the Registry of Dementias of Girona (ReDeGi) in Catalonia (Spain).]]
+|- class='wd_q33363128'
+| 3
+| Nordic Cryptorchidism Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Nordic%20Cryptorchidism%20Study%20Group
+| [[:d:Q33363128|Risk factors for congenital cryptorchidism in a prospective birth cohort study]]
+|- class='wd_q34200663'
+| 3
+| Alf-One Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Alf-One%20Study%20Group
+| [[:d:Q34200663|Sexual dysfunction in 1,274 European men suffering from lower urinary tract symptoms.]]
+|- class='wd_q40641117'
+| 3
+| International Society for Medical Publication Professionals
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=International%20Society%20for%20Medical%20Publication%20Professionals
+| [[:d:Q40641117|Good Publication Practice for Communicating Company-Sponsored Medical Research: GPP3.]]
+|- class='wd_q41078074'
+| 3
+| Itinere Project Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Itinere%20Project%20Group
+| [[:d:Q41078074|High hepatitis C virus prevalence and incidence in a community cohort of young heroin injectors in a context of extensive harm reduction programmes.]]
+|- class='wd_q36942934'
+| 3
+| European DISABKIDS Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=European%20DISABKIDS%20Group
+| [[:d:Q36942934|Cross-cultural development of a child health care questionnaire on satisfaction, utilization, and needs.]]
+|- class='wd_q47546875'
+| 3
+| ANRS EP57 APACHES Study group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=ANRS%20EP57%20APACHES%20Study%20group
+| [[:d:Q47546875|Prevalence and risk factors for anal human papillomavirus infection in HIV-positive men having sex with men.]]
+|- class='wd_q30433234'
+| 3
+| Japan Study Group of NAFLD (JSG-NAFLD)
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Japan%20Study%20Group%20of%20NAFLD%20%28JSG-NAFLD%29
+| [[:d:Q30433234|Simple scoring system for predicting cirrhosis in nonalcoholic fatty liver disease.]]
+|- class='wd_q38655597'
+| 3
+| European Biological Variation Study of the EFLM Working Group on Biological Variation
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=European%20Biological%20Variation%20Study%20of%20the%20EFLM%20Working%20Group%20on%20Biological%20Variation
+| [[:d:Q38655597|The EuBIVAS Project: Within- and Between-Subject Biological Variation Data for Serum Creatinine Using Enzymatic and Alkaline Picrate Methods and Implications for Monitoring.]]
+|- class='wd_q44053553'
+| 2
+| Brain Resuscitation Clinical Trial III (BRCT III) Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Brain%20Resuscitation%20Clinical%20Trial%20III%20%28BRCT%20III%29%20Study%20Group
+| [[:d:Q44053553|Clinical use of sodium bicarbonate during cardiopulmonary resuscitation--is it used sensibly?]]
+|- class='wd_q78290503'
+| 2
+| EURODIAB Substudy 2 Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=EURODIAB%20Substudy%202%20Study%20Group
+| [[:d:Q78290503|Rapid early growth is associated with increased risk of childhood type 1 diabetes in various European populations]]
+|- class='wd_q34835217'
+| 2
+| Albiglutide Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Albiglutide%20Study%20Group
+| [[:d:Q34835217|Pharmacodynamics, pharmacokinetics, safety, and tolerability of albiglutide, a long-acting glucagon-like peptide-1 mimetic, in patients with type 2 diabetes.]]
+|- class='wd_q46518107'
+| 2
+| DaNeX Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=DaNeX%20Study%20Group
+| [[:d:Q46518107|Pig brain stereotaxic standard space: mapping of cerebral blood flow normative values and effect of MPTP-lesioning.]]
+|- class='wd_q46444665'
+| 2
+| RESULT Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=RESULT%20Study%20Group
+| [[:d:Q46444665|Reduction in use of healthcare services with combination sulfonylurea and rosiglitazone: findings from the Rosiglitazone Early vs SULfonylurea Titration (RESULT) study.]]
+|- class='wd_q51392454'
+| 2
+| Wisconsin State Horticultural Society
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Wisconsin%20State%20Horticultural%20Society
+| [[:d:Q51392454|Wisconsin horticulture]]
+|- class='wd_q38813322'
+| 2
+| Gabriela Caldeira Andrade Americano
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Gabriela%20Caldeira%20Andrade%20Americano
+| [[:d:Q38813322|A systematic review on the association between molar incisor hypomineralization and dental caries.]]
+|- class='wd_q35236079'
+| 2
+| Acute Leukemia Working Party of the European Society for Blood and Marrow Transplantation
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Acute%20Leukemia%20Working%20Party%20of%20the%20European%20Society%20for%20Blood%20and%20Marrow%20Transplantation
+| [[:d:Q35236079|T-cell-replete haploidentical transplantation versus autologous stem cell transplantation in adult acute leukemia: a matched pair analysis]]
+|- class='wd_q35205961'
+| 1
+| Communications Department American Board of Family Medicine
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Communications%20Department%20American%20Board%20of%20Family%20Medicine
+| [[:d:Q35205961|Kendall M. Campbell, MD selected as 2014 Puffer/IOM fellow.]]
+|- class='wd_q36712153'
+| 1
+| European Society for Physical and Rehabilitation Medicine
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=European%20Society%20for%20Physical%20and%20Rehabilitation%20Medicine
+| [[:d:Q36712153|White book on physical and rehabilitation medicine in Europe.]]
+|- class='wd_q43225349'
+| 1
+| Grafihco Study Team
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Grafihco%20Study%20Team
+| [[:d:Q43225349|Prevalence and factors associated with significant liver fibrosis assessed by transient elastometry in HIV/hepatitis C virus-coinfected patients.]]
+|- class='wd_q52727450'
+| 1
+| National Heart, Lung and Blood Institute Severe Asthma Research Program 3
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=National%20Heart%2C%20Lung%20and%20Blood%20Institute%20Severe%20Asthma%20Research%20Program%203
+| [[:d:Q52727450|Refractory airway type 2 inflammation in a large subgroup of asthmatic patients treated with inhaled corticosteroids.]]
+|- class='wd_q34069017'
+| 1
+| ETAC Study Group (Early Treatment of the Atopic Child)
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=ETAC%20Study%20Group%20%28Early%20Treatment%20of%20the%20Atopic%20Child%29
+| [[:d:Q34069017|What are the candidate groups for pharmacotherapeutic intervention to prevent asthma?]]
+|- class='wd_q37426429'
+| 1
+| Policy & Practice Committee of the British Fertility Society
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Policy%20%26%20Practice%20Committee%20of%20the%20British%20Fertility%20Society
+| [[:d:Q37426429|Medical adjuncts in IVF: evidence for clinical practice.]]
+|- class='wd_q38676964'
+| 1
+| American Heart Association Stroke Council and Council on Epidemiology and Prevention
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=American%20Heart%20Association%20Stroke%20Council%20and%20Council%20on%20Epidemiology%20and%20Prevention
+| [[:d:Q38676964|Scientific Rationale for the Inclusion and Exclusion Criteria for Intravenous Alteplase in Acute Ischemic Stroke: A Statement for Healthcare Professionals From the American Heart Association/American Stroke Association.]]
+|- class='wd_q48895929'
+| 1
+| Seoul–Osaka Resuscitation Study (SORS) Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Seoul%E2%80%93Osaka%20Resuscitation%20Study%20%28SORS%29%20Group
+| [[:d:Q48895929|Association between resuscitation time interval at the scene and neurological outcome after out-of-hospital cardiac arrest in two Asian cities.]]
+|- class='wd_q50125906'
+| 1
+| Symptoms of Lower Urinary Tract Dysfunction Research Network Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Symptoms%20of%20Lower%20Urinary%20Tract%20Dysfunction%20Research%20Network%20Study%20Group
+| [[:d:Q50125906|Baseline Lower Urinary Tract Symptoms in Patients Enrolled in LURN: A Prospective, Observational Cohort Study.]]
+|- class='wd_q83076973'
+| 1
+| American Heart Association Writing Group 6
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=American%20Heart%20Association%20Writing%20Group%206
+| [[:d:Q83076973|Atherosclerotic Peripheral Vascular Disease Symposium II: controversies in abdominal aortic aneurysm repair]]
+|- class='wd_q38439307'
+| 1
+| Rembrandt/Vermeer Study Groups
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Rembrandt%2FVermeer%20Study%20Groups
+| [[:d:Q38439307|Pardoprunox in early Parkinson's disease: results from 2 large, randomized double-blind trials.]]
+|- class='wd_q47879804'
+| 1
+| Postdilatation Clinical Compartative Study (POSTIT) Investigators
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Postdilatation%20Clinical%20Compartative%20Study%20%28POSTIT%29%20Investigators
+| [[:d:Q47879804|Is adjunctive balloon postdilatation necessary after coronary stent deployment? Final results from the POSTIT trial.]]
+|- class='wd_q81205074'
+| 1
+| PRIMO and SEROCO Study Groups
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=PRIMO%20and%20SEROCO%20Study%20Groups
+| [[:d:Q81205074|Does transient HAART during primary HIV-1 infection lower the virological set-point?]]
+|- class='wd_q40289488'
+| 1
+| San Felice del Benaco Study Investigators
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=San%20Felice%20del%20Benaco%20Study%20Investigators
+| [[:d:Q40289488|Incidence of post-infectious irritable bowel syndrome and functional intestinal disorders following a water-borne viral gastroenteritis outbreak.]]
+|- class='wd_q48634290'
+| 1
+| Royal College of Radiologists' Clinical Radiology Audit Committee
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Royal%20College%20of%20Radiologists%27%20Clinical%20Radiology%20Audit%20Committee
+| [[:d:Q48634290|Audit of radiology communication systems for critical, urgent, and unexpected significant findings.]]
+|- class='wd_q51749297'
+| 1
+| 1369 GHD to GHDA Transition Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=1369%20GHD%20to%20GHDA%20Transition%20Study%20Group
+| [[:d:Q51749297|Treatment for 24 months with recombinant human GH has a beneficial effect on bone mineral density in young adults with childhood-onset GH deficiency.]]
+|- class='wd_q30941905'
+| 1
+| DECODE Insulin Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=DECODE%20Insulin%20Study%20Group
+| [[:d:Q30941905|Plasma insulin and cardiovascular mortality in non-diabetic European men and women: a meta-analysis of data from eleven prospective studies.]]
+|- class='wd_q34387750'
+| 1
+| Working Group for the Natural History of IPMN of the Japan Pancreas Society
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Working%20Group%20for%20the%20Natural%20History%20of%20IPMN%20of%20the%20Japan%20Pancreas%20Society
+| [[:d:Q34387750|Natural history of branch duct intraductal papillary mucinous neoplasm with mural nodules: a Japan Pancreas Society multicenter study]]
+|- class='wd_q35652433'
+| 1
+| Swedish Addision Registry Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Swedish%20Addision%20Registry%20Study%20Group
+| [[:d:Q35652433|Linkage Analysis in Autoimmune Addison's Disease: NFATC1 as a Potential Novel Susceptibility Locus.]]
+|- class='wd_q44117486'
+| 1
+| JACC Study Group. Japan Collaborative Cohort Study for Evaluation of Cancer Risk
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=JACC%20Study%20Group.%20Japan%20Collaborative%20Cohort%20Study%20for%20Evaluation%20of%20Cancer%20Risk
+| [[:d:Q44117486|Prospective study of educational background and stomach cancer in Japan.]]
+|- class='wd_q46333274'
+| 1
+| Lebanese National Conference for Health in Universities study group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Lebanese%20National%20Conference%20for%20Health%20in%20Universities%20study%20group
+| [[:d:Q46333274|The Young Adults' Cigarette Dependence (YACD) score: an improved tool for cigarette dependence assessment in university students.]]
+|- class='wd_q85323348'
+| 1
+| Equipo de ECMO del Hospital Sant Joan de Déu
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Equipo%20de%20ECMO%20del%20Hospital%20Sant%20Joan%20de%20D%C3%A9u
+| [[:d:Q85323348|[Neonatal extracorporeal membrane oxygenation: 9 years of experience]]]
+|- class='wd_q36421653'
+| 1
+| Latin-American GORD Consensus Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Latin-American%20GORD%20Consensus%20Group
+| [[:d:Q36421653|An evidence-based, Latin-American consensus on gastro-oesophageal reflux disease.]]
+|- class='wd_q79354335'
+| 1
+| DIAMOND study group investigators
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=DIAMOND%20study%20group%20investigators
+| [[:d:Q79354335|Atrial fibrillation, ischaemic heart disease, and the risk of death in patients with heart failure]]
+|- class='wd_q81651180'
+| 1
+| Italian CTS and others entrapment Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Italian%20CTS%20and%20others%20entrapment%20Study%20Group
+| [[:d:Q81651180|Multicenter study on carpal tunnel syndrome and pregnancy incidence and natural course]]
+|- class='wd_q84970964'
+| 1
+| American College of Veterinary Pathologists Training Program Development Task Force
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=American%20College%20of%20Veterinary%20Pathologists%20Training%20Program%20Development%20Task%20Force
+| [[:d:Q84970964|Elements of good training in anatomic pathology]]
+|- class='wd_q90933620'
+| 1
+| China Kadoorie Biobank Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=China%20Kadoorie%20Biobank%20Study%20Group
+| [[:d:Q90933620|Solid fuels for cooking and tobacco use and risk of major chronic liver disease mortality: a prospective cohort study of 0.5 million Chinese adults]]
+|- class='wd_q91339403'
+| 1
+| NACHO-LIBRE Study Group
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=NACHO-LIBRE%20Study%20Group
+| [[:d:Q91339403|Clinical responses and persistent BRAF V600E+ blood cells in children with LCH treated with MAPK pathway inhibition]]
+|- class='wd_q91594484'
+| 1
+| SGNA Practice Committee 2017-2018
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=SGNA%20Practice%20Committee%202017-2018
+| [[:d:Q91594484|MANAGEMENT OF ENDOSCOPIC ACCESSORIES, VALVES, AND WATER AND IRRIGATION BOTTLES IN THE GASTROENTEROLOGY SETTING]]
+|- class='wd_q92303864'
+| 1
+| Editorial Committee of the "Evidence-based guideline for the management of early onset scoliosis" of Chinese Association of Orthopedic Surgeons
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Editorial%20Committee%20of%20the%20%22Evidence-based%20guideline%20for%20the%20management%20of%20early%20onset%20scoliosis%22%20of%20Chinese%20Association%20of%20Orthopedic%20Surgeons
+| [[:d:Q92303864|[Evidence-based guideline for the management of early onset scoliosis]]]
+|- class='wd_q95483299'
+| 1
+| Institute of Medicine (US) Committee for Review and Evaluation of the Medical Use Program of the Nuclear Regulatory Commission
+| https://author-disambiguator.toolforge.org/names_oauth.php?doit=Look+for+author&name=Institute%20of%20Medicine%20%28US%29%20Committee%20for%20Review%20and%20Evaluation%20of%20the%20Medical%20Use%20Program%20of%20the%20Nuclear%20Regulatory%20Commission
+| [[:d:Q95483299|Radiation In Medicine: A Need For Regulatory Reform]]
+|}
+----
+&sum; 73 items.
+
+#$$$$ SPARQL_RESULTS
+

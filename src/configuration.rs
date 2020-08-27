@@ -30,6 +30,8 @@ pub struct Configuration {
     default_thumbnail_size: Option<u64>,
     location_regions: Vec<String>,
     mysql: Option<Value>,
+    wiki_user: String,
+    wiki_password: String,
 }
 
 impl Configuration {
@@ -49,9 +51,12 @@ impl Configuration {
         if let Some(i) = j["default_thumbnail_size"].as_u64() { ret.default_thumbnail_size = Some(i) }
         if let Some(sic) = j["shadow_images_check"].as_array() { ret.shadow_images_check = sic.iter().map(|s|s.as_str().unwrap().to_string()).collect() }
         if let Some(lr) = j["location_regions"].as_array() { ret.location_regions = lr.iter().map(|s|s.as_str().unwrap().to_string()).collect() }
+        if let Some(s) = j["wiki_login"]["user"].as_str() { ret.wiki_user = s.to_string() }
+        if let Some(s) = j["wiki_login"]["pass"].as_str() { ret.wiki_password = s.to_string() }
         if j["mysql"].is_object() {
             ret.mysql = Some(j["mysql"].to_owned()) ;
         }
+        
 
         // valid WikiBase APIs
         if let Some(o) = j["apis"].as_object() {
@@ -112,6 +117,14 @@ impl Configuration {
         Ok(ret)
     }
 
+    pub fn wiki_user(&self) -> &String {
+        &self.wiki_user
+    }
+
+    pub fn wiki_password(&self) -> &String {
+        &self.wiki_password
+    }
+
     pub fn mysql(&self,key: &str) -> Value {
         match &self.mysql {
             Some(mysql) => mysql[key].to_owned(),
@@ -166,10 +179,10 @@ impl Configuration {
         &self.location_regions
     }
 
-    pub async fn wbapi_login(&mut self,key: &str,user: &str,pass: &str) -> bool {
+    pub async fn wbapi_login(&mut self,key: &str) -> bool {
         match self.wb_apis.get_mut(key) {
             Some(mut api) => {
-                (*Arc::get_mut(&mut api).unwrap()).login(user.to_owned(), pass.to_owned()).await.expect("Could not log in");
+                (*Arc::get_mut(&mut api).unwrap()).login(self.wiki_user.to_owned(), self.wiki_password.to_owned()).await.expect("Could not log in");
                 true
             }
             None => false

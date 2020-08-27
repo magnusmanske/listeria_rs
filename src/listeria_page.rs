@@ -141,15 +141,15 @@ impl ListeriaPage {
                 params.insert("page".to_string(),self.page_params.page.clone());
             }
         }
-
         let result = self
             .page_params
             .mw_api
             .read()
             .await
-            .get_query_api_json(&params)
+            .post_query_api_json(&params)
             .await
-            .expect("Loading page failed");
+            .map_err(|e|format!("Loading page failed: {}",e))?;
+        println!("{:?}",&result);
         match result["parse"][mode]["*"].as_str() {
             Some(ret) => Ok(ret.to_string()),
             None => Err(format!("No parse tree for {}", &self.page_params.page)),
@@ -176,7 +176,7 @@ impl ListeriaPage {
             ("action", "edit"),
             ("title", title),
             ("text", wikitext),
-            ("summary", "Wikidata list updated"),
+            ("summary", "Wikidata list updated [V2]"),
             ("token", &token),
         ]
         .into_iter()
@@ -241,7 +241,6 @@ mod tests {
     use crate::* ;
     use crate::render_wikitext::RendererWikitext;
     use crate::listeria_page::ListeriaPage;
-    use config::{Config, File};
 
     fn read_fixture_from_file(path:PathBuf) -> HashMap<String,String> {
         let text = fs::read_to_string(path).unwrap();
@@ -281,15 +280,7 @@ mod tests {
         }
         let mut config = Configuration::new_from_json(j).await.unwrap();
         if path.to_str().unwrap() == "test_data/commons_sparql.fixture" { // HACKISH
-            let ini_file = "listeria.ini";
-
-            let mut settings = Config::default();
-            settings
-                .merge(File::with_name(ini_file))
-                .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
-            let user = settings.get_str("user.user").expect("No user name");
-            let pass = settings.get_str("user.pass").expect("No user pass");
-            let result = config.wbapi_login("commons",&user,&pass).await;
+            let result = config.wbapi_login("commons").await;
             println!("LOGIN TO COMMONS: {}",result);
         }
         let config = Arc::new(config);
@@ -471,6 +462,11 @@ mod tests {
     #[tokio::test]
     async fn wdedit() {
         check_fixture_file(PathBuf::from("test_data/wdedit.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn curly_braces() {
+        check_fixture_file(PathBuf::from("test_data/curly_braces.fixture")).await;
     }
 
     #[tokio::test]
