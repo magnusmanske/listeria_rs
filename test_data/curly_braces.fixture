@@ -8,7 +8,7 @@ User:Daniel Mietchen/Wikidata lists/Corporate authors
 
 $$$$ WIKITEXT
 
-{{Wikidata list|sparql=
+This is before{{Wikidata list|sparql=
 
 SELECT (SAMPLE (?work) AS ?item)
 (COUNT(?work) AS ?count) ?string 
@@ -37,8 +37,7 @@ ORDER BY DESC(?count)
 |min_section=1 
 |wdedit = yes
 |summary=itemnumber
-}}
-{{Wikidata list end}}
+}}This is inside{{Wikidata list end}}This is after.
 
 $$$$ EXPECTED
 

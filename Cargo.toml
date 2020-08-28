@@ -5,8 +5,7 @@ authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
 edition = "2018"
 
 [dependencies]
-#regex = "1"
-regex = { version = "1", features = ["pattern"] }
+regex = "1"
 lazy_static = "1"
 chrono = "0.4.15"
 config = "^0.10"

@@ -24,6 +24,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use wikibase::entity::EntityTrait;
 use wikibase::mediawiki::api::Api;
+use regex::RegexBuilder;
 
 #[derive(Debug, Clone)]
 pub struct PageParams {
@@ -136,23 +137,23 @@ impl SparqlValue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Template {
     pub title: String,
     pub params: HashMap<String, String>,
 }
 
 impl Template {
-    pub fn new_from_xml(node: &roxmltree::Node) -> Option<Self> {
+    /*
+    pub fn new_from_xml(node: &mut roxmltree::Node) -> Option<Self> {
         let mut title: Option<String> = None;
-
+        Self::expand_templates(node);
         let mut parts: HashMap<String, String> = HashMap::new();
         for n in node.children().filter(|n| n.is_element()) {
             if n.tag_name().name() == "title" {
                 n.children().for_each(|c| {
                     let t = c.text().unwrap_or("").replace("_", " ");
-                    let t = t.trim();
-                    title = Some(t.to_string());
+                    title = Some(t.trim().to_string());
                 });
             } else if n.tag_name().name() == "part" {
                 let mut k: Option<String> = None;
@@ -189,15 +190,6 @@ impl Template {
             }
         }
 
-        let sparql = match &parts.get("sparql") {
-            Some(sparql) => Some(Self::fix_sparql(sparql)),
-            None => None
-        } ;
-        match sparql {
-            Some(sparql) => { parts.insert("sparql".to_string(),sparql); }
-            None => {}
-        }
-
         match title {
             Some(t) => Some(Self {
                 title: t,
@@ -206,12 +198,51 @@ impl Template {
             None => None,
         }
     }
+    */
 
-    // HACKISH
-    fn fix_sparql(sparql: &String) -> String {
-        let sparql = sparql.replace("{{!}}","|");
-        sparql
+    pub fn new_from_params(title: String, text: String) -> Self {
+        let mut curly_braces = 0 ;
+        let mut parts : Vec<String> = vec![] ;
+        let mut part : Vec<char> = vec![] ;
+        text
+            .chars()
+            .for_each(|c|{
+                match c {
+                    '{' => { curly_braces += 1 ; part.push(c); }
+                    '}' => { curly_braces -= 1 ; part.push(c); }
+                    '|' => {
+                        if curly_braces == 0 {
+                            parts.push ( part.iter().collect() ) ;
+                            part.clear() ;
+                        } else {
+                            part.push(c);
+                        }
+                    }
+                    _ => { part.push(c); }
+                }
+                });
+        parts.push ( part.into_iter().collect() ) ;
+        
+        let params : HashMap<String,String> = parts
+            .iter()
+            .filter_map(|part|{
+                let pos = part.find('=')?;
+                let k = part.get(0..pos)?.trim().to_string();
+                let v = part.get(pos+1..)?.trim().to_string();
+                Some((k,v))
+            })
+            .collect();
+        Self {
+            title,
+            params,
+        }
     }
+
+    /*
+    fn expand_templates(node: &mut roxmltree::Node) {
+        println!("NODE: {:?}",node);
+    }
+    */
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -403,4 +434,138 @@ pub trait Renderer {
     fn new() -> Self ;
     fn render(&mut self,page:&ListeriaList) -> Result<String,String> ;
     fn get_new_wikitext(&self,wikitext: &str, page:&ListeriaPage ) -> Result<Option<String>,String> ;
+}
+
+#[derive(Debug, Clone)]
+pub struct PageElement {
+    before: String,
+    template_start: String,
+    inside: String,
+    template_end: String,
+    after: String,
+    list: ListeriaList,
+    is_just_text: bool,
+}
+
+impl PageElement {
+    pub fn new_from_text(text: &String, page: &ListeriaPage) -> Option<Self> {
+        let start_template = page
+            .config()
+            .get_local_template_title_start(&page.wiki()).ok()?;
+        let end_template = page
+            .config()
+            .get_local_template_title_end(&page.wiki()).ok()?;
+        let pattern_string_start = r#"\{\{([Ww]ikidata[ _]list|"#.to_string()
+            + &start_template.replace(" ", "[ _]")
+            + r#"[^\|]*)"#;
+        let pattern_string_end = r#"\{\{([Ww]ikidata[ _]list[ _]end|"#.to_string()
+            + &end_template.replace(" ", "[ _]")
+            + r#")(\s*\}\})"#;
+        let seperator_start: Regex = RegexBuilder::new(&pattern_string_start)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+        let seperator_end: Regex = RegexBuilder::new(&pattern_string_end)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .unwrap();
+
+        let match_start = match seperator_start.find(&text) {
+            Some(m) => m,
+            None => return None
+        };
+
+        let (match_end,single_template) = match seperator_end.find(&text) {
+            Some(m) => (m,false),
+            None => (match_start.clone(),true) // No end template, could be tabbed data
+        };
+
+        let remaining = if single_template {
+            String::from_utf8(text.as_bytes()[match_start.end()..].to_vec()).ok()?
+        } else {
+            String::from_utf8(text.as_bytes()[match_start.end()..match_end.start()].to_vec()).ok()?
+        };
+        let template_start_end_bytes = match Self::get_template_end(remaining) {
+            Some(pos) => pos+match_start.end(),
+            None => return None
+        };
+        let inside = if single_template { String::new() } else { String::from_utf8(text.as_bytes()[template_start_end_bytes..match_end.start()].to_vec()).ok()? } ;
+
+        let template = Template::new_from_params("".to_string(),String::from_utf8(text.as_bytes()[match_start.end()..template_start_end_bytes-2].to_vec()).ok()?);
+
+        Some ( Self {
+            before:String::from_utf8(text.as_bytes()[0..match_start.start()].to_vec()).ok()?,
+            template_start:String::from_utf8(text.as_bytes()[match_start.start()..template_start_end_bytes].to_vec()).ok()?,
+            inside,
+            template_end:if single_template { String::new() } else { String::from_utf8(text.as_bytes()[match_end.start()..match_end.end()].to_vec()).ok()? },
+            after:String::from_utf8(text.as_bytes()[match_end.end()..].to_vec()).ok()?,
+            list: ListeriaList::new(template,page.page_params()),
+            is_just_text: false
+        } )
+    }
+
+    pub fn new_just_text(text: &String, page: &ListeriaPage) -> Self {
+        let template = Template { title:String::new(), params:HashMap::new() };
+        Self {
+            before:text.clone(),
+            template_start:String::new(),
+            inside:String::new(),
+            template_end:String::new(),
+            after:String::new(),
+            list: ListeriaList::new(template,page.page_params()),
+            is_just_text: true
+        }
+    }
+
+    pub fn get_and_clean_after(&mut self) -> String {
+        let ret = self.after.clone() ;
+        self.after = String::new();
+        ret
+    }
+
+    pub fn new_inside(&self) -> Result<String,String> {
+        match self.is_just_text {
+            true => Ok(String::new()),
+            false => {
+                let mut renderer = RendererWikitext::new();
+                renderer.render(&self.list)        
+            }
+        }
+    }
+
+    pub fn as_wikitext(&self) -> Result<String,String> {
+        match self.is_just_text {
+            true => Ok(self.before.clone()),
+            false => Ok(self.before.clone() + &self.template_start + "\n" + &self.new_inside()? + "\n" + &self.template_end + &self.after),
+        }
+    }
+
+    pub async fn process(&mut self) -> Result<(),String> {
+        match self.is_just_text {
+            true => Ok(()),
+            false => self.list.process().await,
+        }
+    }
+
+    pub fn is_just_text(&self) -> bool {
+        self.is_just_text
+    }
+
+    fn get_template_end(text: String) -> Option<usize> {
+        let mut pos : usize = 0 ;
+        let mut curly_braces_open : usize = 2;
+        let tv = text.as_bytes();
+        while pos < tv.len() && curly_braces_open > 0 {
+            match tv[pos] as char {
+                '{' => curly_braces_open += 1 ,
+                '}' => curly_braces_open -= 1 ,
+                _ => {}
+            }
+            pos += 1 ;
+        }
+        if curly_braces_open == 0 { Some(pos) } else { None }
+    }
+
 }

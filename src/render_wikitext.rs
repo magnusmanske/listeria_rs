@@ -1,5 +1,4 @@
 use crate::*;
-use regex::RegexBuilder;
 use crate::column::*;
 
 pub struct RendererWikitext {}
@@ -32,9 +31,16 @@ impl Renderer for RendererWikitext {
 
     fn get_new_wikitext(
         &self,
-        wikitext: &str,
+        _wikitext: &str,
         page: &ListeriaPage,
     ) -> Result<Option<String>, String> {
+        let new_wikitext = page
+            .elements()
+            .iter()
+            .map(|element|element.as_wikitext().unwrap())
+            .collect();
+        Ok(Some(new_wikitext))
+        /*
         let start_template = page
             .config()
             .get_local_template_title_start(&page.wiki())?;
@@ -86,11 +92,12 @@ impl Renderer for RendererWikitext {
                         caps.get(2).unwrap().as_str(),
                         caps.get(3).unwrap().as_str(),
                     );
-                    if page.lists().len() <= template_counter {
+                    if page.elements().len() <= template_counter {
                         return Err("More lists than templates".to_string());
                     }
-                    let mut renderer = RendererWikitext::new();
-                    new_wikitext += &renderer.render(&page.lists()[template_counter])?;
+                    // TODO render elements
+                    //let mut renderer = RendererWikitext::new();
+                    //new_wikitext += &renderer.render(&page.lists()[template_counter])?;
                     new_wikitext += "\n{{";
                     new_wikitext += template_name;
                     new_wikitext += template_end_after;
@@ -102,15 +109,16 @@ impl Renderer for RendererWikitext {
             }
         }
 
-        if template_counter != page.lists().len() {
+        if template_counter != page.elements().len() {
             return Err(format!(
                 "Replaced {} lists but there are {}",
                 &template_counter,
-                page.lists().len()
+                page.elements().len()
             ));
         }
 
         Ok(Some(new_wikitext))
+        */
     }
 }
 
@@ -193,19 +201,4 @@ impl RendererWikitext {
         wt
     }
 
-    fn split_keep<'a>(r: &Regex, text: &'a str) -> Vec<&'a str> {
-        let mut result = Vec::new();
-        let mut last = 0;
-        for (index, matched) in text.match_indices(r) {
-            if last != index {
-                result.push(&text[last..index]);
-            }
-            result.push(matched);
-            last = index + matched.len();
-        }
-        if last < text.len() {
-            result.push(&text[last..]);
-        }
-        result
-    }
 }

@@ -31,7 +31,7 @@ pub struct ListeriaPage {
     page_params: Arc<PageParams>,
     results: Vec<ResultRow>,
     data_has_changed: bool,
-    lists:Vec<ListeriaList>,
+    elements:Vec<PageElement>,
 }
 
 impl ListeriaPage {
@@ -42,7 +42,7 @@ impl ListeriaPage {
             page_params,
             results: vec![],
             data_has_changed: false,
-            lists:vec![],
+            elements:vec![],
         })
     }
 
@@ -67,6 +67,10 @@ impl ListeriaPage {
         }
     }
 
+    pub fn page_params(&self) -> Arc<PageParams> {
+        self.page_params.clone()
+    }
+
     pub fn language(&self) -> &String {
         &self.page_params.language
     }
@@ -84,30 +88,44 @@ impl ListeriaPage {
 
     pub async fn run(&mut self) -> Result<(), String> {
         self.check_namespace().await?;
-        self.lists.clear();
-        let templates = self.load_page().await?;
-        for template in templates {
-            self.lists.push(ListeriaList::new(template.clone(),self.page_params.clone()));
-        }
+        self.elements = self.load_page().await?;
 
         let mut promises = Vec::new();
-        for list in &mut self.lists {
-            promises.push(list.process());
+        for element in &mut self.elements {
+            promises.push(element.process());
         }
         try_join_all(promises).await?;
         Ok(())
     }
 
+    async fn load_page(&mut self) -> Result<Vec<PageElement>, String> {
+        let mut text = self.load_page_as("wikitext").await?;
+        let mut ret = vec![] ;
+        let mut again : bool = true ;
+        while again {
+            let mut element = match PageElement::new_from_text(&text,&self) {
+                Some(pe) => pe,
+                None => {
+                    again = false ;
+                    PageElement::new_just_text(&text,self)
+                }
+            };
+            if again { text = element.get_and_clean_after() ; }
+            ret.push(element);
+        }
+        Ok(ret)
+    }
 
-    async fn load_page(&mut self) -> Result<Vec<Template>, String> {
+    /*
+    async fn _load_page(&mut self) -> Result<Vec<Template>, String> {
         let text = self.load_page_as("parsetree").await?;
         let doc = roxmltree::Document::parse(&text).unwrap();
         let template_start = self.page_params.config.get_local_template_title_start(&self.page_params.wiki)? ;
         let ret = doc.root()
             .descendants()
             .filter(|n| n.is_element() && n.tag_name().name() == "template")
-            .filter_map(|node| {
-                match Template::new_from_xml(&node) {
+            .filter_map(|mut node| {
+                match Template::new_from_xml(&mut node) {
                     Some(t) => {
                         // HARDCODED EN AS FALLBACK
                         if t.title == template_start || t.title == "Wikidata list" {
@@ -122,6 +140,7 @@ impl ListeriaPage {
             .collect::<Vec<Template>>();
         Ok(ret)
     }
+    */
 
     pub async fn load_page_as(&self, mode: &str) -> Result<String, String> {
         let mut params: HashMap<String, String> = vec![
@@ -149,7 +168,6 @@ impl ListeriaPage {
             .post_query_api_json(&params)
             .await
             .map_err(|e|format!("Loading page failed: {}",e))?;
-        println!("{:?}",&result);
         match result["parse"][mode]["*"].as_str() {
             Some(ret) => Ok(ret.to_string()),
             None => Err(format!("No parse tree for {}", &self.page_params.page)),
@@ -158,15 +176,16 @@ impl ListeriaPage {
 
     pub fn as_wikitext(&self) -> Result<Vec<String>,String> {
         let mut ret : Vec<String> = vec!();
-        for list in &self.lists {
-            let mut renderer = RendererWikitext::new();
-            ret.push(renderer.render(&list)?);
+        for element in &self.elements {
+            if !element.is_just_text() {
+                ret.push(element.new_inside()?);
+            }
         }
         Ok(ret)
     }
 
-    pub fn lists(&self) -> &Vec<ListeriaList> {
-        &self.lists
+    pub fn elements(&self) -> &Vec<PageElement> {
+        &self.elements
     }
 
     async fn save_wikitext_to_page(&self,title:&str,wikitext:&str) -> Result<(),String> {
@@ -266,7 +285,6 @@ mod tests {
     }
 
     async fn check_fixture_file(path:PathBuf) {
-        //println!("{:?}",&path);
         let data = read_fixture_from_file ( path.clone() ) ;
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
         let mw_api = Arc::new(RwLock::new(mw_api));
