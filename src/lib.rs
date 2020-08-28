@@ -238,6 +238,13 @@ impl Template {
         }
     }
 
+    pub fn fix_values(&mut self) {
+        self.params = self.params.iter().map(|(k,v)|{
+            (k.to_owned(),v.replace("{{!}}","|"))
+        }).collect();
+        // TODO proper template replacement
+    }
+
     /*
     fn expand_templates(node: &mut roxmltree::Node) {
         println!("NODE: {:?}",node);

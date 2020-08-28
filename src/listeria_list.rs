@@ -25,6 +25,8 @@ pub struct ListeriaList {
 impl ListeriaList {
     pub fn new(template:Template,page_params:Arc<PageParams>) -> Self {
         let wb_api = page_params.wb_api.clone() ;
+        let mut template = template ;
+        template.fix_values();
         Self {
             page_params:page_params.clone(),
             template,
