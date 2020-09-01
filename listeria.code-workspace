@@ -5,6 +5,9 @@
 		}
 	],
 	"settings": {
-		"git.ignoreLimitWarning": true
+		"git.ignoreLimitWarning": true,
+		"search.exclude": {
+			"**/target": true
+		}
 	}
 }
