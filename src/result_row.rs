@@ -1,5 +1,6 @@
 use crate::{serde_json, HashMap, SparqlValue};
 use crate::result_cell::{ResultCell, ResultCellPart};
+use crate::column::ColumnType;
 use crate::listeria_list::*;
 use wikibase::entity::EntityTrait;
 use regex::Regex;
@@ -145,6 +146,24 @@ impl ResultRow {
         }
     }
 
+    pub fn get_sortkey_sparql(
+        &self,
+        variable: &str,
+        list: &ListeriaList,
+    ) -> String {
+        let obj = ColumnType::Field(variable.to_lowercase());
+        // TODO sort by actual sparql values instead?
+        match list.columns().iter().enumerate().find(|(_colnum,col)|col.obj==obj) {
+            Some((colnum,_col)) => {
+                match self.cells.get(colnum) {
+                    Some(cell) => cell.get_sortkey(),
+                    None => String::new()
+                }
+            }
+            None => String::new()
+        }
+    }
+
     fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak,list: &ListeriaList) -> String {
         match snak.data_value() {
             Some(data_value) => match data_value.value() {
@@ -219,7 +238,7 @@ impl ResultRow {
             .map(|(colnum, cell)| {
                 let column = list.column(colnum).unwrap(); // TODO
                 let key = column.obj.as_key();
-                format!("{} ={}", key, &cell)
+                format!("{} ={}", key, cell.trim())
             })
             .collect::<Vec<String>>()
             .join("\n| ")
@@ -238,7 +257,6 @@ impl ResultRow {
                 t,
                 self.cells_as_wikitext(list, &cells)
             ),
-            //None => "| ".to_string() + &cells.join("\n| "),
             None => "|".to_string() + &cells.join("\n|"),
         }
     }

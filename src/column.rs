@@ -6,7 +6,7 @@ pub use crate::result_row::ResultRow;
 
 use regex::{Regex, RegexBuilder};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ColumnType {
     Number,
     Label,
@@ -64,7 +64,7 @@ impl ColumnType {
                 caps.get(3).unwrap().as_str().to_uppercase(),
             ))
         }
-        if let Some(caps) = RE_FIELD.captures(&s) { return ColumnType::Field(caps.get(1).unwrap().as_str().to_string()) }
+        if let Some(caps) = RE_FIELD.captures(&s) { return ColumnType::Field(caps.get(1).unwrap().as_str().to_lowercase()) }
         ColumnType::Unknown
     }
 

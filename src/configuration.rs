@@ -132,7 +132,7 @@ impl Configuration {
         }
     }
 
-    fn get_sitelink_mapping(&self, entities:&wikibase::entity_container::EntityContainer, q:&String ) -> Result<HashMap<String,String>,String> {
+    fn get_sitelink_mapping(&self, entities:&wikibase::entity_container::EntityContainer, q:&str ) -> Result<HashMap<String,String>,String> {
         let entity = entities.get_entity(q.to_owned()).ok_or(format!("Entity {} not found",&q))?;
         match entity.sitelinks() {
             Some(sl) => Ok(sl.iter().map(|s|(s.site().to_owned(),s.title().to_owned())).collect()),

@@ -129,8 +129,7 @@ impl SparqlValue {
                 Some("http://www.w3.org/2001/XMLSchema#dateTime") => {
                     Some(SparqlValue::Time(value.to_string()))
                 }
-                None => Some(SparqlValue::Literal(value.to_string())),
-                _ => None,
+                _ => Some(SparqlValue::Literal(value.to_string())),
             },
             _ => None,
         }
@@ -280,6 +279,7 @@ pub enum SortMode {
     Label,
     FamilyName,
     Property(String),
+    SparqlVariable(String),
     None,
 }
 
@@ -290,10 +290,13 @@ impl SortMode {
             Some(s) => match s.as_str() {
                 "LABEL" => Self::Label,
                 "FAMILY_NAME" => Self::FamilyName,
-                prop => {
+                other => {
                     let re_prop = Regex::new(r"^P\d+$").unwrap();
-                    if re_prop.is_match(prop) {
-                        Self::Property(prop.to_string())
+                    let re_sparql = Regex::new(r"^?\S+$").unwrap();
+                    if re_prop.is_match(other) {
+                        Self::Property(other.to_string())
+                    } else if re_sparql.is_match(other) {
+                        Self::SparqlVariable(other[1..].to_string())
                     } else {
                         Self::None
                     }

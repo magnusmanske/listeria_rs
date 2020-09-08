@@ -341,6 +341,24 @@ impl ResultCell {
         self.get_parts_p_p(statement,property)
     }
 
+    pub fn get_sortkey(&self) -> String {
+        match self.parts.get(0) {
+            Some(part) => {
+                match part {
+                    ResultCellPart::Entity((id,_)) => id.to_owned(),
+                    ResultCellPart::LocalLink((page,_label)) => page.to_owned(),
+                    ResultCellPart::Time(time) => time.to_owned(),
+                    ResultCellPart::File(s) => s.to_owned(),
+                    ResultCellPart::Uri(s) => s.to_owned(),
+                    ResultCellPart::Text(s) => s.to_owned(),
+                    ResultCellPart::ExternalId((_prop,id)) => id.to_owned(),
+                    _ => String::new()
+                }
+            }
+            None => String::new()
+        }
+    }
+
     pub fn parts(&self) -> &Vec<ResultCellPart> {
         &self.parts
     }
@@ -364,7 +382,6 @@ impl ResultCell {
                 }
                 ResultCellPart::SnakList(v) => {
                     Self::localize_item_links_in_parts(list,v) ;
-                    //ResultCellPart::SnakList(Self::localize_item_links_in_parts(list,v))
                 }
                 _ => {},
             }

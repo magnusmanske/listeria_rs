@@ -160,8 +160,8 @@ impl ListeriaList {
             .get_location_template(&self.page_params.wiki)
             .replace("$LAT$",&format!("{}",lat))
             .replace("$LON$",&format!("{}",lon))
-            .replace("$ITEM$",&entity_id.unwrap_or(String::new()))
-            .replace("$REGION$",&region.unwrap_or(String::new()))
+            .replace("$ITEM$",&entity_id.unwrap_or_default())
+            .replace("$REGION$",&region.unwrap_or_default())
     }
 
     pub fn thumbnail_size(&self) -> u64 {
@@ -184,7 +184,7 @@ impl ListeriaList {
         //println!("USING ENDPOINT {}",&endpoint);
         match self.wb_api.sparql_query_endpoint(sparql,endpoint).await {
             Ok(j) => Ok(j),
-            Err(e) => return Err(format!("{:?}", &e)),
+            Err(e) => Err(format!("{:?}", &e)),
         }
     }
 
@@ -555,7 +555,13 @@ impl ListeriaList {
                     .map(|row|row.get_sortkey_prop(&prop,&self,&datatype))
                     .collect();
             }
-            _ => return Ok(())
+            SortMode::SparqlVariable(variable) => {
+                sortkeys = self.results
+                    .iter()
+                    .map(|row|row.get_sortkey_sparql(&variable,&self))
+                    .collect();
+            }
+            SortMode::None => return Ok(())
         }
 
         // Apply sortkeys
@@ -649,7 +655,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn get_region_for_entity_id(&self, entity_id: &String) -> Option<String> {
+    async fn get_region_for_entity_id(&self, entity_id: &str) -> Option<String> {
         let sparql = format!("SELECT ?q ?x {{ wd:{} wdt:P131* ?q . ?q wdt:P300 ?x }}", entity_id) ;
         let j = self.run_sparql_query(&sparql).await.ok()?;
         match j["results"]["bindings"].as_array() {
@@ -660,13 +666,10 @@ impl ListeriaList {
                         Some("literal") => {}
                         _ => return
                     }
-                    match b["x"]["value"].as_str() {
-                        Some(r) => {
-                            if r.len() > region.len() {
-                                region = r.to_string();
-                            }
+                    if let Some(r) = b["x"]["value"].as_str() {
+                        if r.len() > region.len() {
+                            region = r.to_string();
                         }
-                        None => {}
                     }
                 });
                 if region.is_empty() { None } else { Some(region) }
@@ -688,12 +691,9 @@ impl ListeriaList {
         self.results.iter().for_each(|row|{
             row.cells().iter().for_each(|cell|{
                 cell.parts().iter().for_each(|part|{
-                    match part {
-                        ResultCellPart::Location((_lat,_lon,_region)) => {
-                            entity_ids.insert(row.entity_id().to_string());
-                            //*region = self.get_region_for_entity_id(row.entity_id()).await ;
-                        }
-                        _ => {}
+                    if let ResultCellPart::Location((_lat,_lon,_region)) = part {
+                        entity_ids.insert(row.entity_id().to_string());
+                        //*region = self.get_region_for_entity_id(row.entity_id()).await ;
                     }
                 });
             });
@@ -701,10 +701,7 @@ impl ListeriaList {
 
         let mut entity_id2region = HashMap::new();
         for entity_id in entity_ids {
-            match self.get_region_for_entity_id(&entity_id).await {
-                Some(region) => { entity_id2region.insert(entity_id,region); }
-                None => {}
-            }
+            if let Some(region) = self.get_region_for_entity_id(&entity_id).await { entity_id2region.insert(entity_id,region); }
         }
 
         for row in self.results.iter_mut() {
@@ -714,11 +711,8 @@ impl ListeriaList {
             };
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
-                    match part {
-                        ResultCellPart::Location((_lat,_lon,region)) => {
-                            *region = Some(the_region.clone()) ;
-                        }
-                        _ => {}
+                    if let ResultCellPart::Location((_lat,_lon,region)) = part {
+                        *region = Some(the_region.clone()) ;
                     }
                 }
             }

@@ -62,19 +62,19 @@ impl ListeriaBot {
             wiki_apis: HashMap::new(),
             pool: mysql_async::Pool::new(opts),
             next_page_cache: vec![],
-            site_matrix: site_matrix,
+            site_matrix,
         };
 
         Ok(ret)
     }
 
-    fn get_url_for_wiki_from_site(&self, wiki: &String, site: &Value) -> Option<String> {
+    fn get_url_for_wiki_from_site(&self, wiki: &str, site: &Value) -> Option<String> {
         self.get_value_from_site_matrix_entry(wiki, site, "dbname", "url")
     }
 
     fn get_value_from_site_matrix_entry(
         &self,
-        value: &String,
+        value: &str,
         site: &Value,
         key_match: &str,
         key_return: &str,
@@ -100,7 +100,7 @@ impl ListeriaBot {
         }
     }
 
-    fn get_server_url_for_wiki(&self, wiki: &String) -> Result<String, String> {
+    fn get_server_url_for_wiki(&self, wiki: &str) -> Result<String, String> {
         match wiki.replace("_", "-").as_str() {
             "be-taraskwiki" | "be-x-oldwiki" => {
                 return Ok("https://be-tarask.wikipedia.org".to_string())
@@ -160,7 +160,7 @@ impl ListeriaBot {
         Ok(())
     }
 
-    async fn get_or_create_wiki_api(&mut self, wiki: &String) -> Result<Arc<RwLock<Api>>,String> {
+    async fn get_or_create_wiki_api(&mut self, wiki: &str) -> Result<Arc<RwLock<Api>>,String> {
         match &self.wiki_apis.get(wiki) {
             Some(api) => { return Ok((*api).clone()); }
             None => {}
@@ -205,7 +205,7 @@ impl ListeriaBot {
         conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
 
         let page = self.next_page_cache.remove(0); // TODO check first
-        return Ok(page);
+        Ok(page)
     }
 
     pub async fn destruct(&mut self) {
