@@ -238,7 +238,7 @@ impl ResultRow {
             .map(|(colnum, cell)| {
                 let column = list.column(colnum).unwrap(); // TODO
                 let key = column.obj.as_key();
-                format!("{} ={}", key, cell.trim())
+                format!("{} = {}", key, cell.trim())
             })
             .collect::<Vec<String>>()
             .join("\n| ")
