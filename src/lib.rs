@@ -458,7 +458,7 @@ pub struct PageElement {
 }
 
 impl PageElement {
-    pub fn new_from_text(text: &String, page: &ListeriaPage) -> Option<Self> {
+    pub fn new_from_text(text: &str, page: &ListeriaPage) -> Option<Self> {
         let start_template = page
             .config()
             .get_local_template_title_start(&page.wiki()).ok()?;
@@ -516,10 +516,10 @@ impl PageElement {
         } )
     }
 
-    pub fn new_just_text(text: &String, page: &ListeriaPage) -> Self {
+    pub fn new_just_text(text: &str, page: &ListeriaPage) -> Self {
         let template = Template { title:String::new(), params:HashMap::new() };
         Self {
-            before:text.clone(),
+            before:text.to_string(),
             template_start:String::new(),
             inside:String::new(),
             template_end:String::new(),

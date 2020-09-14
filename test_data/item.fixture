@@ -18,8 +18,8 @@ $$$$ WIKITEXT
 $$$$ EXPECTED
 
 {| class='wikitable sortable' style='width:100%'
-!name
-!item
+! name
+! item
 |-
 | [[Albert Einstein]]
 | [[:d:Q937|Q937]]
