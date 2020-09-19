@@ -109,10 +109,10 @@ impl ResultCellPart {
         match self {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
-                let entity_id_link = format!("''[[:d:{}|{}]]''", id, id);
                 if !try_localize {
-                    return entity_id_link;
+                    return format!("[[:d:{}|{}]]", id, id);
                 }
+                let entity_id_link = format!("''[[:d:{}|{}]]''", id, id);
                 match list.get_entity(id.to_owned()) {
                     Some(e) => {
                         let use_language = match e.label_in_locale(list.language()) {
@@ -219,7 +219,7 @@ impl ResultCell {
         let entity = list.get_entity(entity_id.to_owned());
         match &col.obj {
             ColumnType::Item => {
-                ret.parts.push(ResultCellPart::Entity((entity_id.to_owned(), true)));
+                ret.parts.push(ResultCellPart::Entity((entity_id.to_owned(), false)));
             }
             ColumnType::Description => if let Some(e) = entity { match e.description_in_locale(list.language()) {
                 Some(s) => {

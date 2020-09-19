@@ -507,7 +507,7 @@ impl ListeriaList {
                 cell.parts()
                     .iter()
                     .for_each(|part|{
-                    if let ResultCellPart::Entity((id, _try_localize)) = part {
+                    if let ResultCellPart::Entity((id, true)) = part { // _try_localize ?
                         ids.push(id);
                     }
                 })
