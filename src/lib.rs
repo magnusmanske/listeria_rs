@@ -8,6 +8,7 @@ pub mod listeria_page;
 pub mod listeria_list;
 pub mod render_wikitext;
 pub mod render_tabbed_data;
+pub mod result_cell_part;
 pub mod result_cell;
 pub mod result_row;
 pub mod column;

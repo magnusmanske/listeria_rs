@@ -12,18 +12,6 @@ TEMPLATE PARAMETERS
 links IMPLEMENT fully
 references IMPLEMENT
 freq IGNORED => bot manager
-
-min_section DONE
-section DONE
-sparql DONE
-columns DONE
-sort DONE
-language done?
-thumb DONE via thumbnail_size()
-row_template DONE
-header_template DONE
-skip_table DONE
-summary DONE
 */
 
 #[derive(Debug, Clone)]
@@ -115,32 +103,6 @@ impl ListeriaPage {
         }
         Ok(ret)
     }
-
-    /*
-    async fn _load_page(&mut self) -> Result<Vec<Template>, String> {
-        let text = self.load_page_as("parsetree").await?;
-        let doc = roxmltree::Document::parse(&text).unwrap();
-        let template_start = self.page_params.config.get_local_template_title_start(&self.page_params.wiki)? ;
-        let ret = doc.root()
-            .descendants()
-            .filter(|n| n.is_element() && n.tag_name().name() == "template")
-            .filter_map(|mut node| {
-                match Template::new_from_xml(&mut node) {
-                    Some(t) => {
-                        // HARDCODED EN AS FALLBACK
-                        if t.title == template_start || t.title == "Wikidata list" {
-                            Some(t)
-                        } else {
-                            None
-                        }
-                    }
-                    None => None
-                }
-            })
-            .collect::<Vec<Template>>();
-        Ok(ret)
-    }
-    */
 
     pub async fn load_page_as(&self, mode: &str) -> Result<String, String> {
         let mut params: HashMap<String, String> = vec![
