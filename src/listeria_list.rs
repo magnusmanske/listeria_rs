@@ -167,7 +167,7 @@ impl ListeriaList {
     pub fn thumbnail_size(&self) -> u64 {
         let default = self.page_params.config.default_thumbnail_size();
         match self.template.params.get("thumb") {
-            Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap(),
+            Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap_or(default),
             None => default,
         }
     }
@@ -233,11 +233,16 @@ impl ListeriaList {
             .ok_or("Broken SPARQL results.bindings")?;
         for b in bindings.iter() {
             let mut row: HashMap<String, SparqlValue> = HashMap::new();
-            for (k, v) in b.as_object().unwrap().iter() {
-                match SparqlValue::new_from_json(&v) {
-                    Some(v2) => row.insert(k.to_owned(), v2),
-                    None => return Err(format!("Can't parse SPARQL value: {} => {:?}", &k, &v)),
-                };
+            match b.as_object() {
+                Some(bo) => {
+                    for (k, v) in bo.iter() {
+                        match SparqlValue::new_from_json(&v) {
+                            Some(v2) => row.insert(k.to_owned(), v2),
+                            None => return Err(format!("Can't parse SPARQL value: {} => {:?}", &k, &v)),
+                        };
+                    }
+                }
+                None => {}
             }
             if row.is_empty() {
                 continue;

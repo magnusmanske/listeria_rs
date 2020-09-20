@@ -197,7 +197,7 @@ impl ResultRow {
             .ok()
             .or(Some(0))
             .unwrap_or(0);
-        id1.partial_cmp(&id2).unwrap()
+        id1.partial_cmp(&id2).unwrap_or(Ordering::Equal)
     }
 
     pub fn compare_to(&self, other: &ResultRow, datatype: &SnakDataType) -> Ordering {
@@ -208,14 +208,14 @@ impl ResultRow {
                 if va == 0 && vb == 0 {
                     self.compare_entiry_ids(other)
                 } else {
-                    va.partial_cmp(&vb).unwrap()
+                    va.partial_cmp(&vb).unwrap_or(Ordering::Equal)
                 }
             }
             _ => {
                 if self.sortkey == other.sortkey {
                     self.compare_entiry_ids(other)
                 } else {
-                    self.sortkey.partial_cmp(&other.sortkey).unwrap()
+                    self.sortkey.partial_cmp(&other.sortkey).unwrap_or(Ordering::Equal)
                 }
             }
         }
@@ -237,9 +237,10 @@ impl ResultRow {
             .iter()
             .enumerate()
             .map(|(colnum, cell)| {
-                let column = list.column(colnum).unwrap(); // TODO
-                let key = column.obj.as_key();
-                format!("{} = {}", key, cell.trim())
+                match list.column(colnum) {
+                    Some(column) => format!("{} = {}", column.obj.as_key(), cell.trim()),
+                    _ => String::new()
+                }
             })
             .collect::<Vec<String>>()
             .join("\n| ")

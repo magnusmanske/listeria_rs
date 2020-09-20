@@ -103,15 +103,25 @@ impl SparqlValue {
         };
         match j["type"].as_str() {
             Some("uri") => match RE_ENTITY.captures(&value) {
-                Some(caps) => Some(SparqlValue::Entity(
-                    caps.get(1).unwrap().as_str().to_string(),
-                )),
+                Some(caps) => match caps.get(1) {
+                    Some(caps1) => {
+                        Some(SparqlValue::Entity(
+                            caps1.as_str().to_string(),
+                        ))
+                    }
+                    None => None
+                },
                 None => match RE_FILE.captures(&value) {
                     Some(caps) => {
-                        let file = caps.get(1).unwrap().as_str().to_string();
-                        let file = urlencoding::decode(&file).ok()?;
-                        let file = file.replace("_", " ");
-                        Some(SparqlValue::File(file))
+                        match caps.get(1) {
+                            Some(caps1) => {
+                                let file = caps1.as_str().to_string();
+                                let file = urlencoding::decode(&file).ok()?;
+                                let file = file.replace("_", " ");
+                                Some(SparqlValue::File(file))
+                            }
+                            None => None
+                        }
                     }
                     None => Some(SparqlValue::Uri(value.to_string())),
                 },
@@ -286,17 +296,19 @@ pub enum SortMode {
 
 impl SortMode {
     pub fn new(os: Option<&String>) -> Self {
+        lazy_static! {
+            static ref RE_PROP : Regex = Regex::new(r"^P\d+$").unwrap();
+            static ref RE_SPARQL : Regex = Regex::new(r"^?\S+$").unwrap();
+        }
         let os = os.map(|s| s.trim().to_uppercase());
         match os {
             Some(s) => match s.as_str() {
                 "LABEL" => Self::Label,
                 "FAMILY_NAME" => Self::FamilyName,
                 other => {
-                    let re_prop = Regex::new(r"^P\d+$").unwrap();
-                    let re_sparql = Regex::new(r"^?\S+$").unwrap();
-                    if re_prop.is_match(other) {
+                    if RE_PROP.is_match(other) {
                         Self::Property(other.to_string())
-                    } else if re_sparql.is_match(other) {
+                    } else if RE_SPARQL.is_match(other) {
                         Self::SparqlVariable(other[1..].to_string())
                     } else {
                         Self::None
@@ -424,17 +436,19 @@ pub enum SectionType {
 
 impl SectionType {
     pub fn new_from_string_option(s: Option<&String>) -> Self {
+        lazy_static! {
+            static ref RE_PROP : Regex = Regex::new(r"^[Pp]\d+$").unwrap();
+            static ref RE_SPARQL : Regex = Regex::new(r"^@.+$").unwrap();
+        }
         let s = match s {
             Some(s) => s,
             None => return Self::None,
         };
         let s = s.trim();
-        let re_prop = Regex::new(r"^[Pp]\d+$").unwrap();
-        if re_prop.is_match(s) {
+        if RE_PROP.is_match(s) {
             return Self::Property(s.to_uppercase());
         }
-        let re_sparql = Regex::new(r"^@.+$").unwrap();
-        if re_sparql.is_match(s) {
+        if RE_SPARQL.is_match(s) {
             return Self::SparqlVariable(s.to_uppercase());
         }
         Self::None
