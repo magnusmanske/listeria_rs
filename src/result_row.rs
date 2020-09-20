@@ -97,16 +97,17 @@ impl ResultRow {
     }
 
     pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
-        // TODO lazy
-        let re_sr_jr = Regex::new(r", [JS]r\.$").unwrap();
-        let re_braces = Regex::new(r"\s+\(.+\)$").unwrap();
-        let re_last_first = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").unwrap();
+        lazy_static! {
+            static ref RE_SR_JR : Regex = Regex::new(r", [JS]r\.$").unwrap();
+            static ref RE_BRACES : Regex = Regex::new(r"\s+\(.+\)$").unwrap();
+            static ref RE_LAST_FIRST : Regex = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").unwrap();
+        }
         match page.get_entity(self.entity_id.to_owned()) {
             Some(entity) => match entity.label_in_locale(&page.language()) {
                 Some(label) => {
-                    let ret = re_sr_jr.replace_all(label, "");
-                    let ret = re_braces.replace_all(&ret, "");
-                    let ret = re_last_first.replace_all(&ret, "$l, $f");
+                    let ret = RE_SR_JR.replace_all(label, "");
+                    let ret = RE_BRACES.replace_all(&ret, "");
+                    let ret = RE_LAST_FIRST.replace_all(&ret, "$l, $f");
                     ret.to_string()
                 }
                 None => entity.id().to_string(),
