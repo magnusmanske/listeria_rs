@@ -162,7 +162,7 @@ impl Configuration {
     }
 
     pub fn get_location_template(&self, wiki:&str) -> String {
-        self.location_templates.get(wiki).unwrap_or(self.location_templates.get(&"default".to_string()).unwrap()).to_string()
+        self.location_templates.get(wiki).unwrap_or_else(|| self.location_templates.get(&"default".to_string()).unwrap()).to_string()
     }
 
     pub fn prefer_preferred(&self) -> bool {
@@ -196,6 +196,6 @@ impl Configuration {
     }
 
     pub fn get_default_wbapi(&self) -> Result<&Arc<Api>,String> {
-        self.wb_apis.get(&self.default_api).ok_or("No default API set in config file".to_string())
+        self.wb_apis.get(&self.default_api).ok_or_else(|| "No default API set in config file".to_string())
     }
 }

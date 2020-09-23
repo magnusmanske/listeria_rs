@@ -436,7 +436,7 @@ mod tests {
 
     #[tokio::test]
     async fn references() {
-        //check_fixture_file(PathBuf::from("test_data/references.fixture")).await;
+        check_fixture_file(PathBuf::from("test_data/references.fixture")).await;
     }
 
     #[tokio::test]

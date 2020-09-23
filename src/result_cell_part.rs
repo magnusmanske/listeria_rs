@@ -1,3 +1,4 @@
+use crate::result_cell::PartWithReference;
 pub use crate::listeria_page::ListeriaPage;
 pub use crate::listeria_list::ListeriaList;
 pub use crate::render_wikitext::RendererWikitext;
@@ -19,7 +20,7 @@ pub enum ResultCellPart {
     Uri(String),
     ExternalId((String, String)), // Property, ID
     Text(String),
-    SnakList(Vec<ResultCellPart>), // PP and PQP
+    SnakList(Vec<PartWithReference>), // PP and PQP
 }
 
 impl ResultCellPart {
@@ -35,6 +36,23 @@ impl ResultCellPart {
     }
 
 
+    pub fn localize_item_links(&mut self,list: &ListeriaList) {
+        match self {
+            ResultCellPart::Entity((item, true)) => {
+                match list.entity_to_local_link(&item) {
+                    Some(ll) => *self = ll,
+                    None => {}
+                } ;
+            }
+            ResultCellPart::SnakList(v) => {
+                for part_with_reference in v.iter_mut() {
+                    part_with_reference.part.localize_item_links(list);
+                }
+                //Self::localize_item_links_in_parts(list,&mut v) ;
+            }
+            _ => {},
+        }
+    }
 
     pub fn from_snak(snak: &wikibase::Snak) -> Self {
         match &snak.data_value() {
@@ -176,7 +194,7 @@ impl ResultCellPart {
             ResultCellPart::Text(text) => text.to_owned(),
             ResultCellPart::SnakList(v) => v
                 .iter()
-                .map(|rcp| rcp.as_wikitext(list, rownum, colnum, partnum))
+                .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum, partnum))
                 .collect::<Vec<String>>()
                 .join(" — "),
         }

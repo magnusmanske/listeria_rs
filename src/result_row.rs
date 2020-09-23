@@ -63,9 +63,9 @@ impl ResultRow {
 
     pub fn remove_shadow_files(&mut self,shadow_files:&[String]) {
         self.cells.iter_mut().for_each(|cell|{
-            cell.set_parts ( cell.parts().iter().filter(|part|{
-                match part {
-                    ResultCellPart::File(file) => !shadow_files.contains(file),
+            cell.set_parts ( cell.parts().iter().filter(|part_with_reference|{
+                match &part_with_reference.part {
+                    ResultCellPart::File(file) => !shadow_files.contains(&file),
                     _ => true
                 }
             })

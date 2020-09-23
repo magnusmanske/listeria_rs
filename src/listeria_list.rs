@@ -233,16 +233,13 @@ impl ListeriaList {
             .ok_or("Broken SPARQL results.bindings")?;
         for b in bindings.iter() {
             let mut row: HashMap<String, SparqlValue> = HashMap::new();
-            match b.as_object() {
-                Some(bo) => {
-                    for (k, v) in bo.iter() {
-                        match SparqlValue::new_from_json(&v) {
-                            Some(v2) => row.insert(k.to_owned(), v2),
-                            None => return Err(format!("Can't parse SPARQL value: {} => {:?}", &k, &v)),
-                        };
-                    }
+            if let Some(bo) = b.as_object() {
+                for (k, v) in bo.iter() {
+                    match SparqlValue::new_from_json(&v) {
+                        Some(v2) => row.insert(k.to_owned(), v2),
+                        None => return Err(format!("Can't parse SPARQL value: {} => {:?}", &k, &v)),
+                    };
                 }
-                None => {}
             }
             if row.is_empty() {
                 continue;
@@ -418,7 +415,7 @@ impl ListeriaList {
         for row in self.results.iter() {
             for cell in row.cells() {
                 for part in cell.parts() {
-                    if let ResultCellPart::File(file) = part {
+                    if let ResultCellPart::File(file) = &part.part {
                         files_to_check.push(file);
                     }
                 }
@@ -512,7 +509,7 @@ impl ListeriaList {
                 cell.parts()
                     .iter()
                     .for_each(|part|{
-                    if let ResultCellPart::Entity((id, true)) = part { // _try_localize ?
+                    if let ResultCellPart::Entity((id, true)) = &part.part { // _try_localize ?
                         ids.push(id);
                     }
                 })
@@ -696,7 +693,7 @@ impl ListeriaList {
         self.results.iter().for_each(|row|{
             row.cells().iter().for_each(|cell|{
                 cell.parts().iter().for_each(|part|{
-                    if let ResultCellPart::Location((_lat,_lon,_region)) = part {
+                    if let ResultCellPart::Location((_lat,_lon,_region)) = &part.part {
                         entity_ids.insert(row.entity_id().to_string());
                         //*region = self.get_region_for_entity_id(row.entity_id()).await ;
                     }
@@ -716,7 +713,7 @@ impl ListeriaList {
             };
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
-                    if let ResultCellPart::Location((_lat,_lon,region)) = part {
+                    if let ResultCellPart::Location((_lat,_lon,region)) = &mut part.part {
                         *region = Some(the_region.clone()) ;
                     }
                 }

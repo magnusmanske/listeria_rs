@@ -119,10 +119,10 @@ impl EntityContainerWrapper {
         }
     }
 
-    pub fn gather_entities_and_external_properties(&self,parts:&[ResultCellPart]) -> Vec<String> {
+    pub fn gather_entities_and_external_properties(&self,parts:&[PartWithReference]) -> Vec<String> {
         let mut entities_to_load = vec![];
-        for part in parts {
-            match part {
+        for part_with_reference in parts {
+            match &part_with_reference.part {
                 ResultCellPart::Entity((item, true)) => {
                     entities_to_load.push(item.to_owned());
                 }

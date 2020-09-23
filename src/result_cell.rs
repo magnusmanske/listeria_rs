@@ -16,9 +16,30 @@ pub struct Reference {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct PartWithReference {
+    pub part: ResultCellPart,
+    pub references: Option<Vec<Reference>>,
+}
+
+impl PartWithReference {
+    pub fn new(part:ResultCellPart,references:Option<Vec<Reference>>) -> Self {
+        Self {part,references}
+    }
+
+    pub fn as_wikitext(
+        &self,
+        list: &ListeriaList,
+        rownum: usize,
+        colnum: usize,
+        partnum: usize,
+    ) -> String {
+        self.part.as_wikitext(list,rownum,colnum,partnum)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct ResultCell {
-    parts: Vec<ResultCellPart>,
-    references: Vec<Vec<Reference>>,
+    parts: Vec<PartWithReference>,
     wdedit_class: Option<String>,
 }
 
@@ -29,28 +50,28 @@ impl ResultCell {
         sparql_rows: &[&HashMap<String, SparqlValue>],
         col: &Column,
     ) -> Self {
-        let mut ret = Self { parts:vec![] , references:vec![] , wdedit_class:None };
+        let mut ret = Self { parts:vec![] , wdedit_class:None };
 
         let entity = list.get_entity(entity_id.to_owned());
         match &col.obj {
             ColumnType::Item => {
-                ret.parts.push(ResultCellPart::Entity((entity_id.to_owned(), false)));
+                ret.parts.push(PartWithReference::new(ResultCellPart::Entity((entity_id.to_owned(), false)),None));
             }
             ColumnType::Description => if let Some(e) = entity { match e.description_in_locale(list.language()) {
                 Some(s) => {
                     ret.wdedit_class = Some("wd_desc".to_string());
-                    ret.parts.push(ResultCellPart::Text(s.to_string()));
+                    ret.parts.push(PartWithReference::new(ResultCellPart::Text(s.to_string()),None));
                 }
                 None => {
                     if let Ok(s) = list.get_autodesc_description(&e).await {
-                        ret.parts.push(ResultCellPart::Text(s));
+                        ret.parts.push(PartWithReference::new(ResultCellPart::Text(s),None));
                     }
                 }
             } },
             ColumnType::Field(varname) => {
                 for row in sparql_rows.iter() {
                     if let Some(x) = row.get(varname) {
-                        ret.parts.push(ResultCellPart::from_sparql_value(x));
+                        ret.parts.push(PartWithReference::new(ResultCellPart::from_sparql_value(x),None));
                     }
                 }
             }
@@ -60,7 +81,7 @@ impl ResultCell {
                     .iter()
                     .for_each(|statement| {
                         ret.parts
-                            .push(ResultCellPart::from_snak(statement.main_snak()));
+                            .push(PartWithReference::new(ResultCellPart::from_snak(statement.main_snak()),None));
                     });
             },
             ColumnType::PropertyQualifier((p1, p2)) => if let Some(e) = entity {
@@ -69,7 +90,7 @@ impl ResultCell {
                     .for_each(|statement| {
                         ret.get_parts_p_p(statement,p2)
                             .iter()
-                            .for_each(|part|ret.parts.push(part.to_owned()));
+                            .for_each(|part|ret.parts.push(PartWithReference::new(part.to_owned(),None)));
                     });
             },
             ColumnType::PropertyQualifierValue((p1, q1, p2)) => if let Some(e) = entity {
@@ -78,16 +99,16 @@ impl ResultCell {
                     .for_each(|statement| {
                         ret.get_parts_p_q_p(statement,q1,p2)
                             .iter()
-                            .for_each(|part|ret.parts.push(part.to_owned()));
+                            .for_each(|part|ret.parts.push(PartWithReference::new(part.to_owned(),None)));
                     });
             },
             ColumnType::LabelLang(language) => if let Some(e) = entity {
                 match e.label_in_locale(language) {
                     Some(s) => {
-                        ret.parts.push(ResultCellPart::Text(s.to_string()));
+                        ret.parts.push(PartWithReference::new(ResultCellPart::Text(s.to_string()),None));
                     }
                     None => if let Some(s) = e.label_in_locale(list.language()) {
-                        ret.parts.push(ResultCellPart::Text(s.to_string()));
+                        ret.parts.push(PartWithReference::new(ResultCellPart::Text(s.to_string()),None));
                     },
                 }
             },
@@ -107,17 +128,17 @@ impl ResultCell {
                 };
                 match local_page {
                     Some(page) => {
-                        ret.parts.push(ResultCellPart::LocalLink((page, label)));
+                        ret.parts.push(PartWithReference::new(ResultCellPart::LocalLink((page, label)),None));
                     }
                     None => {
                         ret.parts
-                            .push(ResultCellPart::Entity((entity_id.to_string(), true)));
+                            .push(PartWithReference::new(ResultCellPart::Entity((entity_id.to_string(), true)),None));
                     }
                 }
             },
             ColumnType::Unknown => {} // Ignore
             ColumnType::Number => {
-                ret.parts.push(ResultCellPart::Number);
+                ret.parts.push(PartWithReference::new(ResultCellPart::Number,None));
             }
         }
 
@@ -131,8 +152,14 @@ impl ResultCell {
             .filter(|snak|*snak.property()==*property)
             .map(|snak|ResultCellPart::SnakList (
                     vec![
-                        ResultCellPart::from_snak(statement.main_snak()),
-                        ResultCellPart::from_snak(snak)
+                        PartWithReference::new(
+                            ResultCellPart::from_snak(statement.main_snak()),
+                            None
+                        ),
+                        PartWithReference::new(
+                            ResultCellPart::from_snak(snak),
+                            None
+                        )
                     ]
                 )
             )
@@ -158,7 +185,7 @@ impl ResultCell {
     pub fn get_sortkey(&self) -> String {
         match self.parts.get(0) {
             Some(part) => {
-                match part {
+                match &part.part {
                     ResultCellPart::Entity((id,_)) => id.to_owned(),
                     ResultCellPart::LocalLink((page,_label)) => page.to_owned(),
                     ResultCellPart::Time(time) => time.to_owned(),
@@ -173,32 +200,21 @@ impl ResultCell {
         }
     }
 
-    pub fn parts(&self) -> &Vec<ResultCellPart> {
+    pub fn parts(&self) -> &Vec<PartWithReference> {
         &self.parts
     }
 
-    pub fn parts_mut(&mut self) -> &mut Vec<ResultCellPart> {
+    pub fn parts_mut(&mut self) -> &mut Vec<PartWithReference> {
         &mut self.parts
     }
 
-    pub fn set_parts(&mut self, parts:Vec<ResultCellPart> ) {
+    pub fn set_parts(&mut self, parts:Vec<PartWithReference> ) {
         self.parts = parts ;
     }
 
-    pub fn localize_item_links_in_parts(list: &ListeriaList, parts: &mut Vec<ResultCellPart>) {
-        for part in parts.iter_mut() {
-            match part {
-                ResultCellPart::Entity((item, true)) => {
-                    *part = match list.entity_to_local_link(&item) {
-                        Some(ll) => ll,
-                        None => part.to_owned(),
-                    } ;
-                }
-                ResultCellPart::SnakList(v) => {
-                    Self::localize_item_links_in_parts(list,v) ;
-                }
-                _ => {},
-            }
+    pub fn localize_item_links_in_parts(list: &ListeriaList, parts: &mut Vec<PartWithReference>) {
+        for part_with_reference in parts.iter_mut() {
+            part_with_reference.part.localize_item_links(list);
         }
     }
 
@@ -207,7 +223,7 @@ impl ResultCell {
             .parts
             .iter()
             .enumerate()
-            .map(|(partnum, part)| part.as_tabbed_data(list, rownum, colnum, partnum))
+            .map(|(partnum, part_with_reference)| part_with_reference.part.as_tabbed_data(list, rownum, colnum, partnum))
             .collect();
         json!(ret.join("<br/>"))
     }
@@ -225,7 +241,7 @@ impl ResultCell {
         ret += &self.parts
             .iter()
             .enumerate()
-            .map(|(partnum, part)| part.as_wikitext(list, rownum, colnum, partnum))
+            .map(|(partnum, part_with_reference)| part_with_reference.as_wikitext(list, rownum, colnum, partnum))
             .collect::<Vec<String>>()
             .join("<br/>") ;
         ret
