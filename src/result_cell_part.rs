@@ -39,16 +39,12 @@ impl ResultCellPart {
     pub fn localize_item_links(&mut self,list: &ListeriaList) {
         match self {
             ResultCellPart::Entity((item, true)) => {
-                match list.entity_to_local_link(&item) {
-                    Some(ll) => *self = ll,
-                    None => {}
-                } ;
+                if let Some(ll) = list.entity_to_local_link(&item) { *self = ll } ;
             }
             ResultCellPart::SnakList(v) => {
                 for part_with_reference in v.iter_mut() {
                     part_with_reference.part.localize_item_links(list);
                 }
-                //Self::localize_item_links_in_parts(list,&mut v) ;
             }
             _ => {},
         }

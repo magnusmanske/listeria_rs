@@ -10,9 +10,106 @@ use serde_json::Value;
 use wikibase::entity::EntityTrait;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct Reference {
+    pub url: Option<String>,
+    pub title: Option<String>,
+    pub date: Option<String>,
+    pub stated_in: Option<String>, // Item
+    wikitext_cache: Option<String>,
+}
 
+impl Reference {
+    pub fn new_from_snaks(snaks: &[wikibase::snak::Snak],language: &str) -> Option<Self> {
+        let mut ret = Self { ..Default::default() } ;
+
+        for snak in snaks.iter() {
+            match snak.property() {
+                "P854" => { // Reference URL
+                    if let Some(dv) = snak.data_value() {
+                        if let wikibase::Value::StringValue(url) = dv.value() {
+                            ret.url = Some(url.to_owned()) ;
+                        }
+                    }
+                }
+                "P1476" => { // Title
+                    if let Some(dv) = snak.data_value() {
+                        if let wikibase::Value::MonoLingual(mlt) = dv.value() {
+                            if mlt.language() == language {
+                                ret.title = Some(mlt.text().to_owned()) ;
+                            }
+                        }
+                    }
+                }
+                "P813" => { // Timestamp/last access
+                    if let Some(dv) = snak.data_value() {
+                        if let wikibase::Value::Time(tv) = dv.value() {
+                            if let Some(pos) = tv.time().find('T') {
+                                let (date,_) = tv.time().split_at(pos) ;
+                                let mut date = date.replace('+',"").to_string();
+                                if *tv.precision() >= 11 { // Day
+                                    // Keep
+                                } else if *tv.precision() == 10 { // Month
+                                    if let Some(pos) = date.rfind('-') {
+                                        date = date.split_at(pos).0.to_string();
+                                    }
+                                } else if *tv.precision() <=9 { // Year etc TODO century etc
+                                    if let Some(pos) = date.find('-') {
+                                        date = date.split_at(pos).0.to_string();
+                                    }
+                                }
+                                ret.date = Some(date);
+                            }
+                        }
+                    }
+                }
+                "P248" => { // Stated in
+                    if let Some(dv) = snak.data_value() {
+                        if let wikibase::Value::Entity(item) = dv.value() {
+                            ret.stated_in = Some(item.id().to_owned()) ;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if ret.is_empty() {
+            None
+        } else {
+            Some(ret)
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.url.is_none() && self.stated_in.is_none()
+    }
+
+    pub fn as_wikitext(&mut self) -> String {
+        match &self.wikitext_cache {
+            Some(s) => return s.to_string(),
+            None => {}
+        }
+        let mut s = String::new() ;
+
+        if self.title.is_some() && self.url.is_some() {
+            s += &format!("{{{{cite web|url={}|title={}",self.url.as_ref().unwrap(),self.title.as_ref().unwrap());
+            if let Some(stated_in) = &self.stated_in {
+                s += &format!("|website={}",stated_in); // TODO render item title
+            }
+            if let Some(date) = &self.date {
+                s += &format!("|access-date={}",&date);
+            }
+            s += "}}";
+        } else if self.url.is_some() {
+            s += &self.url.as_ref().unwrap();
+        } else if self.stated_in.is_some() {
+            s += &self.stated_in.as_ref().unwrap(); // TODO render item title
+        }
+
+        self.wikitext_cache = Some(s);
+        self.as_wikitext()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -80,8 +177,9 @@ impl ResultCell {
                 list.get_filtered_claims(&e,property)
                     .iter()
                     .for_each(|statement| {
+                        let references = Self::get_references_for_statement(&statement,list.language());
                         ret.parts
-                            .push(PartWithReference::new(ResultCellPart::from_snak(statement.main_snak()),None));
+                            .push(PartWithReference::new(ResultCellPart::from_snak(statement.main_snak()),references));
                     });
             },
             ColumnType::PropertyQualifier((p1, p2)) => if let Some(e) = entity {
@@ -166,6 +264,18 @@ impl ResultCell {
             .collect()
     }
 
+    fn get_references_for_statement(statement: &wikibase::statement::Statement,language:&str) -> Option<Vec<Reference>> {
+        let references = statement.references() ;
+        let mut ret : Vec<Reference> = vec![] ;
+        for reference in references.iter() {
+            if let Some(r) = Reference::new_from_snaks(reference.snaks(),language) {
+                ret.push(r);    
+            }
+
+        }
+        if ret.is_empty() { None } else { Some(ret) }
+    }
+
     fn get_parts_p_q_p(&self,statement:&wikibase::statement::Statement,target_item:&str,property:&str) -> Vec<ResultCellPart> {
         let links_to_target = match statement.main_snak().data_value(){
             Some(dv) => {
@@ -184,8 +294,8 @@ impl ResultCell {
 
     pub fn get_sortkey(&self) -> String {
         match self.parts.get(0) {
-            Some(part) => {
-                match &part.part {
+            Some(part_with_reference) => {
+                match &part_with_reference.part {
                     ResultCellPart::Entity((id,_)) => id.to_owned(),
                     ResultCellPart::LocalLink((page,_label)) => page.to_owned(),
                     ResultCellPart::Time(time) => time.to_owned(),

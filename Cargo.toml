@@ -12,10 +12,7 @@ config = "^0.10"
 serde_json = "1"
 urlencoding = "1"
 roxmltree = "0.13.0"
-#mediawiki = "0.2"
-#wikibase = "0.3"
 wikibase = { git = "https://gitlab.com/tobias47n9e/wikibase_rs" , branch="tokio" }
-#wikibase = { path='../wikibase_rs' }
 tokio = { version = "^0.2", features = ["macros"] }
 futures = "^0.3"
 mysql_async = "0.24.1"
