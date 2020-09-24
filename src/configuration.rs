@@ -145,12 +145,12 @@ impl Configuration {
     }
 
     pub fn get_local_template_title_start(&self,wiki: &str) -> Result<String,String> {
-        let ret = self.template_start_sites.get(wiki).map(|s|s.to_string()).ok_or("Cannot find local start template".to_string())?;
+        let ret = self.template_start_sites.get(wiki).map(|s|s.to_string()).ok_or_else(|| "Cannot find local start template".to_string())?;
         Ok(ret.split(':').last().unwrap().to_string())
     }
 
     pub fn get_local_template_title_end(&self,wiki: &str) -> Result<String,String> {
-        let ret = self.template_end_sites.get(wiki).map(|s|s.to_string()).ok_or("Cannot find local end template".to_string())?;
+        let ret = self.template_end_sites.get(wiki).map(|s|s.to_string()).ok_or_else(|| "Cannot find local end template".to_string())?;
         Ok(ret.split(':').last().unwrap().to_string())
     }
 

@@ -1,3 +1,4 @@
+use tokio::sync::RwLock;
 use std::collections::HashSet;
 use crate::*;
 use crate::entity_container_wrapper::*;
@@ -20,6 +21,7 @@ pub struct ListeriaList {
     section_id_to_name: HashMap<usize,String>,
     wb_api: Arc<Api>,
     language: String,
+    reference_ids: Arc<std::sync::RwLock<HashSet<String>>>,
 }
 
 impl ListeriaList {
@@ -41,6 +43,7 @@ impl ListeriaList {
             section_id_to_name: HashMap::new(),
             wb_api,
             language:page_params.language.to_string(),
+            reference_ids: Arc::new(std::sync::RwLock::new(HashSet::new()))
         }
     }
 
@@ -63,6 +66,10 @@ impl ListeriaList {
 
     pub fn shadow_files(&self) -> &Vec<String> {
         &self.shadow_files
+    }
+
+    pub fn reference_ids(&self) -> Arc<std::sync::RwLock<HashSet<String>>> {
+        self.reference_ids.clone()
     }
 
     pub fn sparql_rows(&self) -> &Vec<HashMap<String, SparqlValue>> {
@@ -722,6 +729,35 @@ impl ListeriaList {
 
         Ok(())
     }
+
+    async fn process_reference_items(&mut self) -> Result<(), String> {
+        let mut items_to_load : Vec<String> = vec![] ;
+        for row in self.results.iter_mut() {
+            for cell in row.cells_mut().iter_mut() {
+                for part_with_reference in cell.parts_mut().iter_mut() {
+                    match &part_with_reference.references {
+                        Some(references) => {
+                            for reference in references.iter() {
+                                match &reference.stated_in {
+                                    Some(stated_in) => {
+                                        items_to_load.push(stated_in.to_string())
+                                    }
+                                    None => {}
+                                }
+                            }
+                        }
+                        None => {}
+                    }
+                }
+            }
+        }
+        if !items_to_load.is_empty() {
+            items_to_load.sort_unstable();
+            items_to_load.dedup();
+            self.ecw.load_entities(&self.wb_api, &items_to_load).await?;
+        }
+        Ok(())
+    }
     
     pub async fn process_results(&mut self) -> Result<(), String> {
         self.gather_and_load_items().await? ;
@@ -729,6 +765,7 @@ impl ListeriaList {
         self.process_items_to_local_links()?;
         self.process_redlinks().await?;
         self.process_remove_shadow_files().await?;
+        self.process_reference_items().await?;
         self.process_sort_results()?;
         self.process_assign_sections()?;
         self.process_regions().await?;

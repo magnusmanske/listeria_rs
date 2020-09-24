@@ -85,7 +85,24 @@ impl Reference {
         self.url.is_none() && self.stated_in.is_none()
     }
 
-    pub fn as_wikitext(&mut self) -> String {
+    pub fn as_reference(&mut self,list: &ListeriaList) -> String {
+        let wikitext = self.as_wikitext();
+        let md5 = self.get_md5();
+        let has_md5 = list.reference_ids().read().unwrap().get(&md5).is_some();
+        if has_md5 {
+            format!("<ref name='ref_{}' />",&md5)
+        } else {
+            format!("<ref name='ref_{}'>{}</ref>",&md5,&wikitext)
+        }
+    }
+
+    fn get_md5(&mut self) -> String {
+        let wikitext = self.as_wikitext();
+        let md5 = md5::compute(wikitext);
+        format!("{:x}", md5)
+    }
+
+    fn as_wikitext(&mut self) -> String {
         match &self.wikitext_cache {
             Some(s) => return s.to_string(),
             None => {}
@@ -124,13 +141,25 @@ impl PartWithReference {
     }
 
     pub fn as_wikitext(
-        &self,
+        &mut self,
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
         partnum: usize,
     ) -> String {
-        self.part.as_wikitext(list,rownum,colnum,partnum)
+        let wikitext_part = self.part.as_wikitext(list,rownum,colnum,partnum) ;
+        let wikitext_reference = match &mut self.references {
+            Some(references) => {
+                let mut wikitext : Vec<String> = vec![] ;
+                for reference in references.iter_mut() {
+                    let r = reference.as_reference(list);
+                    wikitext.push(r);
+                }
+                wikitext.join("\n").to_string()
+            }
+            None => String::new()
+        };
+        wikitext_part + &wikitext_reference
     }
 }
 
@@ -351,7 +380,7 @@ impl ResultCell {
         ret += &self.parts
             .iter()
             .enumerate()
-            .map(|(partnum, part_with_reference)| part_with_reference.as_wikitext(list, rownum, colnum, partnum))
+            .map(|(partnum, &mut result_cell::PartWithReference)| part_with_reference.as_wikitext(list, rownum, colnum, partnum))
             .collect::<Vec<String>>()
             .join("<br/>") ;
         ret
