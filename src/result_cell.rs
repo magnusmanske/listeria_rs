@@ -367,7 +367,7 @@ impl ResultCell {
         json!(ret.join("<br/>"))
     }
 
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let mut ret ;
         if list.template_params().wdedit {
             ret = match &self.wdedit_class {
@@ -377,10 +377,16 @@ impl ResultCell {
         } else {
             ret = " ".to_string();
         }
+
+        self.parts
+            .iter_mut()
+            .enumerate()
+            for_each(|(partnum, part_with_reference)| part_with_reference.as_wikitext(list, rownum, colnum, partnum))
+
         ret += &self.parts
             .iter()
             .enumerate()
-            .map(|(partnum, &mut result_cell::PartWithReference)| part_with_reference.as_wikitext(list, rownum, colnum, partnum))
+            .map(|(partnum, part_with_reference)| part_with_reference.as_wikitext(list, rownum, colnum, partnum))
             .collect::<Vec<String>>()
             .join("<br/>") ;
         ret
