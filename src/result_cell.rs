@@ -5,18 +5,25 @@ pub use crate::render_tabbed_data::RendererTabbedData;
 pub use crate::result_row::ResultRow;
 pub use crate::result_cell_part::ResultCellPart;
 pub use crate::column::*;
-pub use crate::{SparqlValue,LinksType};
+pub use crate::{SparqlValue,LinksType,ReferencesParameter};
 use serde_json::Value;
 use wikibase::entity::EntityTrait;
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::RwLock;
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Reference {
     pub url: Option<String>,
     pub title: Option<String>,
     pub date: Option<String>,
     pub stated_in: Option<String>, // Item
-    wikitext_cache: Option<String>,
+    wikitext_cache: Arc<RwLock<Option<String>>>,
+}
+impl PartialEq for Reference {
+    fn eq(&self, other: &Self) -> bool {
+        self.url==other.url && self.title==other.title && self.date==other.date && self.stated_in==other.stated_in
+    }
 }
 
 impl Reference {
@@ -85,7 +92,7 @@ impl Reference {
         self.url.is_none() && self.stated_in.is_none()
     }
 
-    pub fn as_reference(&mut self,list: &ListeriaList) -> String {
+    pub fn as_reference(&self,list: &ListeriaList) -> String {
         let wikitext = self.as_wikitext();
         let md5 = self.get_md5();
         let has_md5 = list.reference_ids().read().unwrap().get(&md5).is_some();
@@ -96,16 +103,18 @@ impl Reference {
         }
     }
 
-    fn get_md5(&mut self) -> String {
+    fn get_md5(&self) -> String {
         let wikitext = self.as_wikitext();
         let md5 = md5::compute(wikitext);
         format!("{:x}", md5)
     }
 
-    fn as_wikitext(&mut self) -> String {
-        match &self.wikitext_cache {
-            Some(s) => return s.to_string(),
-            None => {}
+    fn as_wikitext(&self) -> String {
+        match self.wikitext_cache.read() {
+            Ok(cache) => {
+                if let Some(s) = &*cache { return s.to_string() }
+            }
+            _ => return String::new(), // No error
         }
         let mut s = String::new() ;
 
@@ -124,7 +133,12 @@ impl Reference {
             s += &self.stated_in.as_ref().unwrap(); // TODO render item title
         }
 
-        self.wikitext_cache = Some(s);
+        match self.wikitext_cache.write() {
+            Ok(mut cache) => {
+                *cache = Some(s);
+            },
+            _ => return String::new(), // No error
+        };
         self.as_wikitext()
     }
 }
@@ -141,21 +155,21 @@ impl PartWithReference {
     }
 
     pub fn as_wikitext(
-        &mut self,
+        &self,
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
         partnum: usize,
     ) -> String {
         let wikitext_part = self.part.as_wikitext(list,rownum,colnum,partnum) ;
-        let wikitext_reference = match &mut self.references {
+        let wikitext_reference = match &self.references {
             Some(references) => {
                 let mut wikitext : Vec<String> = vec![] ;
-                for reference in references.iter_mut() {
+                for reference in references.iter() {
                     let r = reference.as_reference(list);
                     wikitext.push(r);
                 }
-                wikitext.join("\n").to_string()
+                wikitext.join("\n")
             }
             None => String::new()
         };
@@ -206,7 +220,10 @@ impl ResultCell {
                 list.get_filtered_claims(&e,property)
                     .iter()
                     .for_each(|statement| {
-                        let references = Self::get_references_for_statement(&statement,list.language());
+                        let references = match list.get_reference_parameter() {
+                            ReferencesParameter::All => Self::get_references_for_statement(&statement,list.language()),
+                            _ => None
+                        };
                         ret.parts
                             .push(PartWithReference::new(ResultCellPart::from_snak(statement.main_snak()),references));
                     });
@@ -367,7 +384,7 @@ impl ResultCell {
         json!(ret.join("<br/>"))
     }
 
-    pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let mut ret ;
         if list.template_params().wdedit {
             ret = match &self.wdedit_class {
@@ -377,12 +394,6 @@ impl ResultCell {
         } else {
             ret = " ".to_string();
         }
-
-        self.parts
-            .iter_mut()
-            .enumerate()
-            for_each(|(partnum, part_with_reference)| part_with_reference.as_wikitext(list, rownum, colnum, partnum))
-
         ret += &self.parts
             .iter()
             .enumerate()

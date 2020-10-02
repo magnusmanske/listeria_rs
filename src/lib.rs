@@ -421,7 +421,7 @@ impl TemplateParams {
             wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
             references: ReferencesParameter::new(template.params.get("references")),
             sort_order: SortOrder::new(template.params.get("sort_order")),
-            wikibase: template.params.get("wikibase").map(|s|s.trim().to_uppercase()).unwrap_or("wikidata".to_string()) , // TODO config
+            wikibase: template.params.get("wikibase").map(|s|s.trim().to_uppercase()).unwrap_or_else(|| "wikidata".to_string()) , // TODO config
         }
     }
 }
@@ -504,7 +504,7 @@ impl PageElement {
 
         let (match_end,single_template) = match seperator_end.find(&text) {
             Some(m) => (m,false),
-            None => (match_start.clone(),true) // No end template, could be tabbed data
+            None => (match_start,true) // No end template, could be tabbed data
         };
 
         let remaining = if single_template {

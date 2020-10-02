@@ -1,4 +1,3 @@
-use tokio::sync::RwLock;
 use std::collections::HashSet;
 use crate::*;
 use crate::entity_container_wrapper::*;
@@ -783,6 +782,10 @@ impl ListeriaList {
 
     pub fn get_row_template(&self) -> &Option<String> {
         &self.params.row_template
+    }
+
+    pub fn get_reference_parameter(&self) -> &ReferencesParameter {
+        &self.params.references
     }
 
     fn gather_items_for_property(&mut self,prop:&str) -> Result<Vec<String>,String> {
