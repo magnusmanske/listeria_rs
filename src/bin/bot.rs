@@ -140,19 +140,20 @@ impl ListeriaBot {
         let mw_api = self.get_or_create_wiki_api(&page.wiki).await?;
         let mut listeria_page = match ListeriaPage::new(self.config.clone(), mw_api, page.title.to_owned()).await {
             Ok(p) => p,
-            Err(e) => panic!("Could not open/parse page '{}': {}", &page.title,e),
+            Err(e) => return Err(format!("Could not open/parse page '{}': {}", &page.title,e)),
         };
         match listeria_page.run().await {
             Ok(_) => {}
-            Err(e) => panic!("{}", e),
+            Err(e) => return Err(e),
         }
         //let renderer = RendererWikitext::new();
         //let old_wikitext = listeria_page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
         //let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&listeria_page).unwrap().unwrap();
         //println!("{:?}",&new_wikitext);
         match listeria_page.update_source_page().await? {
-            true => {println!("{} edited",&page.title);
-            panic!("TEST");
+            true => {
+                println!("{} edited",&page.title);
+                //panic!("TEST");
             }
             false => println!("{} not edited",&page.title),
         }
