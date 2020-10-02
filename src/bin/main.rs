@@ -4,8 +4,8 @@ extern crate serde_json;
 use tokio::sync::RwLock;
 use std::sync::Arc;
 use config::{Config, File};
-use listeria::Renderer;
-use listeria::render_wikitext::RendererWikitext;
+//use listeria::Renderer;
+//use listeria::render_wikitext::RendererWikitext;
 use listeria::listeria_page::ListeriaPage;
 use listeria::configuration::Configuration;
 
@@ -31,16 +31,16 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) {
         Ok(_) => {}
         Err(e) => panic!("{}", e),
     }
+    /*
     let renderer = RendererWikitext::new();
     let old_wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
     let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&page).unwrap().unwrap();
     println!("{:?}",&new_wikitext);
-    /*
+    */
     match page.update_source_page().await.expect("update failed") {
         true => println!("{} edited",&page_title),
         false => println!("{} not edited",&page_title),
     }
-    */
 
 
     //let j = page.as_tabbed_data().unwrap();
@@ -58,7 +58,7 @@ async fn main() {
         .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 
     update_page(&settings,
-        "User:Magnus Manske/listeria test6",
+        "User:Magnus Manske/listeria test3a",
         "https://en.wikipedia.org/w/api.php"
         ).await;
 }

@@ -1,8 +1,14 @@
-use crate::*;
+use std::collections::HashMap;
+use std::sync::Arc;
+use crate::{PageParams,SparqlValue,LinksType};
+use crate::listeria_list::ListeriaList;
+use crate::result_row::ResultRow;
+use crate::result_cell_part::PartWithReference;
+use crate::result_cell_part::ResultCellPart;
+use wikibase::mediawiki::api::Api;
 use wikibase::entity::*;
 use wikibase::snak::SnakDataType;
 use wikibase::entity_container::EntityContainer;
-use result_cell::*;
 
 #[derive(Debug, Clone)]
 pub struct EntityContainerWrapper {

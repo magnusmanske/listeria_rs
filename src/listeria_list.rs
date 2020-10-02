@@ -1,9 +1,11 @@
 use std::collections::HashSet;
-use crate::*;
+use crate::*; // FIXME
+use crate::result_row::ResultRow;
 use crate::entity_container_wrapper::*;
+use crate::result_cell_part::ResultCellPart;
+use crate::result_cell::*;
 use wikibase::entity::*;
 use wikibase::snak::SnakDataType;
-use result_cell::*;
 
 #[derive(Debug, Clone)]
 pub struct ListeriaList {

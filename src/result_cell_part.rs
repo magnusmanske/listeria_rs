@@ -1,13 +1,43 @@
-use crate::result_cell::PartWithReference;
-pub use crate::listeria_page::ListeriaPage;
-pub use crate::listeria_list::ListeriaList;
-pub use crate::render_wikitext::RendererWikitext;
-pub use crate::render_tabbed_data::RendererTabbedData;
-pub use crate::result_row::ResultRow;
-pub use crate::column::*;
-pub use crate::{SparqlValue,LinksType};
+use crate::listeria_list::ListeriaList;
+use crate::{SparqlValue,LinksType};
+use crate::reference::Reference;
 use regex::Regex;
 use wikibase::entity::EntityTrait;
+
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartWithReference {
+    pub part: ResultCellPart,
+    pub references: Option<Vec<Reference>>,
+}
+
+impl PartWithReference {
+    pub fn new(part:ResultCellPart,references:Option<Vec<Reference>>) -> Self {
+        Self {part,references}
+    }
+
+    pub fn as_wikitext(
+        &self,
+        list: &ListeriaList,
+        rownum: usize,
+        colnum: usize,
+        partnum: usize,
+    ) -> String {
+        let wikitext_part = self.part.as_wikitext(list,rownum,colnum,partnum) ;
+        let wikitext_reference = match &self.references {
+            Some(references) => {
+                let mut wikitext : Vec<String> = vec![] ;
+                for reference in references.iter() {
+                    let r = reference.as_reference(list);
+                    wikitext.push(r);
+                }
+                wikitext.join("")
+            }
+            None => String::new()
+        };
+        wikitext_part + &wikitext_reference
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResultCellPart {

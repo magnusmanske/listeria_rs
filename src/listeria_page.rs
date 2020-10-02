@@ -3,14 +3,13 @@ use futures::future::try_join_all;
 use std::sync::Arc;
 use std::collections::HashMap;
 use wikibase::mediawiki::api::Api;
-use crate::column::*;
+use crate::result_row::ResultRow;
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
 
 TEMPLATE PARAMETERS
-links IMPLEMENT fully
-references IMPLEMENT
+links IMPLEMENT fully?
 freq IGNORED => bot manager
 */
 

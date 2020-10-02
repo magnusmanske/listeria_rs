@@ -1,5 +1,6 @@
 use crate::{serde_json, HashMap, SparqlValue};
-use crate::result_cell::{ResultCell, ResultCellPart};
+use crate::result_cell::ResultCell;
+use crate::result_cell_part::ResultCellPart;
 use crate::column::ColumnType;
 use crate::listeria_list::*;
 use wikibase::entity::EntityTrait;
