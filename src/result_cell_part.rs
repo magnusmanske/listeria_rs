@@ -152,7 +152,11 @@ impl ResultCellPart {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
                 if !try_localize {
-                    return list.get_item_link_with_fallback(id);
+                    if list.is_wikidatawiki() {
+                        return format!("[[:d:{}|{}]]", id, id);
+                    } else {
+                        return format!("''[[:d:{}|{}]]''", id, id);
+                    }
                 }
                 let entity_id_link = list.get_item_link_with_fallback(id);
                 match list.get_entity(id.to_owned()) {

@@ -16,7 +16,6 @@ P1559 monolingual
 {{Wikidata list
 |sparql=SELECT ?item { VALUES ?item { wd:Q83764640 } }
 |columns=label,description
-|autolist=fallback
 }}
 {| class='wikitable sortable' style='width:100%'
 !label
@@ -40,14 +39,13 @@ P1559 monolingual
 {{Wikidata list
 |sparql=SELECT ?item { VALUES ?item { wd:Q83764640 } }
 |columns=label,description
-|autolist=fallback
 }}
 {| class='wikitable sortable' style='width:100%'
 ! label
 ! description
 |-
 | ''[[:d:Q83764640|[ISQ96] 382K 12]]''
-| [[Star|star]] and infrared source in the constellation [[Centaurus]]
+| 
 |}
 {{Wikidata list end}}
 

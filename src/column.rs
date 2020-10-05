@@ -87,6 +87,7 @@ impl ColumnType {
 pub struct Column {
     pub obj: ColumnType,
     pub label: String,
+    has_label : bool,
 }
 
 impl Column {
@@ -98,15 +99,20 @@ impl Column {
             Some(caps) => Self {
                 obj: ColumnType::new(&caps.get(1).unwrap().as_str().to_string()),
                 label: caps.get(2).unwrap().as_str().to_string(),
+                has_label: !caps.get(2).unwrap().as_str().is_empty()
             },
             None => Self {
                 obj: ColumnType::new(&s.trim().to_string()),
                 label: s.trim().to_string(),
+                has_label: false,
             },
         }
     }
 
     pub fn generate_label(&mut self, list: &ListeriaList) {
+        if self.has_label {
+            return;
+        }
         self.label = match &self.obj {
             ColumnType::Property(prop) => list.get_label_with_fallback(prop),
             ColumnType::PropertyQualifier((prop, qual)) => {

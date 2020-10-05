@@ -1,0 +1,38 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q12345 wd:Q937 wd:Q94293196 } }
+|columns=label,P31:fake heading
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! label
+! fake heading
+|-
+| [[Tim Berners-Lee]]
+| [[human]]
+|-
+| [[Count von Count]]
+| ''[[:d:Q30061417|vampire in a work of fiction]]''<br/>''[[:d:Q15773317|television character]]''
+|-
+| [[Albert Einstein]]
+| [[human]]
+|-
+| ''[[:d:Q94293196|NVSS J173625-312612]]''
+| [[astronomical radio source]]
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q94293196"}}]}}
