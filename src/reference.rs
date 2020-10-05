@@ -109,7 +109,7 @@ impl Reference {
         if self.title.is_some() && self.url.is_some() {
             s += &format!("{{{{cite web|url={}|title={}",self.url.as_ref().unwrap(),self.title.as_ref().unwrap());
             if let Some(stated_in) = &self.stated_in {
-                s += &format!("|website=''[[:d:{}|{}]]''",&stated_in,list.get_label_with_fallback(stated_in));
+                s += &format!("|website={}",list.get_item_link_with_fallback(stated_in));
             }
             if let Some(date) = &self.date {
                 s += &format!("|access-date={}",&date);
@@ -120,7 +120,7 @@ impl Reference {
         } else if self.stated_in.is_some() {
             match &self.stated_in {
                 Some(q) => {
-                    s += &format!("''[[:d:{}|{}]]''",&q,list.get_label_with_fallback(&q));
+                    s += &list.get_item_link_with_fallback(&q);
                 }
                 None => {}
             }

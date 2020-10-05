@@ -913,6 +913,14 @@ impl ListeriaList {
         }
     }
 
+    pub fn get_item_link_with_fallback(&self,entity_id:&str) -> String {
+        if self.page_params.wiki == "wikidata" { // Link on this wiki, no italics
+            format!("[[:d:{}|{}]]",entity_id,self.get_label_with_fallback(entity_id))
+        } else {
+            format!("''[[:d:{}|{}]]''",entity_id,self.get_label_with_fallback(entity_id))
+        }
+    }
+
     pub fn get_filtered_claims(&self,e:&wikibase::entity::Entity,property:&str) -> Vec<wikibase::statement::Statement> {
         self.ecw.get_filtered_claims(e,property)
     }

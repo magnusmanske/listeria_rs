@@ -154,7 +154,7 @@ impl ResultCellPart {
                 if !try_localize {
                     return format!("[[:d:{}|{}]]", id, id);
                 }
-                let entity_id_link = format!("''[[:d:{}|{}]]''", id, id);
+                let entity_id_link = list.get_item_link_with_fallback(id);
                 match list.get_entity(id.to_owned()) {
                     Some(e) => {
                         let use_language = match e.label_in_locale(list.language()) {
