@@ -23,12 +23,19 @@ struct PageToProcess {
 }
 
 #[derive(Debug, Clone)]
+pub struct ListeriaBotWiki {
+    wiki: String,
+    api: Arc<RwLock<Api>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ListeriaBot {
     config: Arc<Configuration>,
     wiki_apis: HashMap<String,Arc<RwLock<Api>>>,
     pool: mysql_async::Pool,
     next_page_cache: Vec<PageToProcess>,
     site_matrix: Value,
+    bot_per_wiki: HashMap<String,ListeriaBotWiki>,
 }
 
 impl ListeriaBot {
@@ -56,15 +63,22 @@ impl ListeriaBot {
             .collect();
 
         let site_matrix = api.get_query_api_json(&params).await.expect("Can't run action=sitematrix on Wikidata API");
-        let ret = Self {
+        let mut ret = Self {
             config: Arc::new(config),
             wiki_apis: HashMap::new(),
             pool: mysql_async::Pool::new(opts),
             next_page_cache: vec![],
             site_matrix,
+            bot_per_wiki: HashMap::new(),
         };
 
+        ret.update_bots();
+
         Ok(ret)
+    }
+
+    fn update_bots(&mut self) -> Result<(),String> {
+        Ok(())
     }
 
     fn get_url_for_wiki_from_site(&self, wiki: &str, site: &Value) -> Option<String> {
@@ -204,8 +218,12 @@ impl ListeriaBot {
         //println!("{:?}",&self.next_page_cache);
         conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
 
-        let page = self.next_page_cache.remove(0); // TODO check first
-        Ok(page)
+        match self.next_page_cache.get(0) {
+            Some(_) => {
+                Ok(self.next_page_cache.remove(0))
+            }
+            None => Err("bot next_page_cache is empty in get_next_page_to_process".to_string())
+        }
     }
 
     pub async fn destruct(&mut self) {
