@@ -26,6 +26,18 @@ struct PageToProcess {
 pub struct ListeriaBotWiki {
     wiki: String,
     api: Arc<RwLock<Api>>,
+    config: Arc<Configuration>,
+}
+
+impl ListeriaBotWiki {
+    pub fn new(wiki:&str,api:Arc<RwLock<Api>>,config:Arc<Configuration>) -> Self {
+        println!("Creating bot for {}",wiki);
+        Self {
+            wiki:wiki.to_string(),
+            api,
+            config
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -72,12 +84,33 @@ impl ListeriaBot {
             bot_per_wiki: HashMap::new(),
         };
 
-        ret.update_bots();
+        ret.update_bots().await?;
 
         Ok(ret)
     }
 
-    fn update_bots(&mut self) -> Result<(),String> {
+    async fn update_bots(&mut self) -> Result<(),String> {
+        let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
+        let sql = "SELECT DISTINCT wikis.name AS wiki FROM wikis".to_string() ;
+        let wikis = conn.exec_iter(
+            sql.as_str(),
+            ()
+        ).await
+        .map_err(|e|format!("PageList::update_bots: SQL query error[1]: {:?}",e))?
+        .map_and_drop(|row| { from_row::<String>(row) } )
+        .await
+        .map_err(|e|format!("PageList::update_bots: SQL query error[2]: {:?}",e))?;
+        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
+
+        let new_wikis : Vec<String> = wikis.iter().filter(|wiki|!self.bot_per_wiki.contains_key(*wiki)).cloned().collect(); // TESTING FIXME
+        let new_wikis = vec!["dewiki".to_string(),"enwiki".to_string()];
+        println!("{:?}",&new_wikis);
+
+        for wiki in new_wikis {
+            let mw_api = self.get_or_create_wiki_api(&wiki).await?;
+            let bot = ListeriaBotWiki::new(&wiki,mw_api,self.config.clone());
+            self.bot_per_wiki.insert(wiki,bot);
+        }
         Ok(())
     }
 
@@ -234,13 +267,15 @@ impl ListeriaBot {
 
 #[tokio::main]
 async fn main() {
-    let mut bot = ListeriaBot::new("config.json").await.unwrap();
+    let _bot = ListeriaBot::new("config.json").await.unwrap();
+    /*
     loop {
         match bot.process_next_page().await {
             Ok(()) => {}
             Err(e) => { println!("{}",&e); }
         }
     }
+    */
     /*
     let mut mw_api = wikibase::mediawiki::api::Api::new(api_url)
         .await
