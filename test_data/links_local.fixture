@@ -9,7 +9,7 @@ Irrelevant
 $$$$ WIKITEXT
 
 {{Wikidata list
-|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q12345 wd:Q937 } }
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q12345 wd:Q937 wd:Q88193217 } }
 |columns=label:name,P31
 |links=local
 }}
@@ -32,5 +32,4 @@ $$$$ EXPECTED
 |}
 
 $$$$ SPARQL_RESULTS
-
-{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}}]}}
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q88193217"}}]}}

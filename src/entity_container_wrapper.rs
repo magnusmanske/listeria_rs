@@ -62,9 +62,19 @@ impl EntityContainerWrapper {
         list: &ListeriaList,
     ) -> Option<ResultRow> {
         if let LinksType::Local = list.template_params().links {
-            if !self.entities.has_entity(entity_id.to_owned()) {
-                return None;
-            }
+            let entity = match self.entities.get_entity(entity_id.to_owned()) {
+                Some(e) => e,
+                None => return None,
+            };
+            let page = match entity.sitelinks() {
+                Some(sl) => sl
+                    .iter()
+                    .filter(|s| *s.site() == *list.wiki())
+                    .map(|s| s.title().to_string())
+                    .next(),
+                None => None,
+            };
+            page.as_ref()?; // return None if no page on this wiki
         }
 
         let mut row = ResultRow::new(entity_id);

@@ -227,7 +227,6 @@ impl ListeriaBot {
                 None => {continue;}
             }
         }
-        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
         println!("{:?}",wiki2page);
 
         let mut futures = Vec::new();
@@ -240,6 +239,7 @@ impl ListeriaBot {
                 None => {continue;},
             };
             pages.push(page.to_owned());
+            //self.update_page_status(&mut conn,&page.to_owned(),wiki,"RUNNING").await?; // TODO
             let future = bot.process_page(page);
             /*
             // TODO
@@ -249,6 +249,7 @@ impl ListeriaBot {
             */
             futures.push(future);
         }
+        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
         let results = join_all(futures).await;
         println!("{:?}",&results);
         let mut conn = self.pool.get_conn().await.expect("Can't connect to database");

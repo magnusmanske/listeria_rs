@@ -166,8 +166,6 @@ impl ListeriaList {
             return s.to_owned();
         }
         self.first_letter_to_upper_case(s)
-        //let (first_letter, the_rest) = s.split_at(1);
-        //first_letter.to_uppercase() + the_rest
     }
 
     pub fn get_location_template(&self, lat: f64, lon: f64, entity_id: Option<String>, region: Option<String> ) -> String {
