@@ -3,6 +3,9 @@ extern crate serde_json;
 
 use std::collections::HashMap;
 use tokio::sync::RwLock;
+//use tokio_threadpool::ThreadPool;
+//use futures::future::{Future, lazy};
+use futures::future::*;
 use std::sync::Arc;
 use listeria::listeria_page::ListeriaPage;
 use listeria::configuration::Configuration;
@@ -38,6 +41,29 @@ impl ListeriaBotWiki {
             config
         }
     }
+
+    pub async fn process_page(&self, page:&str) -> Result<String,String> {
+        let mut listeria_page = match ListeriaPage::new(self.config.clone(), self.api.clone(), page.to_owned()).await {
+            Ok(p) => p,
+            Err(e) => return Err(format!("Could not open/parse page '{}': {}", page,e)),
+        };
+        match listeria_page.run().await {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+        //let renderer = RendererWikitext::new();
+        //let old_wikitext = listeria_page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
+        //let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&listeria_page).unwrap().unwrap();
+        //println!("{:?}",&new_wikitext);
+        match listeria_page.update_source_page().await? {
+            true => {
+                println!("{} on {} edited",page,self.wiki);
+                //panic!("TEST");
+            }
+            false => println!("{} on {} not edited",page,self.wiki),
+        }
+        Ok("OK".to_string())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +74,7 @@ pub struct ListeriaBot {
     next_page_cache: Vec<PageToProcess>,
     site_matrix: Value,
     bot_per_wiki: HashMap<String,ListeriaBotWiki>,
+    //thread_pool:Arc<ThreadPool>,
 }
 
 impl ListeriaBot {
@@ -82,10 +109,10 @@ impl ListeriaBot {
             next_page_cache: vec![],
             site_matrix,
             bot_per_wiki: HashMap::new(),
+            //thread_pool: Arc::new(ThreadPool::new()),
         };
 
         ret.update_bots().await?;
-
         Ok(ret)
     }
 
@@ -102,9 +129,8 @@ impl ListeriaBot {
         .map_err(|e|format!("PageList::update_bots: SQL query error[2]: {:?}",e))?;
         conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
 
-        let new_wikis : Vec<String> = wikis.iter().filter(|wiki|!self.bot_per_wiki.contains_key(*wiki)).cloned().collect(); // TESTING FIXME
-        let new_wikis = vec!["dewiki".to_string(),"enwiki".to_string()];
-        println!("{:?}",&new_wikis);
+        let _new_wikis : Vec<String> = wikis.iter().filter(|wiki|!self.bot_per_wiki.contains_key(*wiki)).cloned().collect();
+        let new_wikis = vec!["dewiki".to_string(),"enwiki".to_string()]; // TESTING FIXME
 
         for wiki in new_wikis {
             let mw_api = self.get_or_create_wiki_api(&wiki).await?;
@@ -181,6 +207,43 @@ impl ListeriaBot {
     }
 
     pub async fn process_next_page(&mut self) -> Result<(),String> {
+        // Get next page to update, for all wikis
+        let wikis = self.bot_per_wiki.keys() ;
+        let mut wiki2page = HashMap::new();
+        let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
+        for wiki in wikis {
+            let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' AND wikis.name='{}' order by pagestatus.timestamp DESC LIMIT 1",wiki);
+            let pages = conn.exec_iter(
+                sql.as_str(),
+                ()
+            ).await
+            .map_err(|e|format!("PageList::run_batch_query: SQL query error[1]: {:?}",e))?
+            .map_and_drop(|row| {
+                let parts = from_row::<(u64,String,String,String)>(row);
+                PageToProcess { id:parts.0, title:parts.1, status:parts.2, wiki:parts.3 }
+            } )
+            .await
+            .map_err(|e|format!("PageList::run_batch_query: SQL query error[2]: {:?}",e))?;
+            match pages.get(0) {
+                Some(page_to_process) => {wiki2page.insert(wiki,page_to_process.title.to_owned());}
+                None => {continue;}
+            }
+        }
+        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
+        println!("{:?}",wiki2page);
+
+        let mut futures = Vec::new();
+        for (wiki,bot) in self.bot_per_wiki.iter() {
+            let page = match wiki2page.get(wiki) {
+                Some(page) => {page},
+                None => {continue;},
+            };
+            let future = bot.process_page(page);
+            futures.push(future);
+        }
+        let results = join_all(futures).await;
+        println!("{:?}",&results);
+        /*
         let page = self.get_next_page_to_process().await?;
         println!("Processing {} : {}",&page.wiki,&page.title);
 
@@ -204,6 +267,7 @@ impl ListeriaBot {
             }
             false => println!("{} not edited",&page.title),
         }
+        */
         Ok(())
     }
 
@@ -227,7 +291,7 @@ impl ListeriaBot {
         self.wiki_apis.get(wiki).ok_or(format!("Wiki not found: {}",wiki)).map(|api|api.clone())
     }
 
-    async fn get_next_page_to_process(&mut self) -> Result<PageToProcess,String> {
+    async fn _get_next_page_to_process(&mut self, wiki: Option<String>) -> Result<PageToProcess,String> {
         if !self.next_page_cache.is_empty() {
             let page = self.next_page_cache.remove(0);
             return Ok(page);
@@ -236,7 +300,11 @@ impl ListeriaBot {
         let max_results : u64 = 100 ;
         
         let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
-        let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' order by pagestatus.timestamp DESC LIMIT {}",max_results) ;
+        let sql = match wiki {
+            Some(wiki) => format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' AND wiki='{}' order by pagestatus.timestamp DESC LIMIT 1",wiki),
+            None => format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' order by pagestatus.timestamp DESC LIMIT {}",max_results),
+        };
+        println!("{}",&sql);
         self.next_page_cache = conn.exec_iter(
             sql.as_str(),
             ()
@@ -267,15 +335,13 @@ impl ListeriaBot {
 
 #[tokio::main]
 async fn main() {
-    let _bot = ListeriaBot::new("config.json").await.unwrap();
-    /*
-    loop {
+    let mut bot = ListeriaBot::new("config.json").await.unwrap();
+    //loop {
         match bot.process_next_page().await {
             Ok(()) => {}
             Err(e) => { println!("{}",&e); }
         }
-    }
-    */
+    //}
     /*
     let mut mw_api = wikibase::mediawiki::api::Api::new(api_url)
         .await
