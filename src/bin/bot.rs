@@ -128,12 +128,24 @@ impl ListeriaBot {
         conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
 
         let new_wikis : Vec<String> = wikis.iter().filter(|wiki|!self.bot_per_wiki.contains_key(*wiki)).cloned().collect();
-        //let new_wikis = vec!["dewiki".to_string(),"enwiki".to_string()]; // TESTING FIXME
 
-        for wiki in new_wikis {
+        let mut futures = Vec::new();
+        for wiki in &new_wikis {
+            let future = self.create_wiki_api(wiki);
+            futures.push(future);
+        }
+        let results = join_all(futures).await;
+        
+        for num in 0..results.len() {
+            let mw_api = results[num].as_ref()?;
+            let wiki = &new_wikis[num];
+            self.wiki_apis.insert(wiki.to_owned(),mw_api.clone());
+        }
+
+        for wiki in &new_wikis {
             let mw_api = self.get_or_create_wiki_api(&wiki).await?;
             let bot = ListeriaBotWiki::new(&wiki,mw_api,self.config.clone());
-            self.bot_per_wiki.insert(wiki,bot);
+            self.bot_per_wiki.insert(wiki.to_string(),bot);
         }
         Ok(())
     }
@@ -287,12 +299,7 @@ impl ListeriaBot {
         Ok(())
     }
 
-    async fn get_or_create_wiki_api(&mut self, wiki: &str) -> Result<Arc<RwLock<Api>>,String> {
-        match &self.wiki_apis.get(wiki) {
-            Some(api) => { return Ok((*api).clone()); }
-            None => {}
-        }
-
+    async fn create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>,String> {
         let api_url = format!("{}/w/api.php",self.get_server_url_for_wiki(wiki)?);
         let mut mw_api = wikibase::mediawiki::api::Api::new(&api_url)
             .await
@@ -302,6 +309,16 @@ impl ListeriaBot {
             .await
             .expect("Could not log in");
         let mw_api = Arc::new(RwLock::new(mw_api));
+        Ok(mw_api)
+    }
+
+    async fn get_or_create_wiki_api(&mut self, wiki: &str) -> Result<Arc<RwLock<Api>>,String> {
+        match &self.wiki_apis.get(wiki) {
+            Some(api) => { return Ok((*api).clone()); }
+            None => {}
+        }
+
+        let mw_api = self.create_wiki_api(wiki).await?;
         self.wiki_apis.insert(wiki.to_owned(),mw_api);
         
         self.wiki_apis.get(wiki).ok_or(format!("Wiki not found: {}",wiki)).map(|api|api.clone())
