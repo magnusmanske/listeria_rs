@@ -22,13 +22,13 @@ $$$$ EXPECTED
 ! item
 |-
 | [[Albert Einstein]]
-| ''[[:d:Q937|Q937]]''
+| [[:d:Q937|Q937]]
 |-
 | [[Count von Count]]
-| ''[[:d:Q12345|Q12345]]''
+| [[:d:Q12345|Q12345]]
 |-
 | [[Tim Berners-Lee]]
-| ''[[:d:Q80|Q80]]''
+| [[:d:Q80|Q80]]
 |}
 
 $$$$ SPARQL_RESULTS

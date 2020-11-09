@@ -230,7 +230,23 @@ impl ResultCellPart {
                     None => id.to_owned(),
                 }
             }
-            ResultCellPart::Text(text) => text.to_owned(),
+            ResultCellPart::Text(text) => {
+                match list.column(colnum) {
+                    Some(col) => {
+                        match &col.obj {
+                            ColumnType::Property(p) => { // Commons category
+                                if p == "P373" {
+                                    format!("[[:commons:Category:{}|{}]]",text,text)
+                                } else {
+                                    text.to_owned()
+                                }
+                            }
+                            _ => text.to_owned()
+                        }
+                    }
+                    None => {text.to_owned()}
+                }
+            }
             ResultCellPart::SnakList(v) => v
                 .iter()
                 .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum, partnum))

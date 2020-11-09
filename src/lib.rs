@@ -58,7 +58,7 @@ impl PageParams {
             simulated_text: None,
             simulated_sparql_results: None,
             config: config.clone(),
-            local_file_namespace_prefix: api.get_canonical_namespace_name(6).unwrap_or("File").to_string()
+            local_file_namespace_prefix: api.get_local_namespace_name(6).unwrap_or("File").to_string()
         } ;
         Ok(ret)
     }
@@ -442,6 +442,7 @@ impl SectionType {
     pub fn new_from_string_option(s: Option<&String>) -> Self {
         lazy_static! {
             static ref RE_PROP : Regex = Regex::new(r"^[Pp]\d+$").unwrap();
+            static ref RE_PROP_NUM : Regex = Regex::new(r"^\d+$").unwrap(); // Yes people do that!
             static ref RE_SPARQL : Regex = Regex::new(r"^@.+$").unwrap();
         }
         let s = match s {
@@ -451,6 +452,9 @@ impl SectionType {
         let s = s.trim();
         if RE_PROP.is_match(s) {
             return Self::Property(s.to_uppercase());
+        }
+        if RE_PROP_NUM.is_match(s) {
+            return Self::Property(format!("P{}",&s));
         }
         if RE_SPARQL.is_match(s) {
             return Self::SparqlVariable(s.to_uppercase());
