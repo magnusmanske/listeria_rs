@@ -152,13 +152,22 @@ impl ListeriaList {
         *self.local_page_cache.get(&page.to_string()).unwrap_or(&false)
     }
 
+    fn first_letter_to_upper_case(&self, s1: &String) -> String {
+        let mut c = s1.chars();
+        match c.next() {
+            None => String::new(),
+            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        }
+    }
+
     pub fn normalize_page_title(&self,s: &String) -> String {
         // TODO use page to find out about first character capitalization on the current wiki
         if s.len() < 2 {
             return s.to_owned();
         }
-        let (first_letter, the_rest) = s.split_at(1);
-        first_letter.to_uppercase() + the_rest
+        self.first_letter_to_upper_case(s)
+        //let (first_letter, the_rest) = s.split_at(1);
+        //first_letter.to_uppercase() + the_rest
     }
 
     pub fn get_location_template(&self, lat: f64, lon: f64, entity_id: Option<String>, region: Option<String> ) -> String {

@@ -3,6 +3,7 @@ extern crate serde_json;
 
 use std::collections::HashMap;
 use tokio::sync::RwLock;
+//use tokio::runtime::Runtime;
 use futures::future::*;
 use std::sync::Arc;
 use listeria::listeria_page::ListeriaPage;
@@ -12,6 +13,7 @@ use mysql_async::prelude::*;
 use mysql_async::from_row;
 use mysql_async as my;
 use serde_json::Value;
+use chrono::{DateTime, Utc};
 
 // ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
 
@@ -213,13 +215,13 @@ impl ListeriaBot {
                 sql.as_str(),
                 ()
             ).await
-            .map_err(|e|format!("PageList::run_batch_query: SQL query error[1]: {:?}",e))?
+            .map_err(|e|format!("ListeriaBot::process_next_page: SQL query error[1]: {:?}",e))?
             .map_and_drop(|row| {
                 let parts = from_row::<(u64,String,String,String)>(row);
                 PageToProcess { id:parts.0, title:parts.1, status:parts.2, wiki:parts.3 }
             } )
             .await
-            .map_err(|e|format!("PageList::run_batch_query: SQL query error[2]: {:?}",e))?;
+            .map_err(|e|format!("ListeriaBot::process_next_page: SQL query error[2]: {:?}",e))?;
             match pages.get(0) {
                 Some(page_to_process) => {wiki2page.insert(wiki,page_to_process.title.to_owned());}
                 None => {continue;}
@@ -229,41 +231,58 @@ impl ListeriaBot {
         println!("{:?}",wiki2page);
 
         let mut futures = Vec::new();
+        let mut wikis = Vec::new();
+        let mut pages = Vec::new();
         for (wiki,bot) in self.bot_per_wiki.iter() {
+            wikis.push(wiki.to_owned());
             let page = match wiki2page.get(wiki) {
                 Some(page) => {page},
                 None => {continue;},
             };
+            pages.push(page.to_owned());
             let future = bot.process_page(page);
+            /*
+            // TODO
+            let future = tokio::spawn(async move {
+                bot.process_page(page).await
+            });
+            */
             futures.push(future);
         }
         let results = join_all(futures).await;
         println!("{:?}",&results);
-        /*
-        let page = self.get_next_page_to_process().await?;
-        println!("Processing {} : {}",&page.wiki,&page.title);
+        let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
+        for num in 0..results.len() {
+            let page = &pages[num];
+            let wiki = &wikis[num];
+            let result = match &results[num] {
+                Ok(s) => s,
+                Err(s) => s,
+            };
+            self.update_page_status(&mut conn,page,wiki,result).await?;
+        }
+        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
+        Ok(())
+    }
 
-        let mw_api = self.get_or_create_wiki_api(&page.wiki).await?;
-        let mut listeria_page = match ListeriaPage::new(self.config.clone(), mw_api, page.title.to_owned()).await {
-            Ok(p) => p,
-            Err(e) => return Err(format!("Could not open/parse page '{}': {}", &page.title,e)),
-        };
-        match listeria_page.run().await {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
-        //let renderer = RendererWikitext::new();
-        //let old_wikitext = listeria_page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
-        //let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&listeria_page).unwrap().unwrap();
-        //println!("{:?}",&new_wikitext);
-        match listeria_page.update_source_page().await? {
-            true => {
-                println!("{} edited",&page.title);
-                //panic!("TEST");
-            }
-            false => println!("{} not edited",&page.title),
-        }
-        */
+    async fn update_page_status(&mut self, conn:&mut mysql_async::Conn, page: &str,wiki: &str, status: &str ) -> Result<(),String> {
+        let now: DateTime<Utc> = Utc::now();
+        let timestamp = now.format("%Y%m%d%H%M%S").to_string() ;
+        let params = params! {
+            "wiki" => wiki,
+            "page" => page,
+            "timestamp" => timestamp,
+            "status" => status
+        } ;
+        let sql = "UPDATE `pagestatus` SET `status`=:status,`timestamp`=:timestamp WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
+        conn.exec_iter(
+            sql.as_str(),
+            params
+        ).await
+        .map_err(|e|format!("ListeriaBot::update_page_status: SQL query error[1]: {:?}",e))?
+        .map_and_drop(|row| { from_row::<String>(row) } )
+        .await
+        .map_err(|e|format!("ListeriaBot::update_page_status: SQL query error[2]: {:?}",e))?;
         Ok(())
     }
 
@@ -294,12 +313,17 @@ impl ListeriaBot {
 }
 
 #[tokio::main]
-async fn main() {
-    let mut bot = ListeriaBot::new("config.json").await.unwrap();
-    //loop {
-        match bot.process_next_page().await {
-            Ok(()) => {}
-            Err(e) => { println!("{}",&e); }
-        }
-    //}
+pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    //let rt  = Runtime::new()?;
+    //let threaded_rt = Runtime::new()?;
+    //rt.block_on(async {
+        let mut bot = ListeriaBot::new("config.json").await.unwrap();
+        //loop {
+            match bot.process_next_page().await {
+                Ok(()) => {}
+                Err(e) => { println!("{}",&e); }
+            }
+        //}
+    //});
+    Ok(())
 }
