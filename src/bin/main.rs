@@ -58,7 +58,7 @@ async fn main() {
         .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 
     update_page(&settings,
-        "Wikidata:WikiProject_every_politician/Greece/data/Parliament/17th_(bio)",
-        "https://www.wikidata.org/w/api.php"
+        "Wikipedia:Database reports/Recent deaths",
+        "https://en.wikipedia.org/w/api.php"
         ).await;
 }

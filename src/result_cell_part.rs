@@ -1,6 +1,7 @@
 use crate::listeria_list::ListeriaList;
 use crate::{SparqlValue,LinksType};
 use crate::reference::Reference;
+use crate::column::ColumnType;
 use regex::Regex;
 use wikibase::entity::EntityTrait;
 
@@ -152,7 +153,11 @@ impl ResultCellPart {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
                 if !try_localize {
-                    if list.is_wikidatawiki() {
+                    let is_item_column = match list.column(colnum) {
+                        Some(col) => {col.obj == ColumnType::Item}
+                        None => {false}
+                    };
+                    if list.is_wikidatawiki() || is_item_column {
                         return format!("[[:d:{}|{}]]", id, id);
                     } else {
                         return format!("''[[:d:{}|{}]]''", id, id);

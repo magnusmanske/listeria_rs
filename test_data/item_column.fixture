@@ -1,0 +1,34 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q12345 } }
+|columns=item,label:name,P31
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! item
+! name
+! instance of
+|-
+| [[:d:Q80|Q80]]
+| [[Tim Berners-Lee]]
+| [[human]]
+|-
+| [[:d:Q12345|Q12345]]
+| [[Count von Count]]
+| ''[[:d:Q30061417|vampire in a work of fiction]]''<br/>''[[:d:Q15773317|television character]]''
+|}
+
+$$$$ SPARQL_RESULTS
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}}]}}
