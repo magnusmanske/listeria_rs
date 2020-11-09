@@ -3,8 +3,6 @@ extern crate serde_json;
 
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-//use tokio_threadpool::ThreadPool;
-//use futures::future::{Future, lazy};
 use futures::future::*;
 use std::sync::Arc;
 use listeria::listeria_page::ListeriaPage;
@@ -74,7 +72,6 @@ pub struct ListeriaBot {
     next_page_cache: Vec<PageToProcess>,
     site_matrix: Value,
     bot_per_wiki: HashMap<String,ListeriaBotWiki>,
-    //thread_pool:Arc<ThreadPool>,
 }
 
 impl ListeriaBot {
@@ -109,7 +106,6 @@ impl ListeriaBot {
             next_page_cache: vec![],
             site_matrix,
             bot_per_wiki: HashMap::new(),
-            //thread_pool: Arc::new(ThreadPool::new()),
         };
 
         ret.update_bots().await?;
@@ -291,42 +287,6 @@ impl ListeriaBot {
         self.wiki_apis.get(wiki).ok_or(format!("Wiki not found: {}",wiki)).map(|api|api.clone())
     }
 
-    async fn _get_next_page_to_process(&mut self, wiki: Option<String>) -> Result<PageToProcess,String> {
-        if !self.next_page_cache.is_empty() {
-            let page = self.next_page_cache.remove(0);
-            return Ok(page);
-        }
-
-        let max_results : u64 = 100 ;
-        
-        let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
-        let sql = match wiki {
-            Some(wiki) => format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' AND wiki='{}' order by pagestatus.timestamp DESC LIMIT 1",wiki),
-            None => format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' order by pagestatus.timestamp DESC LIMIT {}",max_results),
-        };
-        println!("{}",&sql);
-        self.next_page_cache = conn.exec_iter(
-            sql.as_str(),
-            ()
-        ).await
-        .map_err(|e|format!("PageList::run_batch_query: SQL query error[1]: {:?}",e))?
-        .map_and_drop(|row| {
-            let parts = from_row::<(u64,String,String,String)>(row);
-            PageToProcess { id:parts.0, title:parts.1, status:parts.2, wiki:parts.3 }
-        } )
-        .await
-        .map_err(|e|format!("PageList::run_batch_query: SQL query error[2]: {:?}",e))?;
-        //println!("{:?}",&self.next_page_cache);
-        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
-
-        match self.next_page_cache.get(0) {
-            Some(_) => {
-                Ok(self.next_page_cache.remove(0))
-            }
-            None => Err("bot next_page_cache is empty in get_next_page_to_process".to_string())
-        }
-    }
-
     pub async fn destruct(&mut self) {
         //self.pool.disconnect().await.unwrap(); // TODO
     }
@@ -342,11 +302,4 @@ async fn main() {
             Err(e) => { println!("{}",&e); }
         }
     //}
-    /*
-    let mut mw_api = wikibase::mediawiki::api::Api::new(api_url)
-        .await
-        .expect("Could not connect to MW API");
-    let mw_api = Arc::new(RwLock::new(mw_api));
-    */
-
 }
