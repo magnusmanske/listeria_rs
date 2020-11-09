@@ -127,8 +127,8 @@ impl ListeriaBot {
         .map_err(|e|format!("PageList::update_bots: SQL query error[2]: {:?}",e))?;
         conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
 
-        let _new_wikis : Vec<String> = wikis.iter().filter(|wiki|!self.bot_per_wiki.contains_key(*wiki)).cloned().collect();
-        let new_wikis = vec!["dewiki".to_string(),"enwiki".to_string()]; // TESTING FIXME
+        let new_wikis : Vec<String> = wikis.iter().filter(|wiki|!self.bot_per_wiki.contains_key(*wiki)).cloned().collect();
+        //let new_wikis = vec!["dewiki".to_string(),"enwiki".to_string()]; // TESTING FIXME
 
         for wiki in new_wikis {
             let mw_api = self.get_or_create_wiki_api(&wiki).await?;
