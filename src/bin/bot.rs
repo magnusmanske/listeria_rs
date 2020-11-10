@@ -45,21 +45,24 @@ impl ListeriaBotWiki {
         }
     }
 
-    pub async fn process_page(&self, page:&str) -> Result<String,String> {
+    pub async fn process_page(&self, page:&str) -> Result<(String,String,String),(String,String,String)> {
         let mut listeria_page = match ListeriaPage::new(self.config.clone(), self.api.clone(), page.to_owned()).await {
             Ok(p) => p,
-            Err(e) => return Err(format!("Could not open/parse page '{}': {}", page,e)),
+            Err(e) => return Err((self.wiki.to_owned(),page.to_string(),format!("Could not open/parse page '{}': {}", page,e))),
         };
-        listeria_page.run().await?;
-        match listeria_page.update_source_page().await? {
-            true => {
-                //println!("{} on {} edited",page,self.wiki);
-            }
-            false => {
-                //println!("{} on {} not edited",page,self.wiki),
+        match listeria_page.run().await {
+            Ok(_) => {},
+            Err(e) => {
+                return Err((self.wiki.to_owned(),page.to_string(),e.to_string()))
             }
         }
-        Ok("OK".to_string())
+        let _did_edit = match listeria_page.update_source_page().await {
+            Ok(x) => x,
+            Err(e) => {
+                return Err((self.wiki.to_owned(),page.to_string(),e.to_string()))
+            }
+        };
+        Ok((self.wiki.to_owned(),page.to_string(),"OK".to_string()))
     }
 }
 
@@ -232,7 +235,7 @@ impl ListeriaBot {
 
     pub async fn process_next_page(&mut self) -> Result<(),String> {
         // Get next page to update, for all wikis
-        let wikis = self.bot_per_wiki.keys() ;
+        let wikis : Vec<String> = self.bot_per_wiki.iter().map(|(wiki,_bot)|wiki.to_string()).collect() ;
         let mut wiki2page = HashMap::new();
         let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
         for wiki in wikis {
@@ -255,17 +258,26 @@ impl ListeriaBot {
         }
         //println!("{:?}",wiki2page);
 
-        let mut futures = Vec::new();
-        let mut wikis = Vec::new();
-        let mut pages = Vec::new();
-        for (wiki,bot) in self.bot_per_wiki.iter() {
-            wikis.push(wiki.to_owned());
+        // Update status to RUNNING
+        let mut running = Vec::new();
+        for (wiki,_bot) in &self.bot_per_wiki {
             let page = match wiki2page.get(wiki) {
                 Some(page) => {page},
                 None => {continue;},
             };
-            pages.push(page.to_owned());
-            //self.update_page_status(&mut conn,&page.to_owned(),wiki,"RUNNING").await?; // TODO
+            running.push((wiki.to_owned(),page.to_owned()));
+        }
+        for (wiki,page) in running {
+            self.update_page_status(&mut conn,&page.to_owned(),&wiki,&"RUNNING".to_string(),&"".to_string()).await?; // TODO
+        }
+        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
+
+        let mut futures = Vec::new();
+        for (wiki,bot) in &self.bot_per_wiki {
+            let page = match wiki2page.get(wiki) {
+                Some(page) => {page},
+                None => {continue;},
+            };
             let future = bot.process_page(page);
             /*
             // TODO
@@ -275,16 +287,20 @@ impl ListeriaBot {
             */
             futures.push(future);
         }
-        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
+
+
         let results = join_all(futures).await;
         println!("{:?}",&results);
+        
         let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
-        for num in 0..results.len() {
-            let page = &pages[num];
-            let wiki = &wikis[num];
-            let (status,message) = match &results[num] {
-                Ok(s) => (s.to_string(),"".to_string()),
-                Err(s) => ("FAIL".to_string(),s.to_string()),
+        for result in &results {
+            let (wiki,page,status,message) = match result {
+                Ok((wiki,page,result)) => {
+                    (wiki,page,result.to_string(),"".to_string())
+                },
+                Err((wiki,page,result)) => {
+                    (wiki,page,"FAIL".to_string(),result.to_string())
+                }
             };
             self.update_page_status(&mut conn,page,wiki,&status,&message).await?;
         }
@@ -300,10 +316,9 @@ impl ListeriaBot {
             "page" => page,
             "timestamp" => timestamp,
             "status" => status,
-            "message" => format!("V2:{}",&message),
+            "message" => message, //format!("V2:{}",&message),
         } ;
         let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
-        println!("{}:{:?}",&sql,&params);
         conn.exec_iter(
             sql.as_str(),
             params
