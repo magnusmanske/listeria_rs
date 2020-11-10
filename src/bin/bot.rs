@@ -3,7 +3,6 @@ extern crate serde_json;
 
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-//use tokio::runtime::Runtime;
 use futures::future::*;
 use std::sync::Arc;
 use listeria::listeria_page::ListeriaPage;
@@ -15,7 +14,11 @@ use mysql_async as my;
 use serde_json::Value;
 use chrono::{DateTime, Utc};
 
-// ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
+/*
+ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
+
+scp ~/rust/listeria/target/release/bot magnus@tools-login.wmflabs.org:/home/magnus/listeria_bot
+*/
 
 #[derive(Debug, Clone, Default)]
 struct PageToProcess {
@@ -47,20 +50,14 @@ impl ListeriaBotWiki {
             Ok(p) => p,
             Err(e) => return Err(format!("Could not open/parse page '{}': {}", page,e)),
         };
-        match listeria_page.run().await {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
-        //let renderer = RendererWikitext::new();
-        //let old_wikitext = listeria_page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
-        //let new_wikitext = renderer.get_new_wikitext(&old_wikitext,&listeria_page).unwrap().unwrap();
-        //println!("{:?}",&new_wikitext);
+        listeria_page.run().await?;
         match listeria_page.update_source_page().await? {
             true => {
-                println!("{} on {} edited",page,self.wiki);
-                //panic!("TEST");
+                //println!("{} on {} edited",page,self.wiki);
             }
-            false => println!("{} on {} not edited",page,self.wiki),
+            false => {
+                //println!("{} on {} not edited",page,self.wiki),
+            }
         }
         Ok("OK".to_string())
     }
@@ -136,24 +133,25 @@ impl ListeriaBot {
             .cloned()
             .collect();
 
-        let new_wikis = vec!["commonswiki".to_string()];
-
-        let mut futures = Vec::new();
-        for wiki in &new_wikis {
-            let future = self.create_wiki_api(wiki);
-            futures.push(future);
-        }
-        let results = join_all(futures).await;
-        
-        for num in 0..results.len() {
-            let wiki = &new_wikis[num];
-            match &results[num] {
-                Ok(mw_api) => {
-                    self.wiki_apis.insert(wiki.to_owned(),mw_api.clone());
-                }
-                Err(e) => {
-                    println!("Can't login to {}: {}",wiki,e);
-                    self.ignore_wikis.push(wiki.to_owned());
+        let login_in_parallel = false;
+        if login_in_parallel { //This does not work, probably a MW issue
+            let mut futures = Vec::new();
+            for wiki in &new_wikis {
+                let future = self.create_wiki_api(wiki);
+                futures.push(future);
+            }
+            let results = join_all(futures).await;
+            
+            for num in 0..results.len() {
+                let wiki = &new_wikis[num];
+                match &results[num] {
+                    Ok(mw_api) => {
+                        self.wiki_apis.insert(wiki.to_owned(),mw_api.clone());
+                    }
+                    Err(e) => {
+                        println!("Can't login to {}: {}",wiki,e);
+                        self.ignore_wikis.push(wiki.to_owned());
+                    }
                 }
             }
         }
@@ -255,7 +253,7 @@ impl ListeriaBot {
                 None => {continue;}
             }
         }
-        println!("{:?}",wiki2page);
+        //println!("{:?}",wiki2page);
 
         let mut futures = Vec::new();
         let mut wikis = Vec::new();
@@ -284,26 +282,28 @@ impl ListeriaBot {
         for num in 0..results.len() {
             let page = &pages[num];
             let wiki = &wikis[num];
-            let result = match &results[num] {
-                Ok(s) => s,
-                Err(s) => s,
+            let (status,message) = match &results[num] {
+                Ok(s) => (s.to_string(),"".to_string()),
+                Err(s) => ("FAIL".to_string(),s.to_string()),
             };
-            self.update_page_status(&mut conn,page,wiki,result).await?;
+            self.update_page_status(&mut conn,page,wiki,&status,&message).await?;
         }
         conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
         Ok(())
     }
 
-    async fn update_page_status(&mut self, conn:&mut mysql_async::Conn, page: &str,wiki: &str, status: &str ) -> Result<(),String> {
+    async fn update_page_status(&mut self, conn:&mut mysql_async::Conn, page: &String,wiki: &String, status: &String, message: &String ) -> Result<(),String> {
         let now: DateTime<Utc> = Utc::now();
         let timestamp = now.format("%Y%m%d%H%M%S").to_string() ;
         let params = params! {
             "wiki" => wiki,
             "page" => page,
             "timestamp" => timestamp,
-            "status" => status
+            "status" => status,
+            "message" => format!("V2:{}",&message),
         } ;
-        let sql = "UPDATE `pagestatus` SET `status`=:status,`timestamp`=:timestamp WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
+        let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
+        println!("{}:{:?}",&sql,&params);
         conn.exec_iter(
             sql.as_str(),
             params
