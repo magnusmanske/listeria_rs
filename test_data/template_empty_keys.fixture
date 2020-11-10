@@ -1,0 +1,36 @@
+$$$$ API
+
+https://commons.wikimedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT DISTINCT ?item ?street_number ?district { VALUES ?item {wd:Q98631542} }
+|min_section=1
+|links=text
+|thumb=250
+|columns=label:Name,?street_number,P31,P669,P276:place,P131,P625:coord,P18:Image,P373:Commonscat,item:wikidata,?district
+|row_template=India heritage list row
+|header_template=India heritage list header
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{{India heritage list header}}
+{{India heritage list row
+| label = Kishore Rai temple
+| p31 = [[temple]]
+| p276 = Panchet
+| p131 = Patashpur II community development block
+| item = [[:d:Q98631542|Q98631542]]
+}}
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item","street_number","district"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q98631542"}}]}}

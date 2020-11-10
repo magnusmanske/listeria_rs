@@ -74,6 +74,7 @@ pub struct ListeriaBot {
     next_page_cache: Vec<PageToProcess>,
     site_matrix: Value,
     bot_per_wiki: HashMap<String,ListeriaBotWiki>,
+    ignore_wikis : Vec<String>,
 }
 
 impl ListeriaBot {
@@ -108,6 +109,7 @@ impl ListeriaBot {
             next_page_cache: vec![],
             site_matrix,
             bot_per_wiki: HashMap::new(),
+            ignore_wikis: Vec::new(),
         };
 
         ret.update_bots().await?;
@@ -127,7 +129,14 @@ impl ListeriaBot {
         .map_err(|e|format!("PageList::update_bots: SQL query error[2]: {:?}",e))?;
         conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
 
-        let new_wikis : Vec<String> = wikis.iter().filter(|wiki|!self.bot_per_wiki.contains_key(*wiki)).cloned().collect();
+        let new_wikis : Vec<String> = wikis
+            .iter()
+            .filter(|wiki|!self.bot_per_wiki.contains_key(*wiki))
+            .filter(|wiki|!self.ignore_wikis.contains(*wiki))
+            .cloned()
+            .collect();
+
+        let new_wikis = vec!["commonswiki".to_string()];
 
         let mut futures = Vec::new();
         for wiki in &new_wikis {
@@ -137,9 +146,16 @@ impl ListeriaBot {
         let results = join_all(futures).await;
         
         for num in 0..results.len() {
-            let mw_api = results[num].as_ref()?;
             let wiki = &new_wikis[num];
-            self.wiki_apis.insert(wiki.to_owned(),mw_api.clone());
+            match &results[num] {
+                Ok(mw_api) => {
+                    self.wiki_apis.insert(wiki.to_owned(),mw_api.clone());
+                }
+                Err(e) => {
+                    println!("Can't login to {}: {}",wiki,e);
+                    self.ignore_wikis.push(wiki.to_owned());
+                }
+            }
         }
 
         for wiki in &new_wikis {
@@ -303,11 +319,11 @@ impl ListeriaBot {
         let api_url = format!("{}/w/api.php",self.get_server_url_for_wiki(wiki)?);
         let mut mw_api = wikibase::mediawiki::api::Api::new(&api_url)
             .await
-            .expect("Could not connect to MW API");
+            .map_err(|e|e.to_string())?;
         mw_api
             .login(self.config.wiki_user().to_owned(), self.config.wiki_password().to_owned())
             .await
-            .expect("Could not log in");
+            .map_err(|e|e.to_string())?;
         let mw_api = Arc::new(RwLock::new(mw_api));
         Ok(mw_api)
     }

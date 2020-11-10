@@ -237,10 +237,17 @@ impl ResultRow {
         cells
             .iter()
             .enumerate()
-            .map(|(colnum, cell)| {
+            .filter_map(|(colnum, cell)| {
                 match list.column(colnum) {
-                    Some(column) => format!("{} = {}", column.obj.as_key(), cell.trim()),
-                    _ => String::new()
+                    Some(column) => {
+                        let value = cell.trim();
+                        if value.is_empty() {
+                            None
+                        } else {
+                            Some(format!("{} = {}", column.obj.as_key(), value))
+                        }
+                    }
+                    _ => None
                 }
             })
             .collect::<Vec<String>>()

@@ -58,7 +58,7 @@ async fn main() {
         .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 
     update_page(&settings,
-        "Wikipedia:Database reports/Recent deaths",
-        "https://en.wikipedia.org/w/api.php"
+        "Commons:Wiki Loves Monuments in India/Monuments/West Bengal Heritage Commission",
+        "https://commons.wikimedia.org/w/api.php"
         ).await;
 }
