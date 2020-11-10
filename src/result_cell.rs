@@ -103,7 +103,7 @@ impl ResultCell {
                 };
                 match local_page {
                     Some(page) => {
-                        ret.parts.push(PartWithReference::new(ResultCellPart::LocalLink((page, label)),None));
+                        ret.parts.push(PartWithReference::new(ResultCellPart::LocalLink((page, label, false)),None));
                     }
                     None => {
                         ret.parts
@@ -174,7 +174,7 @@ impl ResultCell {
             Some(part_with_reference) => {
                 match &part_with_reference.part {
                     ResultCellPart::Entity((id,_)) => id.to_owned(),
-                    ResultCellPart::LocalLink((page,_label)) => page.to_owned(),
+                    ResultCellPart::LocalLink((page,_label, _)) => page.to_owned(),
                     ResultCellPart::Time(time) => time.to_owned(),
                     ResultCellPart::File(s) => s.to_owned(),
                     ResultCellPart::Uri(s) => s.to_owned(),

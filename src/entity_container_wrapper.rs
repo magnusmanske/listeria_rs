@@ -52,7 +52,7 @@ impl EntityContainerWrapper {
             None => None,
         }?;
         let label = self.get_local_entity_label(item, language).unwrap_or_else(|| page.clone());
-        Some(ResultCellPart::LocalLink((page, label)))
+        Some(ResultCellPart::LocalLink((page, label, false)))
     }
 
     pub async fn get_result_row(

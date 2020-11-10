@@ -114,7 +114,6 @@ impl ListeriaList {
         &self.language
     }
 
-
     async fn cache_local_page_exists(&mut self,page:String) {
         let params: HashMap<String, String> = vec![
             ("action", "query"),
@@ -353,8 +352,6 @@ impl ListeriaList {
             None => Err("load_entities: sparql_first_variable is None".to_string()),
         }
     }
-
-
 
     pub async fn get_autodesc_description(&self, e:&Entity) -> Result<String,String> {
         if self.params.autodesc != Some("FALLBACK".to_string()) {
@@ -766,6 +763,23 @@ impl ListeriaList {
         }
         Ok(())
     }
+
+    async fn fix_local_links(&mut self) -> Result<(), String> {
+        // Set the is_category flag
+        let mw_api = self.mw_api();
+        let mw_api = mw_api.read().await;
+        for row in self.results.iter_mut() {
+            for cell in row.cells_mut().iter_mut() {
+                for part in cell.parts_mut().iter_mut() {
+                    if let ResultCellPart::LocalLink((page,_label,is_category)) = &mut part.part {
+                        let title = wikibase::mediawiki::title::Title::new_from_full(page,&mw_api);
+                        *is_category = title.namespace_id() == 14 ;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     
     pub async fn process_results(&mut self) -> Result<(), String> {
         self.gather_and_load_items().await? ;
@@ -777,6 +791,7 @@ impl ListeriaList {
         self.process_sort_results()?;
         self.process_assign_sections()?;
         self.process_regions().await?;
+        self.fix_local_links().await?;
         Ok(())
     }
 
@@ -946,6 +961,10 @@ impl ListeriaList {
 
     pub fn template_params(&self) -> &TemplateParams {
         &self.params
+    }
+
+    pub fn mw_api(&self) -> Arc<RwLock<Api>> {
+        self.page_params.mw_api.clone()
     }
 
 }

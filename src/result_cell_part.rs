@@ -5,7 +5,6 @@ use crate::column::ColumnType;
 use regex::Regex;
 use wikibase::entity::EntityTrait;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartWithReference {
     pub part: ResultCellPart,
@@ -44,7 +43,7 @@ impl PartWithReference {
 pub enum ResultCellPart {
     Number,
     Entity((String, bool)),      // ID, try_localize
-    LocalLink((String, String)), // Page, label
+    LocalLink((String, String, bool)), // Page, label, is_category
     Time(String),
     Location((f64, f64, Option<String>)),
     File(String),
@@ -199,11 +198,16 @@ impl ResultCellPart {
                     None => entity_id_link,
                 }
             }
-            ResultCellPart::LocalLink((title, label)) => {
-                if list.normalize_page_title(title) == list.normalize_page_title(label) {
-                    "[[".to_string() + &label + "]]"
+            ResultCellPart::LocalLink((title, label, is_category)) => {
+                let start = if *is_category {
+                    "[[:"
                 } else {
-                    "[[".to_string() + &title + "|" + &label + "]]"
+                    "[["
+                };
+                if list.normalize_page_title(title) == list.normalize_page_title(label) {
+                    format!("{}{}]]",&start,&label)
+                } else {
+                    format!("{}{}|{}]]",&start,&title,&label)
                 }
             }
             ResultCellPart::Time(time) => time.to_owned(),
