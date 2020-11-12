@@ -100,6 +100,8 @@ impl SparqlValue {
                     .unwrap();
             static ref RE_POINT: Regex =
                 Regex::new(r#"^Point\((-{0,1}\d+[\.0-9]+) (-{0,1}\d+[\.0-9]+)\)$"#).unwrap();
+            static ref RE_DATE : Regex =
+                Regex::new(r#"^([+-]{0,1}\d+-\d{2}-\d{2})T00:00:00Z$"#).unwrap();
         }
         let value = match j["value"].as_str() {
             Some(v) => v,
@@ -142,7 +144,15 @@ impl SparqlValue {
                     }
                 }
                 Some("http://www.w3.org/2001/XMLSchema#dateTime") => {
-                    Some(SparqlValue::Time(value.to_string()))
+                    let time = value.to_string() ;
+                    let time = match RE_DATE.captures(&value) {
+                        Some(caps) => {
+                            let date: String = caps.get(1)?.as_str().to_string();
+                            date
+                        }
+                        None => time,
+                    };
+                    Some(SparqlValue::Time(time))
                 }
                 _ => Some(SparqlValue::Literal(value.to_string())),
             },
@@ -158,62 +168,6 @@ pub struct Template {
 }
 
 impl Template {
-    /*
-    pub fn new_from_xml(node: &mut roxmltree::Node) -> Option<Self> {
-        let mut title: Option<String> = None;
-        Self::expand_templates(node);
-        let mut parts: HashMap<String, String> = HashMap::new();
-        for n in node.children().filter(|n| n.is_element()) {
-            if n.tag_name().name() == "title" {
-                n.children().for_each(|c| {
-                    let t = c.text().unwrap_or("").replace("_", " ");
-                    title = Some(t.trim().to_string());
-                });
-            } else if n.tag_name().name() == "part" {
-                let mut k: Option<String> = None;
-                let mut v: Option<String> = None;
-                n.children().for_each(|c| {
-                    let tag = c.tag_name().name();
-                    match tag {
-                        "name" => {
-                            let txt: Vec<String> = c
-                                .children()
-                                .map(|c| c.text().unwrap_or("").trim().to_string())
-                                .collect();
-                            let txt = txt.join("");
-                            if txt.is_empty() {
-                                if let Some(i) = c.attribute("index") { k = Some(i.to_string()) }
-                            } else {
-                                k = Some(txt);
-                            }
-                        }
-                        "value" => {
-                            let txt: Vec<String> = c
-                                .children()
-                                .map(|c| c.text().unwrap_or("").trim().to_string())
-                                .collect();
-                            v = Some(txt.join(""));
-                        }
-                        _ => {}
-                    }
-                });
-
-                if let (Some(k), Some(v)) = (k, v) {
-                    parts.insert(k, v);
-                }
-            }
-        }
-
-        match title {
-            Some(t) => Some(Self {
-                title: t,
-                params: parts,
-            }),
-            None => None,
-        }
-    }
-    */
-
     pub fn new_from_params(title: String, text: String) -> Self {
         let mut curly_braces = 0 ;
         let mut parts : Vec<String> = vec![] ;
@@ -258,12 +212,6 @@ impl Template {
         }).collect();
         // TODO proper template replacement
     }
-
-    /*
-    fn expand_templates(node: &mut roxmltree::Node) {
-        println!("NODE: {:?}",node);
-    }
-    */
 }
 
 #[derive(Debug, Clone, PartialEq)]
