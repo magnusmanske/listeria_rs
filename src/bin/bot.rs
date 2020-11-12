@@ -19,7 +19,7 @@ TEST DB CONNECT
 ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
 
 REFRESH FROM GIT
-cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -cwd cargo build --release
+cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ./target/release/main ; jsub -mem 4g -cwd cargo build --release
 
 # RUN BOT ON TOOLFORGE
 cd ~/listeria_rs ; jsub -mem 6g -cwd ./target/release/bot
