@@ -19,10 +19,12 @@ TEST DB CONNECT
 ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
 
 REFRESH FROM GIT
-cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -cwd cargo build --release --bin bot
+cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -cwd cargo build --release
 
 # RUN BOT ON TOOLFORGE
 cd ~/listeria_rs ; jsub -mem 6g -cwd ./target/release/bot
+
+# TODO freq
 */
 
 #[derive(Debug, Clone, Default)]
@@ -106,7 +108,7 @@ impl ListeriaBot {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
 
-        let site_matrix = api.get_query_api_json(&params).await.expect("Can't run action=sitematrix on Wikidata API");
+        let site_matrix = api.get_query_api_json(&params).await.expect("Can't run action=sitematrix on Wikibase API");
         let mut ret = Self {
             config: Arc::new(config),
             wiki_apis: HashMap::new(),
@@ -375,5 +377,4 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => { println!("{}",&e); }
         }
     }
-    Ok(())
 }

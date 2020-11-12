@@ -10,7 +10,6 @@ use crate::result_row::ResultRow;
 
 TEMPLATE PARAMETERS
 links IMPLEMENT fully?
-freq IGNORED => bot manager
 */
 
 #[derive(Debug, Clone)]
