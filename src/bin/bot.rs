@@ -15,9 +15,14 @@ use serde_json::Value;
 use chrono::{DateTime, Utc};
 
 /*
+TEST DB CONNECT
 ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
 
-scp ~/rust/listeria/target/release/bot magnus@tools-login.wmflabs.org:/home/magnus/listeria_bot
+REFRESH FROM GIT
+cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -cwd cargo build --release --bin bot
+
+# RUN BOT ON TOOLFORGE
+cd ~/listeria_rs ; jsub -mem 6g -cwd ./target/release/bot
 */
 
 #[derive(Debug, Clone, Default)]
@@ -53,13 +58,13 @@ impl ListeriaBotWiki {
         match listeria_page.run().await {
             Ok(_) => {},
             Err(e) => {
-                return Err((self.wiki.to_owned(),page.to_string(),e.to_string()))
+                return Err((self.wiki.to_owned(),page.to_string(),e))
             }
         }
         let _did_edit = match listeria_page.update_source_page().await {
             Ok(x) => x,
             Err(e) => {
-                return Err((self.wiki.to_owned(),page.to_string(),e.to_string()))
+                return Err((self.wiki.to_owned(),page.to_string(),e))
             }
         };
         Ok((self.wiki.to_owned(),page.to_string(),"OK".to_string()))
@@ -290,7 +295,7 @@ impl ListeriaBot {
 
 
         let results = join_all(futures).await;
-        println!("{:?}",&results);
+        //println!("{:?}",&results);
         
         let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
         for result in &results {
