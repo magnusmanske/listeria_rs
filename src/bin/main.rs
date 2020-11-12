@@ -34,7 +34,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) -> Result<St
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), String> {
     let ini_file = "listeria.ini";
 
     let mut settings = Config::default();
@@ -43,8 +43,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 
     let args : Vec<String> = env::args().collect();
-    let wiki_server = args.get(1).ok_or(||format!("No wiki server argument"))?;
-    let page = args.get(2).ok_or(||format!("No page argument"))?;
+    let wiki_server = args.get(1).ok_or("No wiki server argument".to_string())?;
+    let page = args.get(2).ok_or("No page argument".to_string())?;
 
     let wiki_api = format!("https://{}/w/api.php",&wiki_server);
     let message = update_page(&settings,&page,&wiki_api).await.unwrap();
