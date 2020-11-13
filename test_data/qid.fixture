@@ -1,0 +1,36 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT DISTINCT ?item { VALUES ?item { wd:Q80 wd:Q12345 wd:Q937} }
+|columns=label:name,qid
+|links=all
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! name
+! qid
+|-
+| [[Albert Einstein]]
+| Q937
+|-
+| [[Count von Count]]
+| Q12345
+|-
+| [[Tim Berners-Lee]]
+| Q80
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q12345"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}}]}}

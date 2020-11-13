@@ -468,6 +468,11 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn qid() {
+        check_fixture_file(PathBuf::from("test_data/qid.fixture")).await;
+    }
+
+    #[tokio::test]
     async fn edit_wikitext() {
         let data = read_fixture_from_file ( PathBuf::from("test_data/edit_wikitext.fixture") ) ;
         let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php").await.unwrap();

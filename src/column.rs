@@ -9,6 +9,7 @@ pub enum ColumnType {
     LabelLang(String),
     Description,
     Item,
+    Qid,
     Property(String),
     PropertyQualifier((String, String)),
     PropertyQualifierValue((String, String, String)),
@@ -35,6 +36,7 @@ impl ColumnType {
             "label" => return ColumnType::Label,
             "description" => return ColumnType::Description,
             "item" => return ColumnType::Item,
+            "qid" => return ColumnType::Qid,
             _ => {}
         }
         if let Some(caps) = RE_LABEL_LANG.captures(&s) {
@@ -68,17 +70,17 @@ impl ColumnType {
         match self {
             Self::Number => "number".to_string(),
             Self::Label => "label".to_string(),
-            //Self::LabelLang(s) => {}
             Self::Description => "desc".to_string(),
             Self::Item => "item".to_string(),
+            Self::Qid => "qid".to_string(),
+            Self::LabelLang(l) => format!("language:{}",l),
             Self::Property(p) => p.to_lowercase(),
             Self::PropertyQualifier((p, q)) => p.to_lowercase() + "_" + &q.to_lowercase(),
             Self::PropertyQualifierValue((p, q, v)) => {
                 p.to_lowercase() + "_" + &q.to_lowercase() + "_" + &v.to_lowercase()
             }
             Self::Field(f) => f.to_lowercase(),
-            //Self::Unknown => ""
-            _ => "unknown".to_string(),
+            Self::Unknown => "unknown".to_string(),
         }
     }
 }

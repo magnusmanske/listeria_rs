@@ -25,6 +25,9 @@ impl ResultCell {
 
         let entity = list.get_entity(entity_id.to_owned());
         match &col.obj {
+            ColumnType::Qid => {
+                ret.parts.push(PartWithReference::new(ResultCellPart::Text(entity_id.to_string()),None));
+            }
             ColumnType::Item => {
                 ret.parts.push(PartWithReference::new(ResultCellPart::Entity((entity_id.to_owned(), false)),None));
             }
