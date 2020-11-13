@@ -40,9 +40,20 @@ impl ResultCell {
                 }
             } },
             ColumnType::Field(varname) => {
+                let varname = varname.to_lowercase();
+                let mut found_varname : Option<String> = None ;
                 for row in sparql_rows.iter() {
-                    if let Some(x) = row.get(varname) {
-                        ret.parts.push(PartWithReference::new(ResultCellPart::from_sparql_value(x),None));
+                    if found_varname.is_none() {
+                        for x in row.keys() {
+                            if x.to_lowercase()==varname {
+                                found_varname = Some(x.to_string());
+                            }
+                        }
+                    }
+                    if let Some(ref the_varname) = found_varname {
+                        if let Some(x) = row.get(the_varname) {
+                            ret.parts.push(PartWithReference::new(ResultCellPart::from_sparql_value(x),None));
+                        }
                     }
                 }
             }
