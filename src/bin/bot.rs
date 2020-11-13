@@ -3,6 +3,7 @@ extern crate serde_json;
 
 use std::collections::HashMap;
 use tokio::sync::RwLock;
+use tokio::runtime;
 use futures::future::*;
 use std::sync::Arc;
 use listeria::listeria_page::ListeriaPage;
@@ -22,7 +23,7 @@ REFRESH FROM GIT
 cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -cwd cargo build --release
 
 # RUN BOT ON TOOLFORGE
-cd ~/listeria_rs ; jsub -mem 6g -cwd ./target/release/bot
+cd ~/listeria_rs ; jsub -mem 6g -cwd -continuous ./target/release/bot
 
 # TODO freq
 */
@@ -33,6 +34,27 @@ struct PageToProcess {
     title: String,
     status: String,
     wiki: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct WikiPageResult {
+    pub wiki: String,
+    pub page: String,
+    pub result: String,
+    pub message: String,
+}
+
+unsafe impl Send for WikiPageResult {}
+
+impl WikiPageResult {
+    pub fn new(wiki: &str,page: &str, result: &str, message: String) -> Self {
+        Self {
+            wiki: wiki.to_string(),
+            page: page.to_string(),
+            result: result.to_string(),
+            message,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -52,24 +74,24 @@ impl ListeriaBotWiki {
         }
     }
 
-    pub async fn process_page(&self, page:&str) -> Result<(String,String,String),(String,String,String)> {
+    pub async fn process_page(&self, page:&str) -> WikiPageResult {
         let mut listeria_page = match ListeriaPage::new(self.config.clone(), self.api.clone(), page.to_owned()).await {
             Ok(p) => p,
-            Err(e) => return Err((self.wiki.to_owned(),page.to_string(),format!("Could not open/parse page '{}': {}", page,e))),
+            Err(e) => return WikiPageResult::new(&self.wiki,page,"FAIL",format!("Could not open/parse page '{}': {}", page,e))
         };
         match listeria_page.run().await {
             Ok(_) => {},
             Err(e) => {
-                return Err((self.wiki.to_owned(),page.to_string(),e))
+                return WikiPageResult::new(&self.wiki,page,"FAIL",e)
             }
         }
         let _did_edit = match listeria_page.update_source_page().await {
             Ok(x) => x,
             Err(e) => {
-                return Err((self.wiki.to_owned(),page.to_string(),e))
+                return WikiPageResult::new(&self.wiki,page,"FAIL",e)
             }
         };
-        Ok((self.wiki.to_owned(),page.to_string(),"OK".to_string()))
+        WikiPageResult::new(&self.wiki,page,"OK","".to_string())
     }
 }
 
@@ -142,6 +164,7 @@ impl ListeriaBot {
             .filter(|wiki|!self.ignore_wikis.contains(*wiki))
             .cloned()
             .collect();
+        //let new_wikis = vec!["dewiki".to_string()]; // TESTING
 
         let login_in_parallel = false;
         if login_in_parallel { //This does not work, probably a MW issue
@@ -267,7 +290,7 @@ impl ListeriaBot {
 
         // Update status to RUNNING
         let mut running = Vec::new();
-        for (wiki,_bot) in &self.bot_per_wiki {
+        for wiki in self.bot_per_wiki.keys() {
             let page = match wiki2page.get(wiki) {
                 Some(page) => {page},
                 None => {continue;},
@@ -286,30 +309,16 @@ impl ListeriaBot {
                 None => {continue;},
             };
             let future = bot.process_page(page);
-            /*
-            // TODO
-            let future = tokio::spawn(async move {
-                bot.process_page(page).await
-            });
-            */
+            //let future = tokio::spawn(async move { bot.process_page(page).await});
             futures.push(future);
         }
 
 
         let results = join_all(futures).await;
-        //println!("{:?}",&results);
-        
+        println!("{:?}",&results);
         let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
-        for result in &results {
-            let (wiki,page,status,message) = match result {
-                Ok((wiki,page,result)) => {
-                    (wiki,page,result.to_string(),"".to_string())
-                },
-                Err((wiki,page,result)) => {
-                    (wiki,page,"FAIL".to_string(),result.to_string())
-                }
-            };
-            self.update_page_status(&mut conn,page,wiki,&status,&message).await?;
+        for wpr in &results {
+            self.update_page_status(&mut conn,&wpr.page,&wpr.wiki,&wpr.result,&wpr.message).await?;
         }
         conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
         Ok(())
@@ -368,6 +377,27 @@ impl ListeriaBot {
 
 }
 
+pub fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut threaded_rt = runtime::Builder::new()
+    //.basic_scheduler()
+    .threaded_scheduler()
+    .enable_all()
+    //.on_thread_start(|| { println!("thread started");})
+    .build()?;
+    
+    threaded_rt.block_on(async move {
+        let mut bot = ListeriaBot::new("config.json").await.unwrap();
+        loop {
+            match bot.process_next_page().await {
+                Ok(()) => {}
+                Err(e) => { println!("{}",&e); }
+            }
+        }
+    });
+    Ok(())
+}
+
+/*
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut bot = ListeriaBot::new("config.json").await.unwrap();
@@ -378,3 +408,4 @@ pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 }
+*/
