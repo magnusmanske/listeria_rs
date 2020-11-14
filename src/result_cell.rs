@@ -12,6 +12,7 @@ use std::collections::HashMap;
 pub struct ResultCell {
     parts: Vec<PartWithReference>,
     wdedit_class: Option<String>,
+    deduplicate_parts: bool,
 }
 
 impl ResultCell {
@@ -21,7 +22,7 @@ impl ResultCell {
         sparql_rows: &[&HashMap<String, SparqlValue>],
         col: &Column,
     ) -> Self {
-        let mut ret = Self { parts:vec![] , wdedit_class:None };
+        let mut ret = Self { parts: vec![],wdedit_class: None,deduplicate_parts: true};
 
         let entity = list.get_entity(entity_id.to_owned());
         match &col.obj {
@@ -239,12 +240,21 @@ impl ResultCell {
         } else {
             ret = " ".to_string();
         }
-        ret += &self.parts
+        let mut parts = self.parts
             .iter()
             .enumerate()
             .map(|(partnum, part_with_reference)| part_with_reference.as_wikitext(list, rownum, colnum, partnum))
-            .collect::<Vec<String>>()
-            .join("<br/>") ;
+            .collect::<Vec<String>>();
+        if self.deduplicate_parts {
+            let mut parts2 = Vec::new();
+            for part in &parts {
+                if !parts2.contains(part) {
+                    parts2.push(part.to_owned())
+                }
+            }
+            parts = parts2;
+        }
+        ret += &parts.join("<br/>") ;
         ret
     }
 }
