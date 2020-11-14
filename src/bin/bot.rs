@@ -269,7 +269,7 @@ impl ListeriaBot {
         let mut wiki2page = HashMap::new();
         let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
         for wiki in wikis {
-            let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' AND wikis.name='{}' order by pagestatus.timestamp DESC LIMIT 1",wiki);
+            let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' AND wikis.name='{}' order by pagestatus.timestamp LIMIT 1",wiki);
             let pages = conn.exec_iter(
                 sql.as_str(),
                 ()
