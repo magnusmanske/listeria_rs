@@ -806,7 +806,7 @@ impl ListeriaList {
     }
 
     pub fn log(&self,message: &str) {
-        if true {
+        if false {
             println!("{}",message);
         }
     }
