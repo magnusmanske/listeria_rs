@@ -107,7 +107,7 @@ impl EntityContainerWrapper {
             .map(|x|(*x).clone())
             .collect();
 
-        let mut ret = if self.page_params.config.prefer_preferred() {
+        if self.page_params.config.prefer_preferred() {
             let has_preferred = ret.iter().any(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
             if has_preferred {
                 ret.retain(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
@@ -115,34 +115,7 @@ impl EntityContainerWrapper {
             ret
         } else {
             ret
-        };
-
-        // Limit to one CommonsMedia (image etc)
-        if ret.len()>1 {
-            match self.entities.get_entity(property.to_owned()) {
-                Some(e_pi) => {
-                    match e_pi {
-                        Entity::Property(pi) => {
-                            match pi.datatype() {
-                                Some(datatype) => {
-                                    match datatype {
-                                        SnakDataType::CommonsMedia => {
-                                            ret.truncate(1);
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                None => {}
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                None => {}
-            }
         }
-
-        ret
     }
 
     pub fn get_datatype_for_property(&self,prop:&str) -> SnakDataType {

@@ -442,6 +442,11 @@ impl ListeriaList {
         Ok(())
     }
 
+    fn process_excess_files(&mut self) {
+        self.results.iter_mut().for_each(|row|{
+            row.remove_excess_files();
+        });
+    }
 
     async fn process_remove_shadow_files(&mut self) -> Result<(), String> {
         if !self.page_params.config.check_for_shadow_images(&self.page_params.wiki) {
@@ -804,35 +809,19 @@ impl ListeriaList {
         }
         Ok(())
     }
-
-    pub fn log(&self,message: &str) {
-        if false {
-            println!("{}",message);
-        }
-    }
     
     pub async fn process_results(&mut self) -> Result<(), String> {
-        self.log("process_results 1");
         self.gather_and_load_items().await? ;
-        self.log("process_results 2");
         self.process_redlinks_only()?;
-        self.log("process_results 3");
         self.process_items_to_local_links()?;
-        self.log("process_results 4");
         self.process_redlinks().await?;
-        self.log("process_results 5");
         self.process_remove_shadow_files().await?;
-        self.log("process_results 6");
+        self.process_excess_files();
         self.process_reference_items().await?;
-        self.log("process_results 7");
         self.process_sort_results()?;
-        self.log("process_results 8");
         self.process_assign_sections()?;
-        self.log("process_results 9");
         self.process_regions().await?;
-        self.log("process_results 10");
         self.fix_local_links().await?;
-        self.log("process_results 11");
         Ok(())
     }
 

@@ -62,6 +62,22 @@ impl ResultRow {
         self.cells = cells;
     }
 
+    pub fn remove_excess_files(&mut self) {
+        self.cells.iter_mut().for_each(|cell|{
+            if cell.parts().len()>1 {
+                let has_files = match cell.parts().get(0).unwrap().part {
+                    ResultCellPart::File(_) => true,
+                    _ => false
+                };
+                if has_files {
+                    let mut parts = cell.parts().clone();
+                    parts.truncate(1);
+                    cell.set_parts ( parts.to_vec() ) ;
+                }
+            }
+        });
+    }
+
     pub fn remove_shadow_files(&mut self,shadow_files:&[String]) {
         self.cells.iter_mut().for_each(|cell|{
             cell.set_parts ( cell.parts().iter().filter(|part_with_reference|{
