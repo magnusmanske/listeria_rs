@@ -593,6 +593,7 @@ impl ListeriaList {
 
         labels.sort();
         labels.dedup();
+        // TODO in parallel
         for chunk in labels.chunks(50) {
             self.cache_local_pages_exist(chunk).await;
         }

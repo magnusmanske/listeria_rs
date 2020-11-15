@@ -8,6 +8,9 @@ use crate::result_row::ResultRow;
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
 
+TESTS:
+- template resolution in SPARQL
+
 TEMPLATE PARAMETERS
 links IMPLEMENT fully?
 */
