@@ -226,12 +226,38 @@ impl ListeriaList {
         }
     }
 
+    async fn expand_sparql_templates(&self,sparql: &mut String) -> Result<(),String> {
+        if !sparql.contains("{{") { // No template
+            return Ok(())
+        }
+        let api = self.page_params.mw_api.read().await ;
+		//$url = 'https://'.$this->wiki_server.'/w/api.php?format=json&action=expandtemplates&prop=wikitext&text='.urlencode($this->sparql);
+		//$url .= "&title=".urlencode($this->page);
+        let params: HashMap<String, String> = vec![
+            ("action", "expandtemplates"),
+            ("title", &self.page_params.page),
+            ("prop", "wikitext"),
+            ("text", sparql),
+        ]
+        .into_iter()
+        .map(|(k,v)|(k.to_string(),v.to_string()))
+        .collect();
+        let j = api.get_query_api_json(&params).await.map_err(|e|e.to_string())?;
+        match j["expandtemplates"]["wikitext"].as_str() {
+            Some(s) => { *sparql = s.to_string(); }
+            None => {}
+        }
+        Ok(())
+    }
+
     pub async fn run_query(&mut self) -> Result<(), String> {
-        let sparql = match self.template.params.get("sparql") {
+        let mut sparql = match self.template.params.get("sparql") {
             Some(s) => s,
             None => return Err(format!("No `sparql` parameter in {:?}", &self.template)),
-        };
+        }.to_string();
 
+        self.expand_sparql_templates(&mut sparql).await?;
+        
         // Return simulated results
         if self.page_params.simulate {
             match &self.page_params.simulated_sparql_results {
@@ -244,7 +270,6 @@ impl ListeriaList {
         }
 
         let j = self.run_sparql_query(&sparql).await? ;
-
         if self.page_params.simulate {
             println!("{}\n{}\n",&sparql,&j);
         }
