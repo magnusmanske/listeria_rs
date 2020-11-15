@@ -44,7 +44,7 @@ impl ListeriaList {
             section_id_to_name: HashMap::new(),
             wb_api,
             language:page_params.language.to_string(),
-            reference_ids: Arc::new(std::sync::RwLock::new(HashSet::new()))
+            reference_ids: Arc::new(std::sync::RwLock::new(HashSet::new())),
         }
     }
 
@@ -114,11 +114,11 @@ impl ListeriaList {
         &self.language
     }
 
-    async fn cache_local_page_exists(&mut self,page:String) {
+    async fn cache_local_pages_exist(&mut self,pages:&[String]) {
         let params: HashMap<String, String> = vec![
             ("action", "query"),
             ("prop", ""),
-            ("titles", page.as_str()),
+            ("titles", pages.join("|").as_str()),
         ]
         .iter()
         .map(|x| (x.0.to_string(), x.1.to_string()))
@@ -134,17 +134,41 @@ impl ListeriaList {
                 Ok(r) => r,
                 Err(_e) => return
             };
-            
-        let page_exists = match result["query"]["pages"].as_object() {
-            Some(obj) => {
-                obj
-                .iter()
-                .filter(|(_k,v)|v["missing"].as_str().is_some())
-                .count()==0 // No "missing"=existing
+
+        let mut normalized = HashMap::new();
+        for page in pages {
+            normalized.insert(page.to_string(),page.to_string());
+        }
+        if let Some(query_normalized) = result["query"]["normalized"].as_array() {
+            for n in query_normalized {
+                let from = match n["from"].as_str() {
+                    Some(from) => from,
+                    None => continue
+                };
+                let to = match n["to"].as_str() {
+                    Some(to) => to,
+                    None => continue
+                };
+                normalized.insert(to.to_string(),from.to_string());
             }
-            None => false // Dunno
+        }
+
+        match result["query"]["pages"].as_object() {
+            Some(obj) => {
+                for (_k,v) in obj.iter() {
+                    match v["title"].as_str() {
+                        Some(title) => {
+                            if normalized.contains_key(title) {
+                                let page_exists = v["missing"].as_str().is_none();
+                                self.local_page_cache.insert(title.to_string(),page_exists);
+                            }    
+                        }
+                        None => {}
+                    }
+                }
+            }
+            None => {} // TODO error? redo?
         };
-        self.local_page_cache.insert(page,page_exists);
     }
 
     pub fn local_page_exists(&self,page:&str) -> bool {
@@ -539,9 +563,15 @@ impl ListeriaList {
 
         labels.sort();
         labels.dedup();
+        for chunk in labels.chunks(50) {
+            self.cache_local_pages_exist(chunk).await;
+        }
+        println!("{:?}",self.local_page_cache);
+        /*
         for label in labels {
             self.cache_local_page_exists(label).await;
         }
+        */
 
         Ok(())
     }
@@ -780,18 +810,35 @@ impl ListeriaList {
         }
         Ok(())
     }
+
+    pub fn log(&self,message: &str) {
+        if true {
+            println!("{}",message);
+        }
+    }
     
     pub async fn process_results(&mut self) -> Result<(), String> {
+        self.log("process_results 1");
         self.gather_and_load_items().await? ;
+        self.log("process_results 2");
         self.process_redlinks_only()?;
+        self.log("process_results 3");
         self.process_items_to_local_links()?;
+        self.log("process_results 4");
         self.process_redlinks().await?;
+        self.log("process_results 5");
         self.process_remove_shadow_files().await?;
+        self.log("process_results 6");
         self.process_reference_items().await?;
+        self.log("process_results 7");
         self.process_sort_results()?;
+        self.log("process_results 8");
         self.process_assign_sections()?;
+        self.log("process_results 9");
         self.process_regions().await?;
+        self.log("process_results 10");
         self.fix_local_links().await?;
+        self.log("process_results 11");
         Ok(())
     }
 
