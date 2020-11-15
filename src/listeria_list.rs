@@ -566,12 +566,6 @@ impl ListeriaList {
         for chunk in labels.chunks(50) {
             self.cache_local_pages_exist(chunk).await;
         }
-        println!("{:?}",self.local_page_cache);
-        /*
-        for label in labels {
-            self.cache_local_page_exists(label).await;
-        }
-        */
 
         Ok(())
     }
