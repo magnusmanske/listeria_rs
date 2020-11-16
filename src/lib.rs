@@ -156,6 +156,10 @@ impl SparqlValue {
                 }
                 _ => Some(SparqlValue::Literal(value.to_string())),
             },
+            Some("bnode") => match j["value"].as_str() {
+                Some(value) => Some(SparqlValue::Literal(value.to_string())),
+                None => None
+            },
             _ => None,
         }
     }
