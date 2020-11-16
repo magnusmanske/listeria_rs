@@ -1,11 +1,16 @@
 use std::collections::HashSet;
-use crate::*; // FIXME
 use crate::result_row::ResultRow;
 use crate::entity_container_wrapper::*;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_cell::*;
 use wikibase::entity::*;
 use wikibase::snak::SnakDataType;
+use std::sync::Arc;
+use std::collections::HashMap;
+use serde_json::Value;
+use wikibase::mediawiki::api::Api;
+use tokio::sync::RwLock;
+use crate::{PageParams,Template,Column,SparqlValue,TemplateParams,ColumnType,LinksType,SortMode,SectionType,SortOrder,ReferencesParameter};
 
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
@@ -153,21 +158,15 @@ impl ListeriaList {
             }
         }
 
-        match result["query"]["pages"].as_object() {
-            Some(obj) => {
-                for (_k,v) in obj.iter() {
-                    match v["title"].as_str() {
-                        Some(title) => {
-                            if normalized.contains_key(title) {
-                                let page_exists = v["missing"].as_str().is_none();
-                                self.local_page_cache.insert(title.to_string(),page_exists);
-                            }    
-                        }
-                        None => {}
-                    }
+        if let Some(obj) = result["query"]["pages"].as_object() {
+            for (_k,v) in obj.iter() {
+                if let Some(title) = v["title"].as_str() {
+                    if normalized.contains_key(title) {
+                        let page_exists = v["missing"].as_str().is_none();
+                        self.local_page_cache.insert(title.to_string(),page_exists);
+                    }    
                 }
             }
-            None => {} // TODO error? redo?
         };
     }
 
@@ -243,10 +242,7 @@ impl ListeriaList {
         .map(|(k,v)|(k.to_string(),v.to_string()))
         .collect();
         let j = api.get_query_api_json(&params).await.map_err(|e|e.to_string())?;
-        match j["expandtemplates"]["wikitext"].as_str() {
-            Some(s) => { *sparql = s.to_string(); }
-            None => {}
-        }
+        if let Some(s) = j["expandtemplates"]["wikitext"].as_str() { *sparql = s.to_string(); }
         Ok(())
     }
 
@@ -601,11 +597,12 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn process_sort_results(&mut self) -> Result<(), String> {
+    async fn process_sort_results(&mut self) -> Result<(), String> {
         let sortkeys : Vec<String> ;
         let mut datatype = SnakDataType::String ; // Default
         match &self.params.sort {
             SortMode::Label => {
+                self.load_row_entities().await?;
                 sortkeys = self.results
                     .iter()
                     .map(|row|row.get_sortkey_label(&self))
@@ -647,7 +644,16 @@ impl ListeriaList {
             self.results.reverse()
         }
 
-        //self.results.iter().for_each(|row|println!("{}: {}",&row.entity_id,&row.sortkey));
+        Ok(())
+    }
+
+    async fn load_row_entities(&mut self) -> Result<(),String> {
+        let items_to_load = self.results
+        .iter()
+        .map(|row|row.entity_id())
+        .cloned()
+        .collect();
+        self.ecw.load_entities(&self.wb_api, &items_to_load).await?;
         Ok(())
     }
 
@@ -844,7 +850,7 @@ impl ListeriaList {
         self.process_remove_shadow_files().await?;
         self.process_excess_files();
         self.process_reference_items().await?;
-        self.process_sort_results()?;
+        self.process_sort_results().await?;
         self.process_assign_sections()?;
         self.process_regions().await?;
         self.fix_local_links().await?;
@@ -970,20 +976,30 @@ impl ListeriaList {
         &self.params.header_template
     }
 
-    pub fn get_label_with_fallback(&self,entity_id:&str) -> String {
+    pub fn get_label_with_fallback(&self,entity_id:&str, use_language: Option<&str>) -> String {
+        let use_language = match use_language {
+            Some(l) => l,
+            None => self.language(),
+        };
         match self.get_entity(entity_id) {
             Some(entity) => {
-                match entity.label_in_locale(self.language()).map(|s|s.to_string()) {
+                match entity.label_in_locale(use_language).map(|s|s.to_string()) {
                     Some(s) => s,
                     None => {
-                        entity_id.to_string() // Fallback
-                        /*
-                        // Fallback to en
-                        match entity.label_in_locale(self.default_language()).map(|s|s.to_string()) {
-                            Some(s) => s,
-                            None => entity_id.to_string()
+                        // Try the usual suspects
+                        for language in ["en","de","fr","es","it","el","nl"].iter() {
+                            if let Some(label) = entity.label_in_locale(language).map(|s|s.to_string()) {
+                                return label;
+                            }
                         }
-                        */
+                        // Try any label, any language
+                        if let Some(entity) = self.get_entity(entity_id.to_owned()) {
+                            if let Some(label) = entity.labels().get(0) {
+                                return label.value().to_string();
+                            }
+                        }
+                        // Fallback to item ID as label
+                        entity_id.to_string()
                     }
                 }
             }
@@ -997,9 +1013,9 @@ impl ListeriaList {
 
     pub fn get_item_link_with_fallback(&self,entity_id:&str) -> String {
         if self.is_wikidatawiki() { // Link on this wiki, no italics
-            format!("[[:d:{}|{}]]",entity_id,self.get_label_with_fallback(entity_id))
+            format!("[[:d:{}|{}]]",entity_id,self.get_label_with_fallback(entity_id,None))
         } else {
-            format!("''[[:d:{}|{}]]''",entity_id,self.get_label_with_fallback(entity_id))
+            format!("''[[:d:{}|{}]]''",entity_id,self.get_label_with_fallback(entity_id,None))
         }
     }
 

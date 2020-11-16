@@ -169,15 +169,7 @@ impl ResultCellPart {
                             Some(_) => list.language(),
                             None => list.default_language()
                         } ;
-
-                        let use_label = match e.label_in_locale(use_language) {
-                            Some(l) => l.to_string(),
-                            None => match e.labels().get(0) { // Fallback: Any language
-                                Some(l) => l.value().to_string(),
-                                None => id.to_string(),
-                            }
-                        };
-
+                        let use_label = list.get_label_with_fallback(id,Some(use_language));
                         let labeled_entity_link = if list.is_wikidatawiki() {
                             format!("[[:d:{}|{}]]", id, use_label)
                         } else {
@@ -185,7 +177,7 @@ impl ResultCellPart {
                         };
 
                         match list.get_links_type() {
-                            LinksType::Text => use_label.to_string(),
+                            LinksType::Text => use_label,
                             LinksType::Red | LinksType::RedOnly => {
                                 if list.local_page_exists(&use_label) {
                                     format!("[[{} ({})|]]",&use_label,&id)
@@ -196,11 +188,11 @@ impl ResultCellPart {
                             LinksType::Reasonator => {
                                 format!("[https://reasonator.toolforge.org/?q={} {}]", id, use_label)
                             }
-                            _ => format!("{}",&labeled_entity_link),
+                            _ => labeled_entity_link,
                         }
 
                     },
-                    None => format!("{}",&entity_id_link),
+                    None => entity_id_link,
                 }
             }
             ResultCellPart::LocalLink((title, label, is_category)) => {

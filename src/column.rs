@@ -116,17 +116,17 @@ impl Column {
             return;
         }
         self.label = match &self.obj {
-            ColumnType::Property(prop) => list.get_label_with_fallback(prop),
+            ColumnType::Property(prop) => list.get_label_with_fallback(prop,None),
             ColumnType::PropertyQualifier((prop, qual)) => {
-                list.get_label_with_fallback(&prop)
+                list.get_label_with_fallback(&prop,None)
                     + "/"
-                    + &list.get_label_with_fallback(&qual)
+                    + &list.get_label_with_fallback(&qual,None)
             }
             ColumnType::PropertyQualifierValue((prop1, _qual, prop2)) => {
-                list.get_label_with_fallback(&prop1)
+                list.get_label_with_fallback(&prop1,None)
                     + "/"
                     + &list
-                        .get_label_with_fallback(&prop2)
+                        .get_label_with_fallback(&prop2,None)
             }
             _ => self.label.to_owned(), // Fallback
         } ;
