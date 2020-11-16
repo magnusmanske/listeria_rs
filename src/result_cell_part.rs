@@ -121,8 +121,8 @@ impl ResultCellPart {
             }
         };
         match v.precision() {
-            6 => format!("{}th millenium", year[0..year.len() - 4].to_string()),
-            7 => format!("{}th century", year[0..year.len() - 3].to_string()),
+            6 => format!("{}th millenium", year[0..year.len() - 2].to_string()),
+            7 => format!("{}th century", year[0..year.len() - 2].to_string()),
             8 => format!("{}0s", year[0..year.len() - 2].to_string()),
             9 => year,
             10 => format!("{}-{}", year, month),
