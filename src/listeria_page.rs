@@ -164,8 +164,17 @@ impl ListeriaPage {
         .into_iter()
         .map(|(k,v)|(k.to_string(),v.to_string()))
         .collect();
-        api.post_query_api_json(&params).await.map_err(|e|e.to_string())?;
-        Ok(())
+        let j = api.post_query_api_json(&params).await.map_err(|e|e.to_string())?;
+        match j["error"].as_object() {
+            Some(o) => {
+                let msg = match o["info"].as_str() {
+                    Some(info) => info,
+                    None => "Error while saving"
+                };
+                Err(msg.to_string())
+            }
+            None => Ok(())
+        }
     }
 
 

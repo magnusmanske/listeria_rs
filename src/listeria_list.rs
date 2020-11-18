@@ -286,7 +286,7 @@ impl ListeriaList {
             None => return Err("Bad SPARQL head.vars".to_string()),
         };
         self.sparql_first_variable = Some(first_var);
-
+        
         let bindings = j["results"]["bindings"]
             .as_array()
             .ok_or("Broken SPARQL results.bindings")?;
