@@ -157,9 +157,9 @@ impl ResultCellPart {
                         None => {false}
                     };
                     if list.is_wikidatawiki() || is_item_column {
-                        return format!("[[:d:{}|{}]]", id, id);
+                        return format!("[[{}|{}]]", list.get_item_wiki_target(id), id);
                     } else {
-                        return format!("''[[:d:{}|{}]]''", id, id);
+                        return format!("''[[{}|{}]]''", list.get_item_wiki_target(id), id);
                     }
                 }
                 let entity_id_link = list.get_item_link_with_fallback(id);
@@ -171,9 +171,9 @@ impl ResultCellPart {
                         } ;
                         let use_label = list.get_label_with_fallback(id,Some(use_language));
                         let labeled_entity_link = if list.is_wikidatawiki() {
-                            format!("[[:d:{}|{}]]", id, use_label)
+                            format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
                         } else {
-                            format!("''[[:d:{}|{}]]''", id, use_label)
+                            format!("''[[{}|{}]]''", list.get_item_wiki_target(id), use_label)
                         };
 
                         match list.get_links_type() {

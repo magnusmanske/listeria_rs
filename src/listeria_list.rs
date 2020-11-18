@@ -1011,12 +1011,21 @@ impl ListeriaList {
         self.page_params.wiki == "wikidatawiki"
     }
 
-    pub fn get_item_link_with_fallback(&self,entity_id:&str) -> String {
-        if self.is_wikidatawiki() { // Link on this wiki, no italics
-            format!("[[:d:{}|{}]]",entity_id,self.get_label_with_fallback(entity_id,None))
-        } else {
-            format!("''[[:d:{}|{}]]''",entity_id,self.get_label_with_fallback(entity_id,None))
+    pub fn get_item_wiki_target(&self,entity_id:&str) -> String {
+        let prefix = if self.is_wikidatawiki() { "" } else { ":d:" };
+        if let Some(first_char) = entity_id.chars().next() {
+            if first_char=='p' || first_char=='P' {
+                return format!("{}Property:{}",prefix,entity_id)
+            }
         }
+        format!("{}{}",prefix,entity_id)
+    }
+
+    pub fn get_item_link_with_fallback(&self,entity_id:&str) -> String {
+        let quotes = if self.is_wikidatawiki() { "" } else { "''" } ;
+        let label = self.get_label_with_fallback(entity_id,None);
+        let label_part = if self.is_wikidatawiki() && entity_id==label { String::new() } else { format!("|{}",label)} ;
+        format!("{}[[{}{}]]{}",quotes,self.get_item_wiki_target(entity_id),label_part,quotes)
     }
 
     pub fn get_filtered_claims(&self,e:&wikibase::entity::Entity,property:&str) -> Vec<wikibase::statement::Statement> {
