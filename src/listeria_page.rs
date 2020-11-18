@@ -133,7 +133,7 @@ impl ListeriaPage {
             .map_err(|e|format!("Loading page failed: {}",e))?;
         match result["parse"][mode]["*"].as_str() {
             Some(ret) => Ok(ret.to_string()),
-            None => Err(format!("No parse tree for {}", &self.page_params.page)),
+            None => Err(format!("No parse tree for {} on {} as {}", &self.page_params.page,self.wiki(),mode)),
         }
     }
 
