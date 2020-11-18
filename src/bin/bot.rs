@@ -334,7 +334,7 @@ impl ListeriaBot {
             "status" => status,
             "message" => message, //format!("V2:{}",&message),
         } ;
-        let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
+        let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp,`bot_version`=2 WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
         conn.exec_iter(
             sql.as_str(),
             params
