@@ -165,6 +165,7 @@ impl ListeriaPage {
         .map(|(k,v)|(k.to_string(),v.to_string()))
         .collect();
         let j = api.post_query_api_json(&params).await.map_err(|e|e.to_string())?;
+        //println!("{:?}",&j);
         match j["error"].as_object() {
             Some(o) => {
                 let msg = match o["info"].as_str() {
