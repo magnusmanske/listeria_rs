@@ -13,10 +13,11 @@ impl Renderer for RendererTabbedData {
     fn render(&mut self,list:&ListeriaList) -> Result<String,String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
-            ret["schema"]["fields"]
-                .as_array_mut()
-                .unwrap() // OK, this must exist
-                .push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{list.language().to_owned():col.label}}))
+            match ret["schema"]["fields"].as_array_mut() {
+                Some(x) => {x.push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{list.language().to_owned():col.label}}));}
+                None => {}
+            }
+                
         });
         ret["data"] = list
             .results()
@@ -52,15 +53,33 @@ impl Renderer for RendererTabbedData {
 
         let (before, blob, end_template, after) = match re_wikitext1.captures(&wikitext) {
             Some(caps) => (
-                caps.get(1).unwrap().as_str(),
-                caps.get(2).unwrap().as_str(),
-                caps.get(3).unwrap().as_str(),
-                caps.get(4).unwrap().as_str(),
+                match caps.get(1) {
+                    Some(a) => a,
+                    _ => unreachable!(),
+                }.as_str(),
+                match caps.get(2) {
+                    Some(a) => a,
+                    _ => unreachable!(),
+                }.as_str(),
+                match caps.get(3) {
+                    Some(a) => a,
+                    _ => unreachable!(),
+                }.as_str(),
+                match caps.get(4) {
+                    Some(a) => a,
+                    _ => unreachable!(),
+                }.as_str(),
             ),
             None => match re_wikitext2.captures(&wikitext) {
                 Some(caps) => (
-                    caps.get(1).unwrap().as_str(),
-                    caps.get(2).unwrap().as_str(),
+                    match caps.get(1) {
+                        Some(a) => a,
+                        _ => unreachable!(),
+                    }.as_str(),
+                    match caps.get(2) {
+                        Some(a) => a,
+                        _ => unreachable!(),
+                    }.as_str(),
                     "",
                     "",
                 ),

@@ -687,14 +687,7 @@ impl ListeriaList {
         // Sort by section name
         let mut valid_section_names : Vec<String> = section_count.iter().map(|(k,_v)|k.to_string()).collect();
         valid_section_names.sort();
-        /*
-        // Sort by count, largest first
-        valid_section_names.sort_by(|a, b| {
-            let va = section_count.get(a).unwrap() ;
-            let vb = section_count.get(b).unwrap() ;
-            vb.partial_cmp(va).unwrap()
-        } );
-        */
+
         let misc_id = valid_section_names.len();
         valid_section_names.push("Misc".to_string());
 
