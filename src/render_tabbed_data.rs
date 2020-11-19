@@ -43,12 +43,12 @@ impl Renderer for RendererTabbedData {
             .multi_line(true)
             .dot_matches_new_line(true)
             .build()
-            .unwrap();
+            .map_err(|e|e.to_string())?;
         let re_wikitext2: Regex = RegexBuilder::new(pattern2)
             .multi_line(true)
             .dot_matches_new_line(true)
             .build()
-            .unwrap();
+            .map_err(|e|e.to_string())?;
 
         let (before, blob, end_template, after) = match re_wikitext1.captures(&wikitext) {
             Some(caps) => (
@@ -81,7 +81,7 @@ impl Renderer for RendererTabbedData {
 
         // Remove tabbed data marker
         let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")
-            .unwrap()
+            .map_err(|e|e.to_string())?
             .replace(&start_template, "");
 
         // Add tabbed data marker
@@ -121,7 +121,8 @@ impl RendererTabbedData {
         let data_page = self
             .tabbed_data_page_name(list)
             .ok_or("Data page name too long")?;
-        let text = ::serde_json::to_string(&tabbed_data_json).unwrap();
+        let text = ::serde_json::to_string(&tabbed_data_json).map_err(|e|e.to_string())?;
+        let token = commons_api.get_edit_token().await.map_err(|e|e.to_string())?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", data_page.as_str()),
@@ -129,7 +130,7 @@ impl RendererTabbedData {
             ("text", text.as_str()),
             ("minor", "true"),
             ("recreate", "true"),
-            ("token", commons_api.get_edit_token().await.unwrap().as_str()),
+            ("token", token.as_str()),
         ]
         .iter()
         .map(|x| (x.0.to_string(), x.1.to_string()))

@@ -36,7 +36,7 @@ impl Renderer for RendererWikitext {
         let new_wikitext = page
             .elements()
             .iter()
-            .map(|element|element.as_wikitext().unwrap())
+            .filter_map(|element|element.as_wikitext().ok())
             .collect();
         Ok(Some(new_wikitext))
     }

@@ -41,28 +41,55 @@ impl ColumnType {
         }
         if let Some(caps) = RE_LABEL_LANG.captures(&s) {
             return ColumnType::LabelLang(
-                caps.get(1).unwrap().as_str().to_lowercase(),
+                match caps.get(1) {
+                    Some(x) => x.as_str().to_lowercase(),
+                    None => String::new()
+                }
             )
         }
         if let Some(caps) = RE_PROPERTY.captures(&s) {
             return ColumnType::Property(
-                caps.get(1).unwrap().as_str().to_uppercase(),
+                match caps.get(1) {
+                    Some(x) => x.as_str().to_uppercase(),
+                    None => String::new()
+                }
             )
         }
         if let Some(caps) = RE_PROP_QUAL.captures(&s) {
             return ColumnType::PropertyQualifier((
-                caps.get(1).unwrap().as_str().to_uppercase(),
-                caps.get(2).unwrap().as_str().to_uppercase(),
+                match caps.get(1) {
+                    Some(x) => x.as_str().to_uppercase(),
+                    None => String::new()
+                },
+                match caps.get(2) {
+                    Some(x) => x.as_str().to_uppercase(),
+                    None => String::new()
+                }
             ))
         }
         if let Some(caps) = RE_PROP_QUAL_VAL.captures(&s) {
             return ColumnType::PropertyQualifierValue((
-                caps.get(1).unwrap().as_str().to_uppercase(),
-                caps.get(2).unwrap().as_str().to_uppercase(),
-                caps.get(3).unwrap().as_str().to_uppercase(),
+                match caps.get(1) {
+                    Some(x) => x.as_str().to_uppercase(),
+                    None => String::new()
+                },
+                match caps.get(2) {
+                    Some(x) => x.as_str().to_uppercase(),
+                    None => String::new()
+                },
+                match caps.get(3) {
+                    Some(x) => x.as_str().to_uppercase(),
+                    None => String::new()
+                }
             ))
         }
-        if let Some(caps) = RE_FIELD.captures(&s) { return ColumnType::Field(caps.get(1).unwrap().as_str().to_lowercase()) }
+        if let Some(caps) = RE_FIELD.captures(&s) {
+            let ret = match caps.get(1) {
+                Some(x) => x.as_str().to_lowercase(),
+                None => String::new()
+            };
+            return ColumnType::Field(ret) ;
+        }
         ColumnType::Unknown
     }
 

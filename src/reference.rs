@@ -89,7 +89,11 @@ impl Reference {
             Ok(s) => s.to_string(),
             _ => return String::new()
         } ;
-        let has_md5 = list.reference_ids().read().unwrap().get(&md5).is_some();
+        let has_md5 = match list.reference_ids().read() {
+            Ok(x) => x.get(&md5).is_some(),
+            _ => false
+        };
+        
         if has_md5 {
             format!("<ref name='ref_{}' />",&md5)
         } else {
@@ -107,7 +111,7 @@ impl Reference {
         let mut s = String::new() ;
 
         if self.title.is_some() && self.url.is_some() {
-            s += &format!("{{{{cite web|url={}|title={}",self.url.as_ref().unwrap(),self.title.as_ref().unwrap());
+            s += &format!("{{{{cite web|url={}|title={}",self.url.as_ref().unwrap_or(&String::new()),self.title.as_ref().unwrap_or(&String::new()));
             if let Some(stated_in) = &self.stated_in {
                 s += &format!("|website={}",list.get_item_link_with_fallback(stated_in));
             }
@@ -116,7 +120,7 @@ impl Reference {
             }
             s += "}}";
         } else if self.url.is_some() {
-            s += &self.url.as_ref().unwrap();
+            if let Some(x) = self.url.as_ref() { s += x; }
         } else if self.stated_in.is_some() {
             match &self.stated_in {
                 Some(q) => {
