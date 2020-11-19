@@ -62,7 +62,7 @@ impl Configuration {
         if let Some(o) = j["apis"].as_object() {
             for (k,v) in o.iter() {
                 if let (name,Some(url)) = (k.as_str(),v.as_str()) {
-                    let api = wikibase::mediawiki::api::Api::new(&url).await.unwrap();
+                    let api = wikibase::mediawiki::api::Api::new(&url).await.map_err(|e|e.to_string())?;
                     ret.wb_apis.insert(name.to_string(),Arc::new(api));
                 }
                 
@@ -146,12 +146,18 @@ impl Configuration {
 
     pub fn get_local_template_title_start(&self,wiki: &str) -> Result<String,String> {
         let ret = self.template_start_sites.get(wiki).map(|s|s.to_string()).ok_or_else(|| "Cannot find local start template".to_string())?;
-        Ok(ret.split(':').last().unwrap().to_string())
+        match ret.split(':').last() {
+            Some(x) => Ok(x.to_string()),
+            None => Err("get_local_template_title_start: no match".to_string())
+        }
     }
 
     pub fn get_local_template_title_end(&self,wiki: &str) -> Result<String,String> {
         let ret = self.template_end_sites.get(wiki).map(|s|s.to_string()).ok_or_else(|| "Cannot find local end template".to_string())?;
-        Ok(ret.split(':').last().unwrap().to_string())
+        match ret.split(':').last() {
+            Some(x) => Ok(x.to_string()),
+            None => Err("get_local_template_title_end: no match".to_string())
+        }
     }
 
     pub fn can_edit_namespace(&self, wiki:&str, nsid:i64) -> bool {
