@@ -28,3 +28,7 @@ $$$$ EXPECTED
 $$$$ SPARQL_RESULTS
 
 {"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q83764640"}}]}}
+
+$$$$ AUTODESC
+Q83764640|en|[[Star|star]] and infrared source in the constellation [[Centaurus]]
+Q83764640|de|Test
