@@ -600,7 +600,8 @@ impl ListeriaList {
         labels.sort();
         labels.dedup();
         // TODO in parallel
-        for chunk in labels.chunks(50) {
+        let labels_per_chunk = if self.page_params.mw_api.read().await.user().is_bot() { 500 } else { 50 };
+        for chunk in labels.chunks(labels_per_chunk) {
             self.cache_local_pages_exist(chunk).await;
         }
 
