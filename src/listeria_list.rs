@@ -19,7 +19,7 @@ pub struct ListeriaList {
     columns: Vec<Column>,
     params: TemplateParams,
     sparql_rows: Vec<HashMap<String, SparqlValue>>,
-    sparql_first_variable: Option<String>,
+    sparql_main_variable: Option<String>,
     pub ecw: EntityContainerWrapper,
     results:Vec<ResultRow>,
     shadow_files: Vec<String>,
@@ -41,7 +41,7 @@ impl ListeriaList {
             columns: vec![],
             params:TemplateParams::new(),
             sparql_rows: vec![],
-            sparql_first_variable: None,
+            sparql_main_variable: None,
             ecw: EntityContainerWrapper::new(page_params.clone()),
             results: vec![],
             shadow_files: vec![],
@@ -274,18 +274,26 @@ impl ListeriaList {
 
     fn parse_sparql(&mut self, j: Value) -> Result<(), String> {
         self.sparql_rows.clear();
-        self.sparql_first_variable = None;
+        self.sparql_main_variable = None;
         
-        // TODO force first_var to be "item" for backwards compatability?
-        // Or check if it is, and fail if not?
-        let first_var = match j["head"]["vars"].as_array() {
-            Some(a) => match a.get(0) {
-                Some(v) => v.as_str().ok_or("Can't parse first variable")?.to_string(),
+        if false { // Use first variable
+            let first_var = match j["head"]["vars"].as_array() {
+                Some(a) => match a.get(0) {
+                    Some(v) => v.as_str().ok_or("Can't parse first variable")?.to_string(),
+                    None => return Err("Bad SPARQL head.vars".to_string()),
+                },
                 None => return Err("Bad SPARQL head.vars".to_string()),
-            },
-            None => return Err("Bad SPARQL head.vars".to_string()),
-        };
-        self.sparql_first_variable = Some(first_var);
+            };
+            self.sparql_main_variable = Some(first_var);
+        } else if let Some(arr) = j["head"]["vars"].as_array() { // Insist on ?item
+            let required_variable_name = "item";
+            for v in arr {
+                if Some(required_variable_name) == v.as_str() {
+                    self.sparql_main_variable = Some(required_variable_name.to_string());
+                    break;
+                }
+            }
+        }
         
         let bindings = j["results"]["bindings"]
             .as_array()
@@ -356,10 +364,11 @@ impl ListeriaList {
         let ids_tmp: Vec<String> = self
             .sparql_rows
             .iter()
-            .filter_map(|row| match row.get(varname) {
+            .filter_map(|row| {
+                match row.get(varname) {
                 Some(SparqlValue::Entity(id)) => Some(id.to_string()),
                 _ => None,
-            })
+            }})
             .collect();
 
         let mut ids: Vec<String> = vec![] ;
@@ -392,9 +401,9 @@ impl ListeriaList {
     }
 
     fn get_var_name(&self) -> Result<&String, String> {
-        match &self.sparql_first_variable {
+        match &self.sparql_main_variable {
             Some(v) => Ok(v),
-            None => Err("load_entities: sparql_first_variable is None".to_string()),
+            None => Err("load_entities: sparql_main_variable is None".to_string()),
         }
     }
 
@@ -428,9 +437,8 @@ impl ListeriaList {
 
     pub async fn generate_results(&mut self) -> Result<(), String> {
         let varname = self.get_var_name()?;
-        let orpi = self.params.one_row_per_item ;
         let mut results : Vec<ResultRow> = vec![] ;
-        match orpi {
+        match self.params.one_row_per_item {
             true => {
                 for id in self.get_ids_from_sparql_rows()?.iter() {
                     let sparql_rows: Vec<&HashMap<String, SparqlValue>> = self
