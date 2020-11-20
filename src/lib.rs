@@ -41,6 +41,7 @@ pub struct PageParams {
     simulate: bool,
     simulated_text: Option<String>,
     simulated_sparql_results: Option<String>,
+    simulated_autodesc: Option<Vec<String>>,
     config: Arc<Configuration>,
     local_file_namespace_prefix: String,
 }
@@ -57,6 +58,7 @@ impl PageParams {
             simulate: false,
             simulated_text: None,
             simulated_sparql_results: None,
+            simulated_autodesc: None,
             config: config.clone(),
             local_file_namespace_prefix: api.get_local_namespace_name(6).unwrap_or("File").to_string()
         } ;

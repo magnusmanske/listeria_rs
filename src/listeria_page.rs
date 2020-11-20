@@ -43,12 +43,13 @@ impl ListeriaPage {
         &self.page_params.wiki
     }
 
-    pub fn do_simulate(&mut self,text: Option<String>, sparql_results:Option<String>) {
+    pub fn do_simulate(&mut self,text: Option<String>, sparql_results:Option<String>, autodesc:Option<Vec<String>>) {
         match Arc::get_mut(&mut self.page_params) {
             Some(pp) => {
                 pp.simulate = true ;
                 pp.simulated_text = text ;
-                pp.simulated_sparql_results = sparql_results ;        
+                pp.simulated_sparql_results = sparql_results ;
+                pp.simulated_autodesc = autodesc ;
             }
             None => {
                 panic!("Cannot simulate")
@@ -277,7 +278,11 @@ mod tests {
         let config = Arc::new(config);
 
         let mut page = ListeriaPage::new(config,mw_api, data["PAGETITLE"].clone()).await.unwrap();
-        page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
+        page.do_simulate(
+            data.get("WIKITEXT").map(|s|s.to_string()),
+            data.get("SPARQL_RESULTS").map(|s|s.to_string()),
+            data.get("AUTODESC").map(|s|s.to_string().split('\n').map(|s|s.to_string()).collect())
+        );
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap();
         let wt = wt.join("\n\n----\n\n");
@@ -492,7 +497,7 @@ mod tests {
         let mw_api = Arc::new(RwLock::new(mw_api));
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let mut page = ListeriaPage::new(config,mw_api, "User:Magnus Manske/listeria test5".to_string()).await.unwrap();
-        page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()));
+        page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()),None);
         page.run().await.unwrap();
         let wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
         let renderer = RendererWikitext::new();
