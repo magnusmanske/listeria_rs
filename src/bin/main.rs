@@ -47,7 +47,10 @@ async fn main() -> Result<(), String> {
     let page = args.get(2).ok_or_else(|| "No page argument".to_string())?;
 
     let wiki_api = format!("https://{}/w/api.php",&wiki_server);
-    let message = update_page(&settings,&page,&wiki_api).await.unwrap();
+    let message = match update_page(&settings,&page,&wiki_api).await {
+        Ok(m) => format!("OK: {}",m),
+        Err(e) => format!("ERROR: {}",e)
+    };
     println!("{}",message);
     Ok(())
 }

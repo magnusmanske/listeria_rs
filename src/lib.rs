@@ -444,7 +444,8 @@ impl PageElement {
             .get_local_template_title_end(&page.wiki()).ok()?;
         let pattern_string_start = r#"\{\{([Ww]ikidata[ _]list|"#.to_string()
             + &start_template.replace(" ", "[ _]")
-            + r#"[^\|]*)"#;
+            + r#")\s*\|"#;
+            //+ r#"[^\|]*)"#;
         let pattern_string_end = r#"\{\{([Ww]ikidata[ _]list[ _]end|"#.to_string()
             + &end_template.replace(" ", "[ _]")
             + r#")(\s*\}\})"#;
@@ -464,7 +465,7 @@ impl PageElement {
             None => return None
         };
 
-        let (match_end,single_template) = match seperator_end.find(&text) {
+        let (match_end,single_template) = match seperator_end.find_at(&text,match_start.start()) {
             Some(m) => (m,false),
             None => (match_start,true) // No end template, could be tabbed data
         };
@@ -472,6 +473,9 @@ impl PageElement {
         let remaining = if single_template {
             String::from_utf8(text.as_bytes()[match_start.end()..].to_vec()).ok()?
         } else {
+            if match_end.start() < match_start.end() {
+                return None;
+            }
             String::from_utf8(text.as_bytes()[match_start.end()..match_end.start()].to_vec()).ok()?
         };
         let template_start_end_bytes = match Self::get_template_end(remaining) {
