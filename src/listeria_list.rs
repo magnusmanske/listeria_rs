@@ -847,6 +847,13 @@ impl ListeriaList {
                     if let ResultCellPart::LocalLink((page,_label,is_category)) = &mut part.part {
                         let title = wikibase::mediawiki::title::Title::new_from_full(page,&mw_api);
                         *is_category = title.namespace_id() == 14 ;
+                    } else if let ResultCellPart::SnakList(v) = &mut part.part {
+                        for subpart in v.iter_mut() {
+                            if let ResultCellPart::LocalLink((page,_label,is_category)) = &mut subpart.part {
+                                let title = wikibase::mediawiki::title::Title::new_from_full(page,&mw_api);
+                                *is_category = title.namespace_id() == 14 ;
+                            }
+                        }
                     }
                 }
             }

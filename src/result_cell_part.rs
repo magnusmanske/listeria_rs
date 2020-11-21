@@ -179,10 +179,16 @@ impl ResultCellPart {
                         match list.get_links_type() {
                             LinksType::Text => use_label,
                             LinksType::Red | LinksType::RedOnly => {
+                                let contains_colon = use_label.contains(':');
                                 if list.local_page_exists(&use_label) {
-                                    format!("[[{} ({})|]]",&use_label,&id)
+                                    let category_prefix = if contains_colon { ":" } else { "" };
+                                    format!("[[{}{} ({})|]]",category_prefix,&use_label,&id)
                                 } else {
-                                    format!("[[{}]]",&use_label)
+                                    if contains_colon {
+                                        format!("[[:{}|]]",&use_label)
+                                    } else {
+                                        format!("[[{}]]",&use_label)
+                                    }
                                 }
                             }
                             LinksType::Reasonator => {
