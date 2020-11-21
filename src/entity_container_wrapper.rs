@@ -51,6 +51,7 @@ impl EntityContainerWrapper {
                 .next(),
             None => None,
         }?;
+        //let title = wikibase::mediawiki::title::Title::new_from_full(page,&mw_api);
         let label = self.get_local_entity_label(item, language).unwrap_or_else(|| page.clone());
         Some(ResultCellPart::LocalLink((page, label, false)))
     }
