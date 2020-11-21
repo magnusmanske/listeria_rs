@@ -181,7 +181,29 @@ impl ResultCell {
         if !links_to_target {
             return vec![];
         }
-        self.get_parts_p_p(statement,property)
+        //self.get_parts_p_p(statement,property)
+        statement
+            .qualifiers()
+            .iter()
+            .filter(|snak|*snak.property()==*property)
+            .map(|snak|ResultCellPart::SnakList (
+                    vec![
+                        /*
+                        // prefix with the Q in p_q_p
+                        PartWithReference::new(
+                            ResultCellPart::from_snak(statement.main_snak()),
+                            None
+                        ),
+                        */
+                        PartWithReference::new(
+                            ResultCellPart::from_snak(snak),
+                            None
+                        )
+                    ]
+                )
+            )
+            .collect()
+
     }
 
     pub fn get_sortkey(&self) -> String {
