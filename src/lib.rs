@@ -442,21 +442,24 @@ impl PageElement {
         let end_template = page
             .config()
             .get_local_template_title_end(&page.wiki()).ok()?;
-        let pattern_string_start = r#"\{\{([Ww]ikidata[ _]list|"#.to_string()
+        let pattern_string_start = r#"\{\{(Wikidata[ _]list[^\|]*|"#.to_string()
             + &start_template.replace(" ", "[ _]")
-            + r#")\s*\|"#;
-            //+ r#"[^\|]*)"#;
-        let pattern_string_end = r#"\{\{([Ww]ikidata[ _]list[ _]end|"#.to_string()
+            //+ r#")\s*\|"#; // New version
+            + r#"[^\|]*)"#; // Orig
+            //+ r#")"#;
+        let pattern_string_end = r#"\{\{(Wikidata[ _]list[ _]end|"#.to_string()
             + &end_template.replace(" ", "[ _]")
             + r#")(\s*\}\})"#;
         let seperator_start: Regex = RegexBuilder::new(&pattern_string_start)
             .multi_line(true)
             .dot_matches_new_line(true)
+            .case_insensitive(true)
             .build()
             .unwrap();
         let seperator_end: Regex = RegexBuilder::new(&pattern_string_end)
             .multi_line(true)
             .dot_matches_new_line(true)
+            .case_insensitive(true)
             .build()
             .unwrap();
 

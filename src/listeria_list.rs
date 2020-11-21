@@ -230,8 +230,6 @@ impl ListeriaList {
             return Ok(())
         }
         let api = self.page_params.mw_api.read().await ;
-		//$url = 'https://'.$this->wiki_server.'/w/api.php?format=json&action=expandtemplates&prop=wikitext&text='.urlencode($this->sparql);
-		//$url .= "&title=".urlencode($this->page);
         let params: HashMap<String, String> = vec![
             ("action", "expandtemplates"),
             ("title", &self.page_params.page),
