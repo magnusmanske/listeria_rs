@@ -102,6 +102,18 @@ impl ResultCell {
                     },
                 }
             },
+            ColumnType::AliasLang(language) => if let Some(e) = entity {
+                let mut aliases : Vec<String> = e
+                    .aliases()
+                    .iter()
+                    .filter(|alias|alias.language()==language)
+                    .map(|alias|alias.value().to_string())
+                    .collect();
+                aliases.sort();
+                aliases.iter().for_each(|alias|{
+                        ret.parts.push(PartWithReference::new(ResultCellPart::Text(alias.to_owned()),None));
+                    });
+            },
             ColumnType::Label => if let Some(e) = entity {
                 ret.wdedit_class = Some("wd_label".to_string());
                 let label = match e.label_in_locale(list.language()) {
