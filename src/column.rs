@@ -7,6 +7,7 @@ pub enum ColumnType {
     Number,
     Label,
     LabelLang(String),
+    AliasLang(String),
     Description,
     Item,
     Qid,
@@ -21,6 +22,10 @@ impl ColumnType {
     pub fn new(s: &str) -> Self {
         lazy_static! {
             static ref RE_LABEL_LANG: Regex = RegexBuilder::new(r#"^label/(.+)$"#)
+                .case_insensitive(true)
+                .build()
+                .unwrap();
+            static ref RE_ALIAS_LANG: Regex = RegexBuilder::new(r#"^alias/(.+)$"#)
                 .case_insensitive(true)
                 .build()
                 .unwrap();
@@ -41,6 +46,14 @@ impl ColumnType {
         }
         if let Some(caps) = RE_LABEL_LANG.captures(&s) {
             return ColumnType::LabelLang(
+                match caps.get(1) {
+                    Some(x) => x.as_str().to_lowercase(),
+                    None => String::new()
+                }
+            )
+        }
+        if let Some(caps) = RE_ALIAS_LANG.captures(&s) {
+            return ColumnType::AliasLang(
                 match caps.get(1) {
                     Some(x) => x.as_str().to_lowercase(),
                     None => String::new()
@@ -101,6 +114,7 @@ impl ColumnType {
             Self::Item => "item".to_string(),
             Self::Qid => "qid".to_string(),
             Self::LabelLang(l) => format!("language:{}",l),
+            Self::AliasLang(l) => format!("alias:{}",l),
             Self::Property(p) => p.to_lowercase(),
             Self::PropertyQualifier((p, q)) => p.to_lowercase() + "_" + &q.to_lowercase(),
             Self::PropertyQualifierValue((p, q, v)) => {
