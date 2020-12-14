@@ -13,11 +13,9 @@ impl Renderer for RendererTabbedData {
     fn render(&mut self,list:&ListeriaList) -> Result<String,String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
-            match ret["schema"]["fields"].as_array_mut() {
-                Some(x) => {x.push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{list.language().to_owned():col.label}}));}
-                None => {}
+            if let Some(x) = ret["schema"]["fields"].as_array_mut() {
+                x.push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{list.language().to_owned():col.label}}));
             }
-                
         });
         ret["data"] = list
             .results()
