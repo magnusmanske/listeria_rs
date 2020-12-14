@@ -25,7 +25,7 @@ async fn update_page(settings:&Config,page_title:&str,api_url:&str) -> Result<St
     let mut page = ListeriaPage::new(config, mw_api, page_title.into()).await?;
     page.run().await?;
 
-    let message = match page.update_source_page().await.expect("update failed") {
+    let message = match page.update_source_page().await? {
         true => format!("{} edited",&page_title),
         false => format!("{} not edited",&page_title),
     };
