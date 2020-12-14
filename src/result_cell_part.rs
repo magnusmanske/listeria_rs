@@ -183,12 +183,10 @@ impl ResultCellPart {
                                 if list.local_page_exists(&use_label) {
                                     let category_prefix = if contains_colon { ":" } else { "" };
                                     format!("[[{}{} ({})|]]",category_prefix,&use_label,&id)
+                                } else if contains_colon {
+                                    format!("[[:{}|]]",&use_label)
                                 } else {
-                                    if contains_colon {
-                                        format!("[[:{}|]]",&use_label)
-                                    } else {
-                                        format!("[[{}]]",&use_label)
-                                    }
+                                    format!("[[{}]]",&use_label)
                                 }
                             }
                             LinksType::Reasonator => {
