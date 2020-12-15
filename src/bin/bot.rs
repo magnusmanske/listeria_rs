@@ -130,7 +130,7 @@ impl ListeriaBot {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
 
-        let site_matrix = api.get_query_api_json(&params).await.expect("Can't run action=sitematrix on Wikibase API");
+        let site_matrix = api.get_query_api_json(&params).await.map_err(|e|e.to_string())?;
         let mut ret = Self {
             config: Arc::new(config),
             wiki_apis: HashMap::new(),
@@ -146,7 +146,7 @@ impl ListeriaBot {
     }
 
     async fn update_bots(&mut self) -> Result<(),String> {
-        let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
+        let mut conn = self.pool.get_conn().await.map_err(|e|e.to_string())?;
         let sql = "SELECT DISTINCT wikis.name AS wiki FROM wikis".to_string() ;
         let wikis = conn.exec_iter(
             sql.as_str(),
@@ -238,13 +238,12 @@ impl ListeriaBot {
         }
         self.site_matrix["sitematrix"]
             .as_object()
-            .expect("AppState::get_server_url_for_wiki: sitematrix not an object")
+            .ok_or_else(|| "AppState::get_server_url_for_wiki: sitematrix not an object".to_string())?
             .iter()
             .filter_map(|(id, data)| match id.as_str() {
                 "count" => None,
                 "specials" => data
-                    .as_array()
-                    .expect("AppState::get_server_url_for_wiki: 'specials' is not an array")
+                    .as_array()?
                     .iter()
                     .filter_map(|site| self.get_url_for_wiki_from_site(wiki, site))
                     .next(),
@@ -267,7 +266,7 @@ impl ListeriaBot {
         // Get next page to update, for all wikis
         let wikis : Vec<String> = self.bot_per_wiki.iter().map(|(wiki,_bot)|wiki.to_string()).collect() ;
         let mut wiki2page = HashMap::new();
-        let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
+        let mut conn = self.pool.get_conn().await.map_err(|e|e.to_string())?;
         for wiki in wikis {
             let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' AND wikis.name='{}' order by pagestatus.timestamp LIMIT 1",wiki);
             let pages = conn.exec_iter(
@@ -286,7 +285,6 @@ impl ListeriaBot {
                 None => {continue;}
             }
         }
-        //println!("{:?}",wiki2page);
 
         // Update status to RUNNING
         let mut running = Vec::new();
@@ -315,8 +313,7 @@ impl ListeriaBot {
 
 
         let results = join_all(futures).await;
-        println!("{:?}",&results);
-        let mut conn = self.pool.get_conn().await.expect("Can't connect to database");
+        let mut conn = self.pool.get_conn().await.map_err(|e|e.to_string())?;
         for wpr in &results {
             self.update_page_status(&mut conn,&wpr.page,&wpr.wiki,&wpr.result,&wpr.message).await?;
         }
