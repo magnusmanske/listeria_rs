@@ -320,12 +320,7 @@ impl ListeriaList {
         if self
             .columns
             .iter()
-            .filter(|c| match c.obj {
-                ColumnType::Number => false,
-                ColumnType::Item => false,
-                ColumnType::Field(_) => false,
-                _ => true,
-            })
+            .filter(|c| !matches!(c.obj, ColumnType::Number | ColumnType::Item | ColumnType::Field(_)))
             .count()
             == 0
         {
