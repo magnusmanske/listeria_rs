@@ -169,10 +169,7 @@ impl ListeriaPage {
         //println!("{:?}",&j);
         match j["error"].as_object() {
             Some(o) => {
-                let msg = match o["info"].as_str() {
-                    Some(info) => info,
-                    None => "Error while saving"
-                };
+                let msg = o["info"].as_str().unwrap_or("Error while saving");
                 Err(msg.to_string())
             }
             None => Ok(())
