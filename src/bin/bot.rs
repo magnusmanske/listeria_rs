@@ -375,11 +375,10 @@ impl ListeriaBot {
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut threaded_rt = runtime::Builder::new()
-    //.basic_scheduler()
-    .threaded_scheduler()
-    .enable_all()
-    //.on_thread_start(|| { println!("thread started");})
+    let threaded_rt = runtime::Builder::new_multi_thread()
+    .worker_threads(4)
+    .thread_name("my-custom-name")
+    .thread_stack_size(3 * 1024 * 1024)
     .build()?;
     
     threaded_rt.block_on(async move {
