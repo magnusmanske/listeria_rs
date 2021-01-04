@@ -377,7 +377,7 @@ impl ListeriaBot {
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threaded_rt = runtime::Builder::new_multi_thread()
     .worker_threads(4)
-    .thread_name("my-custom-name")
+    .thread_name("listeria")
     .thread_stack_size(3 * 1024 * 1024)
     .build()?;
     
