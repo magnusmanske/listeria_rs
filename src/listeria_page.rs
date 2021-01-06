@@ -1,9 +1,9 @@
+use crate::result_row::ResultRow;
 use crate::*;
 use futures::future::try_join_all;
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 use wikibase::mediawiki::api::Api;
-use crate::result_row::ResultRow;
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
@@ -20,18 +20,22 @@ pub struct ListeriaPage {
     page_params: Arc<PageParams>,
     results: Vec<ResultRow>,
     data_has_changed: bool,
-    elements:Vec<PageElement>,
+    elements: Vec<PageElement>,
 }
 
 impl ListeriaPage {
-    pub async fn new(config: Arc<Configuration>, mw_api: Arc<RwLock<Api>>, page: String) -> Result<Self,String> {
-        let page_params = PageParams::new(config, mw_api, page).await? ;
+    pub async fn new(
+        config: Arc<Configuration>,
+        mw_api: Arc<RwLock<Api>>,
+        page: String,
+    ) -> Result<Self, String> {
+        let page_params = PageParams::new(config, mw_api, page).await?;
         let page_params = Arc::new(page_params);
         Ok(Self {
             page_params,
             results: vec![],
             data_has_changed: false,
-            elements:vec![],
+            elements: vec![],
         })
     }
 
@@ -43,13 +47,18 @@ impl ListeriaPage {
         &self.page_params.wiki
     }
 
-    pub fn do_simulate(&mut self,text: Option<String>, sparql_results:Option<String>, autodesc:Option<Vec<String>>) {
+    pub fn do_simulate(
+        &mut self,
+        text: Option<String>,
+        sparql_results: Option<String>,
+        autodesc: Option<Vec<String>>,
+    ) {
         match Arc::get_mut(&mut self.page_params) {
             Some(pp) => {
-                pp.simulate = true ;
-                pp.simulated_text = text ;
-                pp.simulated_sparql_results = sparql_results ;
-                pp.simulated_autodesc = autodesc ;
+                pp.simulate = true;
+                pp.simulated_text = text;
+                pp.simulated_sparql_results = sparql_results;
+                pp.simulated_autodesc = autodesc;
             }
             None => {
                 panic!("Cannot simulate")
@@ -65,14 +74,22 @@ impl ListeriaPage {
         &self.page_params.language
     }
 
-    pub async fn check_namespace(&self) -> Result<(),String> {
+    pub async fn check_namespace(&self) -> Result<(), String> {
         let api = self.page_params.mw_api.read().await;
-        let title = wikibase::mediawiki::title::Title::new_from_full(&self.page_params.page,&api);
+        let title = wikibase::mediawiki::title::Title::new_from_full(&self.page_params.page, &api);
         drop(api);
-        if self.page_params.config.can_edit_namespace(&self.page_params.wiki,title.namespace_id()) {
+        if self
+            .page_params
+            .config
+            .can_edit_namespace(&self.page_params.wiki, title.namespace_id())
+        {
             Ok(())
         } else {
-            Err(format!("Namespace {} not allowed for edit on {}",title.namespace_id(),&self.page_params.wiki))
+            Err(format!(
+                "Namespace {} not allowed for edit on {}",
+                title.namespace_id(),
+                &self.page_params.wiki
+            ))
         }
     }
 
@@ -90,38 +107,37 @@ impl ListeriaPage {
 
     async fn load_page(&mut self) -> Result<Vec<PageElement>, String> {
         let mut text = self.load_page_as("wikitext").await?;
-        let mut ret = vec![] ;
-        let mut again : bool = true ;
+        let mut ret = vec![];
+        let mut again: bool = true;
         while again {
-            let mut element = match PageElement::new_from_text(&text,&self) {
+            let mut element = match PageElement::new_from_text(&text, &self) {
                 Some(pe) => pe,
                 None => {
-                    again = false ;
-                    PageElement::new_just_text(&text,self)
+                    again = false;
+                    PageElement::new_just_text(&text, self)
                 }
             };
-            if again { text = element.get_and_clean_after() ; }
+            if again {
+                text = element.get_and_clean_after();
+            }
             ret.push(element);
         }
         Ok(ret)
     }
 
     pub async fn load_page_as(&self, mode: &str) -> Result<String, String> {
-        let mut params: HashMap<String, String> = vec![
-            ("action", "parse"),
-            ("prop", mode),
-        ]
-        .iter()
-        .map(|x| (x.0.to_string(), x.1.to_string()))
-        .collect();
+        let mut params: HashMap<String, String> = vec![("action", "parse"), ("prop", mode)]
+            .iter()
+            .map(|x| (x.0.to_string(), x.1.to_string()))
+            .collect();
 
         match &self.page_params.simulated_text {
             Some(t) => {
-                params.insert("title".to_string(),self.page_params.page.clone());
-                params.insert("text".to_string(),t.to_string());
+                params.insert("title".to_string(), self.page_params.page.clone());
+                params.insert("text".to_string(), t.to_string());
             }
             None => {
-                params.insert("page".to_string(),self.page_params.page.clone());
+                params.insert("page".to_string(), self.page_params.page.clone());
             }
         }
         let result = self
@@ -131,15 +147,20 @@ impl ListeriaPage {
             .await
             .post_query_api_json(&params)
             .await
-            .map_err(|e|format!("Loading page failed: {}",e))?;
+            .map_err(|e| format!("Loading page failed: {}", e))?;
         match result["parse"][mode]["*"].as_str() {
             Some(ret) => Ok(ret.to_string()),
-            None => Err(format!("No parse tree for {} on {} as {}", &self.page_params.page,self.wiki(),mode)),
+            None => Err(format!(
+                "No parse tree for {} on {} as {}",
+                &self.page_params.page,
+                self.wiki(),
+                mode
+            )),
         }
     }
 
-    pub fn as_wikitext(&self) -> Result<Vec<String>,String> {
-        let mut ret : Vec<String> = vec!();
+    pub fn as_wikitext(&self) -> Result<Vec<String>, String> {
+        let mut ret: Vec<String> = vec![];
         for element in &self.elements {
             if !element.is_just_text() {
                 ret.push(element.new_inside()?);
@@ -152,9 +173,9 @@ impl ListeriaPage {
         &self.elements
     }
 
-    async fn save_wikitext_to_page(&self,title:&str,wikitext:&str) -> Result<(),String> {
-        let mut api = self.page_params.mw_api.write().await ;
-        let token = api.get_edit_token().await.map_err(|e|e.to_string())?;
+    async fn save_wikitext_to_page(&self, title: &str, wikitext: &str) -> Result<(), String> {
+        let mut api = self.page_params.mw_api.write().await;
+        let token = api.get_edit_token().await.map_err(|e| e.to_string())?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", title),
@@ -163,36 +184,39 @@ impl ListeriaPage {
             ("token", &token),
         ]
         .into_iter()
-        .map(|(k,v)|(k.to_string(),v.to_string()))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let j = api.post_query_api_json(&params).await.map_err(|e|e.to_string())?;
+        let j = api
+            .post_query_api_json(&params)
+            .await
+            .map_err(|e| e.to_string())?;
         //println!("{:?}",&j);
         match j["error"].as_object() {
             Some(o) => {
                 let msg = o["info"].as_str().unwrap_or("Error while saving");
                 Err(msg.to_string())
             }
-            None => Ok(())
+            None => Ok(()),
         }
     }
 
-
     pub async fn update_source_page(&mut self) -> Result<bool, String> {
         let renderer = RendererWikitext::new();
-        let mut edited = false ;
+        let mut edited = false;
         let old_wikitext = self.load_page_as("wikitext").await?;
-        let new_wikitext = renderer.get_new_wikitext(&old_wikitext,self)? ; // Safe
+        let new_wikitext = renderer.get_new_wikitext(&old_wikitext, self)?; // Safe
         match new_wikitext {
             Some(new_wikitext) => {
                 if old_wikitext != new_wikitext {
-                    self.save_wikitext_to_page(&self.page_params.page,&new_wikitext).await?;
-                    edited = true ;
+                    self.save_wikitext_to_page(&self.page_params.page, &new_wikitext)
+                        .await?;
+                    edited = true;
                 }
             }
             None => {
                 if self.data_has_changed {
                     self.purge_page().await?;
-                }    
+                }
             }
         }
 
@@ -201,14 +225,19 @@ impl ListeriaPage {
 
     async fn purge_page(&self) -> Result<(), String> {
         if self.page_params.simulate {
-            println!("SIMULATING: purging [[{}]] on {}", &self.page_params.page,self.page_params.wiki);
-            return Ok(())
+            println!(
+                "SIMULATING: purging [[{}]] on {}",
+                &self.page_params.page, self.page_params.wiki
+            );
+            return Ok(());
         }
-        let params: HashMap<String, String> =
-            vec![("action", "purge"), ("titles", self.page_params.page.as_str())]
-                .iter()
-                .map(|x| (x.0.to_string(), x.1.to_string()))
-                .collect();
+        let params: HashMap<String, String> = vec![
+            ("action", "purge"),
+            ("titles", self.page_params.page.as_str()),
+        ]
+        .iter()
+        .map(|x| (x.0.to_string(), x.1.to_string()))
+        .collect();
 
         match self
             .page_params
@@ -216,7 +245,8 @@ impl ListeriaPage {
             .write()
             .await
             .get_query_api_json(&params)
-            .await {
+            .await
+        {
             Ok(_r) => Ok(()),
             Err(e) => Err(e.to_string()),
         }
@@ -225,67 +255,79 @@ impl ListeriaPage {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use std::fs ;
-    use std::path::PathBuf;
-    use crate::* ;
-    use crate::render_wikitext::RendererWikitext;
     use crate::listeria_page::ListeriaPage;
+    use crate::render_wikitext::RendererWikitext;
+    use crate::*;
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
 
-    fn read_fixture_from_file(path:PathBuf) -> HashMap<String,String> {
+    fn read_fixture_from_file(path: PathBuf) -> HashMap<String, String> {
         let text = fs::read_to_string(path).unwrap();
         let rows = text.split('\n');
         let mut key = String::new();
         let mut value = String::new();
-        let mut data : HashMap<String,String> = HashMap::new() ;
+        let mut data: HashMap<String, String> = HashMap::new();
         for row in rows {
             if row.starts_with("$$$$") {
                 if !key.is_empty() {
-                    data.insert(key,value.trim().to_string()) ;
+                    data.insert(key, value.trim().to_string());
                 }
-                value.clear() ;
-                key = row.strip_prefix("$$$$").unwrap().trim().to_string().to_uppercase();
+                value.clear();
+                key = row
+                    .strip_prefix("$$$$")
+                    .unwrap()
+                    .trim()
+                    .to_string()
+                    .to_uppercase();
             } else {
-                value += &format!("\n{}",row);
+                value += &format!("\n{}", row);
             }
         }
         if !key.is_empty() {
-            data.insert(key,value.trim().to_string());
+            data.insert(key, value.trim().to_string());
         }
         data
     }
 
-    async fn check_fixture_file(path:PathBuf) {
-        let data = read_fixture_from_file ( path.clone() ) ;
-        let mw_api = wikibase::mediawiki::api::Api::new(&data["API"]).await.unwrap();
+    async fn check_fixture_file(path: PathBuf) {
+        let data = read_fixture_from_file(path.clone());
+        let mw_api = wikibase::mediawiki::api::Api::new(&data["API"])
+            .await
+            .unwrap();
         let mw_api = Arc::new(RwLock::new(mw_api));
 
         let file = std::fs::File::open("config.json").unwrap();
         let reader = BufReader::new(file);
-        let mut j : Value = serde_json::from_reader(reader).unwrap();
+        let mut j: Value = serde_json::from_reader(reader).unwrap();
         j["namespace_blocks"] = json!({}); // Allow all namespaces, everywhere
-        if path.to_str().unwrap() == "test_data/shadow_images.fixture" { // HACKISH
-            j["prefer_preferred"] = json!(false) ;
+        if path.to_str().unwrap() == "test_data/shadow_images.fixture" {
+            // HACKISH
+            j["prefer_preferred"] = json!(false);
         }
         let mut config = Configuration::new_from_json(j).await.unwrap();
-        if path.to_str().unwrap() == "test_data/commons_sparql.fixture" { // HACKISH
+        if path.to_str().unwrap() == "test_data/commons_sparql.fixture" {
+            // HACKISH
             let result = config.wbapi_login("commons").await;
-            println!("LOGIN TO COMMONS: {}",result);
+            println!("LOGIN TO COMMONS: {}", result);
         }
         let config = Arc::new(config);
 
-        let mut page = ListeriaPage::new(config,mw_api, data["PAGETITLE"].clone()).await.unwrap();
+        let mut page = ListeriaPage::new(config, mw_api, data["PAGETITLE"].clone())
+            .await
+            .unwrap();
         page.do_simulate(
-            data.get("WIKITEXT").map(|s|s.to_string()),
-            data.get("SPARQL_RESULTS").map(|s|s.to_string()),
-            data.get("AUTODESC").map(|s|s.to_string().split('\n').map(|s|s.to_string()).collect())
+            data.get("WIKITEXT").map(|s| s.to_string()),
+            data.get("SPARQL_RESULTS").map(|s| s.to_string()),
+            data.get("AUTODESC")
+                .map(|s| s.to_string().split('\n').map(|s| s.to_string()).collect()),
         );
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap();
         let wt = wt.join("\n\n----\n\n");
         let wt = wt.trim().to_string();
         if data.contains_key("EXPECTED") {
-            assert_eq!(wt,data["EXPECTED"]);
+            assert_eq!(wt, data["EXPECTED"]);
         }
         if data.contains_key("EXPECTED_PART") {
             assert!(wt.contains(&data["EXPECTED_PART"]));
@@ -494,18 +536,35 @@ mod tests {
 
     #[tokio::test]
     async fn edit_wikitext() {
-        let data = read_fixture_from_file ( PathBuf::from("test_data/edit_wikitext.fixture") ) ;
-        let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php").await.unwrap();
+        let data = read_fixture_from_file(PathBuf::from("test_data/edit_wikitext.fixture"));
+        let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php")
+            .await
+            .unwrap();
         let mw_api = Arc::new(RwLock::new(mw_api));
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
-        let mut page = ListeriaPage::new(config,mw_api, "User:Magnus Manske/listeria test5".to_string()).await.unwrap();
-        page.do_simulate(data.get("WIKITEXT").map(|s|s.to_string()),data.get("SPARQL_RESULTS").map(|s|s.to_string()),None);
+        let mut page = ListeriaPage::new(
+            config,
+            mw_api,
+            "User:Magnus Manske/listeria test5".to_string(),
+        )
+        .await
+        .unwrap();
+        page.do_simulate(
+            data.get("WIKITEXT").map(|s| s.to_string()),
+            data.get("SPARQL_RESULTS").map(|s| s.to_string()),
+            None,
+        );
         page.run().await.unwrap();
-        let wikitext = page.load_page_as("wikitext").await.expect("FAILED load page as wikitext");
+        let wikitext = page
+            .load_page_as("wikitext")
+            .await
+            .expect("FAILED load page as wikitext");
         let renderer = RendererWikitext::new();
-        let wt = renderer.get_new_wikitext(&wikitext,&page).expect("FAILED get_new_wikitext").expect("new_wikitext not Some()");
+        let wt = renderer
+            .get_new_wikitext(&wikitext, &page)
+            .expect("FAILED get_new_wikitext")
+            .expect("new_wikitext not Some()");
         let wt = wt.trim().to_string();
-        assert_eq!(wt,data["EXPECTED"]);
+        assert_eq!(wt, data["EXPECTED"]);
     }
-
 }

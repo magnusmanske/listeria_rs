@@ -45,63 +45,57 @@ impl ColumnType {
             _ => {}
         }
         if let Some(caps) = RE_LABEL_LANG.captures(&s) {
-            return ColumnType::LabelLang(
-                match caps.get(1) {
-                    Some(x) => x.as_str().to_lowercase(),
-                    None => String::new()
-                }
-            )
+            return ColumnType::LabelLang(match caps.get(1) {
+                Some(x) => x.as_str().to_lowercase(),
+                None => String::new(),
+            });
         }
         if let Some(caps) = RE_ALIAS_LANG.captures(&s) {
-            return ColumnType::AliasLang(
-                match caps.get(1) {
-                    Some(x) => x.as_str().to_lowercase(),
-                    None => String::new()
-                }
-            )
+            return ColumnType::AliasLang(match caps.get(1) {
+                Some(x) => x.as_str().to_lowercase(),
+                None => String::new(),
+            });
         }
         if let Some(caps) = RE_PROPERTY.captures(&s) {
-            return ColumnType::Property(
-                match caps.get(1) {
-                    Some(x) => x.as_str().to_uppercase(),
-                    None => String::new()
-                }
-            )
+            return ColumnType::Property(match caps.get(1) {
+                Some(x) => x.as_str().to_uppercase(),
+                None => String::new(),
+            });
         }
         if let Some(caps) = RE_PROP_QUAL.captures(&s) {
             return ColumnType::PropertyQualifier((
                 match caps.get(1) {
                     Some(x) => x.as_str().to_uppercase(),
-                    None => String::new()
+                    None => String::new(),
                 },
                 match caps.get(2) {
                     Some(x) => x.as_str().to_uppercase(),
-                    None => String::new()
-                }
-            ))
+                    None => String::new(),
+                },
+            ));
         }
         if let Some(caps) = RE_PROP_QUAL_VAL.captures(&s) {
             return ColumnType::PropertyQualifierValue((
                 match caps.get(1) {
                     Some(x) => x.as_str().to_uppercase(),
-                    None => String::new()
+                    None => String::new(),
                 },
                 match caps.get(2) {
                     Some(x) => x.as_str().to_uppercase(),
-                    None => String::new()
+                    None => String::new(),
                 },
                 match caps.get(3) {
                     Some(x) => x.as_str().to_uppercase(),
-                    None => String::new()
-                }
-            ))
+                    None => String::new(),
+                },
+            ));
         }
         if let Some(caps) = RE_FIELD.captures(&s) {
             let ret = match caps.get(1) {
                 Some(x) => x.as_str().to_lowercase(),
-                None => String::new()
+                None => String::new(),
             };
-            return ColumnType::Field(ret) ;
+            return ColumnType::Field(ret);
         }
         ColumnType::Unknown
     }
@@ -113,8 +107,8 @@ impl ColumnType {
             Self::Description => "desc".to_string(),
             Self::Item => "item".to_string(),
             Self::Qid => "qid".to_string(),
-            Self::LabelLang(l) => format!("language:{}",l),
-            Self::AliasLang(l) => format!("alias:{}",l),
+            Self::LabelLang(l) => format!("language:{}", l),
+            Self::AliasLang(l) => format!("alias:{}", l),
             Self::Property(p) => p.to_lowercase(),
             Self::PropertyQualifier((p, q)) => p.to_lowercase() + "_" + &q.to_lowercase(),
             Self::PropertyQualifierValue((p, q, v)) => {
@@ -130,7 +124,7 @@ impl ColumnType {
 pub struct Column {
     pub obj: ColumnType,
     pub label: String,
-    has_label : bool,
+    has_label: bool,
 }
 
 impl Column {
@@ -142,7 +136,7 @@ impl Column {
             Some(caps) => Self {
                 obj: ColumnType::new(&caps.get(1).unwrap().as_str().to_string()),
                 label: caps.get(2).unwrap().as_str().to_string(),
-                has_label: !caps.get(2).unwrap().as_str().is_empty()
+                has_label: !caps.get(2).unwrap().as_str().is_empty(),
             },
             None => Self {
                 obj: ColumnType::new(&s.trim().to_string()),
@@ -157,19 +151,18 @@ impl Column {
             return;
         }
         self.label = match &self.obj {
-            ColumnType::Property(prop) => list.get_label_with_fallback(prop,None),
+            ColumnType::Property(prop) => list.get_label_with_fallback(prop, None),
             ColumnType::PropertyQualifier((prop, qual)) => {
-                list.get_label_with_fallback(&prop,None)
+                list.get_label_with_fallback(&prop, None)
                     + "/"
-                    + &list.get_label_with_fallback(&qual,None)
+                    + &list.get_label_with_fallback(&qual, None)
             }
             ColumnType::PropertyQualifierValue((prop1, _qual, prop2)) => {
-                list.get_label_with_fallback(&prop1,None)
+                list.get_label_with_fallback(&prop1, None)
                     + "/"
-                    + &list
-                        .get_label_with_fallback(&prop2,None)
+                    + &list.get_label_with_fallback(&prop2, None)
             }
             _ => self.label.to_owned(), // Fallback
-        } ;
+        };
     }
 }
