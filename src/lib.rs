@@ -3,33 +3,33 @@ extern crate lazy_static;
 #[macro_use]
 extern crate serde_json;
 
-pub mod configuration;
-pub mod listeria_page;
-pub mod listeria_list;
-pub mod render_wikitext;
-pub mod render_tabbed_data;
-pub mod result_cell_part;
-pub mod result_cell;
-pub mod result_row;
 pub mod column;
+pub mod configuration;
 pub mod entity_container_wrapper;
+pub mod listeria_list;
+pub mod listeria_page;
 pub mod reference;
+pub mod render_tabbed_data;
+pub mod render_wikitext;
+pub mod result_cell;
+pub mod result_cell_part;
+pub mod result_row;
 
 use crate::column::*;
+use crate::configuration::Configuration;
 use crate::listeria_list::ListeriaList;
 use crate::listeria_page::ListeriaPage;
-use crate::configuration::Configuration;
 use crate::render_wikitext::RendererWikitext;
-use tokio::sync::RwLock;
+use regex::Regex;
+use regex::RegexBuilder;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
-use regex::Regex;
-use serde_json::Value;
-use std::collections::HashMap;
+use tokio::sync::RwLock;
 use wikibase::entity::EntityTrait;
 use wikibase::mediawiki::api::Api;
-use regex::RegexBuilder;
 
 #[derive(Debug, Clone)]
 pub struct PageParams {
@@ -47,7 +47,11 @@ pub struct PageParams {
 }
 
 impl PageParams {
-    pub async fn new ( config: Arc<Configuration>, mw_api: Arc<RwLock<Api>>, page: String ) -> Result<Self,String> {
+    pub async fn new(
+        config: Arc<Configuration>,
+        mw_api: Arc<RwLock<Api>>,
+        page: String,
+    ) -> Result<Self, String> {
         let api = mw_api.read().await;
         let ret = Self {
             wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
@@ -60,8 +64,11 @@ impl PageParams {
             simulated_sparql_results: None,
             simulated_autodesc: None,
             config: config.clone(),
-            local_file_namespace_prefix: api.get_local_namespace_name(6).unwrap_or("File").to_string()
-        } ;
+            local_file_namespace_prefix: api
+                .get_local_namespace_name(6)
+                .unwrap_or("File")
+                .to_string(),
+        };
         Ok(ret)
     }
 
@@ -98,11 +105,10 @@ impl SparqlValue {
             static ref RE_ENTITY: Regex =
                 Regex::new(r#"^https{0,1}://[^/]+/entity/([A-Z]\d+)$"#).unwrap();
             static ref RE_FILE: Regex =
-                Regex::new(r#"^https{0,1}://[^/]+/wiki/Special:FilePath/(.+?)$"#)
-                    .unwrap();
+                Regex::new(r#"^https{0,1}://[^/]+/wiki/Special:FilePath/(.+?)$"#).unwrap();
             static ref RE_POINT: Regex =
                 Regex::new(r#"^Point\((-{0,1}\d+[\.0-9]+) (-{0,1}\d+[\.0-9]+)\)$"#).unwrap();
-            static ref RE_DATE : Regex =
+            static ref RE_DATE: Regex =
                 Regex::new(r#"^([+-]{0,1}\d+-\d{2}-\d{2})T00:00:00Z$"#).unwrap();
         }
         let value = match j["value"].as_str() {
@@ -112,25 +118,19 @@ impl SparqlValue {
         match j["type"].as_str() {
             Some("uri") => match RE_ENTITY.captures(&value) {
                 Some(caps) => match caps.get(1) {
-                    Some(caps1) => {
-                        Some(SparqlValue::Entity(
-                            caps1.as_str().to_string(),
-                        ))
-                    }
-                    None => None
+                    Some(caps1) => Some(SparqlValue::Entity(caps1.as_str().to_string())),
+                    None => None,
                 },
                 None => match RE_FILE.captures(&value) {
-                    Some(caps) => {
-                        match caps.get(1) {
-                            Some(caps1) => {
-                                let file = caps1.as_str().to_string();
-                                let file = urlencoding::decode(&file).ok()?;
-                                let file = file.replace("_", " ");
-                                Some(SparqlValue::File(file))
-                            }
-                            None => None
+                    Some(caps) => match caps.get(1) {
+                        Some(caps1) => {
+                            let file = caps1.as_str().to_string();
+                            let file = urlencoding::decode(&file).ok()?;
+                            let file = file.replace("_", " ");
+                            Some(SparqlValue::File(file))
                         }
-                    }
+                        None => None,
+                    },
                     None => Some(SparqlValue::Uri(value.to_string())),
                 },
             },
@@ -146,7 +146,7 @@ impl SparqlValue {
                     }
                 }
                 Some("http://www.w3.org/2001/XMLSchema#dateTime") => {
-                    let time = value.to_string() ;
+                    let time = value.to_string();
                     let time = match RE_DATE.captures(&value) {
                         Some(caps) => {
                             let date: String = caps.get(1)?.as_str().to_string();
@@ -160,7 +160,7 @@ impl SparqlValue {
             },
             Some("bnode") => match j["value"].as_str() {
                 Some(value) => Some(SparqlValue::Literal(value.to_string())),
-                None => None
+                None => None,
             },
             _ => None,
         }
@@ -175,47 +175,50 @@ pub struct Template {
 
 impl Template {
     pub fn new_from_params(title: String, text: String) -> Self {
-        let mut curly_braces = 0 ;
-        let mut parts : Vec<String> = vec![] ;
-        let mut part : Vec<char> = vec![] ;
-        text
-            .chars()
-            .for_each(|c|{
-                match c {
-                    '{' => { curly_braces += 1 ; part.push(c); }
-                    '}' => { curly_braces -= 1 ; part.push(c); }
-                    '|' => {
-                        if curly_braces == 0 {
-                            parts.push ( part.iter().collect() ) ;
-                            part.clear() ;
-                        } else {
-                            part.push(c);
-                        }
-                    }
-                    _ => { part.push(c); }
+        let mut curly_braces = 0;
+        let mut parts: Vec<String> = vec![];
+        let mut part: Vec<char> = vec![];
+        text.chars().for_each(|c| match c {
+            '{' => {
+                curly_braces += 1;
+                part.push(c);
+            }
+            '}' => {
+                curly_braces -= 1;
+                part.push(c);
+            }
+            '|' => {
+                if curly_braces == 0 {
+                    parts.push(part.iter().collect());
+                    part.clear();
+                } else {
+                    part.push(c);
                 }
-                });
-        parts.push ( part.into_iter().collect() ) ;
-        
-        let params : HashMap<String,String> = parts
+            }
+            _ => {
+                part.push(c);
+            }
+        });
+        parts.push(part.into_iter().collect());
+
+        let params: HashMap<String, String> = parts
             .iter()
-            .filter_map(|part|{
+            .filter_map(|part| {
                 let pos = part.find('=')?;
                 let k = part.get(0..pos)?.trim().to_string();
-                let v = part.get(pos+1..)?.trim().to_string();
-                Some((k,v))
+                let v = part.get(pos + 1..)?.trim().to_string();
+                Some((k, v))
             })
             .collect();
-        Self {
-            title,
-            params,
-        }
+        Self { title, params }
     }
 
     pub fn fix_values(&mut self) {
-        self.params = self.params.iter().map(|(k,v)|{
-            (k.to_owned(),v.replace("{{!}}","|"))
-        }).collect();
+        self.params = self
+            .params
+            .iter()
+            .map(|(k, v)| (k.to_owned(), v.replace("{{!}}", "|")))
+            .collect();
         // TODO proper template replacement
     }
 }
@@ -255,8 +258,8 @@ pub enum SortMode {
 impl SortMode {
     pub fn new(os: Option<&String>) -> Self {
         lazy_static! {
-            static ref RE_PROP : Regex = Regex::new(r"^P\d+$").unwrap();
-            static ref RE_SPARQL : Regex = Regex::new(r"^?\S+$").unwrap();
+            static ref RE_PROP: Regex = Regex::new(r"^P\d+$").unwrap();
+            static ref RE_SPARQL: Regex = Regex::new(r"^?\S+$").unwrap();
         }
         let os = os.map(|s| s.trim().to_uppercase());
         match os {
@@ -281,7 +284,7 @@ impl SortMode {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SortOrder {
     Ascending,
-    Descending
+    Descending,
 }
 
 impl SortOrder {
@@ -294,7 +297,7 @@ impl SortOrder {
                     Self::Ascending
                 }
             }
-            None => Self::Ascending
+            None => Self::Ascending,
         }
     }
 }
@@ -302,7 +305,7 @@ impl SortOrder {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReferencesParameter {
     None,
-    All
+    All,
 }
 
 impl ReferencesParameter {
@@ -315,7 +318,7 @@ impl ReferencesParameter {
                     Self::None
                 }
             }
-            None => Self::None
+            None => Self::None,
         }
     }
 }
@@ -325,7 +328,7 @@ pub struct TemplateParams {
     links: LinksType,
     sort: SortMode,
     section: SectionType,
-    min_section:u64,
+    min_section: u64,
     row_template: Option<String>,
     header_template: Option<String>,
     autodesc: Option<String>,
@@ -346,11 +349,11 @@ impl Default for TemplateParams {
 
 impl TemplateParams {
     pub fn new() -> Self {
-         Self {
-            links:LinksType::All,
-            sort:SortMode::None,
+        Self {
+            links: LinksType::All,
+            sort: SortMode::None,
             section: SectionType::None,
-            min_section:2,
+            min_section: 2,
             row_template: None,
             header_template: None,
             autodesc: None,
@@ -361,29 +364,62 @@ impl TemplateParams {
             one_row_per_item: false,
             sort_order: SortOrder::Ascending,
             wikibase: String::new(),
-         }
+        }
     }
 
-    pub fn new_from_params(template:&Template) -> Self {
+    pub fn new_from_params(template: &Template) -> Self {
         Self {
-            links:LinksType::All,
+            links: LinksType::All,
             sort: SortMode::new(template.params.get("sort")),
             section: SectionType::new_from_string_option(template.params.get("section")),
-            min_section: template.params.get("min_section").map(|s|s.parse::<u64>().ok().or(Some(2)).unwrap_or(2)).unwrap_or(2),
-            row_template: template.params.get("row_template").map(|s|s.trim().to_string()),
-            header_template: template.params.get("header_template").map(|s|s.trim().to_string()),
-            autodesc: template.params.get("autolist").map(|s|s.trim().to_uppercase()).or_else(|| template.params.get("autodesc").map(|s|s.trim().to_uppercase())) ,
-            summary: template.params.get("summary").map(|s|s.trim().to_uppercase()) ,
+            min_section: template
+                .params
+                .get("min_section")
+                .map(|s| s.parse::<u64>().ok().or(Some(2)).unwrap_or(2))
+                .unwrap_or(2),
+            row_template: template
+                .params
+                .get("row_template")
+                .map(|s| s.trim().to_string()),
+            header_template: template
+                .params
+                .get("header_template")
+                .map(|s| s.trim().to_string()),
+            autodesc: template
+                .params
+                .get("autolist")
+                .map(|s| s.trim().to_uppercase())
+                .or_else(|| {
+                    template
+                        .params
+                        .get("autodesc")
+                        .map(|s| s.trim().to_uppercase())
+                }),
+            summary: template
+                .params
+                .get("summary")
+                .map(|s| s.trim().to_uppercase()),
             skip_table: template.params.get("skip_table").is_some(),
-            one_row_per_item: template.params.get("one_row_per_item").map(|s|s.trim().to_uppercase())!=Some("NO".to_string()),
-            wdedit: template.params.get("wdedit").map(|s|s.trim().to_uppercase())==Some("YES".to_string()),
+            one_row_per_item: template
+                .params
+                .get("one_row_per_item")
+                .map(|s| s.trim().to_uppercase())
+                != Some("NO".to_string()),
+            wdedit: template
+                .params
+                .get("wdedit")
+                .map(|s| s.trim().to_uppercase())
+                == Some("YES".to_string()),
             references: ReferencesParameter::new(template.params.get("references")),
             sort_order: SortOrder::new(template.params.get("sort_order")),
-            wikibase: template.params.get("wikibase").map(|s|s.trim().to_uppercase()).unwrap_or_else(|| "wikidata".to_string()) , // TODO config
+            wikibase: template
+                .params
+                .get("wikibase")
+                .map(|s| s.trim().to_uppercase())
+                .unwrap_or_else(|| "wikidata".to_string()), // TODO config
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub enum SectionType {
@@ -408,7 +444,7 @@ impl SectionType {
             return Self::Property(s.to_uppercase());
         }
         if RE_PROP_NUM.is_match(s) {
-            return Self::Property(format!("P{}",&s));
+            return Self::Property(format!("P{}", &s));
         }
         if RE_SPARQL.is_match(s) {
             return Self::SparqlVariable(s.to_uppercase());
@@ -418,9 +454,13 @@ impl SectionType {
 }
 
 pub trait Renderer {
-    fn new() -> Self ;
-    fn render(&mut self,page:&ListeriaList) -> Result<String,String> ;
-    fn get_new_wikitext(&self,wikitext: &str, page:&ListeriaPage ) -> Result<Option<String>,String> ;
+    fn new() -> Self;
+    fn render(&mut self, page: &ListeriaList) -> Result<String, String>;
+    fn get_new_wikitext(
+        &self,
+        wikitext: &str,
+        page: &ListeriaPage,
+    ) -> Result<Option<String>, String>;
 }
 
 #[derive(Debug, Clone)]
@@ -438,15 +478,17 @@ impl PageElement {
     pub fn new_from_text(text: &str, page: &ListeriaPage) -> Option<Self> {
         let start_template = page
             .config()
-            .get_local_template_title_start(&page.wiki()).ok()?;
+            .get_local_template_title_start(&page.wiki())
+            .ok()?;
         let end_template = page
             .config()
-            .get_local_template_title_end(&page.wiki()).ok()?;
+            .get_local_template_title_end(&page.wiki())
+            .ok()?;
         let pattern_string_start = r#"\{\{(Wikidata[ _]list[^\|]*|"#.to_string()
             + &start_template.replace(" ", "[ _]")
             //+ r#")\s*\|"#; // New version
             + r#"[^\|]*)"#; // Orig
-            //+ r#")"#;
+                            //+ r#")"#;
         let pattern_string_end = r#"\{\{(Wikidata[ _]list[ _]end|"#.to_string()
             + &end_template.replace(" ", "[ _]")
             + r#")(\s*\}\})"#;
@@ -465,12 +507,12 @@ impl PageElement {
 
         let match_start = match seperator_start.find(&text) {
             Some(m) => m,
-            None => return None
+            None => return None,
         };
 
-        let (match_end,single_template) = match seperator_end.find_at(&text,match_start.start()) {
-            Some(m) => (m,false),
-            None => (match_start,true) // No end template, could be tabbed data
+        let (match_end, single_template) = match seperator_end.find_at(&text, match_start.start()) {
+            Some(m) => (m, false),
+            None => (match_start, true), // No end template, could be tabbed data
         };
 
         let remaining = if single_template {
@@ -479,64 +521,93 @@ impl PageElement {
             if match_end.start() < match_start.end() {
                 return None;
             }
-            String::from_utf8(text.as_bytes()[match_start.end()..match_end.start()].to_vec()).ok()?
+            String::from_utf8(text.as_bytes()[match_start.end()..match_end.start()].to_vec())
+                .ok()?
         };
         let template_start_end_bytes = match Self::get_template_end(remaining) {
-            Some(pos) => pos+match_start.end(),
-            None => return None
+            Some(pos) => pos + match_start.end(),
+            None => return None,
         };
-        let inside = if single_template { String::new() } else { String::from_utf8(text.as_bytes()[template_start_end_bytes..match_end.start()].to_vec()).ok()? } ;
+        let inside = if single_template {
+            String::new()
+        } else {
+            String::from_utf8(text.as_bytes()[template_start_end_bytes..match_end.start()].to_vec())
+                .ok()?
+        };
 
-        let template = Template::new_from_params("".to_string(),String::from_utf8(text.as_bytes()[match_start.end()..template_start_end_bytes-2].to_vec()).ok()?);
+        let template = Template::new_from_params(
+            "".to_string(),
+            String::from_utf8(
+                text.as_bytes()[match_start.end()..template_start_end_bytes - 2].to_vec(),
+            )
+            .ok()?,
+        );
 
-        Some ( Self {
-            before:String::from_utf8(text.as_bytes()[0..match_start.start()].to_vec()).ok()?,
-            template_start:String::from_utf8(text.as_bytes()[match_start.start()..template_start_end_bytes].to_vec()).ok()?,
+        Some(Self {
+            before: String::from_utf8(text.as_bytes()[0..match_start.start()].to_vec()).ok()?,
+            template_start: String::from_utf8(
+                text.as_bytes()[match_start.start()..template_start_end_bytes].to_vec(),
+            )
+            .ok()?,
             inside,
-            template_end:if single_template { String::new() } else { String::from_utf8(text.as_bytes()[match_end.start()..match_end.end()].to_vec()).ok()? },
-            after:String::from_utf8(text.as_bytes()[match_end.end()..].to_vec()).ok()?,
-            list: ListeriaList::new(template,page.page_params()),
-            is_just_text: false
-        } )
+            template_end: if single_template {
+                String::new()
+            } else {
+                String::from_utf8(text.as_bytes()[match_end.start()..match_end.end()].to_vec())
+                    .ok()?
+            },
+            after: String::from_utf8(text.as_bytes()[match_end.end()..].to_vec()).ok()?,
+            list: ListeriaList::new(template, page.page_params()),
+            is_just_text: false,
+        })
     }
 
     pub fn new_just_text(text: &str, page: &ListeriaPage) -> Self {
-        let template = Template { title:String::new(), params:HashMap::new() };
+        let template = Template {
+            title: String::new(),
+            params: HashMap::new(),
+        };
         Self {
-            before:text.to_string(),
-            template_start:String::new(),
-            inside:String::new(),
-            template_end:String::new(),
-            after:String::new(),
-            list: ListeriaList::new(template,page.page_params()),
-            is_just_text: true
+            before: text.to_string(),
+            template_start: String::new(),
+            inside: String::new(),
+            template_end: String::new(),
+            after: String::new(),
+            list: ListeriaList::new(template, page.page_params()),
+            is_just_text: true,
         }
     }
 
     pub fn get_and_clean_after(&mut self) -> String {
-        let ret = self.after.clone() ;
+        let ret = self.after.clone();
         self.after = String::new();
         ret
     }
 
-    pub fn new_inside(&self) -> Result<String,String> {
+    pub fn new_inside(&self) -> Result<String, String> {
         match self.is_just_text {
             true => Ok(String::new()),
             false => {
                 let mut renderer = RendererWikitext::new();
-                renderer.render(&self.list)        
+                renderer.render(&self.list)
             }
         }
     }
 
-    pub fn as_wikitext(&self) -> Result<String,String> {
+    pub fn as_wikitext(&self) -> Result<String, String> {
         match self.is_just_text {
             true => Ok(self.before.clone()),
-            false => Ok(self.before.clone() + &self.template_start + "\n" + &self.new_inside()? + "\n" + &self.template_end + &self.after),
+            false => Ok(self.before.clone()
+                + &self.template_start
+                + "\n"
+                + &self.new_inside()?
+                + "\n"
+                + &self.template_end
+                + &self.after),
         }
     }
 
-    pub async fn process(&mut self) -> Result<(),String> {
+    pub async fn process(&mut self) -> Result<(), String> {
         match self.is_just_text {
             true => Ok(()),
             false => self.list.process().await,
@@ -548,18 +619,21 @@ impl PageElement {
     }
 
     fn get_template_end(text: String) -> Option<usize> {
-        let mut pos : usize = 0 ;
-        let mut curly_braces_open : usize = 2;
+        let mut pos: usize = 0;
+        let mut curly_braces_open: usize = 2;
         let tv = text.as_bytes();
         while pos < tv.len() && curly_braces_open > 0 {
             match tv[pos] as char {
-                '{' => curly_braces_open += 1 ,
-                '}' => curly_braces_open -= 1 ,
+                '{' => curly_braces_open += 1,
+                '}' => curly_braces_open -= 1,
                 _ => {}
             }
-            pos += 1 ;
+            pos += 1;
         }
-        if curly_braces_open == 0 { Some(pos) } else { None }
+        if curly_braces_open == 0 {
+            Some(pos)
+        } else {
+            None
+        }
     }
-
 }

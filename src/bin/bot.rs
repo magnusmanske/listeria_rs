@@ -1,19 +1,19 @@
 extern crate config;
 extern crate serde_json;
 
-use std::collections::HashMap;
-use tokio::sync::RwLock;
-use tokio::runtime;
-use futures::future::*;
-use std::sync::Arc;
-use listeria::listeria_page::ListeriaPage;
-use listeria::configuration::Configuration;
-use wikibase::mediawiki::api::Api;
-use mysql_async::prelude::*;
-use mysql_async::from_row;
-use mysql_async as my;
-use serde_json::Value;
 use chrono::{DateTime, Utc};
+use futures::future::*;
+use listeria::configuration::Configuration;
+use listeria::listeria_page::ListeriaPage;
+use mysql_async as my;
+use mysql_async::from_row;
+use mysql_async::prelude::*;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::runtime;
+use tokio::sync::RwLock;
+use wikibase::mediawiki::api::Api;
 
 /*
 TEST DB CONNECT
@@ -47,7 +47,7 @@ pub struct WikiPageResult {
 unsafe impl Send for WikiPageResult {}
 
 impl WikiPageResult {
-    pub fn new(wiki: &str,page: &str, result: &str, message: String) -> Self {
+    pub fn new(wiki: &str, page: &str, result: &str, message: String) -> Self {
         Self {
             wiki: wiki.to_string(),
             page: page.to_string(),
@@ -65,56 +65,76 @@ pub struct ListeriaBotWiki {
 }
 
 impl ListeriaBotWiki {
-    pub fn new(wiki:&str,api:Arc<RwLock<Api>>,config:Arc<Configuration>) -> Self {
-        println!("Creating bot for {}",wiki);
+    pub fn new(wiki: &str, api: Arc<RwLock<Api>>, config: Arc<Configuration>) -> Self {
+        println!("Creating bot for {}", wiki);
         Self {
-            wiki:wiki.to_string(),
+            wiki: wiki.to_string(),
             api,
-            config
+            config,
         }
     }
 
-    pub async fn process_page(&self, page:&str) -> WikiPageResult {
-        let mut listeria_page = match ListeriaPage::new(self.config.clone(), self.api.clone(), page.to_owned()).await {
-            Ok(p) => p,
-            Err(e) => return WikiPageResult::new(&self.wiki,page,"FAIL",format!("Could not open/parse page '{}': {}", page,e))
-        };
+    pub async fn process_page(&self, page: &str) -> WikiPageResult {
+        let mut listeria_page =
+            match ListeriaPage::new(self.config.clone(), self.api.clone(), page.to_owned()).await {
+                Ok(p) => p,
+                Err(e) => {
+                    return WikiPageResult::new(
+                        &self.wiki,
+                        page,
+                        "FAIL",
+                        format!("Could not open/parse page '{}': {}", page, e),
+                    )
+                }
+            };
         match listeria_page.run().await {
-            Ok(_) => {},
-            Err(e) => {
-                return WikiPageResult::new(&self.wiki,page,"FAIL",e)
-            }
+            Ok(_) => {}
+            Err(e) => return WikiPageResult::new(&self.wiki, page, "FAIL", e),
         }
         let _did_edit = match listeria_page.update_source_page().await {
             Ok(x) => x,
-            Err(e) => {
-                return WikiPageResult::new(&self.wiki,page,"FAIL",e)
-            }
+            Err(e) => return WikiPageResult::new(&self.wiki, page, "FAIL", e),
         };
-        WikiPageResult::new(&self.wiki,page,"OK","".to_string())
+        WikiPageResult::new(&self.wiki, page, "OK", "".to_string())
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct ListeriaBot {
     config: Arc<Configuration>,
-    wiki_apis: HashMap<String,Arc<RwLock<Api>>>,
+    wiki_apis: HashMap<String, Arc<RwLock<Api>>>,
     pool: mysql_async::Pool,
     next_page_cache: Vec<PageToProcess>,
     site_matrix: Value,
-    bot_per_wiki: HashMap<String,ListeriaBotWiki>,
-    ignore_wikis : Vec<String>,
+    bot_per_wiki: HashMap<String, ListeriaBotWiki>,
+    ignore_wikis: Vec<String>,
 }
 
 impl ListeriaBot {
-    pub async fn new(config_file: &str) -> Result<Self,String> {
+    pub async fn new(config_file: &str) -> Result<Self, String> {
         let config = Configuration::new_from_file(config_file).await?;
 
-        let host = config.mysql("host").as_str().ok_or("No host in config")?.to_string();
-        let schema = config.mysql("schema").as_str().ok_or("No schema in config")?.to_string();
+        let host = config
+            .mysql("host")
+            .as_str()
+            .ok_or("No host in config")?
+            .to_string();
+        let schema = config
+            .mysql("schema")
+            .as_str()
+            .ok_or("No schema in config")?
+            .to_string();
         let port = config.mysql("port").as_u64().ok_or("No port in config")? as u16;
-        let user = config.mysql("user").as_str().ok_or("No user in config")?.to_string();
-        let password = config.mysql("password").as_str().ok_or("No password in config")?.to_string();
+        let user = config
+            .mysql("user")
+            .as_str()
+            .ok_or("No user in config")?
+            .to_string();
+        let password = config
+            .mysql("password")
+            .as_str()
+            .ok_or("No password in config")?
+            .to_string();
 
         let opts = my::OptsBuilder::default()
             .ip_or_hostname(host.to_owned())
@@ -130,7 +150,10 @@ impl ListeriaBot {
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
 
-        let site_matrix = api.get_query_api_json(&params).await.map_err(|e|e.to_string())?;
+        let site_matrix = api
+            .get_query_api_json(&params)
+            .await
+            .map_err(|e| e.to_string())?;
         let mut ret = Self {
             config: Arc::new(config),
             wiki_apis: HashMap::new(),
@@ -145,44 +168,44 @@ impl ListeriaBot {
         Ok(ret)
     }
 
-    async fn update_bots(&mut self) -> Result<(),String> {
-        let mut conn = self.pool.get_conn().await.map_err(|e|e.to_string())?;
-        let sql = "SELECT DISTINCT wikis.name AS wiki FROM wikis".to_string() ;
-        let wikis = conn.exec_iter(
-            sql.as_str(),
-            ()
-        ).await
-        .map_err(|e|format!("PageList::update_bots: SQL query error[1]: {:?}",e))?
-        .map_and_drop(|row| { from_row::<String>(row) } )
-        .await
-        .map_err(|e|format!("PageList::update_bots: SQL query error[2]: {:?}",e))?;
-        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
+    async fn update_bots(&mut self) -> Result<(), String> {
+        let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
+        let sql = "SELECT DISTINCT wikis.name AS wiki FROM wikis".to_string();
+        let wikis = conn
+            .exec_iter(sql.as_str(), ())
+            .await
+            .map_err(|e| format!("PageList::update_bots: SQL query error[1]: {:?}", e))?
+            .map_and_drop(|row| from_row::<String>(row))
+            .await
+            .map_err(|e| format!("PageList::update_bots: SQL query error[2]: {:?}", e))?;
+        conn.disconnect().await.map_err(|e| format!("{:?}", e))?;
 
-        let new_wikis : Vec<String> = wikis
+        let new_wikis: Vec<String> = wikis
             .iter()
-            .filter(|wiki|!self.bot_per_wiki.contains_key(*wiki))
-            .filter(|wiki|!self.ignore_wikis.contains(*wiki))
+            .filter(|wiki| !self.bot_per_wiki.contains_key(*wiki))
+            .filter(|wiki| !self.ignore_wikis.contains(*wiki))
             .cloned()
             .collect();
         //let new_wikis = vec!["dewiki".to_string()]; // TESTING
 
         let login_in_parallel = false;
-        if login_in_parallel { //This does not work, probably a MW issue
+        if login_in_parallel {
+            //This does not work, probably a MW issue
             let mut futures = Vec::new();
             for wiki in &new_wikis {
                 let future = self.create_wiki_api(wiki);
                 futures.push(future);
             }
             let results = join_all(futures).await;
-            
+
             for num in 0..results.len() {
                 let wiki = &new_wikis[num];
                 match &results[num] {
                     Ok(mw_api) => {
-                        self.wiki_apis.insert(wiki.to_owned(),mw_api.clone());
+                        self.wiki_apis.insert(wiki.to_owned(), mw_api.clone());
                     }
                     Err(e) => {
-                        println!("Can't login to {}: {}",wiki,e);
+                        println!("Can't login to {}: {}", wiki, e);
                         self.ignore_wikis.push(wiki.to_owned());
                     }
                 }
@@ -191,8 +214,8 @@ impl ListeriaBot {
 
         for wiki in &new_wikis {
             let mw_api = self.get_or_create_wiki_api(&wiki).await?;
-            let bot = ListeriaBotWiki::new(&wiki,mw_api,self.config.clone());
-            self.bot_per_wiki.insert(wiki.to_string(),bot);
+            let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
+            self.bot_per_wiki.insert(wiki.to_string(), bot);
         }
         Ok(())
     }
@@ -238,7 +261,9 @@ impl ListeriaBot {
         }
         self.site_matrix["sitematrix"]
             .as_object()
-            .ok_or_else(|| "AppState::get_server_url_for_wiki: sitematrix not an object".to_string())?
+            .ok_or_else(|| {
+                "AppState::get_server_url_for_wiki: sitematrix not an object".to_string()
+            })?
             .iter()
             .filter_map(|(id, data)| match id.as_str() {
                 "count" => None,
@@ -262,27 +287,49 @@ impl ListeriaBot {
             ))
     }
 
-    pub async fn process_next_page(&mut self) -> Result<(),String> {
+    pub async fn process_next_page(&mut self) -> Result<(), String> {
         // Get next page to update, for all wikis
-        let wikis : Vec<String> = self.bot_per_wiki.iter().map(|(wiki,_bot)|wiki.to_string()).collect() ;
+        let wikis: Vec<String> = self
+            .bot_per_wiki
+            .iter()
+            .map(|(wiki, _bot)| wiki.to_string())
+            .collect();
         let mut wiki2page = HashMap::new();
-        let mut conn = self.pool.get_conn().await.map_err(|e|e.to_string())?;
+        let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
         for wiki in wikis {
             let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' AND wikis.name='{}' order by pagestatus.timestamp LIMIT 1",wiki);
-            let pages = conn.exec_iter(
-                sql.as_str(),
-                ()
-            ).await
-            .map_err(|e|format!("ListeriaBot::process_next_page: SQL query error[1]: {:?}",e))?
-            .map_and_drop(|row| {
-                let parts = from_row::<(u64,String,String,String)>(row);
-                PageToProcess { id:parts.0, title:parts.1, status:parts.2, wiki:parts.3 }
-            } )
-            .await
-            .map_err(|e|format!("ListeriaBot::process_next_page: SQL query error[2]: {:?}",e))?;
+            let pages = conn
+                .exec_iter(sql.as_str(), ())
+                .await
+                .map_err(|e| {
+                    format!(
+                        "ListeriaBot::process_next_page: SQL query error[1]: {:?}",
+                        e
+                    )
+                })?
+                .map_and_drop(|row| {
+                    let parts = from_row::<(u64, String, String, String)>(row);
+                    PageToProcess {
+                        id: parts.0,
+                        title: parts.1,
+                        status: parts.2,
+                        wiki: parts.3,
+                    }
+                })
+                .await
+                .map_err(|e| {
+                    format!(
+                        "ListeriaBot::process_next_page: SQL query error[2]: {:?}",
+                        e
+                    )
+                })?;
             match pages.get(0) {
-                Some(page_to_process) => {wiki2page.insert(wiki,page_to_process.title.to_owned());}
-                None => {continue;}
+                Some(page_to_process) => {
+                    wiki2page.insert(wiki, page_to_process.title.to_owned());
+                }
+                None => {
+                    continue;
+                }
             }
         }
 
@@ -290,103 +337,138 @@ impl ListeriaBot {
         let mut running = Vec::new();
         for wiki in self.bot_per_wiki.keys() {
             let page = match wiki2page.get(wiki) {
-                Some(page) => {page},
-                None => {continue;},
+                Some(page) => page,
+                None => {
+                    continue;
+                }
             };
-            running.push((wiki.to_owned(),page.to_owned()));
+            running.push((wiki.to_owned(), page.to_owned()));
         }
-        for (wiki,page) in running {
-            self.update_page_status(&mut conn,&page.to_owned(),&wiki,&"RUNNING".to_string(),&"".to_string()).await?; // TODO
+        for (wiki, page) in running {
+            self.update_page_status(
+                &mut conn,
+                &page.to_owned(),
+                &wiki,
+                &"RUNNING".to_string(),
+                &"".to_string(),
+            )
+            .await?; // TODO
         }
-        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
+        conn.disconnect().await.map_err(|e| format!("{:?}", e))?;
 
         let mut futures = Vec::new();
-        for (wiki,bot) in &self.bot_per_wiki {
+        for (wiki, bot) in &self.bot_per_wiki {
             let page = match wiki2page.get(wiki) {
-                Some(page) => {page},
-                None => {continue;},
+                Some(page) => page,
+                None => {
+                    continue;
+                }
             };
             let future = bot.process_page(page);
             //let future = tokio::spawn(async move { bot.process_page(page).await});
             futures.push(future);
         }
 
-
         let results = join_all(futures).await;
-        let mut conn = self.pool.get_conn().await.map_err(|e|e.to_string())?;
+        let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
         for wpr in &results {
-            self.update_page_status(&mut conn,&wpr.page,&wpr.wiki,&wpr.result,&wpr.message).await?;
+            self.update_page_status(&mut conn, &wpr.page, &wpr.wiki, &wpr.result, &wpr.message)
+                .await?;
         }
-        conn.disconnect().await.map_err(|e|format!("{:?}",e))?;
+        conn.disconnect().await.map_err(|e| format!("{:?}", e))?;
         Ok(())
     }
 
-    async fn update_page_status(&mut self, conn:&mut mysql_async::Conn, page: &String,wiki: &String, status: &String, message: &String ) -> Result<(),String> {
+    async fn update_page_status(
+        &mut self,
+        conn: &mut mysql_async::Conn,
+        page: &String,
+        wiki: &String,
+        status: &String,
+        message: &String,
+    ) -> Result<(), String> {
         let now: DateTime<Utc> = Utc::now();
-        let timestamp = now.format("%Y%m%d%H%M%S").to_string() ;
+        let timestamp = now.format("%Y%m%d%H%M%S").to_string();
         let params = params! {
             "wiki" => wiki,
             "page" => page,
             "timestamp" => timestamp,
             "status" => status,
             "message" => message, //format!("V2:{}",&message),
-        } ;
+        };
         let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp,`bot_version`=2 WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
-        conn.exec_iter(
-            sql.as_str(),
-            params
-        ).await
-        .map_err(|e|format!("ListeriaBot::update_page_status: SQL query error[1]: {:?}",e))?
-        .map_and_drop(|row| { from_row::<String>(row) } )
-        .await
-        .map_err(|e|format!("ListeriaBot::update_page_status: SQL query error[2]: {:?}",e))?;
+        conn.exec_iter(sql.as_str(), params)
+            .await
+            .map_err(|e| {
+                format!(
+                    "ListeriaBot::update_page_status: SQL query error[1]: {:?}",
+                    e
+                )
+            })?
+            .map_and_drop(|row| from_row::<String>(row))
+            .await
+            .map_err(|e| {
+                format!(
+                    "ListeriaBot::update_page_status: SQL query error[2]: {:?}",
+                    e
+                )
+            })?;
         Ok(())
     }
 
-    async fn create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>,String> {
-        let api_url = format!("{}/w/api.php",self.get_server_url_for_wiki(wiki)?);
+    async fn create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>, String> {
+        let api_url = format!("{}/w/api.php", self.get_server_url_for_wiki(wiki)?);
         let mut mw_api = wikibase::mediawiki::api::Api::new(&api_url)
             .await
-            .map_err(|e|e.to_string())?;
+            .map_err(|e| e.to_string())?;
         mw_api
-            .login(self.config.wiki_user().to_owned(), self.config.wiki_password().to_owned())
+            .login(
+                self.config.wiki_user().to_owned(),
+                self.config.wiki_password().to_owned(),
+            )
             .await
-            .map_err(|e|e.to_string())?;
+            .map_err(|e| e.to_string())?;
         let mw_api = Arc::new(RwLock::new(mw_api));
         Ok(mw_api)
     }
 
-    async fn get_or_create_wiki_api(&mut self, wiki: &str) -> Result<Arc<RwLock<Api>>,String> {
+    async fn get_or_create_wiki_api(&mut self, wiki: &str) -> Result<Arc<RwLock<Api>>, String> {
         match &self.wiki_apis.get(wiki) {
-            Some(api) => { return Ok((*api).clone()); }
+            Some(api) => {
+                return Ok((*api).clone());
+            }
             None => {}
         }
 
         let mw_api = self.create_wiki_api(wiki).await?;
-        self.wiki_apis.insert(wiki.to_owned(),mw_api);
-        
-        self.wiki_apis.get(wiki).ok_or(format!("Wiki not found: {}",wiki)).map(|api|api.clone())
+        self.wiki_apis.insert(wiki.to_owned(), mw_api);
+
+        self.wiki_apis
+            .get(wiki)
+            .ok_or(format!("Wiki not found: {}", wiki))
+            .map(|api| api.clone())
     }
 
     pub async fn destruct(&mut self) {
         //self.pool.disconnect().await.unwrap(); // TODO
     }
-
 }
 
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threaded_rt = runtime::Builder::new_multi_thread()
-    .worker_threads(4)
-    .thread_name("listeria")
-    .thread_stack_size(3 * 1024 * 1024)
-    .build()?;
-    
+        .worker_threads(4)
+        .thread_name("listeria")
+        .thread_stack_size(3 * 1024 * 1024)
+        .build()?;
+
     threaded_rt.block_on(async move {
         let mut bot = ListeriaBot::new("config.json").await.unwrap();
         loop {
             match bot.process_next_page().await {
                 Ok(()) => {}
-                Err(e) => { println!("{}",&e); }
+                Err(e) => {
+                    println!("{}", &e);
+                }
             }
         }
     });

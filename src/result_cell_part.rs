@@ -1,7 +1,7 @@
-use crate::listeria_list::ListeriaList;
-use crate::{SparqlValue,LinksType};
-use crate::reference::Reference;
 use crate::column::ColumnType;
+use crate::listeria_list::ListeriaList;
+use crate::reference::Reference;
+use crate::{LinksType, SparqlValue};
 use regex::Regex;
 use wikibase::entity::EntityTrait;
 
@@ -12,8 +12,8 @@ pub struct PartWithReference {
 }
 
 impl PartWithReference {
-    pub fn new(part:ResultCellPart,references:Option<Vec<Reference>>) -> Self {
-        Self {part,references}
+    pub fn new(part: ResultCellPart, references: Option<Vec<Reference>>) -> Self {
+        Self { part, references }
     }
 
     pub fn as_wikitext(
@@ -23,17 +23,17 @@ impl PartWithReference {
         colnum: usize,
         partnum: usize,
     ) -> String {
-        let wikitext_part = self.part.as_wikitext(list,rownum,colnum,partnum) ;
+        let wikitext_part = self.part.as_wikitext(list, rownum, colnum, partnum);
         let wikitext_reference = match &self.references {
             Some(references) => {
-                let mut wikitext : Vec<String> = vec![] ;
+                let mut wikitext: Vec<String> = vec![];
                 for reference in references.iter() {
                     let r = reference.as_reference(list);
                     wikitext.push(r);
                 }
                 wikitext.join("")
             }
-            None => String::new()
+            None => String::new(),
         };
         wikitext_part + &wikitext_reference
     }
@@ -42,7 +42,7 @@ impl PartWithReference {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResultCellPart {
     Number,
-    Entity((String, bool)),      // ID, try_localize
+    Entity((String, bool)),            // ID, try_localize
     LocalLink((String, String, bool)), // Page, label, is_category
     Time(String),
     Location((f64, f64, Option<String>)),
@@ -65,18 +65,19 @@ impl ResultCellPart {
         }
     }
 
-
-    pub fn localize_item_links(&mut self,list: &ListeriaList) {
+    pub fn localize_item_links(&mut self, list: &ListeriaList) {
         match self {
             ResultCellPart::Entity((item, true)) => {
-                if let Some(ll) = list.entity_to_local_link(&item) { *self = ll } ;
+                if let Some(ll) = list.entity_to_local_link(&item) {
+                    *self = ll
+                };
             }
             ResultCellPart::SnakList(v) => {
                 for part_with_reference in v.iter_mut() {
                     part_with_reference.part.localize_item_links(list);
                 }
             }
-            _ => {},
+            _ => {}
         }
     }
 
@@ -153,8 +154,8 @@ impl ResultCellPart {
             ResultCellPart::Entity((id, try_localize)) => {
                 if !try_localize {
                     let is_item_column = match list.column(colnum) {
-                        Some(col) => {col.obj == ColumnType::Item}
-                        None => {false}
+                        Some(col) => col.obj == ColumnType::Item,
+                        None => false,
                     };
                     if list.is_wikidatawiki() || is_item_column {
                         return format!("[[{}|{}]]", list.get_item_wiki_target(id), id);
@@ -167,9 +168,9 @@ impl ResultCellPart {
                     Some(e) => {
                         let use_language = match e.label_in_locale(list.language()) {
                             Some(_) => list.language(),
-                            None => list.default_language()
-                        } ;
-                        let use_label = list.get_label_with_fallback(id,Some(use_language));
+                            None => list.default_language(),
+                        };
+                        let use_label = list.get_label_with_fallback(id, Some(use_language));
                         let labeled_entity_link = if list.is_wikidatawiki() {
                             format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
                         } else {
@@ -182,41 +183,39 @@ impl ResultCellPart {
                                 let contains_colon = use_label.contains(':');
                                 if list.local_page_exists(&use_label) {
                                     let category_prefix = if contains_colon { ":" } else { "" };
-                                    format!("[[{}{} ({})|]]",category_prefix,&use_label,&id)
+                                    format!("[[{}{} ({})|]]", category_prefix, &use_label, &id)
                                 } else if contains_colon {
-                                    format!("[[:{}|]]",&use_label)
+                                    format!("[[:{}|]]", &use_label)
                                 } else {
-                                    format!("[[{}]]",&use_label)
+                                    format!("[[{}]]", &use_label)
                                 }
                             }
                             LinksType::Reasonator => {
-                                format!("[https://reasonator.toolforge.org/?q={} {}]", id, use_label)
+                                format!(
+                                    "[https://reasonator.toolforge.org/?q={} {}]",
+                                    id, use_label
+                                )
                             }
                             _ => labeled_entity_link,
                         }
-
-                    },
+                    }
                     None => entity_id_link,
                 }
             }
             ResultCellPart::LocalLink((title, label, is_category)) => {
-                let start = if *is_category {
-                    "[[:"
-                } else {
-                    "[["
-                };
+                let start = if *is_category { "[[:" } else { "[[" };
                 if list.normalize_page_title(title) == list.normalize_page_title(label) {
-                    format!("{}{}]]",&start,&label)
+                    format!("{}{}]]", &start, &label)
                 } else {
-                    format!("{}{}|{}]]",&start,&title,&label)
+                    format!("{}{}|{}]]", &start, &title, &label)
                 }
             }
             ResultCellPart::Time(time) => time.to_owned(),
             ResultCellPart::Location((lat, lon, region)) => {
                 let entity_id = match list.results().get(rownum) {
                     Some(row) => Some(row.entity_id().to_string()),
-                    None => None
-                } ;
+                    None => None,
+                };
                 list.get_location_template(*lat, *lon, entity_id, region.to_owned())
             }
             ResultCellPart::File(file) => {
@@ -239,17 +238,18 @@ impl ResultCellPart {
                 match list.column(colnum) {
                     Some(col) => {
                         match &col.obj {
-                            ColumnType::Property(p) => { // Commons category
+                            ColumnType::Property(p) => {
+                                // Commons category
                                 if p == "P373" {
-                                    format!("[[:commons:Category:{}|{}]]",text,text)
+                                    format!("[[:commons:Category:{}|{}]]", text, text)
                                 } else {
                                     text.to_owned()
                                 }
                             }
-                            _ => text.to_owned()
+                            _ => text.to_owned(),
                         }
                     }
-                    None => {text.to_owned()}
+                    None => text.to_owned(),
                 }
             }
             ResultCellPart::SnakList(v) => v

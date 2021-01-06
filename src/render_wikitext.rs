@@ -36,7 +36,7 @@ impl Renderer for RendererWikitext {
         let new_wikitext = page
             .elements()
             .iter()
-            .filter_map(|element|element.as_wikitext().ok())
+            .filter_map(|element| element.as_wikitext().ok())
             .collect();
         Ok(Some(new_wikitext))
     }
@@ -53,15 +53,19 @@ impl RendererWikitext {
 
         wt += &self.as_wikitext_table_header(list);
 
-        if list.get_row_template().is_none() && !list.skip_table() && !list.results().is_empty() && !list.template_params().wdedit {
+        if list.get_row_template().is_none()
+            && !list.skip_table()
+            && !list.results().is_empty()
+            && !list.template_params().wdedit
+        {
             wt += "|-\n";
         }
 
-        let row_entity_ids : Vec<String> = list
+        let row_entity_ids: Vec<String> = list
             .results()
             .iter()
             .filter(|row| row.section() == section_id)
-            .map(|row|row.entity_id())
+            .map(|row| row.entity_id())
             .cloned()
             .collect();
 
@@ -76,8 +80,14 @@ impl RendererWikitext {
         if list.skip_table() {
             wt += &rows.join("\n");
         } else if list.template_params().wdedit {
-            let x : Vec<String> = row_entity_ids.iter().zip(rows.iter()).map(|(entity_id,row)|format!("\n|- class='wd_{}'\n{}",&entity_id.to_lowercase(),&row)).collect();
-            wt += &x.join("").trim() ;
+            let x: Vec<String> = row_entity_ids
+                .iter()
+                .zip(rows.iter())
+                .map(|(entity_id, row)| {
+                    format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row)
+                })
+                .collect();
+            wt += &x.join("").trim();
         } else {
             wt += &rows.join("\n|-\n");
         }
@@ -100,9 +110,9 @@ impl RendererWikitext {
             }
             None => {
                 if !list.skip_table() {
-                    wt += "{| class='wikitable sortable" ;
+                    wt += "{| class='wikitable sortable";
                     if list.template_params().wdedit {
-                        wt += " wd_can_edit" ;
+                        wt += " wd_can_edit";
                     }
                     wt += "' style='width:100%'\n";
                     list.columns()
@@ -118,5 +128,4 @@ impl RendererWikitext {
         }
         wt
     }
-
 }

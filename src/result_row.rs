@@ -1,12 +1,12 @@
-use crate::{serde_json, HashMap, SparqlValue};
-use crate::result_cell::ResultCell;
-use crate::result_cell_part::ResultCellPart;
 use crate::column::ColumnType;
 use crate::listeria_list::*;
-use wikibase::entity::EntityTrait;
+use crate::result_cell::ResultCell;
+use crate::result_cell_part::ResultCellPart;
+use crate::{serde_json, HashMap, SparqlValue};
 use regex::Regex;
 use serde_json::Value;
 use std::cmp::Ordering;
+use wikibase::entity::EntityTrait;
 use wikibase::SnakDataType;
 
 #[derive(Debug, Clone, Default)]
@@ -26,7 +26,7 @@ impl ResultRow {
         }
     }
 
-    pub fn set_keep(&mut self, keep:bool ) {
+    pub fn set_keep(&mut self, keep: bool) {
         self.keep = keep;
     }
 
@@ -50,45 +50,52 @@ impl ResultRow {
         self.section
     }
 
-    pub fn set_section(&mut self, section:usize) {
-        self.section = section ;
+    pub fn set_section(&mut self, section: usize) {
+        self.section = section;
     }
 
     pub fn sortkey(&self) -> &String {
         &self.sortkey
     }
 
-    pub fn set_cells(&mut self,cells: Vec<ResultCell>) {
+    pub fn set_cells(&mut self, cells: Vec<ResultCell>) {
         self.cells = cells;
     }
 
     pub fn remove_excess_files(&mut self) {
-        self.cells.iter_mut().for_each(|cell|{
-            if cell.parts().len()>1 {
-                let has_files = matches!(cell.parts().get(0).unwrap().part, ResultCellPart::File(_));
+        self.cells.iter_mut().for_each(|cell| {
+            if cell.parts().len() > 1 {
+                let has_files =
+                    matches!(cell.parts().get(0).unwrap().part, ResultCellPart::File(_));
                 if has_files {
                     let mut parts = cell.parts().clone();
                     parts.truncate(1);
-                    cell.set_parts ( parts.to_vec() ) ;
+                    cell.set_parts(parts.to_vec());
                 }
             }
         });
     }
 
-    pub fn remove_shadow_files(&mut self,shadow_files:&[String]) {
-        self.cells.iter_mut().for_each(|cell|{
-            cell.set_parts ( cell.parts().iter().filter(|part_with_reference|{
-                match &part_with_reference.part {
-                    ResultCellPart::File(file) => !shadow_files.contains(&file),
-                    _ => true
-                }
-            })
-            .cloned()
-            .collect());
+    pub fn remove_shadow_files(&mut self, shadow_files: &[String]) {
+        self.cells.iter_mut().for_each(|cell| {
+            cell.set_parts(
+                cell.parts()
+                    .iter()
+                    .filter(|part_with_reference| match &part_with_reference.part {
+                        ResultCellPart::File(file) => !shadow_files.contains(&file),
+                        _ => true,
+                    })
+                    .cloned()
+                    .collect(),
+            );
         });
     }
 
-    pub async fn from_columns(&mut self, list:&ListeriaList, sparql_rows: &[&HashMap<String, SparqlValue>]) {
+    pub async fn from_columns(
+        &mut self,
+        list: &ListeriaList,
+        sparql_rows: &[&HashMap<String, SparqlValue>],
+    ) {
         self.cells.clear();
         for column in list.columns().iter() {
             let x = ResultCell::new(list, &self.entity_id, sparql_rows, column).await;
@@ -102,16 +109,16 @@ impl ResultRow {
 
     pub fn get_sortkey_label(&self, list: &ListeriaList) -> String {
         match list.get_entity(self.entity_id()) {
-            Some(_entity) => list.get_label_with_fallback(self.entity_id(),None),
-            None => "".to_string()
+            Some(_entity) => list.get_label_with_fallback(self.entity_id(), None),
+            None => "".to_string(),
         }
     }
 
     pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
         lazy_static! {
-            static ref RE_SR_JR : Regex = Regex::new(r", [JS]r\.$").unwrap();
-            static ref RE_BRACES : Regex = Regex::new(r"\s+\(.+\)$").unwrap();
-            static ref RE_LAST_FIRST : Regex = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").unwrap();
+            static ref RE_SR_JR: Regex = Regex::new(r", [JS]r\.$").unwrap();
+            static ref RE_BRACES: Regex = Regex::new(r"\s+\(.+\)$").unwrap();
+            static ref RE_LAST_FIRST: Regex = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").unwrap();
         }
         match page.get_entity(self.entity_id.to_owned()) {
             Some(entity) => match entity.label_in_locale(&page.language()) {
@@ -144,13 +151,14 @@ impl ResultRow {
     ) -> String {
         match list.get_entity(self.entity_id.to_owned()) {
             Some(entity) => {
-                match list.get_filtered_claims(&entity,prop) // entity.claims()
+                match list
+                    .get_filtered_claims(&entity, prop) // entity.claims()
                     .iter()
                     .filter(|statement| statement.property() == prop)
                     .map(|statement| statement.main_snak())
                     .next()
                 {
-                    Some(snak) => self.get_sortkey_from_snak(snak,list),
+                    Some(snak) => self.get_sortkey_from_snak(snak, list),
                     None => self.no_value(datatype),
                 }
             }
@@ -158,25 +166,24 @@ impl ResultRow {
         }
     }
 
-    pub fn get_sortkey_sparql(
-        &self,
-        variable: &str,
-        list: &ListeriaList,
-    ) -> String {
+    pub fn get_sortkey_sparql(&self, variable: &str, list: &ListeriaList) -> String {
         let obj = ColumnType::Field(variable.to_lowercase());
         // TODO sort by actual sparql values instead?
-        match list.columns().iter().enumerate().find(|(_colnum,col)|col.obj==obj) {
-            Some((colnum,_col)) => {
-                match self.cells.get(colnum) {
-                    Some(cell) => cell.get_sortkey(),
-                    None => String::new()
-                }
-            }
-            None => String::new()
+        match list
+            .columns()
+            .iter()
+            .enumerate()
+            .find(|(_colnum, col)| col.obj == obj)
+        {
+            Some((colnum, _col)) => match self.cells.get(colnum) {
+                Some(cell) => cell.get_sortkey(),
+                None => String::new(),
+            },
+            None => String::new(),
         }
     }
 
-    fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak,list: &ListeriaList) -> String {
+    fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak, list: &ListeriaList) -> String {
         match snak.data_value() {
             Some(data_value) => match data_value.value() {
                 wikibase::value::Value::Coordinate(c) => format!(
@@ -186,8 +193,9 @@ impl ResultRow {
                     c.precision().unwrap_or(0.0)
                 ),
                 wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
-                wikibase::value::Value::Entity(entity) => {// TODO language?
-                    list.get_label_with_fallback(&entity.id(),None)
+                wikibase::value::Value::Entity(entity) => {
+                    // TODO language?
+                    list.get_label_with_fallback(&entity.id(), None)
                 }
                 wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikibase::value::Value::StringValue(s) => s.to_owned(),
@@ -226,7 +234,9 @@ impl ResultRow {
                 if self.sortkey == other.sortkey {
                     self.compare_entiry_ids(other)
                 } else {
-                    self.sortkey.partial_cmp(&other.sortkey).unwrap_or(Ordering::Equal)
+                    self.sortkey
+                        .partial_cmp(&other.sortkey)
+                        .unwrap_or(Ordering::Equal)
                 }
             }
         }
@@ -247,18 +257,16 @@ impl ResultRow {
         cells
             .iter()
             .enumerate()
-            .filter_map(|(colnum, cell)| {
-                match list.column(colnum) {
-                    Some(column) => {
-                        let value = cell.trim();
-                        if value.is_empty() {
-                            None
-                        } else {
-                            Some(format!("{} = {}", column.obj.as_key(), value))
-                        }
+            .filter_map(|(colnum, cell)| match list.column(colnum) {
+                Some(column) => {
+                    let value = cell.trim();
+                    if value.is_empty() {
+                        None
+                    } else {
+                        Some(format!("{} = {}", column.obj.as_key(), value))
                     }
-                    _ => None
                 }
+                _ => None,
             })
             .collect::<Vec<String>>()
             .join("\n| ")

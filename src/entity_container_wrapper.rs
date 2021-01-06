@@ -1,30 +1,30 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use crate::{PageParams,SparqlValue,LinksType};
 use crate::listeria_list::ListeriaList;
-use crate::result_row::ResultRow;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
-use wikibase::mediawiki::api::Api;
+use crate::result_row::ResultRow;
+use crate::{LinksType, PageParams, SparqlValue};
+use std::collections::HashMap;
+use std::sync::Arc;
 use wikibase::entity::*;
-use wikibase::snak::SnakDataType;
 use wikibase::entity_container::EntityContainer;
+use wikibase::mediawiki::api::Api;
+use wikibase::snak::SnakDataType;
 
 #[derive(Debug, Clone)]
 pub struct EntityContainerWrapper {
     entities: EntityContainer,
-    page_params:Arc<PageParams>
+    page_params: Arc<PageParams>,
 }
 
 impl EntityContainerWrapper {
-    pub fn new(page_params:Arc<PageParams>) -> Self {
+    pub fn new(page_params: Arc<PageParams>) -> Self {
         Self {
             entities: EntityContainer::new(),
-            page_params
+            page_params,
         }
     }
 
-    pub async fn load_entities(&mut self,api: &Api, ids: &Vec<String>) -> Result<(),String> {
+    pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<(), String> {
         match self.entities.load_entities(api, ids).await {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("Error loading entities: {:?}", &e)),
@@ -38,7 +38,12 @@ impl EntityContainerWrapper {
             .map(|s| s.to_string())
     }
 
-    pub fn entity_to_local_link(&self, item: &str, wiki: &str, language: &str) -> Option<ResultCellPart> {
+    pub fn entity_to_local_link(
+        &self,
+        item: &str,
+        wiki: &str,
+        language: &str,
+    ) -> Option<ResultCellPart> {
         let entity = match self.entities.get_entity(item.to_owned()) {
             Some(e) => e,
             None => return None,
@@ -52,7 +57,9 @@ impl EntityContainerWrapper {
             None => None,
         }?;
         //let title = wikibase::mediawiki::title::Title::new_from_full(page,&mw_api);
-        let label = self.get_local_entity_label(item, language).unwrap_or_else(|| page.clone());
+        let label = self
+            .get_local_entity_label(item, language)
+            .unwrap_or_else(|| page.clone());
         Some(ResultCellPart::LocalLink((page, label, false)))
     }
 
@@ -79,7 +86,7 @@ impl EntityContainerWrapper {
         }
 
         let mut row = ResultRow::new(entity_id);
-        row.from_columns(list,sparql_rows).await;
+        row.from_columns(list, sparql_rows).await;
         Some(row)
     }
 
@@ -90,28 +97,32 @@ impl EntityContainerWrapper {
             .filter_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
                 match data_value.value() {
-                    wikibase::Value::StringValue(s) => 
-                        Some(
-                        s.to_owned()
-                            .replace("$1", &urlencoding::decode(&id).ok()?),
-                    ),
+                    wikibase::Value::StringValue(s) => {
+                        Some(s.to_owned().replace("$1", &urlencoding::decode(&id).ok()?))
+                    }
                     _ => None,
                 }
             })
             .next()
     }
 
-    pub fn get_filtered_claims(&self,e:&wikibase::entity::Entity,property:&str) -> Vec<wikibase::statement::Statement> {
-        let mut ret : Vec<wikibase::statement::Statement> = e
+    pub fn get_filtered_claims(
+        &self,
+        e: &wikibase::entity::Entity,
+        property: &str,
+    ) -> Vec<wikibase::statement::Statement> {
+        let mut ret: Vec<wikibase::statement::Statement> = e
             .claims_with_property(property)
             .iter()
-            .map(|x|(*x).clone())
+            .map(|x| (*x).clone())
             .collect();
 
         if self.page_params.config.prefer_preferred() {
-            let has_preferred = ret.iter().any(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
+            let has_preferred = ret
+                .iter()
+                .any(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
             if has_preferred {
-                ret.retain(|x|*x.rank()==wikibase::statement::StatementRank::Preferred);
+                ret.retain(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
             }
             ret
         } else {
@@ -119,24 +130,23 @@ impl EntityContainerWrapper {
         }
     }
 
-    pub fn get_datatype_for_property(&self,prop:&str) -> SnakDataType {
+    pub fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         match self.entities.get_entity(prop) {
-            Some(entity) => {
-                match entity {
-                    Entity::Property(p) => {
-                        match p.datatype() {
-                            Some(t) => t.to_owned(),
-                            None => SnakDataType::String
-                        }
-                    }
-                    _ => SnakDataType::String
-                }
-            }
-            None => SnakDataType::String
+            Some(entity) => match entity {
+                Entity::Property(p) => match p.datatype() {
+                    Some(t) => t.to_owned(),
+                    None => SnakDataType::String,
+                },
+                _ => SnakDataType::String,
+            },
+            None => SnakDataType::String,
         }
     }
 
-    pub fn gather_entities_and_external_properties(&self,parts:&[PartWithReference]) -> Vec<String> {
+    pub fn gather_entities_and_external_properties(
+        &self,
+        parts: &[PartWithReference],
+    ) -> Vec<String> {
         let mut entities_to_load = vec![];
         for part_with_reference in parts {
             match &part_with_reference.part {
@@ -146,11 +156,10 @@ impl EntityContainerWrapper {
                 ResultCellPart::ExternalId((property, _id)) => {
                     entities_to_load.push(property.to_owned());
                 }
-                ResultCellPart::SnakList(v) => {
-                    self.gather_entities_and_external_properties(&v)
-                        .iter()
-                        .for_each(|entity_id|entities_to_load.push(entity_id.to_string()))
-                }
+                ResultCellPart::SnakList(v) => self
+                    .gather_entities_and_external_properties(&v)
+                    .iter()
+                    .for_each(|entity_id| entities_to_load.push(entity_id.to_string())),
                 _ => {}
             }
         }
@@ -160,5 +169,4 @@ impl EntityContainerWrapper {
     pub fn entities(&self) -> &EntityContainer {
         &self.entities
     }
-
 }

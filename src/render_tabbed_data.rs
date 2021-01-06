@@ -1,16 +1,15 @@
-use regex::RegexBuilder;
 pub use crate::column::*;
 use crate::*;
+use regex::RegexBuilder;
 
-pub struct RendererTabbedData {
-}
+pub struct RendererTabbedData {}
 
 impl Renderer for RendererTabbedData {
     fn new() -> Self {
-        Self{}
+        Self {}
     }
 
-    fn render(&mut self,list:&ListeriaList) -> Result<String,String> {
+    fn render(&mut self, list: &ListeriaList) -> Result<String, String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
             if let Some(x) = ret["schema"]["fields"].as_array_mut() {
@@ -23,12 +22,14 @@ impl Renderer for RendererTabbedData {
             .enumerate()
             .map(|(rownum, row)| row.as_tabbed_data(&list, rownum))
             .collect();
-        Ok(format!("{}",ret))
-        }
+        Ok(format!("{}", ret))
+    }
 
-
-    fn get_new_wikitext(&self,wikitext: &str, _page:&ListeriaPage ) -> Result<Option<String>,String> {
-
+    fn get_new_wikitext(
+        &self,
+        wikitext: &str,
+        _page: &ListeriaPage,
+    ) -> Result<Option<String>, String> {
         // TODO use local template name
 
         // Start/end template
@@ -42,42 +43,48 @@ impl Renderer for RendererTabbedData {
             .multi_line(true)
             .dot_matches_new_line(true)
             .build()
-            .map_err(|e|e.to_string())?;
+            .map_err(|e| e.to_string())?;
         let re_wikitext2: Regex = RegexBuilder::new(pattern2)
             .multi_line(true)
             .dot_matches_new_line(true)
             .build()
-            .map_err(|e|e.to_string())?;
+            .map_err(|e| e.to_string())?;
 
         let (before, blob, end_template, after) = match re_wikitext1.captures(&wikitext) {
             Some(caps) => (
                 match caps.get(1) {
                     Some(a) => a,
                     _ => unreachable!(),
-                }.as_str(),
+                }
+                .as_str(),
                 match caps.get(2) {
                     Some(a) => a,
                     _ => unreachable!(),
-                }.as_str(),
+                }
+                .as_str(),
                 match caps.get(3) {
                     Some(a) => a,
                     _ => unreachable!(),
-                }.as_str(),
+                }
+                .as_str(),
                 match caps.get(4) {
                     Some(a) => a,
                     _ => unreachable!(),
-                }.as_str(),
+                }
+                .as_str(),
             ),
             None => match re_wikitext2.captures(&wikitext) {
                 Some(caps) => (
                     match caps.get(1) {
                         Some(a) => a,
                         _ => unreachable!(),
-                    }.as_str(),
+                    }
+                    .as_str(),
                     match caps.get(2) {
                         Some(a) => a,
                         _ => unreachable!(),
-                    }.as_str(),
+                    }
+                    .as_str(),
                     "",
                     "",
                 ),
@@ -98,7 +105,7 @@ impl Renderer for RendererTabbedData {
 
         // Remove tabbed data marker
         let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")
-            .map_err(|e|e.to_string())?
+            .map_err(|e| e.to_string())?
             .replace(&start_template, "");
 
         // Add tabbed data marker
@@ -121,7 +128,7 @@ impl Renderer for RendererTabbedData {
 }
 
 impl RendererTabbedData {
-    pub fn tabbed_data_page_name(&self,list:&ListeriaList) -> Option<String> {
+    pub fn tabbed_data_page_name(&self, list: &ListeriaList) -> Option<String> {
         let ret = "Data:Listeria/".to_string() + &list.wiki() + "/" + &list.page_title() + ".tab";
         if ret.len() > 250 {
             return None; // Page title too long
@@ -133,13 +140,16 @@ impl RendererTabbedData {
         &mut self,
         tabbed_data_json: Value,
         commons_api: &mut Api,
-        list:&ListeriaList
+        list: &ListeriaList,
     ) -> Result<bool, String> {
         let data_page = self
             .tabbed_data_page_name(list)
             .ok_or("Data page name too long")?;
-        let text = ::serde_json::to_string(&tabbed_data_json).map_err(|e|e.to_string())?;
-        let token = commons_api.get_edit_token().await.map_err(|e|e.to_string())?;
+        let text = ::serde_json::to_string(&tabbed_data_json).map_err(|e| e.to_string())?;
+        let token = commons_api
+            .get_edit_token()
+            .await
+            .map_err(|e| e.to_string())?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", data_page.as_str()),
@@ -160,7 +170,6 @@ impl RendererTabbedData {
         // TODO check ["edit"]["result"] == "Success"
         Ok(true) //list.data_has_changed = true; // Just to make sure to update including page
     }
-
 
     fn separate_start_template(&self, blob: &str) -> Option<(String, String)> {
         let mut split_at: Option<usize> = None;
@@ -188,5 +197,4 @@ impl RendererTabbedData {
             None => None,
         }
     }
-
 }
