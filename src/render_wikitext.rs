@@ -84,7 +84,10 @@ impl RendererWikitext {
                 .iter()
                 .zip(rows.iter())
                 .map(|(entity_id, row)| {
-                    format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row)
+                    match &list.header_template() {
+                        Some(_) => row.to_string(),
+                        None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row)
+                    }
                 })
                 .collect();
             wt += &x.join("").trim();
