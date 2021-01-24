@@ -2694,12 +2694,12 @@ dependencies = [
 [[package]]
 name = "wikibase"
 version = "0.6.1"
-source = "git+https://gitlab.com/tobias47n9e/wikibase_rs?branch=tokio#587ae9630891cf9c66892658a25c35b963e3f6c5"
+source = "git+https://gitlab.com/tobias47n9e/wikibase_rs#90545230d4d7bbd1f56b0d5fa6d3add431daf553"
 dependencies = [
  "curl",
  "futures",
  "mediawiki",
- "rand 0.7.3",
+ "rand 0.8.2",
  "rayon",
  "regex",
  "serde 1.0.121",
