@@ -46,7 +46,10 @@ impl ResultCell {
                 if let Some(e) = entity {
                     match e.description_in_locale(list.language()) {
                         Some(s) => {
-                            ret.wdedit_class = Some("wd_desc".to_string());
+                            ret.wdedit_class = match &list.header_template() {
+                                Some(_) => None,
+                                None => Some("wd_desc".to_string())
+                            } ;
                             ret.parts.push(PartWithReference::new(
                                 ResultCellPart::Text(s.to_string()),
                                 None,
@@ -84,7 +87,10 @@ impl ResultCell {
             }
             ColumnType::Property(property) => {
                 if let Some(e) = entity {
-                    ret.wdedit_class = Some(format!("wd_{}", property.to_lowercase()));
+                    ret.wdedit_class = match &list.header_template() {
+                        Some(_) => None,
+                        None => Some(format!("wd_{}", property.to_lowercase()))
+                    } ;
                     list.get_filtered_claims(&e, property)
                         .iter()
                         .for_each(|statement| {
@@ -166,7 +172,10 @@ impl ResultCell {
             }
             ColumnType::Label => {
                 if let Some(e) = entity {
-                    ret.wdedit_class = Some("wd_label".to_string());
+                    ret.wdedit_class = match &list.header_template() {
+                        Some(_) => None,
+                        None => Some("wd_label".to_string())
+                    } ;
                     let label = match e.label_in_locale(list.language()) {
                         Some(s) => s.to_string(),
                         None => entity_id.to_string(),
@@ -327,7 +336,7 @@ impl ResultCell {
 
     pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let mut ret;
-        if list.template_params().wdedit {
+        if list.template_params().wdedit && list.header_template().is_none() {
             ret = match &self.wdedit_class {
                 Some(class) => format!("class='{}'| ", class.to_owned()),
                 None => " ".to_string(),
