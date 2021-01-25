@@ -2,7 +2,7 @@ extern crate config;
 extern crate serde_json;
 
 use listeria::listeria_bot::ListeriaBot;
-//use tokio::runtime;
+use tokio::runtime;
 
 /*
 TEST DB CONNECT
@@ -17,7 +17,6 @@ cd ~/listeria_rs ; jsub -mem 6g -cwd -continuous ./target/release/bot
 # TODO freq
 */
 
-/*
 pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     let threaded_rt = runtime::Builder::new_multi_thread()
         .enable_all()
@@ -38,16 +37,4 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     });
     Ok(())
-}
-*/
-
-#[tokio::main]
-pub async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut bot = ListeriaBot::new("config.json").await.unwrap();
-    loop {
-        match bot.process_next_page().await {
-            Ok(()) => {}
-            Err(e) => { println!("{}",&e); }
-        }
-    }
 }
