@@ -158,7 +158,7 @@ impl ListeriaBot {
             .exec_iter(sql.as_str(), ())
             .await
             .map_err(|e| format!("PageList::update_bots: SQL query error[1]: {:?}", e))?
-            .map_and_drop(|row| from_row::<String>(row))
+            .map_and_drop(from_row::<String>)
             .await
             .map_err(|e| format!("PageList::update_bots: SQL query error[2]: {:?}", e))?;
         conn.disconnect().await.map_err(|e| format!("{:?}", e))?;
