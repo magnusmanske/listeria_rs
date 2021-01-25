@@ -8,6 +8,7 @@ pub mod configuration;
 pub mod entity_container_wrapper;
 pub mod listeria_list;
 pub mod listeria_page;
+pub mod listeria_bot;
 pub mod reference;
 pub mod render_tabbed_data;
 pub mod render_wikitext;
