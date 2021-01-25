@@ -196,9 +196,15 @@ impl ListeriaBot {
         }
 
         for wiki in &new_wikis {
-            let mw_api = self.get_or_create_wiki_api(&wiki).await?;
-            let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
-            self.bot_per_wiki.insert(wiki.to_string(), bot);
+            match self.get_or_create_wiki_api(&wiki).await {
+                Ok(mw_api) => {
+                    let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
+                    self.bot_per_wiki.insert(wiki.to_string(), bot);        
+                }
+                Err(e) => {
+                    eprintln!("{}",e);
+                }
+            }
         }
         Ok(())
     }
@@ -410,7 +416,7 @@ impl ListeriaBot {
                 self.config.wiki_password().to_owned(),
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("{}: {}",wiki,e))?;
         let mw_api = Arc::new(RwLock::new(mw_api));
         Ok(mw_api)
     }
