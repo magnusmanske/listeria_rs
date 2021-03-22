@@ -14,6 +14,7 @@ use tokio::sync::RwLock;
 use wikibase::entity::*;
 use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
+use futures::future::join_all;
 
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
@@ -31,6 +32,7 @@ pub struct ListeriaList {
     wb_api: Arc<Api>,
     language: String,
     reference_ids: Arc<std::sync::RwLock<HashSet<String>>>,
+    profiling:bool,
 }
 
 impl ListeriaList {
@@ -53,15 +55,29 @@ impl ListeriaList {
             wb_api,
             language: page_params.language.to_string(),
             reference_ids: Arc::new(std::sync::RwLock::new(HashSet::new())),
+            profiling:false,
+        }
+    }
+
+    fn profile(&self, msg:&str) {
+        if self.profiling {
+            println!("{}",msg);
         }
     }
 
     pub async fn process(&mut self) -> Result<(), String> {
+        self.profile("START list::process");
         self.process_template().await?;
+        self.profile("AFTER list::process process_template");
         self.run_query().await?;
+        self.profile("AFTER list::process run_query");
         self.load_entities().await?;
+        self.profile("AFTER list::process load_entities");
         self.generate_results().await?;
+        self.profile("AFTER list::process generate_results");
         self.process_results().await?;
+        self.profile("AFTER list::process process_results");
+        self.profile("END list::process");
         Ok(())
     }
 
@@ -470,22 +486,35 @@ impl ListeriaList {
         let mut results: Vec<ResultRow> = vec![];
         match self.params.one_row_per_item {
             true => {
-                for id in self.get_ids_from_sparql_rows()?.iter() {
-                    let sparql_rows: Vec<&HashMap<String, SparqlValue>> = self
-                        .sparql_rows
-                        .iter()
-                        .filter(|row| match row.get(varname) {
-                            Some(SparqlValue::Entity(v)) => v == id,
-                            _ => false,
+                let tmp_rows : Vec<(String,Vec<&HashMap<String,SparqlValue>>)>
+                    = self.get_ids_from_sparql_rows()?
+                    .iter()
+                    .map(|id| {
+                        let sparql_rows: Vec<&HashMap<String, SparqlValue>> = self
+                            .sparql_rows
+                            .iter()
+                            .filter(|row| match row.get(varname) {
+                                Some(SparqlValue::Entity(v)) => v == id,
+                                _ => false,
+                            })
+                            .collect();
+                            (id.to_owned(),sparql_rows)
                         })
-                        .collect();
-                    if !sparql_rows.is_empty() {
-                        let tmp = self.ecw.get_result_row(id, &sparql_rows, &self).await;
-                        if let Some(x) = tmp {
-                            results.push(x);
-                        }
-                    }
+                    .collect();
+                
+                let mut futures = vec!() ;
+                for (id,sparql_rows) in &tmp_rows {
+                    futures.push(self.ecw.get_result_row(&id, &sparql_rows, &self));
                 }
+                self.profile("BEGIN generate_results join_all");
+                let tmp_results = join_all(futures).await;
+                self.profile("END generate_results join_all");
+                results = tmp_results
+                    .iter()
+                    .cloned()
+                    .filter_map(|x| x)
+                    .collect();
+
             }
             false => {
                 for row in self.sparql_rows.iter() {
@@ -544,34 +573,51 @@ impl ListeriaList {
 
         self.shadow_files.clear();
 
-        // TODO better async
-        for filename in files_to_check {
-            let prefixed_filename = format!(
-                "{}:{}",
-                self.page_params.local_file_namespace_prefix(),
-                &filename
-            );
-            let params: HashMap<String, String> = vec![
-                ("action", "query"),
-                ("titles", prefixed_filename.as_str()),
-                ("prop", "imageinfo"),
-            ]
+        let param_list : Vec<HashMap<String,String>> = files_to_check
             .iter()
-            .map(|x| (x.0.to_string(), x.1.to_string()))
+            .map(|filename|{
+                let prefixed_filename = format!(
+                    "{}:{}",
+                    self.page_params.local_file_namespace_prefix(),
+                    &filename
+                );
+                let params: HashMap<String, String> = vec![
+                    ("action", "query"),
+                    ("titles", prefixed_filename.as_str()),
+                    ("prop", "imageinfo"),
+                ]
+                .iter()
+                .map(|x| (x.0.to_string(), x.1.to_string()))
+                .collect();
+                params
+            })
             .collect();
 
-            let j = match self
-                .page_params
-                .mw_api
-                .read()
-                .await
-                .get_query_api_json(&params)
-                .await
-            {
-                Ok(j) => j,
-                Err(_e) => json!({}),
-            };
+        let api_read = self
+        .page_params
+        .mw_api
+        .read()
+        .await;
 
+        let mut futures = vec![] ;
+        for params in &param_list {
+            futures.push ( api_read.get_query_api_json(&params) ) ;
+        }
+
+        let tmp_results = join_all(futures)
+            .await;
+        
+        let tmp_results : Vec<(&String,Value)> = tmp_results
+            .iter()
+            .zip(files_to_check)
+            .filter_map(|(result,filename)| match result {
+                Ok(j) => Some((filename,j.to_owned())),
+                _ => None
+            })
+            .collect()
+        ;
+
+        for (filename,j) in tmp_results {
             let mut could_be_local = false;
             match j["query"]["pages"].as_object() {
                 Some(results) => {
@@ -939,17 +985,30 @@ impl ListeriaList {
     }
 
     pub async fn process_results(&mut self) -> Result<(), String> {
+        self.profile("START list::process_results");
         self.gather_and_load_items().await?;
+        self.profile("AFTER list::process_results gather_and_load_items");
         self.process_redlinks_only()?;
+        self.profile("AFTER list::process_results process_redlinks_only");
         self.process_items_to_local_links()?;
+        self.profile("AFTER list::process_results process_items_to_local_links");
         self.process_redlinks().await?;
+        self.profile("AFTER list::process_results process_redlinks");
         self.process_remove_shadow_files().await?;
+        self.profile("AFTER list::process_results process_remove_shadow_files");
         self.process_excess_files();
+        self.profile("AFTER list::process_results process_excess_files");
         self.process_reference_items().await?;
+        self.profile("AFTER list::process_results process_reference_items");
         self.process_sort_results().await?;
+        self.profile("AFTER list::process_results process_sort_results");
         self.process_assign_sections()?;
+        self.profile("AFTER list::process_results process_assign_sections");
         self.process_regions().await?;
+        self.profile("AFTER list::process_results process_regions");
         self.fix_local_links().await?;
+        self.profile("AFTER list::process_results fix_local_links");
+        self.profile("END list::process_results");
         Ok(())
     }
 

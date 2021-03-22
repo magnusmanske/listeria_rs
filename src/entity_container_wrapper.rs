@@ -69,6 +69,9 @@ impl EntityContainerWrapper {
         sparql_rows: &[&HashMap<String, SparqlValue>],
         list: &ListeriaList,
     ) -> Option<ResultRow> {
+        if sparql_rows.is_empty() {
+            return None;
+        }
         if let LinksType::Local = list.template_params().links {
             let entity = match self.entities.get_entity(entity_id.to_owned()) {
                 Some(e) => e,
