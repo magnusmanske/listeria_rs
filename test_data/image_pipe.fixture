@@ -1,0 +1,28 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q5727898 } }
+|columns=item,P18
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable' style='width:100%'
+! item
+! image
+|-
+| [[:d:Q5727898|Q5727898]]
+| [[File:Biblioteca Municipal Jesus Delgado Valhondo.jpg|center|128px]]
+|}
+
+$$$$ SPARQL_RESULTS
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q5727898"}}]}}
