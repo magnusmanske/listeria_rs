@@ -221,7 +221,7 @@ impl ResultCellPart {
             ResultCellPart::File(file) => {
                 let thumb = list.thumbnail_size();
                 format!(
-                    "[[{}:{}|center|{}px|]]",
+                    "[[{}:{}|center|{}px]]",
                     list.local_file_namespace_prefix(),
                     &file,
                     thumb
