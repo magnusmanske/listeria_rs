@@ -22,12 +22,9 @@ $$$$ EXPECTED
 ! description
 |-
 | ''[[:d:Q83764640|[ISQ96] 382K 12]]''
-| [[Stern]] und Infrarotquelle im Sternbild [[Zentaur (Sternbild)|Zentaur]]
+| Stern im Sternbild Zentaur
 |}
 
 $$$$ SPARQL_RESULTS
 
 {"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q83764640"}}]}}
-
-$$$$ AUTODESC
-Q83764640|de|[[Stern]] und Infrarotquelle im Sternbild [[Zentaur (Sternbild)|Zentaur]]
