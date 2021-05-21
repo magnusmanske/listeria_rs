@@ -787,7 +787,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    pub fn process_assign_sections(&mut self) -> Result<(), String> {
+    pub async fn process_assign_sections(&mut self) -> Result<(), String> {
         // TODO all SectionType options
         let section_property = match &self.params.section {
             SectionType::Property(p) => p,
@@ -795,15 +795,23 @@ impl ListeriaList {
                 return Err("SPARQL variable section type not supported yet".to_string())
             }
             SectionType::None => return Ok(()), // Nothing to do
-        };
-        let datatype = self.ecw.get_datatype_for_property(section_property);
+        }.to_owned();
+        self.load_row_entities().await?;
+        let datatype = self.ecw.get_datatype_for_property(&section_property);
 
         let section_names = self
             .results
             .iter()
-            .map(|row| row.get_sortkey_prop(section_property, self, &datatype))
+            .map(|row| row.get_sortkey_prop(&section_property, self, &datatype))
             .collect::<Vec<String>>();
         //println!("{:?}/{:?}/{:?}",&section_property,&datatype,&section_names);
+
+        // Make sure section name items are loaded
+        self.ecw.load_entities(&self.wb_api, &section_names).await?;
+        let section_names = section_names
+        .iter()
+        .map(|q| self.get_label_with_fallback(q,None))
+        .collect::<Vec<String>>();
 
         // Count names
         let mut section_count = HashMap::new();
@@ -840,7 +848,7 @@ impl ListeriaList {
         self.results.iter_mut().enumerate().for_each(|(num, row)| {
             let section_name = match section_names.get(num) {
                 Some(name) => name,
-                None => return, // Err(format!("process_assign_sections: No name for {}", num)),
+                None => return,
             };
             let section_id = match name2id.get(section_name) {
                 Some(id) => *id,
@@ -1002,7 +1010,7 @@ impl ListeriaList {
         self.profile("AFTER list::process_results process_reference_items");
         self.process_sort_results().await?;
         self.profile("AFTER list::process_results process_sort_results");
-        self.process_assign_sections()?;
+        self.process_assign_sections().await?;
         self.profile("AFTER list::process_results process_assign_sections");
         self.process_regions().await?;
         self.profile("AFTER list::process_results process_regions");
