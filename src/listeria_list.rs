@@ -255,10 +255,9 @@ impl ListeriaList {
                 "https://wcqs-beta.wmflabs.org/sparql"
             }
         };
-        //println!("USING ENDPOINT {}",&endpoint);
         match self.wb_api.sparql_query_endpoint(sparql, endpoint).await {
             Ok(j) => Ok(j),
-            Err(e) => Err(format!("{:?}", &e)),
+            Err(e) => Err(format!("run_sparql_query: {:?}", &e)),
         }
     }
 
@@ -307,7 +306,9 @@ impl ListeriaList {
             }
         }
 
+        self.profile("BEGIN run_query: run_sparql_query");
         let j = self.run_sparql_query(&sparql).await?;
+        self.profile("END run_query: run_sparql_query");
         if self.page_params.simulate {
             println!("{}\n{}\n", &sparql, &j);
         }
@@ -473,8 +474,8 @@ impl ListeriaList {
         let body = api
             .query_raw(&url, &api.no_params(), "GET")
             .await
-            .map_err(|e| e.to_string())?;
-        let json: Value = serde_json::from_str(&body).map_err(|e| e.to_string())?;
+            .map_err(|e| format!("get_autodesc_description[1]: {}",e))?;
+        let json: Value = serde_json::from_str(&body).map_err(|e| format!("get_autodesc_description[1]: {}",e))?;
         match json["result"].as_str() {
             Some(result) => Ok(result.to_string()),
             None => Err("Not a valid autodesc result".to_string()),
@@ -804,7 +805,6 @@ impl ListeriaList {
             .iter()
             .map(|row| row.get_sortkey_prop(&section_property, self, &datatype))
             .collect::<Vec<String>>();
-        //println!("{:?}/{:?}/{:?}",&section_property,&datatype,&section_names);
 
         // Make sure section name items are loaded
         self.ecw.load_entities(&self.wb_api, &section_names).await?;
