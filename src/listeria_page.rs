@@ -110,7 +110,7 @@ impl ListeriaPage {
         let mut ret = vec![];
         let mut again: bool = true;
         while again {
-            let mut element = match PageElement::new_from_text(&text, &self) {
+                let mut element = match PageElement::new_from_text(&text, &self) {
                 Some(pe) => pe,
                 None => {
                     again = false;
@@ -190,7 +190,6 @@ impl ListeriaPage {
             .post_query_api_json(&params)
             .await
             .map_err(|e| e.to_string())?;
-        //println!("{:?}",&j);
         match j["error"].as_object() {
             Some(o) => {
                 let msg = o["info"].as_str().unwrap_or("Error while saving");
