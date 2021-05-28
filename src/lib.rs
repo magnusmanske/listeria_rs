@@ -175,11 +175,24 @@ pub struct Template {
 }
 
 impl Template {
-    pub fn new_from_params(title: String, text: String) -> Self {
+    pub fn new_from_params(title: String, text: String) -> Result<Self,String> {
         let mut curly_braces = 0;
         let mut parts: Vec<String> = vec![];
         let mut part: Vec<char> = vec![];
+        let mut quoted = false ;
+        let mut quote_char : char = ' ' ;
         text.chars().for_each(|c| match c {
+            '\''|'"' => {
+                if quoted {
+                    if quote_char == c {
+                        quoted = false ;
+                    }
+                } else {
+                    quoted = true ;
+                    quote_char = c ;
+                }
+                part.push(c);
+            }
             '{' => {
                 curly_braces += 1;
                 part.push(c);
@@ -189,7 +202,7 @@ impl Template {
                 part.push(c);
             }
             '|' => {
-                if curly_braces == 0 {
+                if curly_braces == 0 && !quoted {
                     parts.push(part.iter().collect());
                     part.clear();
                 } else {
@@ -201,6 +214,9 @@ impl Template {
             }
         });
         parts.push(part.into_iter().collect());
+        if quoted==true {
+            return Err ( format!("Unclosed quote: {}",quote_char) ) ;
+        }
 
         let params: HashMap<String, String> = parts
             .iter()
@@ -211,7 +227,7 @@ impl Template {
                 Some((k, v))
             })
             .collect();
-        Self { title, params }
+        Ok ( Self { title, params } )
     }
 
     pub fn fix_values(&mut self) {
@@ -542,7 +558,7 @@ impl PageElement {
                 text.as_bytes()[match_start.end()..template_start_end_bytes - 2].to_vec(),
             )
             .ok()?,
-        );
+        ).ok()?;
 
         Some(Self {
             before: String::from_utf8(text.as_bytes()[0..match_start.start()].to_vec()).ok()?,
