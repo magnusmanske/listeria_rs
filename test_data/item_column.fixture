@@ -27,7 +27,7 @@ $$$$ EXPECTED
 |-
 | [[:d:Q12345|Q12345]]
 | [[Count von Count]]
-| ''[[:d:Q30061417|vampire in a work of fiction]]''<br/>''[[:d:Q15773317|television character]]''
+| ''[[:d:Q30061417|vampire in a work of fiction]]''<br/>''[[:d:Q15773317|television character]]''<br/>''[[:d:Q89349965|puppet character]]''
 |}
 
 $$$$ SPARQL_RESULTS
