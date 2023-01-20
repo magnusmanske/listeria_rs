@@ -169,7 +169,7 @@ impl ListeriaBot {
             .filter(|wiki| !self.ignore_wikis.contains(*wiki))
             .cloned()
             .collect();
-        //let new_wikis = vec!["dewiki".to_string()]; // TESTING
+        //let new_wikis = vec!["enwiki".to_string(),"dewiki".to_string()]; // TESTING
 
         let login_in_parallel = false;
         if login_in_parallel {
@@ -251,7 +251,7 @@ impl ListeriaBot {
         self.site_matrix["sitematrix"]
             .as_object()
             .ok_or_else(|| {
-                "AppState::get_server_url_for_wiki: sitematrix not an object".to_string()
+                "ListeriaBot::get_server_url_for_wiki: sitematrix not an object".to_string()
             })?
             .iter()
             .filter_map(|(id, data)| match id.as_str() {
@@ -276,7 +276,7 @@ impl ListeriaBot {
             ))
     }
 
-    pub async fn process_next_page(&mut self) -> Result<(), String> {
+    pub async fn process_next_page(&self) -> Result<(), String> {
         // Get next page to update, for all wikis
         let wikis: Vec<String> = self
             .bot_per_wiki
@@ -353,8 +353,9 @@ impl ListeriaBot {
                     continue;
                 }
             };
-            let future = bot.process_page(page);
-            //let future = tokio::spawn(async move { bot.process_page(page).await});
+            let future = bot.process_page(&page);
+            //let bot = bot.clone();
+            //let future = tokio::spawn(async move { bot.process_page(&page).await});
             futures.push(future);
         }
 
@@ -362,14 +363,14 @@ impl ListeriaBot {
         let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
         for wpr in &results {
             self.update_page_status(&mut conn, &wpr.page, &wpr.wiki, &wpr.result, &wpr.message)
-                .await?;
+                    .await?;    
         }
         conn.disconnect().await.map_err(|e| format!("{:?}", e))?;
         Ok(())
     }
 
     async fn update_page_status(
-        &mut self,
+        &self,
         conn: &mut mysql_async::Conn,
         page: &String,
         wiki: &String,
@@ -378,6 +379,7 @@ impl ListeriaBot {
     ) -> Result<(), String> {
         let now: DateTime<Utc> = Utc::now();
         let timestamp = now.format("%Y%m%d%H%M%S").to_string();
+        println!("{wiki}:{page} : {status}");
         let params = params! {
             "wiki" => wiki,
             "page" => page,
