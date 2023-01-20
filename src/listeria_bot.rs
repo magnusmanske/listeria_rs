@@ -13,10 +13,10 @@ use wikibase::mediawiki::api::Api;
 
 #[derive(Debug, Clone, Default)]
 struct PageToProcess {
-    id: u64,
+    _id: u64,
     title: String,
-    status: String,
-    wiki: String,
+    _status: String,
+    _wiki: String,
 }
 
 #[derive(Debug, Clone)]
@@ -87,7 +87,7 @@ pub struct ListeriaBot {
     config: Arc<Configuration>,
     wiki_apis: HashMap<String, Arc<RwLock<Api>>>,
     pool: mysql_async::Pool,
-    next_page_cache: Vec<PageToProcess>,
+    _next_page_cache: Vec<PageToProcess>,
     site_matrix: Value,
     bot_per_wiki: HashMap<String, ListeriaBotWiki>,
     ignore_wikis: Vec<String>,
@@ -141,7 +141,7 @@ impl ListeriaBot {
             config: Arc::new(config),
             wiki_apis: HashMap::new(),
             pool: mysql_async::Pool::new(opts),
-            next_page_cache: vec![],
+            _next_page_cache: vec![],
             site_matrix,
             bot_per_wiki: HashMap::new(),
             ignore_wikis: Vec::new(),
@@ -299,10 +299,10 @@ impl ListeriaBot {
                 .map_and_drop(|row| {
                     let parts = from_row::<(u64, String, String, String)>(row);
                     PageToProcess {
-                        id: parts.0,
+                        _id: parts.0,
                         title: parts.1,
-                        status: parts.2,
-                        wiki: parts.3,
+                        _status: parts.2,
+                        _wiki: parts.3,
                     }
                 })
                 .await
