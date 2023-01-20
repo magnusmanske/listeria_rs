@@ -1,10 +1,10 @@
 extern crate config;
 extern crate serde_json;
 
-//use std::sync::Arc;
-//use tokio::sync::Mutex;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use listeria::listeria_bot::ListeriaBot;
-//use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration};
 //use tokio::runtime;
 
 /*
@@ -20,6 +20,33 @@ cd ~/listeria_rs ; jsub -mem 6g -cwd -continuous ./target/release/bot
 # TODO freq
 */
 
+const THREADS: i32 = 4;
+
+async fn run_singles() {
+    let running_counter = Arc::new(Mutex::new(0 as i32));
+    let bot = ListeriaBot::new("config.json").await.unwrap();
+    let bot = Arc::new(bot);
+    loop {
+        while *running_counter.lock().await>=THREADS {
+            sleep(Duration::from_millis(5000)).await;
+        }
+        let page = match bot.prepare_next_single_page().await {
+            Ok(page) => page,
+            Err(_) => continue,
+        };
+        let bot = bot.clone();
+        let running_counter = running_counter.clone();
+        *running_counter.lock().await += 1 ;
+        tokio::spawn(async move {
+            // println!("Running: {} for {:?}",running_counter.lock().await,&page);
+            if let Err(e) = bot.run_single_bot(page).await {
+                println!("{}", &e)
+            }
+            *running_counter.lock().await -= 1 ;
+        });
+    }
+}
+
 #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /*
@@ -32,37 +59,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     threaded_rt.block_on(async move { */
 
-    let bot = ListeriaBot::new("config.json").await.unwrap();
-    loop {
-        if let Err(e) = bot.process_next_page().await { println!("{}", &e);};
-    }
-
-    /*
-    let running_counter = Arc::new(Mutex::new(0 as i32));
-    let bot = ListeriaBot::new("config.json").await.unwrap();
-    let bot = Arc::new(bot);
-    loop {
-        while *running_counter.lock().await>=8 {
-            sleep(Duration::from_millis(5000)).await;
+    if true {
+        run_singles().await;
+    } else {
+        let bot = ListeriaBot::new("config.json").await.unwrap();
+        loop {
+            if let Err(e) = bot.process_next_page().await { println!("{}", &e);};
         }
-        let bot = bot.clone();
-        let running_counter = running_counter.clone();
-        tokio::spawn(async move {
-            *running_counter.lock().await += 1 ;
-            println!("Running: {}",running_counter.lock().await);
-            match bot.process_next_page().await {
-                Ok(()) => {
-                    *running_counter.lock().await -= 1 ;
-                }
-                Err(e) => {
-                    *running_counter.lock().await -= 1 ;
-                    println!("{}", &e);
-                }
-            }
-        });
     }
 
-    */
     //});
-    //Ok(())
+    Ok(())
 }
