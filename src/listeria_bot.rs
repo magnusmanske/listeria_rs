@@ -311,6 +311,11 @@ impl ListeriaBot {
             ))
     }
 
+    pub async fn reset_running(&self) -> Result<(),String> {
+        let sql = "UPDATE pagestatus SET status='OK' WHERE status='RUNNING'";
+        let _ = self.pool.get_conn().await.map_err(|e| e.to_string())?.exec_iter(sql, ()).await;
+        Ok(())
+    }
   
     /// Returns a page to be processed. 
     pub async fn prepare_next_single_page(&self) -> Result<PageToProcess, String> {

@@ -25,6 +25,7 @@ const THREADS: i32 = 4;
 async fn run_singles() {
     let running_counter = Arc::new(Mutex::new(0 as i32));
     let bot = ListeriaBot::new("config.json").await.unwrap();
+    let _ = bot.reset_running().await;
     let bot = Arc::new(bot);
     loop {
         while *running_counter.lock().await>=THREADS {
