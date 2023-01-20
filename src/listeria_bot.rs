@@ -314,7 +314,7 @@ impl ListeriaBot {
   
     /// Returns a page to be processed. 
     pub async fn prepare_next_single_page(&self) -> Result<PageToProcess, String> {
-        let sql = "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' ORDER BY pagestatus.timestamp LIMIT 1";
+        let sql = "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki FROM pagestatus,wikis WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' ORDER BY rand() LIMIT 1";
         let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
         let page = conn
             .exec_iter(sql, ())
