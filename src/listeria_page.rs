@@ -1,4 +1,3 @@
-use crate::result_row::ResultRow;
 use crate::*;
 use futures::future::try_join_all;
 use std::collections::HashMap;
@@ -18,7 +17,6 @@ links IMPLEMENT fully?
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
     page_params: Arc<PageParams>,
-    results: Vec<ResultRow>,
     data_has_changed: bool,
     elements: Vec<PageElement>,
 }
@@ -33,7 +31,6 @@ impl ListeriaPage {
         let page_params = Arc::new(page_params);
         Ok(Self {
             page_params,
-            results: vec![],
             data_has_changed: false,
             elements: vec![],
         })
