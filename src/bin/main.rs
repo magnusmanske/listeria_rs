@@ -9,8 +9,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 async fn update_page(settings: &Config, page_title: &str, api_url: &str) -> Result<String, String> {
-    let user = settings.get_str("user.user").expect("No user name");
-    let pass = settings.get_str("user.pass").expect("No user pass");
+    let user = settings.get_string("user.user").expect("No user name");
+    let pass = settings.get_string("user.pass").expect("No user pass");
 
     let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
 
