@@ -484,7 +484,7 @@ pub trait Renderer {
 pub struct PageElement {
     before: String,
     template_start: String,
-    inside: String,
+    _inside: String,
     template_end: String,
     after: String,
     list: ListeriaList,
@@ -566,7 +566,7 @@ impl PageElement {
                 text.as_bytes()[match_start.start()..template_start_end_bytes].to_vec(),
             )
             .ok()?,
-            inside,
+            _inside: inside,
             template_end: if single_template {
                 String::new()
             } else {
@@ -587,7 +587,7 @@ impl PageElement {
         Self {
             before: text.to_string(),
             template_start: String::new(),
-            inside: String::new(),
+            _inside: String::new(),
             template_end: String::new(),
             after: String::new(),
             list: ListeriaList::new(template, page.page_params()),
