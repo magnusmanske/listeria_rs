@@ -285,7 +285,11 @@ impl ListeriaBot {
     pub async fn run_single_bot(&self, page: PageToProcess ) -> Result<(), String> {
         let bot = match self.create_bot_for_wiki(&page.wiki).await {
             Some(bot) => bot.to_owned(),
-            None => return Err(format!("ListeriaBot::run_single_bot: No such wiki '{}'",page.wiki))
+            None => {
+                let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
+                self.update_page_status(&mut conn, &page.title, &page.wiki, "FAILED", &format!("No such wiki: {}",&page.wiki)).await?;
+                return Err(format!("ListeriaBot::run_single_bot: No such wiki '{}'",page.wiki))
+            }
         };
         let wpr = bot.process_page(&page.title).await;
         let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
@@ -314,20 +318,10 @@ impl ListeriaBot {
         let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp,`bot_version`=2 WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
         conn.exec_iter(sql.as_str(), params)
             .await
-            .map_err(|e| {
-                format!(
-                    "ListeriaBot::update_page_status: SQL query error[1]: {:?}",
-                    e
-                )
-            })?
+            .map_err(|e| format!("ListeriaBot::update_page_status: SQL query error[1]: {:?}",e))?
             .map_and_drop(|row| from_row::<String>(row))
             .await
-            .map_err(|e| {
-                format!(
-                    "ListeriaBot::update_page_status: SQL query error[2]: {:?}",
-                    e
-                )
-            })?;
+            .map_err(|e| format!("ListeriaBot::update_page_status: SQL query error[2]: {:?}",e))?;
         Ok(())
     }
 
