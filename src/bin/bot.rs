@@ -60,14 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     threaded_rt.block_on(async move { */
 
-    if true {
-        run_singles().await;
-    } else {
-        let bot = ListeriaBot::new("config.json").await.unwrap();
-        loop {
-            if let Err(e) = bot.process_next_page().await { println!("{}", &e);};
-        }
-    }
+    run_singles().await;
 
     //});
     Ok(())
