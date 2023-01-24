@@ -1,11 +1,10 @@
 extern crate config;
 extern crate serde_json;
 
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::{sync::Arc, convert::TryInto};
+use tokio::{sync::Mutex, runtime};
 use listeria::listeria_bot::ListeriaBot;
 use tokio::time::{sleep, Duration};
-//use tokio::runtime;
 
 /*
 TEST DB CONNECT
@@ -20,7 +19,7 @@ cd ~/listeria_rs ; jsub -mem 6g -cwd -continuous ./target/release/bot
 # TODO freq
 */
 
-const THREADS: i32 = 4;
+const THREADS: usize = 4;
 
 async fn run_singles() {
     let running_counter = Arc::new(Mutex::new(0 as i32));
@@ -28,7 +27,7 @@ async fn run_singles() {
     let _ = bot.reset_running().await;
     let bot = Arc::new(bot);
     loop {
-        while *running_counter.lock().await>=THREADS {
+        while *running_counter.lock().await>=THREADS.try_into().expect("Can't convert THREADS to usize") {
             sleep(Duration::from_millis(5000)).await;
         }
         let page = match bot.prepare_next_single_page().await {
@@ -48,20 +47,19 @@ async fn run_singles() {
     }
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+//#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /*
+    
     let threaded_rt = runtime::Builder::new_multi_thread()
         .enable_all()
-        .worker_threads(8)
+        .worker_threads(THREADS)
         .thread_name("listeria")
-        .thread_stack_size(3 * 1024 * 1024)
+        .thread_stack_size(THREADS * 1024 * 1024)
         .build()?;
 
-    threaded_rt.block_on(async move { */
-
-    run_singles().await;
-
-    //});
+    threaded_rt.block_on(async move {
+        run_singles().await;
+    });
     Ok(())
 }
