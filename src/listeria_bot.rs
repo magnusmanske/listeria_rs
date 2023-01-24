@@ -1,6 +1,5 @@
 use tokio::sync::Mutex;
 use chrono::{DateTime, Utc};
-use futures::future::*;
 use crate::configuration::Configuration;
 use crate::listeria_page::ListeriaPage;
 use mysql_async as my;
@@ -104,10 +103,8 @@ pub struct ListeriaBot {
     config: Arc<Configuration>,
     wiki_apis: Arc<Mutex<HashMap<String, Arc<RwLock<Api>>>>>,
     pool: mysql_async::Pool,
-    _next_page_cache: Vec<PageToProcess>,
     site_matrix: Value,
     bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
-    ignore_wikis: Vec<String>,
 }
 
 impl ListeriaBot {
@@ -154,70 +151,13 @@ impl ListeriaBot {
             .get_query_api_json(&params)
             .await
             .map_err(|e| e.to_string())?;
-        let mut ret = Self {
+        Ok(Self {
             config: Arc::new(config),
             wiki_apis: Arc::new(Mutex::new(HashMap::new())),
             pool: mysql_async::Pool::new(opts),
-            _next_page_cache: vec![],
             site_matrix,
             bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
-            ignore_wikis: Vec::new(),
-        };
-
-        ret.update_bots().await?;
-        Ok(ret)
-    }
-
-    async fn update_bots(&mut self) -> Result<(), String> {
-        let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
-        let sql = "SELECT DISTINCT wikis.name AS wiki FROM wikis".to_string();
-        let wikis = conn
-            .exec_iter(sql.as_str(), ())
-            .await
-            .map_err(|e| format!("PageList::update_bots: SQL query error[1]: {:?}", e))?
-            .map_and_drop(from_row::<String>)
-            .await
-            .map_err(|e| format!("PageList::update_bots: SQL query error[2]: {:?}", e))?;
-        conn.disconnect().await.map_err(|e| format!("{:?}", e))?;
-
-        let existing_wikis: Vec<String> = self.bot_per_wiki.lock().await.keys().cloned().collect();
-        let new_wikis: Vec<String> = wikis
-            .iter()
-            .filter(|wiki| !existing_wikis.contains(*wiki))
-            .filter(|wiki| !self.ignore_wikis.contains(*wiki))
-            .cloned()
-            .collect();
-        //let new_wikis = vec!["enwiki".to_string(),"dewiki".to_string()]; // TESTING
-
-        let login_in_parallel = false;
-        if login_in_parallel {
-            //This does not work, probably a MW issue
-            let mut futures = Vec::new();
-            for wiki in &new_wikis {
-                let future = self.create_wiki_api(wiki);
-                futures.push(future);
-            }
-            let results = join_all(futures).await;
-
-            for num in 0..results.len() {
-                let wiki = &new_wikis[num];
-                match &results[num] {
-                    Ok(mw_api) => {
-                        self.wiki_apis.lock().await.insert(wiki.to_owned(), mw_api.clone());
-                    }
-                    Err(e) => {
-                        println!("Can't login to {}: {}", wiki, e);
-                        self.ignore_wikis.push(wiki.to_owned());
-                    }
-                }
-            }
-        }
-
-        /*
-        for wiki in &new_wikis {
-            let _ = self.create_bot_for_wiki(wiki).await;
-        } */
-        Ok(())
+        })
     }
 
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
