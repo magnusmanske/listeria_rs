@@ -287,7 +287,7 @@ impl ListeriaBot {
             Some(bot) => bot.to_owned(),
             None => {
                 let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
-                self.update_page_status(&mut conn, &page.title, &page.wiki, "FAILED", &format!("No such wiki: {}",&page.wiki)).await?;
+                self.update_page_status(&mut conn, &page.title, &page.wiki, "FAIL", &format!("No such wiki: {}",&page.wiki)).await?;
                 return Err(format!("ListeriaBot::run_single_bot: No such wiki '{}'",page.wiki))
             }
         };
