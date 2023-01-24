@@ -47,10 +47,10 @@ async fn run_singles() {
     }
 }
 
-//#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-#[tokio::main(flavor = "multi_thread")]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+//#[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    
+    /*
     let threaded_rt = runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(THREADS)
@@ -58,8 +58,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .thread_stack_size(THREADS * 1024 * 1024)
         .build()?;
 
-    threaded_rt.block_on(async move {
+    threaded_rt.block_on(async move { */
         run_singles().await;
-    });
+    //});
     Ok(())
 }
