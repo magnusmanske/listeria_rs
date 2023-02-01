@@ -28,7 +28,7 @@ async fn run_singles() {
     let bot = Arc::new(bot);
     loop {
         while *running_counter.lock().await>=THREADS.try_into().expect("Can't convert THREADS to usize") {
-            sleep(Duration::from_millis(5000)).await;
+            sleep(Duration::from_millis(100)).await;
         }
         let page = match bot.prepare_next_single_page().await {
             Ok(page) => page,
