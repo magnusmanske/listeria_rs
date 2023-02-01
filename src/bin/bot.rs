@@ -15,7 +15,10 @@ REFRESH FROM GIT
 cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -cwd cargo build --release
 
 # RUN BOT ON TOOLFORGE
-cd ~/listeria_rs ; jsub -mem 6g -cwd -continuous ./target/release/bot 8
+rm ~/rustbot* && \
+toolforge-jobs delete rustbot && toolforge-jobs delete rustbot2 && \
+toolforge-jobs run --image tf-php74 --mem 3000Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh' rustbot 8 && \
+toolforge-jobs run --image tf-php74 --mem 3000Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh' rustbot2 8
 
 # TODO freq
 */
