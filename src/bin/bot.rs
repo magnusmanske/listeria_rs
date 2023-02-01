@@ -12,15 +12,14 @@ TEST DB CONNECT
 ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
 
 REFRESH FROM GIT
-cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -cwd cargo build --release
+cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -sync y -cwd cargo build --release
 
 # RUN BOT ON TOOLFORGE
-rm ~/rustbot* && \
 toolforge-jobs delete rustbot && toolforge-jobs delete rustbot2 && \
-toolforge-jobs run --image tf-php74 --mem 3000Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh' rustbot 8 && \
-toolforge-jobs run --image tf-php74 --mem 3000Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh' rustbot2 8
+rm ~/rustbot* && \
+toolforge-jobs run --image tf-php74 --mem 3000Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 8' rustbot && \
+toolforge-jobs run --image tf-php74 --mem 3000Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 8' rustbot2
 
-# TODO freq
 */
 
 const DEFAULT_THREADS: usize = 4;
@@ -64,6 +63,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .worker_threads(threads)
         .thread_name("listeria")
         .thread_stack_size(threads * 1024 * 1024)
+        .thread_keep_alive(Duration::from_secs(300)) // 5 min
         .build()?;
 
     threaded_rt.block_on(async move {
