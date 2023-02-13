@@ -1,7 +1,7 @@
 extern crate config;
 extern crate serde_json;
 
-use std::{sync::Arc, convert::TryInto};
+use std::sync::Arc;
 use tokio::{sync::Mutex, runtime};
 use listeria::listeria_bot::ListeriaBot;
 use tokio::time::{sleep, Duration};
@@ -17,20 +17,20 @@ cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; js
 # RUN BOT ON TOOLFORGE
 toolforge-jobs delete rustbot && toolforge-jobs delete rustbot2 && \
 rm ~/rustbot* && \
-toolforge-jobs run --image tf-php74 --mem 3000Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 8' rustbot && \
-toolforge-jobs run --image tf-php74 --mem 3000Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 8' rustbot2
+toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 8' rustbot && \
+toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 8' rustbot2
 
 */
 
 const DEFAULT_THREADS: usize = 4;
 
 async fn run_singles(threads: usize) {
-    let running_counter = Arc::new(Mutex::new(0 as i32));
+    let running_counter = Arc::new(Mutex::new(0 as usize));
     let bot = ListeriaBot::new("config.json").await.unwrap();
     let _ = bot.reset_running().await;
     let bot = Arc::new(bot);
     loop {
-        while *running_counter.lock().await>=threads.try_into().expect("Can't convert threads to usize") {
+        while *running_counter.lock().await>=threads {
             sleep(Duration::from_millis(100)).await;
         }
         let page = match bot.prepare_next_single_page().await {

@@ -179,6 +179,7 @@ impl ListeriaPage {
             ("text", wikitext),
             ("summary", "Wikidata list updated [V2]"),
             ("token", &token),
+            ("bot","1"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))

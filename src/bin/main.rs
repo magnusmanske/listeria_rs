@@ -37,9 +37,9 @@ async fn update_page(settings: &Config, page_title: &str, api_url: &str) -> Resu
 async fn main() -> Result<(), String> {
     let ini_file = "listeria.ini";
 
-    let mut settings = Config::default();
-    settings
-        .merge(File::with_name(ini_file))
+    let settings = Config::builder()
+        .add_source(File::new("config/settings", config::FileFormat::Ini))
+        .build()
         .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 
     let args: Vec<String> = env::args().collect();
