@@ -15,7 +15,7 @@ $$$$ WIKITEXT
 {{Wikidata list end}}
 
 $$$$ EXPECTED
-{| class='wikitable sortable' style='width:100%'
+{| class='wikitable sortable'
 ! item
 ! name
 ! alias/en

@@ -16,7 +16,7 @@ $$$$ WIKITEXT
 
 $$$$ EXPECTED
 
-{| class='wikitable sortable' style='width:100%'
+{| class='wikitable sortable'
 ! label
 ! fake heading
 |-

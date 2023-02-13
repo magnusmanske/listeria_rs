@@ -27,7 +27,7 @@ something something
 
 $$$$ EXPECTED
 
-{| class='wikitable sortable' style='width:100%'
+{| class='wikitable sortable'
 ! name
 ! instance of
 |-
@@ -46,7 +46,7 @@ $$$$ EXPECTED
 
 ----
 
-{| class='wikitable sortable' style='width:100%'
+{| class='wikitable sortable'
 ! name
 ! instance of
 |-

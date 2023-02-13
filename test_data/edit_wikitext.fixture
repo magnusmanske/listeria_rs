@@ -17,7 +17,7 @@ P1559 monolingual
 |sparql=SELECT ?item { VALUES ?item { wd:Q83764640 } }
 |columns=label,description
 }}
-{| class='wikitable sortable' style='width:100%'
+{| class='wikitable sortable'
 !label
 !description
 |-
@@ -40,7 +40,7 @@ P1559 monolingual
 |sparql=SELECT ?item { VALUES ?item { wd:Q83764640 } }
 |columns=label,description
 }}
-{| class='wikitable sortable' style='width:100%'
+{| class='wikitable sortable'
 ! label
 ! description
 |-
