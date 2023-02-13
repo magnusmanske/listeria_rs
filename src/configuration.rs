@@ -30,8 +30,7 @@ pub struct Configuration {
     default_thumbnail_size: Option<u64>,
     location_regions: Vec<String>,
     mysql: Option<Value>,
-    wiki_user: String,
-    wiki_password: String,
+    oauth2_token: String,
 }
 
 impl Configuration {
@@ -66,11 +65,8 @@ impl Configuration {
         if let Some(lr) = j["location_regions"].as_array() {
             ret.location_regions = lr.iter().map(|s| s.as_str().unwrap().to_string()).collect()
         }
-        if let Some(s) = j["wiki_login"]["user"].as_str() {
-            ret.wiki_user = s.to_string()
-        }
-        if let Some(s) = j["wiki_login"]["pass"].as_str() {
-            ret.wiki_password = s.to_string()
+        if let Some(s) = j["wiki_login"]["token"].as_str() {
+            ret.oauth2_token = s.to_string()
         }
         if j["mysql"].is_object() {
             ret.mysql = Some(j["mysql"].to_owned());
@@ -148,12 +144,8 @@ impl Configuration {
         Ok(ret)
     }
 
-    pub fn wiki_user(&self) -> &String {
-        &self.wiki_user
-    }
-
-    pub fn wiki_password(&self) -> &String {
-        &self.wiki_password
+    pub fn oauth2_token(&self) -> &String {
+        &self.oauth2_token
     }
 
     pub fn mysql(&self, key: &str) -> Value {
@@ -239,12 +231,10 @@ impl Configuration {
     }
 
     pub async fn wbapi_login(&mut self, key: &str) -> bool {
+        let oauth2_token = self.oauth2_token().to_owned();
         match self.wb_apis.get_mut(key) {
             Some(mut api) => {
-                (*Arc::get_mut(&mut api).unwrap())
-                    .login(self.wiki_user.to_owned(), self.wiki_password.to_owned())
-                    .await
-                    .expect("Could not log in");
+                Arc::get_mut(&mut api).unwrap().set_oauth2(&oauth2_token);
                 true
             }
             None => false,
