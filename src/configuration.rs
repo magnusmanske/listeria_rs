@@ -73,12 +73,14 @@ impl Configuration {
         }
 
         // valid WikiBase APIs
+        let oauth2_token = ret.oauth2_token.to_owned();
         if let Some(o) = j["apis"].as_object() {
             for (k, v) in o.iter() {
                 if let (name, Some(url)) = (k.as_str(), v.as_str()) {
-                    let api = wikibase::mediawiki::api::Api::new(&url)
+                    let mut api = wikibase::mediawiki::api::Api::new(&url)
                         .await
                         .map_err(|e| e.to_string())?;
+                    api.set_oauth2(&oauth2_token);
                     ret.wb_apis.insert(name.to_string(), Arc::new(api));
                 }
             }
