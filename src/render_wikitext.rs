@@ -117,7 +117,6 @@ impl RendererWikitext {
                     if list.template_params().wdedit {
                         wt += " wd_can_edit";
                     }
-                    wt += "' style='width:100%'\n";
                     list.columns()
                         .iter()
                         .enumerate()
