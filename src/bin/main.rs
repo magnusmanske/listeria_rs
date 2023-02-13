@@ -9,18 +9,15 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 async fn update_page(settings: &Config, page_title: &str, api_url: &str) -> Result<String, String> {
-    let user = settings.get_string("user.user").expect("No user name");
-    let pass = settings.get_string("user.pass").expect("No user pass");
-
     let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
 
     let mut mw_api = wikibase::mediawiki::api::Api::new(api_url)
         .await
         .map_err(|e| e.to_string())?;
-    mw_api
-        .login(user.to_owned(), pass.to_owned())
-        .await
-        .map_err(|e| e.to_string())?;
+
+    let token = settings.get_string("user.token").expect("No oauth2 user.token");
+    mw_api.set_oauth2(&token);
+
     let mw_api = Arc::new(RwLock::new(mw_api));
     let mut page = ListeriaPage::new(config, mw_api, page_title.into()).await?;
     page.run().await?;
@@ -38,7 +35,7 @@ async fn main() -> Result<(), String> {
     let ini_file = "listeria.ini";
 
     let settings = Config::builder()
-        .add_source(File::new("config/settings", config::FileFormat::Ini))
+        .add_source(File::new(ini_file, config::FileFormat::Ini))
         .build()
         .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 

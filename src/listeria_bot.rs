@@ -330,13 +330,7 @@ impl ListeriaBot {
         let mut mw_api = wikibase::mediawiki::api::Api::new(&api_url)
             .await
             .map_err(|e| e.to_string())?;
-        mw_api
-            .login(
-                self.config.wiki_user().to_owned(),
-                self.config.wiki_password().to_owned(),
-            )
-            .await
-            .map_err(|e| format!("{}: {}",wiki,e))?;
+        mw_api.set_oauth2(self.config.oauth2_token());
         let mw_api = Arc::new(RwLock::new(mw_api));
         Ok(mw_api)
     }
