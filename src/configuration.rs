@@ -59,11 +59,11 @@ impl Configuration {
         if let Some(sic) = j["shadow_images_check"].as_array() {
             ret.shadow_images_check = sic
                 .iter()
-                .map(|s| s.as_str().unwrap().to_string())
+                .map(|s| s.as_str().expect("shadow_images_check needs to be a string").to_string())
                 .collect()
         }
         if let Some(lr) = j["location_regions"].as_array() {
-            ret.location_regions = lr.iter().map(|s| s.as_str().unwrap().to_string()).collect()
+            ret.location_regions = lr.iter().map(|s| s.as_str().expect("location_regions needs to be a string").to_string()).collect()
         }
         if let Some(s) = j["wiki_login"]["token"].as_str() {
             ret.oauth2_token = s.to_string()
@@ -236,7 +236,7 @@ impl Configuration {
         let oauth2_token = self.oauth2_token().to_owned();
         match self.wb_apis.get_mut(key) {
             Some(mut api) => {
-                Arc::get_mut(&mut api).unwrap().set_oauth2(&oauth2_token);
+                if let Some(api) = Arc::get_mut(&mut api) {api.set_oauth2(&oauth2_token);}
                 true
             }
             None => false,

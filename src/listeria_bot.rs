@@ -348,6 +348,6 @@ impl ListeriaBot {
     }
 
     pub async fn destruct(&mut self) {
-        //self.pool.disconnect().await.unwrap(); // TODO
+        //self.pool.disconnect().await; // TODO
     }
 }

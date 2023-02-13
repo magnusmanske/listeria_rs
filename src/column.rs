@@ -24,17 +24,17 @@ impl ColumnType {
             static ref RE_LABEL_LANG: Regex = RegexBuilder::new(r#"^label/(.+)$"#)
                 .case_insensitive(true)
                 .build()
-                .unwrap();
+                .expect("RE_LABEL_LANG does not parse");
             static ref RE_ALIAS_LANG: Regex = RegexBuilder::new(r#"^alias/(.+)$"#)
                 .case_insensitive(true)
                 .build()
-                .unwrap();
-            static ref RE_PROPERTY: Regex = Regex::new(r#"^([Pp]\d+)$"#).unwrap();
+                .expect("RE_ALIAS_LANG does not parse");
+            static ref RE_PROPERTY: Regex = Regex::new(r#"^([Pp]\d+)$"#).expect("RE_PROPERTY does not parse");
             static ref RE_PROP_QUAL: Regex =
-                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#).unwrap();
+                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#).expect("RE_PROP_QUAL does not parse");
             static ref RE_PROP_QUAL_VAL: Regex =
-                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#).unwrap();
-            static ref RE_FIELD: Regex = Regex::new(r#"^\?(.+)$"#).unwrap();
+                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#).expect("RE_PROP_QUAL_VAL does not parse");
+            static ref RE_FIELD: Regex = Regex::new(r#"^\?(.+)$"#).expect("RE_FIELD does not parse");
         }
         match s.to_lowercase().as_str() {
             "number" => return ColumnType::Number,
@@ -130,7 +130,7 @@ pub struct Column {
 impl Column {
     pub fn new(s: &str) -> Self {
         lazy_static! {
-            static ref RE_COLUMN_LABEL: Regex = Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).unwrap();
+            static ref RE_COLUMN_LABEL: Regex = Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).expect("RE_COLUMN_LABEL does not parse");
         }
         match RE_COLUMN_LABEL.captures(&s) {
             Some(caps) => Self {

@@ -108,7 +108,7 @@ impl ResultCellPart {
     pub fn reduce_time(v: &wikibase::TimeValue) -> String {
         lazy_static! {
             static ref RE_DATE: Regex =
-                Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#).unwrap();
+                Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#).expect("RE_DATE does not parse");
         }
         let s = v.time().to_string();
         let (year, month, day) = match RE_DATE.captures(&s) {
