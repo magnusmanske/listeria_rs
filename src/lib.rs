@@ -104,13 +104,13 @@ impl SparqlValue {
     pub fn new_from_json(j: &Value) -> Option<Self> {
         lazy_static! {
             static ref RE_ENTITY: Regex =
-                Regex::new(r#"^https{0,1}://[^/]+/entity/([A-Z]\d+)$"#).unwrap();
+                Regex::new(r#"^https{0,1}://[^/]+/entity/([A-Z]\d+)$"#).expect("RE_ENTITY does not parse");
             static ref RE_FILE: Regex =
-                Regex::new(r#"^https{0,1}://[^/]+/wiki/Special:FilePath/(.+?)$"#).unwrap();
+                Regex::new(r#"^https{0,1}://[^/]+/wiki/Special:FilePath/(.+?)$"#).expect("RE_FILE does not parse");
             static ref RE_POINT: Regex =
-                Regex::new(r#"^Point\((-{0,1}\d+[\.0-9]+) (-{0,1}\d+[\.0-9]+)\)$"#).unwrap();
+                Regex::new(r#"^Point\((-{0,1}\d+[\.0-9]+) (-{0,1}\d+[\.0-9]+)\)$"#).expect("RE_POINT does not parse");
             static ref RE_DATE: Regex =
-                Regex::new(r#"^([+-]{0,1}\d+-\d{2}-\d{2})T00:00:00Z$"#).unwrap();
+                Regex::new(r#"^([+-]{0,1}\d+-\d{2}-\d{2})T00:00:00Z$"#).expect("RE_DATE does not parse");
         }
         let value = match j["value"].as_str() {
             Some(v) => v,
@@ -275,8 +275,8 @@ pub enum SortMode {
 impl SortMode {
     pub fn new(os: Option<&String>) -> Self {
         lazy_static! {
-            static ref RE_PROP: Regex = Regex::new(r"^P\d+$").unwrap();
-            static ref RE_SPARQL: Regex = Regex::new(r"^?\S+$").unwrap();
+            static ref RE_PROP: Regex = Regex::new(r"^P\d+$").expect("RE_PROP does not parse");
+            static ref RE_SPARQL: Regex = Regex::new(r"^?\S+$").expect("RE_SPARQL does not parse");
         }
         let os = os.map(|s| s.trim().to_uppercase());
         match os {
@@ -448,9 +448,9 @@ pub enum SectionType {
 impl SectionType {
     pub fn new_from_string_option(s: Option<&String>) -> Self {
         lazy_static! {
-            static ref RE_PROP : Regex = Regex::new(r"^[Pp]\d+$").unwrap();
-            static ref RE_PROP_NUM : Regex = Regex::new(r"^\d+$").unwrap(); // Yes people do that!
-            static ref RE_SPARQL : Regex = Regex::new(r"^@.+$").unwrap();
+            static ref RE_PROP : Regex = Regex::new(r"^[Pp]\d+$").expect("RE_PROP does not parse");
+            static ref RE_PROP_NUM : Regex = Regex::new(r"^\d+$").expect("RE_PROP_NUM does not parse"); // Yes people do that!
+            static ref RE_SPARQL : Regex = Regex::new(r"^@.+$").expect("RE_SPARQL does not parse");
         }
         let s = match s {
             Some(s) => s,
@@ -514,13 +514,13 @@ impl PageElement {
             .dot_matches_new_line(true)
             .case_insensitive(true)
             .build()
-            .unwrap();
+            .ok()?;
         let seperator_end: Regex = RegexBuilder::new(&pattern_string_end)
             .multi_line(true)
             .dot_matches_new_line(true)
             .case_insensitive(true)
             .build()
-            .unwrap();
+            .ok()?;
 
         let match_start = match seperator_start.find(&text) {
             Some(m) => m,
