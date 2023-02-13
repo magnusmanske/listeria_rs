@@ -268,8 +268,7 @@ impl ListeriaBot {
             LIMIT 1000) ps
             ORDER BY rand()
             LIMIT 1"#;
-        let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
-        let page = conn
+        let page = self.pool.get_conn().await.map_err(|e| e.to_string())?
             .exec_iter(sql, ())
             .await
             .map_err(|e| format!("ListeriaBot::prepare_next_single_page: SQL query error[1]: {:?}",e))?
@@ -278,7 +277,7 @@ impl ListeriaBot {
             .map_err(|e| format!("ListeriaBot::prepare_next_single_page: SQL query error[2]: {:?}",e))?
             .pop()
             .ok_or(format!("!!"))?;
-        self.update_page_status(&mut conn,&page.title,&page.wiki,"RUNNING","PREPARING").await?;
+        self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
         Ok(page)
     }
 
@@ -286,20 +285,17 @@ impl ListeriaBot {
         let bot = match self.create_bot_for_wiki(&page.wiki).await {
             Some(bot) => bot.to_owned(),
             None => {
-                let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
-                self.update_page_status(&mut conn, &page.title, &page.wiki, "FAIL", &format!("No such wiki: {}",&page.wiki)).await?;
+                self.update_page_status( &page.title, &page.wiki, "FAIL", &format!("No such wiki: {}",&page.wiki)).await?;
                 return Err(format!("ListeriaBot::run_single_bot: No such wiki '{}'",page.wiki))
             }
         };
         let wpr = bot.process_page(&page.title).await;
-        let mut conn = self.pool.get_conn().await.map_err(|e| e.to_string())?;
-        self.update_page_status(&mut conn, &wpr.page, &wpr.wiki, &wpr.result, &wpr.message).await?;
+        self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message).await?;
         Ok(())
     }
 
     async fn update_page_status(
         &self,
-        conn: &mut mysql_async::Conn,
         page: &str,
         wiki: &str,
         status: &str,
@@ -316,7 +312,8 @@ impl ListeriaBot {
             "message" => message, //format!("V2:{}",&message),
         };
         let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp,`bot_version`=2 WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
-        conn.exec_iter(sql.as_str(), params)
+        self.pool.get_conn().await.map_err(|e| e.to_string())?
+            .exec_iter(sql.as_str(), params)
             .await
             .map_err(|e| format!("ListeriaBot::update_page_status: SQL query error[1]: {:?}",e))?
             .map_and_drop(|row| from_row::<String>(row))
@@ -336,11 +333,8 @@ impl ListeriaBot {
     }
 
     async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>, String> {
-        match &self.wiki_apis.lock().await.get(wiki) {
-            Some(api) => {
-                return Ok((*api).clone());
-            }
-            None => {}
+        if let Some(api) = &self.wiki_apis.lock().await.get(wiki) {
+            return Ok((*api).clone());
         }
 
         let mw_api = self.create_wiki_api(wiki).await?;
