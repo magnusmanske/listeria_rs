@@ -2,38 +2,95 @@ use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
-use crate::{LinksType, PageParams, SparqlValue};
+use crate::{LinksType, SparqlValue};
 use std::collections::HashMap;
 use std::sync::Arc;
 use wikibase::entity::*;
 use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
+use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use wikibase::snak::SnakDataType;
+use tempfile::NamedTempFile;
 
-#[derive(Debug, Clone)]
+const MAX_LOCAL_CACHED_ENTITIES: usize = 500;
+
+#[derive(Clone)]
 pub struct EntityContainerWrapper {
     entities: EntityContainer,
-    page_params: Arc<PageParams>,
+    pickledb: Option<Arc<PickleDb>>,
+    pickledb_filename: Option<Arc<NamedTempFile>>,
+}
+
+impl std::fmt::Debug for EntityContainerWrapper {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EntityContainerWrapper")
+         .field("entities", &self.entities)
+         .field("pickledb_filename", &self.pickledb_filename)
+         .finish()
+    }
 }
 
 impl EntityContainerWrapper {
-    pub fn new(page_params: Arc<PageParams>) -> Self {
+    pub fn new() -> Self {
         Self {
             entities: EntityContainer::new(),
-            page_params,
+            pickledb: None,
+            pickledb_filename: None,
         }
     }
 
     pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<(), String> {
-        match self.entities.load_entities(api, ids).await {
-            Ok(_) => Ok(()),
-            Err(e) => Err(format!("Error loading entities: {:?}", &e)),
+        self.load_entities_max_size(api, ids, MAX_LOCAL_CACHED_ENTITIES).await
+    }
+
+    pub async fn load_entities_max_size(&mut self, api: &Api, ids: &Vec<String>, max_entities: usize) -> Result<(), String> {
+        let ids = self.entities.unique_shuffle_entity_ids(ids).unwrap();
+        if ids.len()>max_entities { // Use pickledb disk cache
+            self.pickledb_filename = Some(Arc::new(            
+                match  NamedTempFile::new() {
+                    Ok(filename) => filename,
+                    Err(e) => return Err(format!("Error loading entities: {}", &e.to_string()))
+                }
+            ));
+            let temp_filename = self.pickledb_filename.as_ref().unwrap().path().to_str().unwrap();
+            let mut db = PickleDb::new(
+                temp_filename,
+                PickleDbDumpPolicy::AutoDump,
+                SerializationMethod::Json,
+            );
+            let chunks = ids.chunks(max_entities) ;
+            for chunk in chunks {
+                if let Err(e) = self.entities.load_entities(api, &chunk.into()).await {
+                    return Err(format!("Error loading entities: {:?}", &e))
+                }
+                for entity_id in chunk {
+                    if let Some(entity) = self.entities.get_entity(entity_id) {
+                        let json = entity.to_json();
+                        db.set(&entity.id(), &json).unwrap();
+                    }
+                }
+                self.entities.clear();
+            }
+            self.pickledb = Some(Arc::new(db));
+            Ok(())
+        } else {
+            match self.entities.load_entities(api, &ids).await {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Error loading entities: {:?}", &e)),
+            }
         }
     }
 
+    pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
+        if let Some(entity) = self.entities.get_entity(entity_id) {
+            return Some(entity)
+        }
+        let json = self.pickledb.as_ref()?.get::<serde_json::Value>(entity_id)?;
+        Entity::new_from_json(&json).ok()
+    }
+
     pub fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
-        self.entities
-            .get_entity(entity_id.to_owned())?
+        self.get_entity(entity_id)?
             .label_in_locale(language)
             .map(|s| s.to_string())
     }
@@ -44,7 +101,7 @@ impl EntityContainerWrapper {
         wiki: &str,
         language: &str,
     ) -> Option<ResultCellPart> {
-        let entity = match self.entities.get_entity(item.to_owned()) {
+        let entity = match self.get_entity(item) {
             Some(e) => e,
             None => return None,
         };
@@ -73,7 +130,7 @@ impl EntityContainerWrapper {
             return None;
         }
         if let LinksType::Local = list.template_params().links {
-            let entity = match self.entities.get_entity(entity_id.to_owned()) {
+            let entity = match self.get_entity(entity_id) {
                 Some(e) => e,
                 None => return None,
             };
@@ -94,7 +151,7 @@ impl EntityContainerWrapper {
     }
 
     pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
-        let pi = self.entities.get_entity(prop.to_owned())?;
+        let pi = self.get_entity(prop)?;
         pi.claims_with_property("P1630")
             .iter()
             .filter_map(|s| {
@@ -109,32 +166,8 @@ impl EntityContainerWrapper {
             .next()
     }
 
-    pub fn get_filtered_claims(
-        &self,
-        e: &wikibase::entity::Entity,
-        property: &str,
-    ) -> Vec<wikibase::statement::Statement> {
-        let mut ret: Vec<wikibase::statement::Statement> = e
-            .claims_with_property(property)
-            .iter()
-            .map(|x| (*x).clone())
-            .collect();
-
-        if self.page_params.config.prefer_preferred() {
-            let has_preferred = ret
-                .iter()
-                .any(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
-            if has_preferred {
-                ret.retain(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
-            }
-            ret
-        } else {
-            ret
-        }
-    }
-
     pub fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
-        match self.entities.get_entity(prop) {
+        match self.get_entity(prop) {
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),
@@ -169,7 +202,25 @@ impl EntityContainerWrapper {
         entities_to_load
     }
 
-    pub fn entities(&self) -> &EntityContainer {
-        &self.entities
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_pickledb() {
+        let mut ecw = EntityContainerWrapper::new();
+        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
+        let ids = ["Q1","Q2","Q3","Q4","Q5"].iter().map(|s|s.to_string()).collect();
+        ecw.load_entities_max_size(&api, &ids, 2).await.unwrap();
+        assert_eq!(ecw.entities.len(),0);
+
+        let path = ecw.pickledb_filename.as_ref().unwrap().path();
+        let len = std::fs::metadata(path).unwrap().len();
+        assert!(len>0);
+
+        let e2 = ecw.get_entity("Q2").unwrap();
+        assert_eq!(e2.id(),"Q2");
     }
 }

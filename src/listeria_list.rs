@@ -47,7 +47,7 @@ impl ListeriaList {
             params: TemplateParams::new(),
             sparql_rows: vec![],
             sparql_main_variable: None,
-            ecw: EntityContainerWrapper::new(page_params.clone()),
+            ecw: EntityContainerWrapper::new(),
             results: vec![],
             shadow_files: vec![],
             local_page_cache: HashMap::new(),
@@ -662,7 +662,7 @@ impl ListeriaList {
         let wiki = self.page_params.wiki.to_owned();
         for row in self.results.iter_mut() {
             row.set_keep(
-                match self.ecw.entities().get_entity(row.entity_id().to_owned()) {
+                match self.ecw.get_entity(row.entity_id()) {
                     Some(entity) => {
                         match entity.sitelinks() {
                             Some(sl) => sl.iter().filter(|s| *s.site() == wiki).count() == 0,
@@ -700,7 +700,7 @@ impl ListeriaList {
         ids.dedup();
         let mut labels = vec![];
         for id in ids {
-            if let Some(e) = self.get_entity(id.to_owned()) {
+            if let Some(e) = self.get_entity(id) {
                 if let Some(l) = e.label_in_locale(self.language()) {
                     labels.push(l.to_string());
                 }
@@ -1024,8 +1024,8 @@ impl ListeriaList {
         &self.params.links // TODO duplicate code
     }
 
-    pub fn get_entity<S: Into<String>>(&self, entity_id: S) -> Option<wikibase::Entity> {
-        self.ecw.entities().get_entity(entity_id)
+    pub fn get_entity(&self, entity_id: &str) -> Option<wikibase::Entity> {
+        self.ecw.get_entity(entity_id)
     }
 
     pub fn get_row_template(&self) -> &Option<String> {
@@ -1039,8 +1039,8 @@ impl ListeriaList {
     fn gather_items_for_property(&mut self, prop: &str) -> Result<Vec<String>, String> {
         let mut entities_to_load = vec![];
         for row in self.results.iter() {
-            if let Some(entity) = self.ecw.entities().get_entity(row.entity_id().to_owned()) {
-                self.ecw
+            if let Some(entity) = self.ecw.get_entity(row.entity_id()) {
+                self
                     .get_filtered_claims(&entity, prop)
                     .iter()
                     .filter(|statement| statement.property() == prop)
@@ -1164,7 +1164,7 @@ impl ListeriaList {
                             }
                         }
                         // Try any label, any language
-                        if let Some(entity) = self.get_entity(entity_id.to_owned()) {
+                        if let Some(entity) = self.get_entity(entity_id) {
                             if let Some(label) = entity.labels().get(0) {
                                 return label.value().to_string();
                             }
@@ -1209,12 +1209,29 @@ impl ListeriaList {
         )
     }
 
+
     pub fn get_filtered_claims(
         &self,
         e: &wikibase::entity::Entity,
         property: &str,
     ) -> Vec<wikibase::statement::Statement> {
-        self.ecw.get_filtered_claims(e, property)
+        let mut ret: Vec<wikibase::statement::Statement> = e
+            .claims_with_property(property)
+            .iter()
+            .map(|x| (*x).clone())
+            .collect();
+
+        if self.page_params.config.prefer_preferred() {
+            let has_preferred = ret
+                .iter()
+                .any(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
+            if has_preferred {
+                ret.retain(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
+            }
+            ret
+        } else {
+            ret
+        }
     }
 
     pub fn entity_to_local_link(&self, item: &str) -> Option<ResultCellPart> {

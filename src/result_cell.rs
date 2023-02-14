@@ -28,7 +28,7 @@ impl ResultCell {
             deduplicate_parts: true,
         };
 
-        let entity = list.get_entity(entity_id.to_owned());
+        let entity = list.get_entity(entity_id);
         match &col.obj {
             ColumnType::Qid => {
                 ret.parts.push(PartWithReference::new(
