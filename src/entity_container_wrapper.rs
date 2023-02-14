@@ -12,7 +12,7 @@ use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use wikibase::snak::SnakDataType;
 use tempfile::NamedTempFile;
 
-const MAX_LOCAL_CACHED_ENTITIES: usize = 500;
+const MAX_LOCAL_CACHED_ENTITIES: usize = 100;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
