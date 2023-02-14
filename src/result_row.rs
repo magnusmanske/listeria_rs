@@ -119,7 +119,7 @@ impl ResultRow {
             static ref RE_BRACES: Regex = Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse");
             static ref RE_LAST_FIRST: Regex = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
         }
-        match page.get_entity(self.entity_id.to_owned()) {
+        match page.get_entity(&self.entity_id) {
             Some(entity) => match entity.label_in_locale(&page.language()) {
                 Some(label) => {
                     let ret = RE_SR_JR.replace_all(label, "");
@@ -148,7 +148,7 @@ impl ResultRow {
         list: &ListeriaList,
         datatype: &SnakDataType,
     ) -> String {
-        match list.get_entity(self.entity_id.to_owned()) {
+        match list.get_entity(&self.entity_id) {
             Some(entity) => {
                 match list
                     .get_filtered_claims(&entity, prop) 

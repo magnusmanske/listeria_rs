@@ -17,8 +17,8 @@ cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; js
 # RUN BOT ON TOOLFORGE
 toolforge-jobs delete rustbot && toolforge-jobs delete rustbot2 && \
 rm ~/rustbot* && \
-toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 8' rustbot && \
-toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 8' rustbot2
+toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 4' rustbot && \
+toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 4' rustbot2
 
 */
 

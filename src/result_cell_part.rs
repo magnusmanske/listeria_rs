@@ -164,7 +164,7 @@ impl ResultCellPart {
                     }
                 }
                 let entity_id_link = list.get_item_link_with_fallback(id);
-                match list.get_entity(id.to_owned()) {
+                match list.get_entity(id) {
                     Some(e) => {
                         let use_language = match e.label_in_locale(list.language()) {
                             Some(_) => list.language(),
