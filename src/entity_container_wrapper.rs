@@ -3,14 +3,17 @@ use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
 use crate::{LinksType, SparqlValue};
+use tempfile::NamedTempFile;
 use std::collections::HashMap;
 use std::sync::Arc;
+//use std::sync::Mutex;
 use wikibase::entity::*;
 use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use wikibase::snak::SnakDataType;
-use tempfile::NamedTempFile;
+//use std::io::{SeekFrom, Write};
+//use std::io::prelude::*;
 
 const MAX_LOCAL_CACHED_ENTITIES: usize = 100;
 
@@ -19,6 +22,8 @@ pub struct EntityContainerWrapper {
     entities: EntityContainer,
     pickledb: Option<Arc<PickleDb>>,
     pickledb_filename: Option<Arc<NamedTempFile>>,
+    // file_handle: Option<Arc<Mutex<std::fs::File>>>,
+    // entity2pos: HashMap<String,(u64,u64)>,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
@@ -36,9 +41,49 @@ impl EntityContainerWrapper {
             entities: EntityContainer::new(),
             pickledb: None,
             pickledb_filename: None,
+            // file_handle: None,
+            // entity2pos: HashMap::new(),
+        }
+    }
+/*
+    fn hashfile_add_entity(&mut self, entity_id: &str, json: serde_json::Value) {
+        match &self.file_handle {
+            Some(fh) => {
+                let mut fh = fh.lock().unwrap();
+                let start = fh.metadata().unwrap().len();
+                let json_string = json.to_string();
+                println!("Writing data for {entity_id}");
+                write!(fh, "{json_string}").unwrap();
+                fh.sync_all().unwrap();
+                let end = fh.metadata().unwrap().len();
+                let len = end-start;
+                self.entity2pos.insert(entity_id.to_string(), (start,len));        
+            },
+            None => panic!("add_entity: No file handle"),
         }
     }
 
+    fn hashfile_create(&mut self) {
+        self.file_handle = Some(Arc::new(Mutex::new(tempfile().unwrap())));
+    }
+
+    fn hashfile_get_entity(&self, entity_id: &str) -> Option<Entity> {
+        let (start,len) = self.entity2pos.get(entity_id)?;
+        match &self.file_handle {
+            Some(fh) => {
+                let mut fh = fh.lock().ok()?;
+                fh.seek(SeekFrom::Start(*start)).ok()?;
+                let mut buffer = Vec::with_capacity(*len as usize);
+                fh.read_exact(&mut buffer).ok()?;
+                let json_string = String::from_utf8(buffer).ok()?;
+                let json = serde_json::from_str(&json_string).ok()?;
+                Entity::new_from_json(&json).ok()
+        
+            },
+            None => panic!("add_entity: No file handle"),
+        }
+    }
+*/
     pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<(), String> {
         self.load_entities_max_size(api, ids, MAX_LOCAL_CACHED_ENTITIES).await
     }
@@ -46,6 +91,7 @@ impl EntityContainerWrapper {
     pub async fn load_entities_max_size(&mut self, api: &Api, ids: &Vec<String>, max_entities: usize) -> Result<(), String> {
         let ids = self.entities.unique_shuffle_entity_ids(ids).unwrap();
         if ids.len()>max_entities { // Use pickledb disk cache
+            // self.hashfile_create();
             self.pickledb_filename = Some(Arc::new(            
                 match  NamedTempFile::new() {
                     Ok(filename) => filename,
@@ -66,6 +112,7 @@ impl EntityContainerWrapper {
                 for entity_id in chunk {
                     if let Some(entity) = self.entities.get_entity(entity_id) {
                         let json = entity.to_json();
+                        //let _ = self.hashfile_add_entity(&entity.id(), json);
                         db.set(&entity.id(), &json).unwrap();
                     }
                 }
@@ -85,6 +132,7 @@ impl EntityContainerWrapper {
         if let Some(entity) = self.entities.get_entity(entity_id) {
             return Some(entity)
         }
+        // self.hashfile_get_entity(entity_id)
         let json = self.pickledb.as_ref()?.get::<serde_json::Value>(entity_id)?;
         Entity::new_from_json(&json).ok()
     }
