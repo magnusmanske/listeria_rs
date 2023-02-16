@@ -9,8 +9,7 @@
     "namespace_blocks":{
         "dewiki":[0],
         "enwiki":[0],
-        "frwiki":[0],
-        "arwiki":"*"
+        "frwiki":[0]
     } ,
     "location_templates":{
         "default":"{{Coord|$LAT$|$LON$|display=inline}}",
