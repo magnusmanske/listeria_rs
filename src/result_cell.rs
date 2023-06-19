@@ -50,8 +50,9 @@ impl ResultCell {
                                 Some(_) => None,
                                 None => Some("wd_desc".to_string())
                             } ;
+                            let s = Self::fix_wikitext_for_output(s);
                             ret.parts.push(PartWithReference::new(
-                                ResultCellPart::Text(s.to_string()),
+                                ResultCellPart::Text(s),
                                 None,
                             ));
                         }
@@ -212,6 +213,10 @@ impl ResultCell {
         }
 
         ret
+    }
+
+    fn fix_wikitext_for_output(s: &str) -> String {
+        s.replace('\'',"&#39;").replace('<',"&lt;")
     }
 
     fn get_parts_p_p(
