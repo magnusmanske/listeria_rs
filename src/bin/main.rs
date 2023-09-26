@@ -1,6 +1,7 @@
 extern crate config;
 extern crate serde_json;
 
+use anyhow::{Result,anyhow};
 use config::{Config, File};
 use listeria::configuration::Configuration;
 use listeria::listeria_page::ListeriaPage;
@@ -8,13 +9,9 @@ use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-async fn update_page(settings: &Config, page_title: &str, api_url: &str) -> Result<String, String> {
+async fn update_page(settings: &Config, page_title: &str, api_url: &str) -> Result<String> {
     let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
-
-    let mut mw_api = wikibase::mediawiki::api::Api::new(api_url)
-        .await
-        .map_err(|e| e.to_string())?;
-
+    let mut mw_api = wikibase::mediawiki::api::Api::new(api_url).await?;
     let token = settings.get_string("user.token").expect("No oauth2 user.token");
     mw_api.set_oauth2(&token);
 
@@ -31,7 +28,7 @@ async fn update_page(settings: &Config, page_title: &str, api_url: &str) -> Resu
 }
 
 #[tokio::main]
-async fn main() -> Result<(), String> {
+async fn main() -> Result<()> {
     let ini_file = "listeria.ini";
 
     let settings = Config::builder()
@@ -42,8 +39,8 @@ async fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
     let wiki_server = args
         .get(1)
-        .ok_or_else(|| "No wiki server argument".to_string())?;
-    let page = args.get(2).ok_or_else(|| "No page argument".to_string())?;
+        .ok_or_else(|| anyhow!("No wiki server argument"))?;
+    let page = args.get(2).ok_or_else(|| anyhow!("No page argument"))?;
 
     let wiki_api = format!("https://{}/w/api.php", &wiki_server);
     let message = match update_page(&settings, &page, &wiki_api).await {

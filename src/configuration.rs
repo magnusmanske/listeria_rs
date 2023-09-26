@@ -1,5 +1,6 @@
 use crate::*;
 use std::path::Path;
+use anyhow::{Result,anyhow};
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -34,14 +35,14 @@ pub struct Configuration {
 }
 
 impl Configuration {
-    pub async fn new_from_file<P: AsRef<Path>>(path: P) -> Result<Self, String> {
-        let file = File::open(path).map_err(|e| format!("{:?}", e))?;
+    pub async fn new_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let file = File::open(path)?;
         let reader = BufReader::new(file);
-        let j = serde_json::from_reader(reader).map_err(|e| format!("{:?}", e))?;
+        let j = serde_json::from_reader(reader)?;
         Self::new_from_json(j).await
     }
 
-    pub async fn new_from_json(j: Value) -> Result<Self, String> {
+    pub async fn new_from_json(j: Value) -> Result<Self> {
         let mut ret: Self = Default::default();
 
         if let Some(s) = j["default_api"].as_str() {
@@ -78,8 +79,7 @@ impl Configuration {
             for (k, v) in o.iter() {
                 if let (name, Some(url)) = (k.as_str(), v.as_str()) {
                     let mut api = wikibase::mediawiki::api::Api::new(&url)
-                        .await
-                        .map_err(|e| e.to_string())?;
+                        .await?;
                     api.set_oauth2(&oauth2_token);
                     ret.wb_apis.insert(name.to_string(), Arc::new(api));
                 }
@@ -105,10 +105,7 @@ impl Configuration {
                         ret.namespace_blocks
                             .insert(k.to_string(), NamespaceGroup::All);
                     } else {
-                        return Err(format!(
-                            "Unrecognized string value for namespace_blocks[{}]:{}",
-                            k, v
-                        ));
+                        return Err(anyhow!("Unrecognized string value for namespace_blocks[{k}]:{v}"));
                     }
                 }
 
@@ -129,17 +126,17 @@ impl Configuration {
         let api = ret.get_default_wbapi()?;
         let q_start = match j["template_start_q"].as_str() {
             Some(q) => q.to_string(),
-            None => return Err("No template_start_q in config".to_string()),
+            None => return Err(anyhow!("No template_start_q in config")),
         };
         let q_end = match j["template_end_q"].as_str() {
             Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
-            None => return Err("No template_end_q in config".to_string()),
+            None => return Err(anyhow!("No template_end_q in config")),
         };
         let entities = wikibase::entity_container::EntityContainer::new();
         entities
             .load_entities(&api, &vec![q_start.clone(), q_end.clone()])
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e|anyhow!("{e}"))?;
         ret.template_start_sites = ret.get_sitelink_mapping(&entities, &q_start)?;
         ret.template_end_sites = ret.get_sitelink_mapping(&entities, &q_end)?;
 
@@ -161,16 +158,16 @@ impl Configuration {
         &self,
         entities: &wikibase::entity_container::EntityContainer,
         q: &str,
-    ) -> Result<HashMap<String, String>, String> {
+    ) -> Result<HashMap<String, String>> {
         let entity = entities
             .get_entity(q.to_owned())
-            .ok_or(format!("Entity {} not found", &q))?;
+            .ok_or(anyhow!("Entity {q} not found"))?;
         match entity.sitelinks() {
             Some(sl) => Ok(sl
                 .iter()
                 .map(|s| (s.site().to_owned(), s.title().to_owned()))
                 .collect()),
-            None => Err(format!("No sitelink in {}", &q)),
+            None => Err(anyhow!("No sitelink in {q}")),
         }
     }
 
@@ -178,27 +175,27 @@ impl Configuration {
         self.shadow_images_check.contains(wiki)
     }
 
-    pub fn get_local_template_title_start(&self, wiki: &str) -> Result<String, String> {
+    pub fn get_local_template_title_start(&self, wiki: &str) -> Result<String> {
         let ret = self
             .template_start_sites
             .get(wiki)
             .map(|s| s.to_string())
-            .ok_or_else(|| "Cannot find local start template".to_string())?;
+            .ok_or_else(|| anyhow!("Cannot find local start template"))?;
         match ret.split(':').last() {
             Some(x) => Ok(x.to_string()),
-            None => Err("get_local_template_title_start: no match".to_string()),
+            None => Err(anyhow!("get_local_template_title_start: no match")),
         }
     }
 
-    pub fn get_local_template_title_end(&self, wiki: &str) -> Result<String, String> {
+    pub fn get_local_template_title_end(&self, wiki: &str) -> Result<String> {
         let ret = self
             .template_end_sites
             .get(wiki)
             .map(|s| s.to_string())
-            .ok_or_else(|| "Cannot find local end template".to_string())?;
+            .ok_or_else(|| anyhow!("Cannot find local end template"))?;
         match ret.split(':').last() {
             Some(x) => Ok(x.to_string()),
-            None => Err("get_local_template_title_end: no match".to_string()),
+            None => Err(anyhow!("get_local_template_title_end: no match")),
         }
     }
 
@@ -247,9 +244,9 @@ impl Configuration {
         self.wb_apis.get(key)
     }
 
-    pub fn get_default_wbapi(&self) -> Result<&Arc<Api>, String> {
+    pub fn get_default_wbapi(&self) -> Result<&Arc<Api>> {
         self.wb_apis
             .get(&self.default_api)
-            .ok_or_else(|| "No default API set in config file".to_string())
+            .ok_or_else(|| anyhow!("No default API set in config file"))
     }
 }

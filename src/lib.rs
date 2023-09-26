@@ -21,6 +21,7 @@ use crate::configuration::Configuration;
 use crate::listeria_list::ListeriaList;
 use crate::listeria_page::ListeriaPage;
 use crate::render_wikitext::RendererWikitext;
+use anyhow::{Result,anyhow};
 use regex::Regex;
 use regex::RegexBuilder;
 use serde_json::Value;
@@ -52,7 +53,7 @@ impl PageParams {
         config: Arc<Configuration>,
         mw_api: Arc<RwLock<Api>>,
         page: String,
-    ) -> Result<Self, String> {
+    ) -> Result<Self> {
         let api = mw_api.read().await;
         let ret = Self {
             wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
@@ -175,7 +176,7 @@ pub struct Template {
 }
 
 impl Template {
-    pub fn new_from_params(title: String, text: String) -> Result<Self,String> {
+    pub fn new_from_params(title: String, text: String) -> Result<Self> {
         let mut curly_braces = 0;
         let mut parts: Vec<String> = vec![];
         let mut part: Vec<char> = vec![];
@@ -215,7 +216,7 @@ impl Template {
         });
         parts.push(part.into_iter().collect());
         if quoted==true {
-            return Err ( format!("Unclosed quote: {}",quote_char) ) ;
+            return Err ( anyhow!("Unclosed quote: {quote_char}") ) ;
         }
 
         let params: HashMap<String, String> = parts
@@ -472,12 +473,12 @@ impl SectionType {
 
 pub trait Renderer {
     fn new() -> Self;
-    fn render(&mut self, page: &ListeriaList) -> Result<String, String>;
+    fn render(&mut self, page: &ListeriaList) -> Result<String>;
     fn get_new_wikitext(
         &self,
         wikitext: &str,
         page: &ListeriaPage,
-    ) -> Result<Option<String>, String>;
+    ) -> Result<Option<String>>;
 }
 
 #[derive(Debug, Clone)]
@@ -601,7 +602,7 @@ impl PageElement {
         ret
     }
 
-    pub fn new_inside(&self) -> Result<String, String> {
+    pub fn new_inside(&self) -> Result<String> {
         match self.is_just_text {
             true => Ok(String::new()),
             false => {
@@ -611,7 +612,7 @@ impl PageElement {
         }
     }
 
-    pub fn as_wikitext(&self) -> Result<String, String> {
+    pub fn as_wikitext(&self) -> Result<String> {
         match self.is_just_text {
             true => Ok(self.before.clone()),
             false => Ok(self.before.clone()
@@ -624,7 +625,7 @@ impl PageElement {
         }
     }
 
-    pub async fn process(&mut self) -> Result<(), String> {
+    pub async fn process(&mut self) -> Result<()> {
         match self.is_just_text {
             true => Ok(()),
             false => self.list.process().await,

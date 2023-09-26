@@ -3,6 +3,7 @@ use futures::future::try_join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
 use wikibase::mediawiki::api::Api;
+use anyhow::{Result,anyhow};
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
@@ -26,7 +27,7 @@ impl ListeriaPage {
         config: Arc<Configuration>,
         mw_api: Arc<RwLock<Api>>,
         page: String,
-    ) -> Result<Self, String> {
+    ) -> Result<Self> {
         let page_params = PageParams::new(config, mw_api, page).await?;
         let page_params = Arc::new(page_params);
         Ok(Self {
@@ -71,7 +72,7 @@ impl ListeriaPage {
         &self.page_params.language
     }
 
-    pub async fn check_namespace(&self) -> Result<(), String> {
+    pub async fn check_namespace(&self) -> Result<()> {
         let api = self.page_params.mw_api.read().await;
         let title = wikibase::mediawiki::title::Title::new_from_full(&self.page_params.page, &api);
         drop(api);
@@ -82,7 +83,7 @@ impl ListeriaPage {
         {
             Ok(())
         } else {
-            Err(format!(
+            Err(anyhow!(
                 "Namespace {} not allowed for edit on {}",
                 title.namespace_id(),
                 &self.page_params.wiki
@@ -90,7 +91,7 @@ impl ListeriaPage {
         }
     }
 
-    pub async fn run(&mut self) -> Result<(), String> {
+    pub async fn run(&mut self) -> Result<()> {
         self.check_namespace().await?;
         self.elements = self.load_page().await?;
 
@@ -102,7 +103,7 @@ impl ListeriaPage {
         Ok(())
     }
 
-    async fn load_page(&mut self) -> Result<Vec<PageElement>, String> {
+    async fn load_page(&mut self) -> Result<Vec<PageElement>> {
         let mut text = self.load_page_as("wikitext").await?;
         let mut ret = vec![];
         let mut again: bool = true;
@@ -122,7 +123,7 @@ impl ListeriaPage {
         Ok(ret)
     }
 
-    pub async fn load_page_as(&self, mode: &str) -> Result<String, String> {
+    pub async fn load_page_as(&self, mode: &str) -> Result<String> {
         let mut params: HashMap<String, String> = vec![("action", "parse"), ("prop", mode)]
             .iter()
             .map(|x| (x.0.to_string(), x.1.to_string()))
@@ -143,11 +144,10 @@ impl ListeriaPage {
             .read()
             .await
             .post_query_api_json(&params)
-            .await
-            .map_err(|e| format!("Loading page failed: {}", e))?;
+            .await?;
         match result["parse"][mode]["*"].as_str() {
             Some(ret) => Ok(ret.to_string()),
-            None => Err(format!(
+            None => Err(anyhow!(
                 "No parse tree for {} on {} as {}",
                 &self.page_params.page,
                 self.wiki(),
@@ -156,7 +156,7 @@ impl ListeriaPage {
         }
     }
 
-    pub fn as_wikitext(&self) -> Result<Vec<String>, String> {
+    pub fn as_wikitext(&self) -> Result<Vec<String>> {
         let mut ret: Vec<String> = vec![];
         for element in &self.elements {
             if !element.is_just_text() {
@@ -170,9 +170,9 @@ impl ListeriaPage {
         &self.elements
     }
 
-    async fn save_wikitext_to_page(&self, title: &str, wikitext: &str) -> Result<(), String> {
+    async fn save_wikitext_to_page(&self, title: &str, wikitext: &str) -> Result<()> {
         let mut api = self.page_params.mw_api.write().await;
-        let token = api.get_edit_token().await.map_err(|e| e.to_string())?;
+        let token = api.get_edit_token().await?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", title),
@@ -186,18 +186,17 @@ impl ListeriaPage {
         .collect();
         let j = api
             .post_query_api_json(&params)
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
         match j["error"].as_object() {
             Some(o) => {
                 let msg = o["info"].as_str().unwrap_or("Error while saving");
-                Err(msg.to_string())
+                Err(anyhow!("{msg}"))
             }
             None => Ok(()),
         }
     }
 
-    pub async fn update_source_page(&mut self) -> Result<bool, String> {
+    pub async fn update_source_page(&mut self) -> Result<bool> {
         let renderer = RendererWikitext::new();
         let mut edited = false;
         let old_wikitext = self.load_page_as("wikitext").await?;
@@ -220,7 +219,7 @@ impl ListeriaPage {
         Ok(edited)
     }
 
-    async fn purge_page(&self) -> Result<(), String> {
+    async fn purge_page(&self) -> Result<()> {
         if self.page_params.simulate {
             println!(
                 "SIMULATING: purging [[{}]] on {}",
@@ -236,17 +235,14 @@ impl ListeriaPage {
         .map(|x| (x.0.to_string(), x.1.to_string()))
         .collect();
 
-        match self
+        let _ = self
             .page_params
             .mw_api
             .write()
             .await
             .get_query_api_json(&params)
-            .await
-        {
-            Ok(_r) => Ok(()),
-            Err(e) => Err(e.to_string()),
-        }
+            .await?;
+        Ok(())
     }
 }
 
@@ -306,7 +302,7 @@ mod tests {
         if path.to_str().unwrap() == "test_data/commons_sparql.fixture" {
             // HACKISH
             let result = config.wbapi_login("commons").await;
-            println!("LOGIN TO COMMONS: {}", result);
+            // println!("LOGIN TO COMMONS: {}", result);
         }
         let config = Arc::new(config);
 
