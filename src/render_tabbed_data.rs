@@ -9,7 +9,7 @@ impl Renderer for RendererTabbedData {
         Self {}
     }
 
-    fn render(&mut self, list: &ListeriaList) -> Result<String, String> {
+    fn render(&mut self, list: &ListeriaList) -> Result<String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
             if let Some(x) = ret["schema"]["fields"].as_array_mut() {
@@ -29,7 +29,7 @@ impl Renderer for RendererTabbedData {
         &self,
         wikitext: &str,
         _page: &ListeriaPage,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>> {
         // TODO use local template name
 
         // Start/end template
@@ -42,13 +42,11 @@ impl Renderer for RendererTabbedData {
         let re_wikitext1: Regex = RegexBuilder::new(pattern1)
             .multi_line(true)
             .dot_matches_new_line(true)
-            .build()
-            .map_err(|e| e.to_string())?;
+            .build()?;
         let re_wikitext2: Regex = RegexBuilder::new(pattern2)
             .multi_line(true)
             .dot_matches_new_line(true)
-            .build()
-            .map_err(|e| e.to_string())?;
+            .build()?;
 
         let (before, blob, end_template, after) = match re_wikitext1.captures(&wikitext) {
             Some(caps) => (
@@ -88,13 +86,13 @@ impl Renderer for RendererTabbedData {
                     "",
                     "",
                 ),
-                None => return Err("No template/end template found".to_string()),
+                None => return Err(anyhow!("No template/end template found")),
             },
         };
 
         let (start_template, rest) = match self.separate_start_template(&blob.to_string()) {
             Some(parts) => parts,
-            None => return Err("Can\'t split start template".to_string()),
+            None => return Err(anyhow!("Can't split start template")),
         };
 
         let append = if end_template.is_empty() {
@@ -104,9 +102,7 @@ impl Renderer for RendererTabbedData {
         };
 
         // Remove tabbed data marker
-        let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")
-            .map_err(|e| e.to_string())?
-            .replace(&start_template, "");
+        let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")?.replace(&start_template, "");
 
         // Add tabbed data marker
         let start_template = start_template[0..start_template.len() - 2]
@@ -141,15 +137,14 @@ impl RendererTabbedData {
         tabbed_data_json: Value,
         commons_api: &mut Api,
         list: &ListeriaList,
-    ) -> Result<bool, String> {
+    ) -> Result<bool> {
         let data_page = self
             .tabbed_data_page_name(list)
-            .ok_or("Data page name too long")?;
-        let text = ::serde_json::to_string(&tabbed_data_json).map_err(|e| e.to_string())?;
+            .ok_or(anyhow!("Data page name too long"))?;
+        let text = ::serde_json::to_string(&tabbed_data_json)?;
         let token = commons_api
             .get_edit_token()
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", data_page.as_str()),
@@ -163,10 +158,7 @@ impl RendererTabbedData {
         .map(|x| (x.0.to_string(), x.1.to_string()))
         .collect();
         // No need to check if this is the same as the existing data; MW API will return OK but not actually edit
-        let _result = match commons_api.post_query_api_json_mut(&params).await {
-            Ok(r) => r,
-            Err(e) => return Err(format!("{:?}", e)),
-        };
+        let _result = commons_api.post_query_api_json_mut(&params).await?;
         // TODO check ["edit"]["result"] == "Success"
         Ok(true) //list.data_has_changed = true; // Just to make sure to update including page
     }

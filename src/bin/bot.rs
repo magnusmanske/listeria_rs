@@ -1,15 +1,16 @@
 extern crate config;
 extern crate serde_json;
 
+use anyhow::Result;
 use std::sync::Arc;
-use tokio::{sync::Mutex, runtime};
+use tokio::sync::Mutex;
 use listeria::listeria_bot::ListeriaBot;
 use tokio::time::{sleep, Duration};
 use std::env;
 
 /*
 TEST DB CONNECT
-ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N
+ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
 
 REFRESH FROM GIT
 cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -sync y -cwd cargo build --release
@@ -22,7 +23,7 @@ toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/p
 
 */
 
-const DEFAULT_THREADS: usize = 4;
+const DEFAULT_THREADS: usize = 8;
 
 async fn run_singles(threads: usize) {
     let running_counter = Arc::new(Mutex::new(0 as usize));
@@ -51,23 +52,25 @@ async fn run_singles(threads: usize) {
 }
 
 //#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let argv: Vec<_> = env::args_os().collect();
     let threads = match argv.get(1) {
         Some(t) => t.to_owned().into_string().unwrap_or("".into()).parse::<usize>().unwrap_or(DEFAULT_THREADS),
         None => DEFAULT_THREADS
     };
     
-    let threaded_rt = runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(threads)
-        .thread_name("listeria")
-        .thread_stack_size(threads * 1024 * 1024)
-        .thread_keep_alive(Duration::from_secs(300)) // 5 min
-        .build()?;
+    // let threaded_rt = runtime::Builder::new_multi_thread()
+    //     .enable_all()
+    //     .worker_threads(threads)
+    //     .thread_name("listeria")
+    //     .thread_stack_size(threads * 1024 * 1024)
+    //     .thread_keep_alive(Duration::from_secs(300)) // 5 min
+    //     .build()?;
 
-    threaded_rt.block_on(async move {
-        run_singles(threads).await;
-    });
+    // threaded_rt.block_on(async move {
+    //     run_singles(threads).await;
+    // });
+    run_singles(threads).await;
     Ok(())
 }

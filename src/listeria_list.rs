@@ -6,6 +6,7 @@ use crate::{
     Column, ColumnType, LinksType, PageParams, ReferencesParameter, SectionType, SortMode,
     SortOrder, SparqlValue, Template, TemplateParams,
 };
+use anyhow::{Result,anyhow};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -65,7 +66,7 @@ impl ListeriaList {
         }
     }
 
-    pub async fn process(&mut self) -> Result<(), String> {
+    pub async fn process(&mut self) -> Result<()> {
         self.profile("START list::process");
         self.process_template().await?;
         self.profile("AFTER list::process process_template");
@@ -109,7 +110,7 @@ impl ListeriaList {
         self.section_id_to_name.get(&id)
     }
 
-    pub async fn process_template(&mut self) -> Result<(), String> {
+    pub async fn process_template(&mut self) -> Result<()> {
         let template = self.template.clone();
         match template.params.get("columns") {
             Some(columns) => {
@@ -132,7 +133,7 @@ impl ListeriaList {
         let wikibase = &self.params.wikibase;
         self.wb_api = match self.page_params.config.get_wbapi(&wikibase.to_lowercase()) {
             Some(api) => api.clone(),
-            None => return Err(format!("No wikibase setup configured for '{}'", &wikibase)),
+            None => return Err(anyhow!("No wikibase setup configured for '{wikibase}'")),
         };
 
         Ok(())
@@ -241,7 +242,7 @@ impl ListeriaList {
         }
     }
 
-    pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value, String> {
+    pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value> {
         let endpoint = match self
             .wb_api
             .get_site_info_string("general", "wikibase-sparql")
@@ -255,13 +256,10 @@ impl ListeriaList {
                 "https://wcqs-beta.wmflabs.org/sparql"
             }
         };
-        match self.wb_api.sparql_query_endpoint(sparql, endpoint).await {
-            Ok(j) => Ok(j),
-            Err(e) => Err(format!("run_sparql_query: {:?}", &e)),
-        }
+        self.wb_api.sparql_query_endpoint(sparql, endpoint).await.map_err(|e|anyhow!("{e}"))
     }
 
-    async fn expand_sparql_templates(&self, sparql: &mut String) -> Result<(), String> {
+    async fn expand_sparql_templates(&self, sparql: &mut String) -> Result<()> {
         if !sparql.contains("{{") {
             // No template
             return Ok(());
@@ -278,28 +276,27 @@ impl ListeriaList {
         .collect();
         let j = api
             .get_query_api_json(&params)
-            .await
-            .map_err(|e| e.to_string())?;
+            .await?;
         if let Some(s) = j["expandtemplates"]["wikitext"].as_str() {
             *sparql = s.to_string();
         }
         Ok(())
     }
 
-    pub async fn run_query(&mut self) -> Result<(), String> {
+    pub async fn run_query(&mut self) -> Result<()> {
         let mut sparql = match self.template.params.get("sparql") {
             Some(s) => s,
-            None => return Err(format!("No `sparql` parameter in {:?}", &self.template)),
+            None => return Err(anyhow!("No `sparql` parameter in {:?}", &self.template)),
         }
         .to_string();
 
-        self.expand_sparql_templates(&mut sparql).await?;
+        self.expand_sparql_templates(&mut sparql).await.map_err(|e|anyhow!("{e}"))?;
 
         // Return simulated results
         if self.page_params.simulate {
             match &self.page_params.simulated_sparql_results {
                 Some(json_text) => {
-                    let j = serde_json::from_str(&json_text).map_err(|e| e.to_string())?;
+                    let j = serde_json::from_str(&json_text)?;
                     return self.parse_sparql(j);
                 }
                 None => {}
@@ -315,7 +312,7 @@ impl ListeriaList {
         self.parse_sparql(j)
     }
 
-    fn parse_sparql(&mut self, j: Value) -> Result<(), String> {
+    fn parse_sparql(&mut self, j: Value) -> Result<()> {
         self.sparql_rows.clear();
         self.sparql_main_variable = None;
 
@@ -323,10 +320,10 @@ impl ListeriaList {
             // Use first variable
             let first_var = match j["head"]["vars"].as_array() {
                 Some(a) => match a.get(0) {
-                    Some(v) => v.as_str().ok_or("Can't parse first variable")?.to_string(),
-                    None => return Err("Bad SPARQL head.vars".to_string()),
+                    Some(v) => v.as_str().ok_or(anyhow!("Can't parse first variable"))?.to_string(),
+                    None => return Err(anyhow!("Bad SPARQL head.vars")),
                 },
-                None => return Err("Bad SPARQL head.vars".to_string()),
+                None => return Err(anyhow!("Bad SPARQL head.vars")),
             };
             self.sparql_main_variable = Some(first_var);
         } else if let Some(arr) = j["head"]["vars"].as_array() {
@@ -342,7 +339,7 @@ impl ListeriaList {
 
         let bindings = j["results"]["bindings"]
             .as_array()
-            .ok_or("Broken SPARQL results.bindings")?;
+            .ok_or(anyhow!("Broken SPARQL results.bindings"))?;
         for b in bindings.iter() {
             let mut row: HashMap<String, SparqlValue> = HashMap::new();
             if let Some(bo) = b.as_object() {
@@ -350,7 +347,7 @@ impl ListeriaList {
                     match SparqlValue::new_from_json(&v) {
                         Some(v2) => row.insert(k.to_owned(), v2),
                         None => {
-                            return Err(format!("Can't parse SPARQL value: {} => {:?}", &k, &v))
+                            return Err(anyhow!("Can't parse SPARQL value: {} => {:?}", &k, &v))
                         }
                     };
                 }
@@ -363,7 +360,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    pub async fn load_entities(&mut self) -> Result<(), String> {
+    pub async fn load_entities(&mut self) -> Result<()> {
         // Any columns that require entities to be loaded?
         // TODO also force if self.links is redlinks etc.
         if self
@@ -380,9 +377,9 @@ impl ListeriaList {
 
         let ids = self.get_ids_from_sparql_rows()?;
         if ids.is_empty() {
-            return Err("No items to show".to_string());
+            return Err(anyhow!("No items to show"));
         }
-        self.ecw.load_entities(&self.wb_api, &ids).await?;
+        self.ecw.load_entities(&self.wb_api, &ids).await.map_err(|e|anyhow!("{e}"))?;
 
         self.label_columns();
 
@@ -401,7 +398,7 @@ impl ListeriaList {
             .collect();
     }
 
-    fn get_ids_from_sparql_rows(&self) -> Result<Vec<String>, String> {
+    fn get_ids_from_sparql_rows(&self) -> Result<Vec<String>> {
         let varname = self.get_var_name()?;
 
         // Rows
@@ -443,16 +440,16 @@ impl ListeriaList {
         Ok(ids)
     }
 
-    fn get_var_name(&self) -> Result<&String, String> {
+    fn get_var_name(&self) -> Result<&String> {
         match &self.sparql_main_variable {
             Some(v) => Ok(v),
-            None => Err("load_entities: sparql_main_variable is None".to_string()),
+            None => Err(anyhow!("load_entities: sparql_main_variable is None")),
         }
     }
 
-    pub async fn get_autodesc_description(&self, e: &Entity) -> Result<String, String> {
+    pub async fn get_autodesc_description(&self, e: &Entity) -> Result<String> {
         if self.params.autodesc != Some("FALLBACK".to_string()) {
-            return Err("Not used".to_string());
+            return Err(anyhow!("Not used"));
         }
         match &self.page_params.simulated_autodesc {
             Some(autodesc) => {
@@ -473,16 +470,15 @@ impl ListeriaList {
         let api = self.page_params.mw_api.read().await;
         let body = api
             .query_raw(&url, &api.no_params(), "GET")
-            .await
-            .map_err(|e| format!("get_autodesc_description[1]: {}",e))?;
-        let json: Value = serde_json::from_str(&body).map_err(|e| format!("get_autodesc_description[1]: {}",e))?;
+            .await?;
+        let json: Value = serde_json::from_str(&body)?;
         match json["result"].as_str() {
             Some(result) => Ok(result.to_string()),
-            None => Err("Not a valid autodesc result".to_string()),
+            None => Err(anyhow!("Not a valid autodesc result")),
         }
     }
 
-    pub async fn generate_results(&mut self) -> Result<(), String> {
+    pub async fn generate_results(&mut self) -> Result<()> {
         let varname = self.get_var_name()?;
         let mut results: Vec<ResultRow> = vec![];
         match self.params.one_row_per_item {
@@ -531,7 +527,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn process_items_to_local_links(&mut self) -> Result<(), String> {
+    fn process_items_to_local_links(&mut self) -> Result<()> {
         // Try to change items to local link
         // TODO get rid of clone()
         let mut results = self.results.clone();
@@ -551,7 +547,7 @@ impl ListeriaList {
         });
     }
 
-    async fn process_remove_shadow_files(&mut self) -> Result<(), String> {
+    async fn process_remove_shadow_files(&mut self) -> Result<()> {
         if !self
             .page_params
             .config
@@ -653,7 +649,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn process_redlinks_only(&mut self) -> Result<(), String> {
+    fn process_redlinks_only(&mut self) -> Result<()> {
         if *self.get_links_type() != LinksType::RedOnly {
             return Ok(());
         }
@@ -677,7 +673,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn process_redlinks(&mut self) -> Result<(), String> {
+    async fn process_redlinks(&mut self) -> Result<()> {
         if *self.get_links_type() != LinksType::RedOnly && *self.get_links_type() != LinksType::Red
         {
             return Ok(());
@@ -722,7 +718,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn process_sort_results(&mut self) -> Result<(), String> {
+    async fn process_sort_results(&mut self) -> Result<()> {
         let sortkeys: Vec<String>;
         let mut datatype = SnakDataType::String; // Default
         match &self.params.sort {
@@ -762,7 +758,7 @@ impl ListeriaList {
         // Apply sortkeys
         if self.results.len() != sortkeys.len() {
             // Paranoia
-            return Err("process_sort_results: sortkeys length mismatch".to_string());
+            return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
         }
         self.results
             .iter_mut()
@@ -777,23 +773,23 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn load_row_entities(&mut self) -> Result<(), String> {
+    async fn load_row_entities(&mut self) -> Result<()> {
         let items_to_load = self
             .results
             .iter()
             .map(|row| row.entity_id())
             .cloned()
             .collect();
-        self.ecw.load_entities(&self.wb_api, &items_to_load).await?;
+        self.ecw.load_entities(&self.wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
         Ok(())
     }
 
-    pub async fn process_assign_sections(&mut self) -> Result<(), String> {
+    pub async fn process_assign_sections(&mut self) -> Result<()> {
         // TODO all SectionType options
         let section_property = match &self.params.section {
             SectionType::Property(p) => p,
             SectionType::SparqlVariable(_v) => {
-                return Err("SPARQL variable section type not supported yet".to_string())
+                return Err(anyhow!("SPARQL variable section type not supported yet"))
             }
             SectionType::None => return Ok(()), // Nothing to do
         }.to_owned();
@@ -807,7 +803,7 @@ impl ListeriaList {
             .collect::<Vec<String>>();
 
         // Make sure section name items are loaded
-        self.ecw.load_entities(&self.wb_api, &section_names).await?;
+        self.ecw.load_entities(&self.wb_api, &section_names).await.map_err(|e|anyhow!("{e}"))?;
         let section_names = section_names
         .iter()
         .map(|q| self.get_label_with_fallback(q,None))
@@ -897,7 +893,7 @@ impl ListeriaList {
             .contains(self.wiki())
     }
 
-    pub async fn process_regions(&mut self) -> Result<(), String> {
+    pub async fn process_regions(&mut self) -> Result<()> {
         if !self.do_get_regions() {
             return Ok(());
         }
@@ -938,7 +934,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn process_reference_items(&mut self) -> Result<(), String> {
+    async fn process_reference_items(&mut self) -> Result<()> {
         let mut items_to_load: Vec<String> = vec![];
         for row in self.results.iter_mut() {
             for cell in row.cells_mut().iter_mut() {
@@ -960,12 +956,12 @@ impl ListeriaList {
         if !items_to_load.is_empty() {
             items_to_load.sort_unstable();
             items_to_load.dedup();
-            self.ecw.load_entities(&self.wb_api, &items_to_load).await?;
+            self.ecw.load_entities(&self.wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
         }
         Ok(())
     }
 
-    async fn fix_local_links(&mut self) -> Result<(), String> {
+    async fn fix_local_links(&mut self) -> Result<()> {
         // Set the is_category flag
         let mw_api = self.mw_api();
         let mw_api = mw_api.read().await;
@@ -992,7 +988,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    pub async fn process_results(&mut self) -> Result<(), String> {
+    pub async fn process_results(&mut self) -> Result<()> {
         self.profile("START list::process_results");
         self.gather_and_load_items().await?;
         self.profile("AFTER list::process_results gather_and_load_items");
@@ -1036,7 +1032,7 @@ impl ListeriaList {
         &self.params.references
     }
 
-    fn gather_items_for_property(&mut self, prop: &str) -> Result<Vec<String>, String> {
+    fn gather_items_for_property(&mut self, prop: &str) -> Result<Vec<String>> {
         let mut entities_to_load = vec![];
         for row in self.results.iter() {
             if let Some(entity) = self.ecw.get_entity(row.entity_id()) {
@@ -1058,19 +1054,19 @@ impl ListeriaList {
         Ok(entities_to_load)
     }
 
-    fn gather_items_section(&mut self) -> Result<Vec<String>, String> {
+    fn gather_items_section(&mut self) -> Result<Vec<String>> {
         // TODO support all of SectionType
         let prop = match &self.params.section {
             SectionType::Property(p) => p.clone(),
             SectionType::SparqlVariable(_v) => {
-                return Err("SPARQL variable section type not supported yet".to_string())
+                return Err(anyhow!("SPARQL variable section type not supported yet"))
             }
             SectionType::None => return Ok(vec![]), // Nothing to do
         };
         self.gather_items_for_property(&prop)
     }
 
-    fn gather_items_sort(&mut self) -> Result<Vec<String>, String> {
+    fn gather_items_sort(&mut self) -> Result<Vec<String>> {
         let prop = match &self.params.sort {
             SortMode::Property(prop) => prop.clone(),
             _ => return Ok(vec![]),
@@ -1078,7 +1074,7 @@ impl ListeriaList {
         self.gather_items_for_property(&prop)
     }
 
-    async fn gather_and_load_items(&mut self) -> Result<(), String> {
+    async fn gather_and_load_items(&mut self) -> Result<()> {
         // Gather items to load
         let mut entities_to_load: Vec<String> = vec![];
         for row in self.results.iter() {
@@ -1098,20 +1094,24 @@ impl ListeriaList {
                 entities_to_load.push(prop.to_owned());
             }
             SectionType::SparqlVariable(_v) => {
-                return Err("SPARQL variable section type not supported yet".to_string())
+                return Err(anyhow!("SPARQL variable section type not supported yet"))
             }
             SectionType::None => {}
         }
         self.ecw
             .load_entities(&self.wb_api, &entities_to_load)
-            .await?;
+            .await
+            .map_err(|e|anyhow!("{e}"))?;
 
         entities_to_load = self.gather_items_sort()?;
         let mut v2 = self.gather_items_section()?;
         entities_to_load.append(&mut v2);
-        self.ecw
+        match self.ecw
             .load_entities(&self.wb_api, &entities_to_load)
-            .await
+            .await {
+                Ok(ret) => Ok(ret),
+                Err(e) => Err(anyhow!("{e}")),
+            }
     }
 
     pub fn column(&self, column_id: usize) -> Option<&Column> {

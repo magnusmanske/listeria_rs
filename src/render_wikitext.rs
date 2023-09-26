@@ -1,4 +1,5 @@
 use crate::{ListeriaList, ListeriaPage, Renderer};
+use anyhow::Result;
 
 pub struct RendererWikitext {}
 
@@ -7,7 +8,7 @@ impl Renderer for RendererWikitext {
         Self {}
     }
 
-    fn render(&mut self, list: &ListeriaList) -> Result<String, String> {
+    fn render(&mut self, list: &ListeriaList) -> Result<String> {
         let mut wt: String = list
             .get_section_ids()
             .iter()
@@ -32,7 +33,7 @@ impl Renderer for RendererWikitext {
         &self,
         _wikitext: &str,
         page: &ListeriaPage,
-    ) -> Result<Option<String>, String> {
+    ) -> Result<Option<String>> {
         let new_wikitext = page
             .elements()
             .iter()
