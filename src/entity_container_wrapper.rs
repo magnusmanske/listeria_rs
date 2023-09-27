@@ -16,7 +16,7 @@ use wikibase::snak::SnakDataType;
 //use std::io::{SeekFrom, Write};
 //use std::io::prelude::*;
 
-const MAX_LOCAL_CACHED_ENTITIES: usize = usize::MAX; //100;
+const MAX_LOCAL_CACHED_ENTITIES: usize = 50000;//usize::MAX; //100;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
