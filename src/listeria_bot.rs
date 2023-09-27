@@ -167,7 +167,7 @@ impl ListeriaBot {
         let mw_api = match self.get_or_create_wiki_api(&wiki).await {
             Ok(mw_api) => mw_api,
             Err(e) => {
-                eprintln!("{}",e);
+                eprintln!("{e}");
                 return None;
             }
         };
@@ -296,7 +296,7 @@ impl ListeriaBot {
     ) -> Result<()> {
         let now: DateTime<Utc> = Utc::now();
         let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-        println!("{wiki}:{page} : {status}");
+        println!("{timestamp} {wiki}:{page} : {status}");
         let params = params! {
             "wiki" => wiki,
             "page" => page,

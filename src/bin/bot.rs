@@ -36,8 +36,12 @@ async fn run_singles(threads: usize) {
         }
         let page = match bot.prepare_next_single_page().await {
             Ok(page) => page,
-            Err(_) => continue,
+            Err(e) => {
+                eprintln!("{e}");
+                continue
+            }
         };
+        // println!("{page:?}");
         let bot = bot.clone();
         let running_counter = running_counter.clone();
         *running_counter.lock().await += 1 ;

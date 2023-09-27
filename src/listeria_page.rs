@@ -301,7 +301,7 @@ mod tests {
         let mut config = Configuration::new_from_json(j).await.unwrap();
         if path.to_str().unwrap() == "test_data/commons_sparql.fixture" {
             // HACKISH
-            let result = config.wbapi_login("commons").await;
+            let _ = config.wbapi_login("commons").await;
             // println!("LOGIN TO COMMONS: {}", result);
         }
         let config = Arc::new(config);
