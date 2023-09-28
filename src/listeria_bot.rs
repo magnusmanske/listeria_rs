@@ -296,7 +296,7 @@ impl ListeriaBot {
     ) -> Result<()> {
         let now: DateTime<Utc> = Utc::now();
         let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-        println!("{timestamp} {wiki}:{page} : {status}");
+        println!("{timestamp} {wiki}:{page} : {status}: {message}");
         let params = params! {
             "wiki" => wiki,
             "page" => page,
