@@ -1,4 +1,4 @@
-use crate::*;
+use crate::{*, listeria_bot::WikiPageResult};
 use futures::future::try_join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -91,19 +91,19 @@ impl ListeriaPage {
         }
     }
 
-    pub async fn run(&mut self) -> Result<()> {
-        self.check_namespace().await?;
+    pub async fn run(&mut self) -> Result<(),WikiPageResult> {
+        self.check_namespace().await.map_err(|e| self.fail(&e.to_string()))?;
         self.elements = self.load_page().await?;
 
         let mut promises = Vec::new();
         for element in &mut self.elements {
             promises.push(element.process());
         }
-        try_join_all(promises).await?;
+        try_join_all(promises).await.map_err(|e| self.fail(&e.to_string()))?;
         Ok(())
     }
 
-    async fn load_page(&mut self) -> Result<Vec<PageElement>> {
+    async fn load_page(&mut self) -> Result<Vec<PageElement>,WikiPageResult> {
         let mut text = self.load_page_as("wikitext").await?;
         let mut ret = vec![];
         let mut again: bool = true;
@@ -123,7 +123,15 @@ impl ListeriaPage {
         Ok(ret)
     }
 
-    pub async fn load_page_as(&self, mode: &str) -> Result<String> {
+    fn fail(&self, message: &str) -> WikiPageResult {
+        WikiPageResult::fail(
+            &self.wiki(),
+            &self.page_params.page,
+            message
+        )
+    }
+
+    pub async fn load_page_as(&self, mode: &str) -> Result<String,WikiPageResult> {
         let mut params: HashMap<String, String> = vec![("action", "parse"), ("prop", mode)]
             .iter()
             .map(|x| (x.0.to_string(), x.1.to_string()))
@@ -144,15 +152,39 @@ impl ListeriaPage {
             .read()
             .await
             .post_query_api_json(&params)
-            .await?;
+            .await
+            .map_err(|e| self.fail(&e.to_string()))?;
+        if let Some(error) = result["error"]["code"].as_str() {
+            match error {
+                "missingtitle" => {
+                    return Err(WikiPageResult {
+                        wiki: self.page_params.wiki.to_owned(),
+                        page: self.page_params.page.to_owned(),
+                        result: "DELETED".to_string(),
+                        message: "Wiki says this page is missing".to_string(),
+                    });
+                },
+                "invalid" => {
+                    return Err(WikiPageResult {
+                        wiki: self.page_params.wiki.to_owned(),
+                        page: self.page_params.page.to_owned(),
+                        result: "INVALID".to_string(),
+                        message: "Wiki says this page has an invalid title".to_string(),
+                    });
+                },
+                other => {
+                    return Err(WikiPageResult {
+                        wiki: self.page_params.wiki.to_owned(),
+                        page: self.page_params.page.to_owned(),
+                        result: "FAIL".to_string(),
+                        message: other.to_string(),
+                    });
+                }
+            }
+        };
         match result["parse"][mode]["*"].as_str() {
             Some(ret) => Ok(ret.to_string()),
-            None => Err(anyhow!(
-                "No parse tree for {} on {} as {}",
-                &self.page_params.page,
-                self.wiki(),
-                mode
-            )),
+            None => Err(self.fail(&format!("No parse tree for {mode}"))),
         }
     }
 
@@ -196,22 +228,23 @@ impl ListeriaPage {
         }
     }
 
-    pub async fn update_source_page(&mut self) -> Result<bool> {
+    pub async fn update_source_page(&mut self) -> Result<bool,WikiPageResult> {
         let renderer = RendererWikitext::new();
         let mut edited = false;
         let old_wikitext = self.load_page_as("wikitext").await?;
-        let new_wikitext = renderer.get_new_wikitext(&old_wikitext, self)?; // Safe
+        let new_wikitext = renderer.get_new_wikitext(&old_wikitext, self).map_err(|e| self.fail(&e.to_string()))?; // Safe
         match new_wikitext {
             Some(new_wikitext) => {
                 if old_wikitext != new_wikitext {
                     self.save_wikitext_to_page(&self.page_params.page, &new_wikitext)
-                        .await?;
+                        .await
+                        .map_err(|e| self.fail(&e.to_string()))?;
                     edited = true;
                 }
             }
             None => {
                 if self.data_has_changed {
-                    self.purge_page().await?;
+                    self.purge_page().await.map_err(|e| self.fail(&e.to_string()))?;
                 }
             }
         }

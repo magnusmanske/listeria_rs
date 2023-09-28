@@ -17,9 +17,9 @@ async fn update_page(settings: &Config, page_title: &str, api_url: &str) -> Resu
 
     let mw_api = Arc::new(RwLock::new(mw_api));
     let mut page = ListeriaPage::new(config, mw_api, page_title.into()).await?;
-    page.run().await?;
+    page.run().await.map_err(|e|anyhow!("{e:?}"))?;
 
-    let message = match page.update_source_page().await? {
+    let message = match page.update_source_page().await.map_err(|e|anyhow!("{e:?}"))? {
         true => format!("{} edited", &page_title),
         false => format!("{} not edited", &page_title),
     };

@@ -112,7 +112,7 @@ impl ListeriaList {
 
     pub async fn process_template(&mut self) -> Result<()> {
         let template = self.template.clone();
-        match template.params.get("columns") {
+        match self.get_template_value(&template, "columns") {
             Some(columns) => {
                 columns.split(',').for_each(|part| {
                     let s = part.to_string();
@@ -123,10 +123,10 @@ impl ListeriaList {
         }
 
         self.params = TemplateParams::new_from_params(&template);
-        if let Some(s) = template.params.get("links") {
+        if let Some(s) = self.get_template_value(&template, "links") {
             self.params.links = LinksType::new_from_string(s.to_string())
         }
-        if let Some(l) = template.params.get("language") {
+        if let Some(l) = self.get_template_value(&template, "language") {
             self.language = l.to_lowercase()
         }
 
@@ -236,7 +236,7 @@ impl ListeriaList {
 
     pub fn thumbnail_size(&self) -> u64 {
         let default = self.page_params.config.default_thumbnail_size();
-        match self.template.params.get("thumb") {
+        match self.get_template_value(&self.template, "thumb") {
             Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap_or(default),
             None => default,
         }
@@ -283,10 +283,18 @@ impl ListeriaList {
         Ok(())
     }
 
+    fn get_template_value(&self, template: &Template, key: &str) -> Option<String> {
+        // template.params.get(key).map(|s|s.to_owned())
+        template.params.iter()
+            .filter(|(k,_v)|k.to_lowercase()==key.to_lowercase())
+            .map(|(_k,v)|v.to_owned())
+            .next()
+    }
+
     pub async fn run_query(&mut self) -> Result<()> {
-        let mut sparql = match self.template.params.get("sparql") {
+        let mut sparql = match self.get_template_value(&self.template, "sparql") {
             Some(s) => s,
-            None => return Err(anyhow!("No `sparql` parameter in {:?}", &self.template)),
+            None => return Err(anyhow!("No 'sparql' parameter in {:?}", &self.template)),
         }
         .to_string();
 
