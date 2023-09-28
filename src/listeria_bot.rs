@@ -55,6 +55,15 @@ impl WikiPageResult {
             message,
         }
     }
+
+    pub fn fail(wiki: &str, page: &str, message: &str) -> Self {
+        Self::new(
+            wiki,
+            page,
+            "FAIL",
+            message.to_string()
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -87,13 +96,12 @@ impl ListeriaBotWiki {
                     )
                 }
             };
-        match listeria_page.run().await {
-            Ok(_) => {}
-            Err(e) => return WikiPageResult::new(&self.wiki, page, "FAIL", e.to_string()),
+        if let Err(wpr) = listeria_page.run().await {
+            return wpr
         }
         let _did_edit = match listeria_page.update_source_page().await {
             Ok(x) => x,
-            Err(e) => return WikiPageResult::new(&self.wiki, page, "FAIL", e.to_string()),
+            Err(wpr) => return wpr,
         };
         WikiPageResult::new(&self.wiki, page, "OK", "".to_string())
     }
@@ -258,7 +266,7 @@ impl ListeriaBot {
         let sql = r#"SELECT * FROM (
             SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
             FROM pagestatus,wikis 
-            WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status!='RUNNING' 
+            WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status NOT IN ('RUNNING','DELETED')
             ORDER BY pagestatus.timestamp
             LIMIT 1000) ps
             ORDER BY rand()
@@ -302,7 +310,7 @@ impl ListeriaBot {
             "page" => page,
             "timestamp" => timestamp,
             "status" => status,
-            "message" => message, //format!("V2:{}",&message),
+            "message" => message.chars().take(63).collect::<String>(),
         };
         let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp,`bot_version`=2 WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
         self.pool.get_conn().await?
