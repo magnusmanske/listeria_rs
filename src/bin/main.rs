@@ -9,22 +9,21 @@ use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-async fn update_page(settings: &Config, page_title: &str, api_url: &str) -> Result<String> {
+async fn update_page(_settings: &Config, page_title: &str, api_url: &str) -> Result<String> {
     let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
     let mut mw_api = wikibase::mediawiki::api::Api::new(api_url).await?;
-    let token = settings.get_string("user.token").expect("No oauth2 user.token");
-    mw_api.set_oauth2(&token);
+    // let token = settings.get_string("user.token").expect("No oauth2 user.token");
+    // mw_api.set_oauth2(&token);
+    mw_api.set_oauth2(config.oauth2_token());
 
     let mw_api = Arc::new(RwLock::new(mw_api));
     let mut page = ListeriaPage::new(config, mw_api, page_title.into()).await?;
     page.run().await.map_err(|e|anyhow!("{e:?}"))?;
 
-    let message = match page.update_source_page().await.map_err(|e|anyhow!("{e:?}"))? {
-        true => format!("{} edited", &page_title),
-        false => format!("{} not edited", &page_title),
-    };
-
-    Ok(message)
+    Ok(match page.update_source_page().await.map_err(|e|anyhow!("{e:?}"))? {
+        true => format!("{page_title} edited"),
+        false => format!("{page_title} not edited"),
+    })
 }
 
 #[tokio::main]

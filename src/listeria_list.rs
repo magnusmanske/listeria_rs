@@ -8,6 +8,7 @@ use crate::{
 };
 use anyhow::{Result,anyhow};
 use serde_json::Value;
+use tokio::time::{sleep,Duration};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -256,7 +257,29 @@ impl ListeriaList {
                 "https://wcqs-beta.wmflabs.org/sparql"
             }
         };
-        self.wb_api.sparql_query_endpoint(sparql, endpoint).await.map_err(|e|anyhow!("{e}"))
+
+        // SPARQL might need some retries sometimes, bad server or somesuch
+        let mut attempts_left = 10;
+        loop {
+            let ret = self.wb_api.sparql_query_endpoint(sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
+            match ret {
+                Ok(ret) => return Ok(ret),
+                Err(e) => { 
+                    match &e {
+                        wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
+                            if attempts_left>0 && s=="error decoding response body: expected value at line 1 column 1" {
+                                sleep(Duration::from_millis(500)).await;
+                                attempts_left -= 1;
+                                continue;
+                            } else {
+                                return Err(anyhow!("{e}"))
+                            }
+                        },
+                        e => return Err(anyhow!("{e}"))
+                    }
+                }
+            }
+        }
     }
 
     async fn expand_sparql_templates(&self, sparql: &mut String) -> Result<()> {
