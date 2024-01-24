@@ -7,14 +7,11 @@ use anyhow::{Result,anyhow};
 use tempfile::NamedTempFile;
 use std::collections::HashMap;
 use std::sync::Arc;
-//use std::sync::Mutex;
 use wikibase::entity::*;
 use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use wikibase::snak::SnakDataType;
-//use std::io::{SeekFrom, Write};
-//use std::io::prelude::*;
 
 const MAX_LOCAL_CACHED_ENTITIES: usize = 50000;//usize::MAX; //100;
 

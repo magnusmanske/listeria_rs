@@ -12,8 +12,6 @@ use tokio::sync::RwLock;
 async fn update_page(_settings: &Config, page_title: &str, api_url: &str) -> Result<String> {
     let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
     let mut mw_api = wikibase::mediawiki::api::Api::new(api_url).await?;
-    // let token = settings.get_string("user.token").expect("No oauth2 user.token");
-    // mw_api.set_oauth2(&token);
     mw_api.set_oauth2(config.oauth2_token());
 
     let mw_api = Arc::new(RwLock::new(mw_api));
