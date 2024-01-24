@@ -33,7 +33,7 @@ pub struct ListeriaList {
     section_id_to_name: HashMap<usize, String>,
     wb_api: Arc<Api>,
     language: String,
-    reference_ids: Arc<std::sync::RwLock<HashSet<String>>>,
+    reference_ids: HashSet<String>,
     profiling:bool,
 }
 
@@ -56,7 +56,7 @@ impl ListeriaList {
             section_id_to_name: HashMap::new(),
             wb_api,
             language: page_params.language.to_string(),
-            reference_ids: Arc::new(std::sync::RwLock::new(HashSet::new())),
+            reference_ids: HashSet::new(),
             profiling:false,
         }
     }
@@ -95,8 +95,8 @@ impl ListeriaList {
         &self.shadow_files
     }
 
-    pub fn reference_ids(&self) -> Arc<std::sync::RwLock<HashSet<String>>> {
-        self.reference_ids.clone()
+    pub fn reference_ids(&self) -> &HashSet<String> {
+        &self.reference_ids
     }
 
     pub fn sparql_rows(&self) -> &Vec<HashMap<String, SparqlValue>> {
