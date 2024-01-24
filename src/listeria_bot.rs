@@ -320,6 +320,7 @@ impl ListeriaBot {
         let mut mw_api = wikibase::mediawiki::api::Api::new(&api_url)
             .await?;
         mw_api.set_oauth2(self.config.oauth2_token());
+        mw_api.set_edit_delay(Some(250)); // Slow down editing a bit
         let mw_api = Arc::new(RwLock::new(mw_api));
         Ok(mw_api)
     }
