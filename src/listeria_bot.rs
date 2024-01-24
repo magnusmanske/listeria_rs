@@ -169,7 +169,8 @@ impl ListeriaBot {
     }
 
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
-        if let Some(bot) = self.bot_per_wiki.lock().await.get(wiki) {
+        let mut lock = self.bot_per_wiki.lock().await;
+        if let Some(bot) = lock.get(wiki) {
             return Some(bot.to_owned())
         }
         let mw_api = match self.get_or_create_wiki_api(&wiki).await {
@@ -180,15 +181,8 @@ impl ListeriaBot {
             }
         };
 
-        let mut bpw = self.bot_per_wiki.lock().await; // Lock during creation, as to not create multiple
-
-        // Check again
-        if let Some(bot) = bpw.get(wiki) {
-            return Some(bot.to_owned())
-        }
-
         let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
-        bpw.insert(wiki.to_string(), bot.clone());
+        lock.insert(wiki.to_string(), bot.clone());
         return Some(bot);
     }
 
@@ -331,15 +325,15 @@ impl ListeriaBot {
     }
 
     async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>> {
-        if let Some(api) = &self.wiki_apis.lock().await.get(wiki) {
+        let mut lock = self.wiki_apis.lock().await;
+        if let Some(api) = &lock.get(wiki) {
             return Ok((*api).clone());
         }
 
         let mw_api = self.create_wiki_api(wiki).await?;
-        self.wiki_apis.lock().await.insert(wiki.to_owned(), mw_api);
+        lock.insert(wiki.to_owned(), mw_api);
 
-        self.wiki_apis
-            .lock().await
+        lock
             .get(wiki)
             .ok_or(anyhow!("Wiki not found: {wiki}"))
             .map(|api| api.clone())
