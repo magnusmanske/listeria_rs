@@ -477,7 +477,7 @@ impl ListeriaList {
     fn get_var_name(&self) -> Result<&String> {
         match &self.sparql_main_variable {
             Some(v) => Ok(v),
-            None => Err(anyhow!("load_entities: sparql_main_variable is None")),
+            None => Err(anyhow!("Could not determine SPARQL variable for item")),
         }
     }
 
