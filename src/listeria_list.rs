@@ -259,7 +259,7 @@ impl ListeriaList {
         };
 
         // SPARQL might need some retries sometimes, bad server or somesuch
-        let mut attempts_left = 3;
+        let mut attempts_left = 2;
         loop {
             let ret = self.wb_api.sparql_query_endpoint(sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
             match ret {
@@ -273,7 +273,7 @@ impl ListeriaList {
                                 continue;
                             } else {
                                 if s=="error decoding response body: expected value at line 1 column 1" {
-                                    // TODO log that this SPARQL is bad so we don't have to run it again
+                                    return Err(anyhow!("SPARQL is probably broken"));
                                 }
                                 return Err(anyhow!("{e}"))
                             }

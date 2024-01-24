@@ -13,7 +13,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use wikibase::mediawiki::api::Api;
 
-const API_TIMEOUT: Duration = Duration::from_secs(60);
+const API_TIMEOUT: Duration = Duration::from_secs(180);
 
 #[derive(Debug, Clone, Default)]
 pub struct PageToProcess {
