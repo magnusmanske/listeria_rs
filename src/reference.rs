@@ -100,10 +100,7 @@ impl Reference {
             Ok(s) => s.to_string(),
             _ => return String::new(),
         };
-        let has_md5 = match list.reference_ids().read() {
-            Ok(x) => x.get(&md5).is_some(),
-            _ => false,
-        };
+        let has_md5 = list.reference_ids().get(&md5).is_some();
 
         if has_md5 {
             format!("<ref name='ref_{}' />", &md5)
