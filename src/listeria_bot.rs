@@ -9,8 +9,11 @@ use mysql_async::prelude::*;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::RwLock;
 use wikibase::mediawiki::api::Api;
+
+const API_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Default)]
 pub struct PageToProcess {
@@ -317,8 +320,8 @@ impl ListeriaBot {
 
     async fn create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>> {
         let api_url = format!("{}/w/api.php", self.get_server_url_for_wiki(wiki)?);
-        let mut mw_api = wikibase::mediawiki::api::Api::new(&api_url)
-            .await?;
+        let mut mw_api = Api::new_from_builder(&api_url, wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT)).await?;
+        // let mut mw_api = wikibase::mediawiki::api::Api::new(&api_url).await?;
         mw_api.set_oauth2(self.config.oauth2_token());
         mw_api.set_edit_delay(Some(250)); // Slow down editing a bit
         let mw_api = Arc::new(RwLock::new(mw_api));
