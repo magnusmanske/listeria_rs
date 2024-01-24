@@ -304,7 +304,7 @@ impl ListeriaBot {
             "page" => page,
             "timestamp" => timestamp,
             "status" => status,
-            "message" => message.chars().take(63).collect::<String>(),
+            "message" => message.chars().take(200).collect::<String>(),
         };
         let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp,`bot_version`=2 WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
         self.pool.get_conn().await?
