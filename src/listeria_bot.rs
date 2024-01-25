@@ -289,7 +289,14 @@ impl ListeriaBot {
         };
         let wpr = bot.process_page(&page.title).await;
         self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message).await?;
+        if wpr.message.contains("Connection reset by peer (os error 104)") {
+            self.reset_wiki(&page.wiki).await;
+        }
         Ok(())
+    }
+
+    async fn reset_wiki(&self, wiki: &str) {
+        let _ = self.bot_per_wiki.lock().await.remove(wiki);
     }
 
     async fn update_page_status(
