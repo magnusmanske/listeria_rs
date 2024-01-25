@@ -301,6 +301,7 @@ impl ListeriaBot {
 
     async fn reset_wiki(&self, wiki: &str) {
         let _ = self.bot_per_wiki.lock().await.remove(wiki);
+        std::process::exit(0); // Seems that os error 104 is a system wide thing with Wikimedia, best to quit the app and restart
     }
 
     async fn update_page_status(
