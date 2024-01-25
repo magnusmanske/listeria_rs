@@ -93,7 +93,12 @@ impl ResultCellPart {
                     _ => ResultCellPart::Text(v.to_string()),
                 },
                 wikibase::Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
-                wikibase::Value::Time(v) => ResultCellPart::Time(ResultCellPart::reduce_time(&v)),
+                wikibase::Value::Time(v) => {
+                    match ResultCellPart::reduce_time(&v) {
+                        Some(part) => ResultCellPart::Time(part),
+                        None => ResultCellPart::Text("No/unknown value".to_string()),
+                    }
+                }
                 wikibase::Value::Coordinate(v) => {
                     ResultCellPart::Location((*v.latitude(), *v.longitude(), None))
                 }
@@ -105,7 +110,7 @@ impl ResultCellPart {
         }
     }
 
-    pub fn reduce_time(v: &wikibase::TimeValue) -> String {
+    pub fn reduce_time(v: &wikibase::TimeValue) -> Option<String> {
         lazy_static! {
             static ref RE_DATE: Regex =
                 Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#).expect("RE_DATE does not parse");
@@ -113,15 +118,15 @@ impl ResultCellPart {
         let s = v.time().to_string();
         let (year, month, day) = match RE_DATE.captures(&s) {
             Some(caps) => (
-                caps.get(1).unwrap().as_str().to_string(),
-                caps.get(2).unwrap().as_str().to_string(),
-                caps.get(3).unwrap().as_str().to_string(),
+                caps.get(1)?.as_str().to_string(),
+                caps.get(2)?.as_str().to_string(),
+                caps.get(3)?.as_str().to_string(),
             ),
             None => {
-                return s;
+                return Some(s);
             }
         };
-        match v.precision() {
+        Some(match v.precision() {
             6 => format!("{}th millenium", year[0..year.len() - 2].to_string()),
             7 => format!("{}th century", year[0..year.len() - 2].to_string()),
             8 => format!("{}0s", year[0..year.len() - 2].to_string()),
@@ -129,7 +134,7 @@ impl ResultCellPart {
             10 => format!("{}-{}", year, month),
             11 => format!("{}-{}-{}", year, month, day),
             _ => s,
-        }
+        })
     }
 
     fn tabbed_string_safe(&self, s: String) -> String {

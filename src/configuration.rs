@@ -207,10 +207,10 @@ impl Configuration {
     }
 
     pub fn get_location_template(&self, wiki: &str) -> String {
-        self.location_templates
-            .get(wiki)
-            .unwrap_or_else(|| self.location_templates.get(&"default".to_string()).unwrap())
-            .to_string()
+        match self.location_templates.get(wiki) {
+            Some(s) => s.to_owned(),
+            None => self.location_templates.get(&"default".to_string()).map(|s|s.to_owned()).unwrap_or_default()
+        }
     }
 
     pub fn prefer_preferred(&self) -> bool {

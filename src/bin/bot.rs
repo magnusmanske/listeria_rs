@@ -25,9 +25,9 @@ toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/p
 
 const DEFAULT_THREADS: usize = 8;
 
-async fn run_singles(threads: usize) {
+async fn run_singles(threads: usize) -> Result<()> {
     let running_counter = Arc::new(Mutex::new(0 as usize));
-    let bot = ListeriaBot::new("config.json").await.unwrap();
+    let bot = ListeriaBot::new("config.json").await?;
     let _ = bot.reset_running().await;
     let bot = Arc::new(bot);
     loop {
@@ -75,6 +75,6 @@ async fn main() -> Result<()> {
     // threaded_rt.block_on(async move {
     //     run_singles(threads).await;
     // });
-    run_singles(threads).await;
+    run_singles(threads).await?;
     Ok(())
 }
