@@ -14,7 +14,8 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use wikibase::mediawiki::api::Api;
 
-const API_TIMEOUT: Duration = Duration::from_secs(180);
+const API_TIMEOUT: Duration = Duration::from_secs(360);
+const MS_DELAY_AFTER_EDIT: u64 = 100;
 
 #[derive(Debug, Clone, Default)]
 pub struct PageToProcess {
@@ -335,7 +336,7 @@ impl ListeriaBot {
         let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
         let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
         mw_api.set_oauth2(self.config.oauth2_token());
-        mw_api.set_edit_delay(Some(250)); // Slow down editing a bit
+        mw_api.set_edit_delay(Some(MS_DELAY_AFTER_EDIT)); // Slow down editing a bit
         let mw_api = Arc::new(RwLock::new(mw_api));
         Ok(mw_api)
     }
