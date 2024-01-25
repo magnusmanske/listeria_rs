@@ -12,7 +12,6 @@ use tokio::time::{sleep,Duration};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use wikibase::entity::*;
 use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
@@ -1281,7 +1280,7 @@ impl ListeriaList {
         &self.params
     }
 
-    pub fn mw_api(&self) -> Arc<RwLock<Api>> {
+    pub fn mw_api(&self) -> crate::ApiLock {
         self.page_params.mw_api.clone()
     }
 }

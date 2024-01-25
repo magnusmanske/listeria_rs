@@ -2,7 +2,6 @@ use crate::{*, listeria_bot::WikiPageResult};
 use futures::future::try_join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
-use wikibase::mediawiki::api::Api;
 use anyhow::{Result,anyhow};
 
 /* TODO
@@ -25,7 +24,7 @@ pub struct ListeriaPage {
 impl ListeriaPage {
     pub async fn new(
         config: Arc<Configuration>,
-        mw_api: Arc<RwLock<Api>>,
+        mw_api: ApiLock,
         page: String,
     ) -> Result<Self> {
         let page_params = PageParams::new(config, mw_api, page).await?;
