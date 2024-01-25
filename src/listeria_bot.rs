@@ -226,6 +226,9 @@ impl ListeriaBot {
             "be-taraskwiki" | "be-x-oldwiki" => {
                 return Ok("https://be-tarask.wikipedia.org".to_string())
             }
+            "metawiki" => {
+                return Ok("https://meta.wikimedia.org".to_string())
+            }
             _ => {}
         }
         self.site_matrix["sitematrix"]
@@ -327,8 +330,8 @@ impl ListeriaBot {
 
     async fn create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>> {
         let api_url = format!("{}/w/api.php", self.get_server_url_for_wiki(wiki)?);
-        let mut mw_api = Api::new_from_builder(&api_url, wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT)).await?;
-        // let mut mw_api = wikibase::mediawiki::api::Api::new(&api_url).await?;
+        let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
+        let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
         mw_api.set_oauth2(self.config.oauth2_token());
         mw_api.set_edit_delay(Some(250)); // Slow down editing a bit
         let mw_api = Arc::new(RwLock::new(mw_api));
