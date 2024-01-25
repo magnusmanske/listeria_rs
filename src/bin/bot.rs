@@ -63,6 +63,7 @@ async fn main() -> Result<()> {
         Some(t) => t.to_owned().into_string().unwrap_or("".into()).parse::<usize>().unwrap_or(DEFAULT_THREADS),
         None => DEFAULT_THREADS
     };
+    println!("Starting {threads} bots");
     
     // let threaded_rt = runtime::Builder::new_multi_thread()
     //     .enable_all()
