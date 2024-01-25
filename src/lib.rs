@@ -33,12 +33,14 @@ use tokio::sync::RwLock;
 use wikibase::entity::EntityTrait;
 use wikibase::mediawiki::api::Api;
 
+type ApiLock = Arc<RwLock<Api>>;
+
 #[derive(Debug, Clone)]
 pub struct PageParams {
     language: String,
     wiki: String,
     page: String,
-    mw_api: Arc<RwLock<Api>>,
+    mw_api: ApiLock,
     wb_api: Arc<Api>,
     simulate: bool,
     simulated_text: Option<String>,
@@ -51,7 +53,7 @@ pub struct PageParams {
 impl PageParams {
     pub async fn new(
         config: Arc<Configuration>,
-        mw_api: Arc<RwLock<Api>>,
+        mw_api: ApiLock,
         page: String,
     ) -> Result<Self> {
         let api = mw_api.read().await;

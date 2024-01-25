@@ -2,6 +2,7 @@ use tokio::sync::Mutex;
 use chrono::{DateTime, Utc};
 use crate::configuration::Configuration;
 use crate::listeria_page::ListeriaPage;
+use crate::ApiLock;
 use anyhow::{Result,anyhow};
 use mysql_async as my;
 use mysql_async::from_row;
@@ -72,12 +73,12 @@ impl WikiPageResult {
 #[derive(Debug, Clone)]
 pub struct ListeriaBotWiki {
     wiki: String,
-    api: Arc<RwLock<Api>>,
+    api: ApiLock,
     config: Arc<Configuration>,
 }
 
 impl ListeriaBotWiki {
-    pub fn new(wiki: &str, api: Arc<RwLock<Api>>, config: Arc<Configuration>) -> Self {
+    pub fn new(wiki: &str, api: ApiLock, config: Arc<Configuration>) -> Self {
         println!("Creating bot for {}", wiki);
         Self {
             wiki: wiki.to_string(),
@@ -113,7 +114,7 @@ impl ListeriaBotWiki {
 #[derive(Debug, Clone)]
 pub struct ListeriaBot {
     config: Arc<Configuration>,
-    wiki_apis: Arc<Mutex<HashMap<String, Arc<RwLock<Api>>>>>,
+    wiki_apis: Arc<Mutex<HashMap<String, ApiLock>>>,
     pool: mysql_async::Pool,
     site_matrix: Value,
     bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
@@ -328,7 +329,7 @@ impl ListeriaBot {
         Ok(())
     }
 
-    async fn create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>> {
+    async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let api_url = format!("{}/w/api.php", self.get_server_url_for_wiki(wiki)?);
         let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
         let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
@@ -338,7 +339,7 @@ impl ListeriaBot {
         Ok(mw_api)
     }
 
-    async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<Arc<RwLock<Api>>> {
+    async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let mut lock = self.wiki_apis.lock().await;
         if let Some(api) = &lock.get(wiki) {
             return Ok((*api).clone());
