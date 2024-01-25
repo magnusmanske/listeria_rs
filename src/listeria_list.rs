@@ -114,12 +114,14 @@ impl ListeriaList {
         let template = self.template.clone();
         match self.get_template_value(&template, "columns") {
             Some(columns) => {
-                columns.split(',').for_each(|part| {
-                    let s = part.to_string();
-                    self.columns.push(Column::new(&s));
-                });
+                columns.split(',')
+                    .filter_map(|part| Column::new(&part) )
+                    .for_each(|column| self.columns.push(column));
             }
-            None => self.columns.push(Column::new(&"item".to_string())),
+            None => {
+                let column = Column::new(&"item".to_string()).ok_or_else(||anyhow!("Bad column: item"))?;
+                self.columns.push(column);
+            }
         }
 
         self.params = TemplateParams::new_from_params(&template);

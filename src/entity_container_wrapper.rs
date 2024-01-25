@@ -46,10 +46,15 @@ impl EntityContainerWrapper {
     }
 
     pub async fn load_entities_max_size(&mut self, api: &Api, ids: &Vec<String>, max_entities: usize) -> Result<()> {
-        let ids = self.entities.unique_shuffle_entity_ids(ids).unwrap();
+        let ids = self.entities.unique_shuffle_entity_ids(ids).map_err(|e| anyhow!("{e}"))?;
         if ids.len()>max_entities { // Use pickledb disk cache
             self.pickledb_filename = Some(Arc::new(NamedTempFile::new()?));
-            let temp_filename = self.pickledb_filename.as_ref().unwrap().path().to_str().unwrap();
+            let temp_filename = self.pickledb_filename
+                .as_ref()
+                .ok_or_else(||anyhow!("Can not create pickledb file [1]"))?
+                .path()
+                .to_str()
+                .ok_or_else(||anyhow!("Can not create pickledb file [2]"))?;
             let mut db = PickleDb::new(
                 temp_filename,
                 PickleDbDumpPolicy::AutoDump,
@@ -64,7 +69,7 @@ impl EntityContainerWrapper {
                     if let Some(entity) = self.entities.get_entity(entity_id) {
                         let json = entity.to_json();
                         //let _ = self.hashfile_add_entity(&entity.id(), json);
-                        db.set(&entity.id(), &json).unwrap();
+                        db.set(&entity.id(), &json)?;
                     }
                 }
                 self.entities.clear();

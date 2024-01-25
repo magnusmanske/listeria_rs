@@ -104,21 +104,21 @@ pub struct Column {
 }
 
 impl Column {
-    pub fn new(s: &str) -> Self {
+    pub fn new(s: &str) -> Option<Self> {
         lazy_static! {
             static ref RE_COLUMN_LABEL: Regex = Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).expect("RE_COLUMN_LABEL does not parse");
         }
         match RE_COLUMN_LABEL.captures(&s) {
-            Some(caps) => Self {
-                obj: ColumnType::new(&caps.get(1).unwrap().as_str().to_string()),
-                label: caps.get(2).unwrap().as_str().to_string(),
-                has_label: !caps.get(2).unwrap().as_str().is_empty(),
-            },
-            None => Self {
+            Some(caps) => Some(Self {
+                obj: ColumnType::new(&caps.get(1)?.as_str().to_string()),
+                label: caps.get(2)?.as_str().to_string(),
+                has_label: !caps.get(2)?.as_str().is_empty(),
+            }),
+            None => Some(Self {
                 obj: ColumnType::new(&s.trim().to_string()),
                 label: s.trim().to_string(),
                 has_label: false,
-            },
+            }),
         }
     }
 
