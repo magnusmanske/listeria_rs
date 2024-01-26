@@ -373,7 +373,14 @@ impl ListeriaBot {
             "status" => status,
             "message" => message.chars().take(200).collect::<String>(),
         };
-        let sql = "UPDATE `pagestatus` SET `status`=:status,`message`=:message,`timestamp`=:timestamp,`bot_version`=2 WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page".to_string() ;
+        let priority = if status=="OK"||status=="FAILED" { "0" } else { "`priority`" }; // Reset priority on OK or FAIL
+        let sql = format!("UPDATE `pagestatus` SET
+            `status`=:status,
+            `message`=:message,
+            `timestamp`=:timestamp,
+            `bot_version`=2,
+            `priority`={priority}
+            WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page") ;
         self.pool.get_conn().await?
             .exec_iter(sql.as_str(), params)
             .await?
