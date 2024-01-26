@@ -47,13 +47,10 @@ impl WikiList {
             .cloned()
             .collect();
         if !new_wikis.is_empty() {
+            let placeholders = self.placeholders(new_wikis.len(),"(?,'ACTIVE')");
+            let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
             println!("Adding {new_wikis:?}");
-            for chunk in new_wikis.chunks(1000) {
-                let chunk: Vec<String> = chunk.into();
-                let placeholders = self.placeholders(chunk.len(),"(?,'ACTIVE')");
-                let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
-                self.pool.get_conn().await?.exec_drop(sql,chunk).await?;
-                }
+            self.pool.get_conn().await?.exec_drop(sql,new_wikis).await?;
         }
         Ok(())
     }
@@ -86,10 +83,13 @@ impl WikiList {
             .collect();
         if !new_pages.is_empty() {
             let wiki_id = self.get_wiki_id(wiki).await?;
-            let placeholders = self.placeholders(new_pages.len(),&format!("({wiki_id},?,'WAITING','')"));
-            let sql = format!("INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}");
             println!("Adding {} pages for {wiki}",new_pages.len());
-            self.pool.get_conn().await?.exec_drop(sql,new_pages).await?;
+            for chunk in new_pages.chunks(10000) {
+                let chunk: Vec<String> = chunk.into();
+                let placeholders = self.placeholders(chunk.len(),&format!("({wiki_id},?,'WAITING','')"));
+                let sql = format!("INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}");
+                self.pool.get_conn().await?.exec_drop(sql,chunk).await?;
+                }
         }
 
         Ok(())
