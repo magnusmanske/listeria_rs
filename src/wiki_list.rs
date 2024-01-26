@@ -48,7 +48,7 @@ impl WikiList {
             .collect();
         if !new_wikis.is_empty() {
             println!("Adding {new_wikis:?}");
-            for chunk in new_wikis.chunks(10000) {
+            for chunk in new_wikis.chunks(1000) {
                 let chunk: Vec<String> = chunk.into();
                 let placeholders = self.placeholders(chunk.len(),"(?,'ACTIVE')");
                 let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
