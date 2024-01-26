@@ -50,4 +50,8 @@ impl DatabasePool {
 
         Ok(opts)
     }
+
+    pub async fn destruct(&mut self) {
+        //self.pool.disconnect().await; // TODO
+    }
 }
