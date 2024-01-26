@@ -5,6 +5,7 @@ use anyhow::{Result,anyhow};
 use config::{Config, File};
 use listeria::configuration::Configuration;
 use listeria::listeria_page::ListeriaPage;
+use listeria::wiki_list::WikiList;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -34,9 +35,19 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 
     let args: Vec<String> = env::args().collect();
-    let wiki_server = args
+    let first_arg = args
         .get(1)
         .ok_or_else(|| anyhow!("No wiki server argument"))?;
+
+    if first_arg=="update_wikis" {
+        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
+        let wiki_list = WikiList::new(config.clone()).await?;
+        wiki_list.update_wiki_list_in_database().await?;
+        wiki_list.update_all_wikis().await?;
+        return Ok(())
+    }
+
+    let wiki_server = first_arg;
     let page = args.get(2).ok_or_else(|| anyhow!("No page argument"))?;
 
     let wiki_api = format!("https://{}/w/api.php", &wiki_server);
@@ -47,3 +58,7 @@ async fn main() -> Result<()> {
     println!("{}", message);
     Ok(())
 }
+
+/*
+ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
+*/
