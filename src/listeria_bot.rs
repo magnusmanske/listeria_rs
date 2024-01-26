@@ -313,8 +313,8 @@ impl ListeriaBot {
         // Tries to find a "priority" page
         let sql = "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
             FROM pagestatus,wikis 
-            WHERE priority=1
-            ORDER BY pagestatus.timestamp
+            WHERE priority=1 AND wikis.id=pagestatus.wiki
+            ORDER BY rand()
             LIMIT 1";
         if let Some(page) = self.get_page_for_sql(sql).await {
             self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
