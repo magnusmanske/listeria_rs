@@ -32,6 +32,7 @@ pub struct Configuration {
     location_regions: Vec<String>,
     mysql: Option<Value>,
     oauth2_token: String,
+    template_start_q: String,
 }
 
 impl Configuration {
@@ -139,6 +140,7 @@ impl Configuration {
             .map_err(|e|anyhow!("{e}"))?;
         ret.template_start_sites = ret.get_sitelink_mapping(&entities, &q_start)?;
         ret.template_end_sites = ret.get_sitelink_mapping(&entities, &q_end)?;
+        ret.template_start_q = q_start;
 
         Ok(ret)
     }
@@ -211,6 +213,10 @@ impl Configuration {
             Some(s) => s.to_owned(),
             None => self.location_templates.get(&"default".to_string()).map(|s|s.to_owned()).unwrap_or_default()
         }
+    }
+
+    pub fn get_template_start_q(&self) -> String {
+        self.template_start_q.to_owned()
     }
 
     pub fn prefer_preferred(&self) -> bool {
