@@ -192,8 +192,4 @@ impl ListeriaBot {
             .await?;
         Ok(())
     }
-
-    pub async fn destruct(&mut self) {
-        //self.pool.disconnect().await; // TODO
-    }
 }
