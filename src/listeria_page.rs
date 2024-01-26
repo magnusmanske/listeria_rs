@@ -337,7 +337,7 @@ mod tests {
             // println!("LOGIN TO COMMONS: {}", result);
         }
         let config = Arc::new(config);
-
+        // let wiki_apis = Arc::new(WikiApis::new(config.clone()).await.unwrap());
         let mut page = ListeriaPage::new(config, mw_api, data["PAGETITLE"].clone())
             .await
             .unwrap();

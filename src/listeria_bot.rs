@@ -252,24 +252,65 @@ impl DatabasePool {
 }
 
 #[derive(Debug, Clone)]
+pub struct WikiApis {
+    config: Arc<Configuration>,
+    site_matrix: Arc<SiteMatrix>,
+    apis: Arc<Mutex<HashMap<String, ApiLock>>>,
+}
+
+impl WikiApis {
+    pub async fn new(config: Arc<Configuration>) -> Result<Self> {
+        let site_matrix = Arc::new(SiteMatrix::new(&config).await?);
+        Ok(Self {
+            apis: Arc::new(Mutex::new(HashMap::new())),
+            config,
+            site_matrix,
+        })
+    }
+
+    pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
+        let mut lock = self.apis.lock().await;
+        if let Some(api) = &lock.get(wiki) {
+            return Ok((*api).clone());
+        }
+
+        let mw_api = self.create_wiki_api(wiki).await?;
+        lock.insert(wiki.to_owned(), mw_api);
+
+        lock
+            .get(wiki)
+            .ok_or(anyhow!("Wiki not found: {wiki}"))
+            .map(|api| api.clone())
+    }
+
+    async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
+        let api_url = format!("{}/w/api.php", self.site_matrix.get_server_url_for_wiki(wiki)?);
+        let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
+        let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
+        mw_api.set_oauth2(self.config.oauth2_token());
+        mw_api.set_edit_delay(Some(MS_DELAY_AFTER_EDIT)); // Slow down editing a bit
+        let mw_api = Arc::new(RwLock::new(mw_api));
+        Ok(mw_api)
+    }
+
+}
+
+#[derive(Debug, Clone)]
 pub struct ListeriaBot {
     config: Arc<Configuration>,
-    wiki_apis: Arc<Mutex<HashMap<String, ApiLock>>>,
+    wiki_apis: Arc<WikiApis>,
     pool: DatabasePool,
-    site_matrix: SiteMatrix,
     bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
 }
 
 impl ListeriaBot {
     pub async fn new(config_file: &str) -> Result<Self> {
-        let config = Configuration::new_from_file(config_file).await?;
+        let config = Arc::new(Configuration::new_from_file(config_file).await?);
         let pool = DatabasePool::new(&config)?;
-        let site_matrix = SiteMatrix::new(&config).await?;
         Ok(Self {
-            config: Arc::new(config),
-            wiki_apis: Arc::new(Mutex::new(HashMap::new())),
+            config: config.clone(),
+            wiki_apis: Arc::new(WikiApis::new(config.clone()).await?),
             pool,
-            site_matrix,
             bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
         })
     }
@@ -280,7 +321,7 @@ impl ListeriaBot {
         if let Some(bot) = lock.get(wiki) {
             return Some(bot.to_owned())
         }
-        let mw_api = match self.get_or_create_wiki_api(&wiki).await {
+        let mw_api = match self.wiki_apis.get_or_create_wiki_api(&wiki).await {
             Ok(mw_api) => mw_api,
             Err(e) => {
                 eprintln!("{e}");
@@ -387,31 +428,6 @@ impl ListeriaBot {
             .map_and_drop(|row| from_row::<String>(row))
             .await?;
         Ok(())
-    }
-
-    async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
-        let api_url = format!("{}/w/api.php", self.site_matrix.get_server_url_for_wiki(wiki)?);
-        let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
-        let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
-        mw_api.set_oauth2(self.config.oauth2_token());
-        mw_api.set_edit_delay(Some(MS_DELAY_AFTER_EDIT)); // Slow down editing a bit
-        let mw_api = Arc::new(RwLock::new(mw_api));
-        Ok(mw_api)
-    }
-
-    async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
-        let mut lock = self.wiki_apis.lock().await;
-        if let Some(api) = &lock.get(wiki) {
-            return Ok((*api).clone());
-        }
-
-        let mw_api = self.create_wiki_api(wiki).await?;
-        lock.insert(wiki.to_owned(), mw_api);
-
-        lock
-            .get(wiki)
-            .ok_or(anyhow!("Wiki not found: {wiki}"))
-            .map(|api| api.clone())
     }
 
     pub async fn destruct(&mut self) {
