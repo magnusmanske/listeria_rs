@@ -1,79 +1,22 @@
-use my::OptsBuilder;
 use tokio::sync::Mutex;
 use chrono::{DateTime, Utc};
 use crate::configuration::Configuration;
+use crate::database_pool::DatabasePool;
 use crate::listeria_page::ListeriaPage;
+use crate::page_to_process::PageToProcess;
+use crate::wiki_apis::WikiApis;
+use crate::wiki_page_result::WikiPageResult;
 use crate::ApiLock;
 use anyhow::{Result,anyhow};
-use mysql_async as my;
 use mysql_async::from_row;
 use mysql_async::prelude::*;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::RwLock;
-use wikibase::mediawiki::api::Api;
 
-const API_TIMEOUT: Duration = Duration::from_secs(360);
-const MS_DELAY_AFTER_EDIT: u64 = 100;
 
-#[derive(Debug, Clone, Default)]
-pub struct PageToProcess {
-    pub id: u64,
-    pub title: String,
-    pub status: String,
-    pub wiki: String,
-}
-
-impl PageToProcess {
-    pub fn from_parts(parts: (u64,String,String,String)) -> Self {
-        Self {
-            id: parts.0,
-            title: parts.1,
-            status: parts.2,
-            wiki: parts.3,
-        }
-    }
-
-    pub fn from_row(row: mysql_async::Row) -> Self {
-        let parts = from_row::<(u64, String, String, String)>(row);
-        Self::from_parts(parts)
-    }
-}
 
 #[derive(Debug, Clone)]
-pub struct WikiPageResult {
-    pub wiki: String,
-    pub page: String,
-    pub result: String,
-    pub message: String,
-}
-
-unsafe impl Send for WikiPageResult {}
-
-impl WikiPageResult {
-    pub fn new(wiki: &str, page: &str, result: &str, message: String) -> Self {
-        Self {
-            wiki: wiki.to_string(),
-            page: page.to_string(),
-            result: result.to_string(),
-            message,
-        }
-    }
-
-    pub fn fail(wiki: &str, page: &str, message: &str) -> Self {
-        Self::new(
-            wiki,
-            page,
-            "FAIL",
-            message.to_string()
-        )
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ListeriaBotWiki {
+struct ListeriaBotWiki {
     wiki: String,
     api: ApiLock,
     config: Arc<Configuration>,
@@ -113,187 +56,7 @@ impl ListeriaBotWiki {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct SiteMatrix {
-    site_matrix: Value,
-}
 
-impl SiteMatrix {
-    pub async fn new(config: &Configuration) -> Result<Self> {
-        // Load site matrix
-        let api = config.get_default_wbapi()?;
-        let params: HashMap<String, String> = vec![("action", "sitematrix")]
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
-
-        let site_matrix = api
-            .get_query_api_json(&params)
-            .await?;
-        Ok(Self { site_matrix })
-    }
-
-
-    fn get_url_for_wiki_from_site(&self, wiki: &str, site: &Value) -> Option<String> {
-        self.get_value_from_site_matrix_entry(wiki, site, "dbname", "url")
-    }
-
-    fn get_value_from_site_matrix_entry(
-        &self,
-        value: &str,
-        site: &Value,
-        key_match: &str,
-        key_return: &str,
-    ) -> Option<String> {
-        if site["closed"].as_str().is_some() {
-            return None;
-        }
-        if site["private"].as_str().is_some() {
-            return None;
-        }
-        match site[key_match].as_str() {
-            Some(site_url) => {
-                if value == site_url {
-                    match site[key_return].as_str() {
-                        Some(url) => Some(url.to_string()),
-                        None => None,
-                    }
-                } else {
-                    None
-                }
-            }
-            None => None,
-        }
-    }
-
-    pub fn get_server_url_for_wiki(&self, wiki: &str) -> Result<String> {
-        match wiki.replace("_", "-").as_str() {
-            "be-taraskwiki" | "be-x-oldwiki" => {
-                return Ok("https://be-tarask.wikipedia.org".to_string())
-            }
-            "metawiki" => {
-                return Ok("https://meta.wikimedia.org".to_string())
-            }
-            _ => {}
-        }
-        self.site_matrix["sitematrix"]
-            .as_object()
-            .ok_or_else(|| anyhow!("ListeriaBot::get_server_url_for_wiki: sitematrix not an object"))?
-            .iter()
-            .filter_map(|(id, data)| match id.as_str() {
-                "count" => None,
-                "specials" => data
-                    .as_array()?
-                    .iter()
-                    .filter_map(|site| self.get_url_for_wiki_from_site(wiki, site))
-                    .next(),
-                _other => match data["site"].as_array() {
-                    Some(sites) => sites
-                        .iter()
-                        .filter_map(|site| self.get_url_for_wiki_from_site(wiki, site))
-                        .next(),
-                    None => None,
-                },
-            })
-            .next()
-            .ok_or(anyhow!("AppState::get_server_url_for_wiki: Cannot find server for wiki '{wiki}'"))
-    }
-
-}
-
-#[derive(Debug, Clone)]
-pub struct DatabasePool {
-    pool: mysql_async::Pool,
-}
-
-impl DatabasePool {
-    pub fn new(config: &Configuration) -> Result<Self> {
-        let opts = Self::pool_opts_from_config(&config)?;
-        Ok(Self { pool: mysql_async::Pool::new(opts) } )
-    }
-
-    pub async fn get_conn(&self) -> Result<my::Conn> {
-        let ret = self.pool.get_conn().await?;
-        Ok(ret)
-    }
-
-    fn pool_opts_from_config(config: &Configuration) -> Result<OptsBuilder> {
-        let host = config
-            .mysql("host")
-            .as_str()
-            .ok_or(anyhow!("No host in config"))?
-            .to_string();
-        let schema = config
-            .mysql("schema")
-            .as_str()
-            .ok_or(anyhow!("No schema in config"))?
-            .to_string();
-        let port = config.mysql("port").as_u64().ok_or(anyhow!("No port in config"))? as u16;
-        let user = config
-            .mysql("user")
-            .as_str()
-            .ok_or(anyhow!("No user in config"))?
-            .to_string();
-        let password = config
-            .mysql("password")
-            .as_str()
-            .ok_or(anyhow!("No password in config"))?
-            .to_string();
-
-        let opts = my::OptsBuilder::default()
-            .ip_or_hostname(host.to_owned())
-            .db_name(Some(schema))
-            .user(Some(user))
-            .pass(Some(password))
-            .tcp_port(port);
-
-        Ok(opts)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct WikiApis {
-    config: Arc<Configuration>,
-    site_matrix: Arc<SiteMatrix>,
-    apis: Arc<Mutex<HashMap<String, ApiLock>>>,
-}
-
-impl WikiApis {
-    pub async fn new(config: Arc<Configuration>) -> Result<Self> {
-        let site_matrix = Arc::new(SiteMatrix::new(&config).await?);
-        Ok(Self {
-            apis: Arc::new(Mutex::new(HashMap::new())),
-            config,
-            site_matrix,
-        })
-    }
-
-    pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
-        let mut lock = self.apis.lock().await;
-        if let Some(api) = &lock.get(wiki) {
-            return Ok((*api).clone());
-        }
-
-        let mw_api = self.create_wiki_api(wiki).await?;
-        lock.insert(wiki.to_owned(), mw_api);
-
-        lock
-            .get(wiki)
-            .ok_or(anyhow!("Wiki not found: {wiki}"))
-            .map(|api| api.clone())
-    }
-
-    async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
-        let api_url = format!("{}/w/api.php", self.site_matrix.get_server_url_for_wiki(wiki)?);
-        let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
-        let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
-        mw_api.set_oauth2(self.config.oauth2_token());
-        mw_api.set_edit_delay(Some(MS_DELAY_AFTER_EDIT)); // Slow down editing a bit
-        let mw_api = Arc::new(RwLock::new(mw_api));
-        Ok(mw_api)
-    }
-
-}
 
 #[derive(Debug, Clone)]
 pub struct ListeriaBot {
