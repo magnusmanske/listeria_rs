@@ -10,34 +10,35 @@ use mysql_async::from_row;
 use mysql_async::prelude::*;
 
 use crate::configuration::Configuration;
+use crate::listeria_bot::DatabasePool;
 use crate::listeria_bot::SiteMatrix;
 
 pub struct WikiList {
     config: Arc<Configuration>,
-    pool: mysql_async::Pool,
+    pool: DatabasePool,
     site_matrix: SiteMatrix,
 }
 
 impl WikiList {
     pub async fn new(config: Arc<Configuration>) -> Result<Self> {
-        let opts = crate::listeria_bot::ListeriaBot::pool_opts_from_config(&config)?;
+        let pool = DatabasePool::new(&config)?;
         let site_matrix = SiteMatrix::new(&config).await?;
         Ok(Self {
             config,
-            pool: mysql_async::Pool::new(opts),
+            pool,
             site_matrix,
         })
     }
 
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
-        let q = "Q19860885"; // Wikidata item for {{Wikidata list}}
+        let q = self.config.get_template_start_q(); // Wikidata item for {{Wikidata list}}
         let api = self.config.get_default_wbapi()?;
         let entities = EntityContainer::new();
         entities
-            .load_entities(&api, &vec![q.to_string()])
+            .load_entities(&api, &vec![q.to_owned()])
             .await
             .map_err(|e|anyhow!("{e}"))?;
-        let entity = entities.get_entity(q).ok_or_else(||anyhow!("{q} item not found on Wikidata"))?;
+        let entity = entities.get_entity(&q).ok_or_else(||anyhow!("{q} item not found on Wikidata"))?;
         let current_wikis: Vec<String> = entity.sitelinks().iter().flatten().map(|s|s.site().to_owned()).collect(); // All wikis with a start template
         let existing_wikis = self.get_wikis_in_database().await?;
         let new_wikis: Vec<String> = current_wikis
@@ -46,10 +47,13 @@ impl WikiList {
             .cloned()
             .collect();
         if !new_wikis.is_empty() {
-            let placeholders = self.placeholders(new_wikis.len(),"(?,'ACTIVE')");
-            let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
             println!("Adding {new_wikis:?}");
-            self.pool.get_conn().await?.exec_drop(sql,new_wikis).await?;
+            for chunk in new_wikis.chunks(10000) {
+                let chunk: Vec<String> = chunk.into();
+                let placeholders = self.placeholders(chunk.len(),"(?,'ACTIVE')");
+                let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
+                self.pool.get_conn().await?.exec_drop(sql,chunk).await?;
+                }
         }
         Ok(())
     }

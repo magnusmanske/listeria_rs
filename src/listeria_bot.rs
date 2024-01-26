@@ -202,29 +202,22 @@ impl SiteMatrix {
 }
 
 #[derive(Debug, Clone)]
-pub struct ListeriaBot {
-    config: Arc<Configuration>,
-    wiki_apis: Arc<Mutex<HashMap<String, ApiLock>>>,
+pub struct DatabasePool {
     pool: mysql_async::Pool,
-    site_matrix: SiteMatrix,
-    bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
 }
 
-impl ListeriaBot {
-    pub async fn new(config_file: &str) -> Result<Self> {
-        let config = Configuration::new_from_file(config_file).await?;
+impl DatabasePool {
+    pub fn new(config: &Configuration) -> Result<Self> {
         let opts = Self::pool_opts_from_config(&config)?;
-        let site_matrix = SiteMatrix::new(&config).await?;
-        Ok(Self {
-            config: Arc::new(config),
-            wiki_apis: Arc::new(Mutex::new(HashMap::new())),
-            pool: mysql_async::Pool::new(opts),
-            site_matrix,
-            bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
-        })
+        Ok(Self { pool: mysql_async::Pool::new(opts) } )
     }
 
-    pub fn pool_opts_from_config(config: &Configuration) -> Result<OptsBuilder> {
+    pub async fn get_conn(&self) -> Result<my::Conn> {
+        let ret = self.pool.get_conn().await?;
+        Ok(ret)
+    }
+
+    fn pool_opts_from_config(config: &Configuration) -> Result<OptsBuilder> {
         let host = config
             .mysql("host")
             .as_str()
@@ -256,6 +249,31 @@ impl ListeriaBot {
 
         Ok(opts)
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeriaBot {
+    config: Arc<Configuration>,
+    wiki_apis: Arc<Mutex<HashMap<String, ApiLock>>>,
+    pool: DatabasePool,
+    site_matrix: SiteMatrix,
+    bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
+}
+
+impl ListeriaBot {
+    pub async fn new(config_file: &str) -> Result<Self> {
+        let config = Configuration::new_from_file(config_file).await?;
+        let pool = DatabasePool::new(&config)?;
+        let site_matrix = SiteMatrix::new(&config).await?;
+        Ok(Self {
+            config: Arc::new(config),
+            wiki_apis: Arc::new(Mutex::new(HashMap::new())),
+            pool,
+            site_matrix,
+            bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
 
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
         let mut lock = self.bot_per_wiki.lock().await;
@@ -283,11 +301,11 @@ impl ListeriaBot {
 
     async fn get_page_for_sql(&self, sql: &str) -> Option<PageToProcess> {
         self.pool.get_conn().await.ok()?
-        .exec_iter(sql, ())
-        .await.ok()?
-        .map_and_drop(|row| PageToProcess::from_row(row))
-        .await.ok()?
-        .pop()
+            .exec_iter(sql, ())
+            .await.ok()?
+            .map_and_drop(|row| PageToProcess::from_row(row))
+            .await.ok()?
+            .pop()
     }
   
     /// Returns a page to be processed. 
