@@ -10,8 +10,8 @@ use mysql_async::from_row;
 use mysql_async::prelude::*;
 
 use crate::configuration::Configuration;
-use crate::listeria_bot::DatabasePool;
-use crate::listeria_bot::SiteMatrix;
+use crate::database_pool::DatabasePool;
+use crate::site_matrix::SiteMatrix;
 
 pub struct WikiList {
     config: Arc<Configuration>,
