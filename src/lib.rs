@@ -5,6 +5,7 @@ extern crate serde_json;
 
 pub mod column;
 pub mod configuration;
+pub mod wiki_list;
 pub mod entity_container_wrapper;
 pub mod listeria_list;
 pub mod listeria_page;

@@ -1,3 +1,4 @@
+use my::OptsBuilder;
 use tokio::sync::Mutex;
 use chrono::{DateTime, Utc};
 use crate::configuration::Configuration;
@@ -113,47 +114,12 @@ impl ListeriaBotWiki {
 }
 
 #[derive(Debug, Clone)]
-pub struct ListeriaBot {
-    config: Arc<Configuration>,
-    wiki_apis: Arc<Mutex<HashMap<String, ApiLock>>>,
-    pool: mysql_async::Pool,
+pub struct SiteMatrix {
     site_matrix: Value,
-    bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
 }
 
-impl ListeriaBot {
-    pub async fn new(config_file: &str) -> Result<Self> {
-        let config = Configuration::new_from_file(config_file).await?;
-
-        let host = config
-            .mysql("host")
-            .as_str()
-            .ok_or(anyhow!("No host in config"))?
-            .to_string();
-        let schema = config
-            .mysql("schema")
-            .as_str()
-            .ok_or(anyhow!("No schema in config"))?
-            .to_string();
-        let port = config.mysql("port").as_u64().ok_or(anyhow!("No port in config"))? as u16;
-        let user = config
-            .mysql("user")
-            .as_str()
-            .ok_or(anyhow!("No user in config"))?
-            .to_string();
-        let password = config
-            .mysql("password")
-            .as_str()
-            .ok_or(anyhow!("No password in config"))?
-            .to_string();
-
-        let opts = my::OptsBuilder::default()
-            .ip_or_hostname(host.to_owned())
-            .db_name(Some(schema))
-            .user(Some(user))
-            .pass(Some(password))
-            .tcp_port(port);
-
+impl SiteMatrix {
+    pub async fn new(config: &Configuration) -> Result<Self> {
         // Load site matrix
         let api = config.get_default_wbapi()?;
         let params: HashMap<String, String> = vec![("action", "sitematrix")]
@@ -164,32 +130,9 @@ impl ListeriaBot {
         let site_matrix = api
             .get_query_api_json(&params)
             .await?;
-        Ok(Self {
-            config: Arc::new(config),
-            wiki_apis: Arc::new(Mutex::new(HashMap::new())),
-            pool: mysql_async::Pool::new(opts),
-            site_matrix,
-            bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
-        })
+        Ok(Self { site_matrix })
     }
 
-    async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
-        let mut lock = self.bot_per_wiki.lock().await;
-        if let Some(bot) = lock.get(wiki) {
-            return Some(bot.to_owned())
-        }
-        let mw_api = match self.get_or_create_wiki_api(&wiki).await {
-            Ok(mw_api) => mw_api,
-            Err(e) => {
-                eprintln!("{e}");
-                return None;
-            }
-        };
-
-        let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
-        lock.insert(wiki.to_string(), bot.clone());
-        return Some(bot);
-    }
 
     fn get_url_for_wiki_from_site(&self, wiki: &str, site: &Value) -> Option<String> {
         self.get_value_from_site_matrix_entry(wiki, site, "dbname", "url")
@@ -223,7 +166,7 @@ impl ListeriaBot {
         }
     }
 
-    fn get_server_url_for_wiki(&self, wiki: &str) -> Result<String> {
+    pub fn get_server_url_for_wiki(&self, wiki: &str) -> Result<String> {
         match wiki.replace("_", "-").as_str() {
             "be-taraskwiki" | "be-x-oldwiki" => {
                 return Ok("https://be-tarask.wikipedia.org".to_string())
@@ -256,30 +199,120 @@ impl ListeriaBot {
             .ok_or(anyhow!("AppState::get_server_url_for_wiki: Cannot find server for wiki '{wiki}'"))
     }
 
+}
+
+#[derive(Debug, Clone)]
+pub struct ListeriaBot {
+    config: Arc<Configuration>,
+    wiki_apis: Arc<Mutex<HashMap<String, ApiLock>>>,
+    pool: mysql_async::Pool,
+    site_matrix: SiteMatrix,
+    bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
+}
+
+impl ListeriaBot {
+    pub async fn new(config_file: &str) -> Result<Self> {
+        let config = Configuration::new_from_file(config_file).await?;
+        let opts = Self::pool_opts_from_config(&config)?;
+        let site_matrix = SiteMatrix::new(&config).await?;
+        Ok(Self {
+            config: Arc::new(config),
+            wiki_apis: Arc::new(Mutex::new(HashMap::new())),
+            pool: mysql_async::Pool::new(opts),
+            site_matrix,
+            bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    pub fn pool_opts_from_config(config: &Configuration) -> Result<OptsBuilder> {
+        let host = config
+            .mysql("host")
+            .as_str()
+            .ok_or(anyhow!("No host in config"))?
+            .to_string();
+        let schema = config
+            .mysql("schema")
+            .as_str()
+            .ok_or(anyhow!("No schema in config"))?
+            .to_string();
+        let port = config.mysql("port").as_u64().ok_or(anyhow!("No port in config"))? as u16;
+        let user = config
+            .mysql("user")
+            .as_str()
+            .ok_or(anyhow!("No user in config"))?
+            .to_string();
+        let password = config
+            .mysql("password")
+            .as_str()
+            .ok_or(anyhow!("No password in config"))?
+            .to_string();
+
+        let opts = my::OptsBuilder::default()
+            .ip_or_hostname(host.to_owned())
+            .db_name(Some(schema))
+            .user(Some(user))
+            .pass(Some(password))
+            .tcp_port(port);
+
+        Ok(opts)
+    }
+
+    async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
+        let mut lock = self.bot_per_wiki.lock().await;
+        if let Some(bot) = lock.get(wiki) {
+            return Some(bot.to_owned())
+        }
+        let mw_api = match self.get_or_create_wiki_api(&wiki).await {
+            Ok(mw_api) => mw_api,
+            Err(e) => {
+                eprintln!("{e}");
+                return None;
+            }
+        };
+
+        let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
+        lock.insert(wiki.to_string(), bot.clone());
+        return Some(bot);
+    }
+
     pub async fn reset_running(&self) -> Result<()> {
         let sql = "UPDATE pagestatus SET status='OK' WHERE status='RUNNING'";
         let _ = self.pool.get_conn().await?.exec_iter(sql, ()).await;
         Ok(())
     }
+
+    async fn get_page_for_sql(&self, sql: &str) -> Option<PageToProcess> {
+        self.pool.get_conn().await.ok()?
+        .exec_iter(sql, ())
+        .await.ok()?
+        .map_and_drop(|row| PageToProcess::from_row(row))
+        .await.ok()?
+        .pop()
+    }
   
     /// Returns a page to be processed. 
     pub async fn prepare_next_single_page(&self) -> Result<PageToProcess> {
-        // Gets the first 1000 pages (by timestamp), then randomly picks one
+        // Tries to find a "priority" page
+        let sql = "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
+            FROM pagestatus,wikis 
+            WHERE priority=1
+            ORDER BY pagestatus.timestamp
+            LIMIT 1";
+        if let Some(page) = self.get_page_for_sql(sql).await {
+            self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
+            return Ok(page)
+        }
+
+        // Gets the first 100 pages (by timestamp), then randomly picks one
         let sql = r#"SELECT * FROM (
             SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
             FROM pagestatus,wikis 
             WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status NOT IN ('RUNNING','DELETED')
             ORDER BY pagestatus.timestamp
-            LIMIT 1000) ps
+            LIMIT 100) ps
             ORDER BY rand()
             LIMIT 1"#;
-        let page = self.pool.get_conn().await?
-            .exec_iter(sql, ())
-            .await?
-            .map_and_drop(|row| PageToProcess::from_row(row))
-            .await?
-            .pop()
-            .ok_or(anyhow!("prepare_next_single_page:: no pop"))?;
+        let page = self.get_page_for_sql(sql).await.ok_or(anyhow!("prepare_next_single_page:: no pop"))?;
         self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
         Ok(page)
     }
@@ -332,7 +365,7 @@ impl ListeriaBot {
     }
 
     async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
-        let api_url = format!("{}/w/api.php", self.get_server_url_for_wiki(wiki)?);
+        let api_url = format!("{}/w/api.php", self.site_matrix.get_server_url_for_wiki(wiki)?);
         let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
         let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
         mw_api.set_oauth2(self.config.oauth2_token());
