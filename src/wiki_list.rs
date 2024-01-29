@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 use anyhow::{Result,anyhow};
 use mysql_async::Conn;
@@ -40,10 +41,10 @@ impl WikiList {
             .map_err(|e|anyhow!("{e}"))?;
         let entity = entities.get_entity(&q).ok_or_else(||anyhow!("{q} item not found on Wikidata"))?;
         let current_wikis: Vec<String> = entity.sitelinks().iter().flatten().map(|s|s.site().to_owned()).collect(); // All wikis with a start template
-        let existing_wikis = self.get_wikis_in_database().await?;
+        let existing_wikis: HashSet<String> = self.get_wikis_in_database().await?.into_iter().collect();
         let new_wikis: Vec<String> = current_wikis
             .iter()
-            .filter(|wiki| !existing_wikis.contains(wiki))
+            .filter(|wiki| !existing_wikis.contains(*wiki))
             .cloned()
             .collect();
         if !new_wikis.is_empty() {
@@ -75,10 +76,10 @@ impl WikiList {
             .map(|(nsid,title)| Title::new(title, *nsid))
             .filter_map(|title| title.full_with_underscores(&mw_api))
             .collect();
-        let existing_pages = self.get_pages_for_wiki_in_database(wiki).await?;
+        let existing_pages: HashSet<String> = self.get_pages_for_wiki_in_database(wiki).await?.into_iter().collect();
         let new_pages: Vec<String> = current_pages
             .iter()
-            .filter(|page| !existing_pages.contains(page))
+            .filter(|page| !existing_pages.contains(*page))
             .cloned()
             .collect();
         if !new_pages.is_empty() {
