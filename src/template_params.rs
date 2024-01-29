@@ -230,7 +230,7 @@ impl TemplateParams {
                 .params
                 .get("wikibase")
                 .map(|s| s.trim().to_uppercase())
-                .unwrap_or_else(|| "wikidata".to_string()), // TODO config
+                .unwrap_or_else(|| "wikidatawiki".to_string()), // TODO config
         }
     }
 
