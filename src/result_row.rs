@@ -2,10 +2,11 @@ use crate::column::ColumnType;
 use crate::listeria_list::*;
 use crate::result_cell::ResultCell;
 use crate::result_cell_part::ResultCellPart;
-use crate::{serde_json, HashMap, SparqlValue};
+use crate::sparql_value::SparqlValue;
 use regex::Regex;
 use serde_json::Value;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use wikibase::entity::EntityTrait;
 use wikibase::SnakDataType;
 

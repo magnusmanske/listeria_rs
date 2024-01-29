@@ -1,5 +1,5 @@
-use crate::{ListeriaList, ListeriaPage, Renderer};
 use anyhow::Result;
+use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
 
 pub struct RendererWikitext {}
 
@@ -57,7 +57,7 @@ impl RendererWikitext {
         if list.get_row_template().is_none()
             && !list.skip_table()
             && !list.results().is_empty()
-            && !list.template_params().wdedit
+            && !list.template_params().wdedit()
         {
             wt += "|-\n";
         }
@@ -80,7 +80,7 @@ impl RendererWikitext {
             .collect::<Vec<String>>();
         if list.skip_table() {
             wt += &rows.join("\n");
-        } else if list.template_params().wdedit {
+        } else if list.template_params().wdedit() {
             let x: Vec<String> = row_entity_ids
                 .iter()
                 .zip(rows.iter())
@@ -115,7 +115,7 @@ impl RendererWikitext {
             None => {
                 if !list.skip_table() {
                     wt += "{| class='wikitable sortable";
-                    if list.template_params().wdedit {
+                    if list.template_params().wdedit() {
                         wt += " wd_can_edit";
                     }
                     wt += "'\n";

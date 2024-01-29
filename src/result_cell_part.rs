@@ -1,7 +1,8 @@
 use crate::column::ColumnType;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
-use crate::{LinksType, SparqlValue};
+use crate::sparql_value::SparqlValue;
+use crate::template_params::LinksType;
 use regex::Regex;
 use wikibase::entity::EntityTrait;
 
