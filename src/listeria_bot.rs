@@ -11,6 +11,7 @@ use anyhow::{Result,anyhow};
 use mysql_async::from_row;
 use mysql_async::prelude::*;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 
@@ -64,6 +65,7 @@ pub struct ListeriaBot {
     wiki_apis: Arc<WikiApis>,
     pool: DatabasePool,
     bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
+    running: Arc<Mutex<HashSet<u64>>>,
 }
 
 impl ListeriaBot {
@@ -75,6 +77,7 @@ impl ListeriaBot {
             wiki_apis: Arc::new(WikiApis::new(config.clone()).await?),
             pool,
             bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
+            running: Arc::new(Mutex::new(HashSet::default())),
         })
     }
 
@@ -111,30 +114,49 @@ impl ListeriaBot {
             .await.ok()?
             .pop()
     }
-  
+
+    /// Removed a pagestatus ID from the running list
+    pub async fn release_running(&self, pagestatus_id: u64) {
+        self.running.lock().await.remove(&pagestatus_id);
+    }
+
+    /// Returns how many pages are running
+    pub async fn get_running_count(&self) -> usize {
+        self.running.lock().await.len()
+    }
+
     /// Returns a page to be processed. 
     pub async fn prepare_next_single_page(&self) -> Result<PageToProcess> {
+        let mut running = self.running.lock().await;
+        let ids: String = running.iter().map(|id|format!("{id}")).collect::<Vec<String>>().join(",");
+        let ids = if ids.is_empty() { "0".to_string() } else { ids } ;
+        
         // Tries to find a "priority" page
-        let sql = "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
+        let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
             FROM pagestatus,wikis 
-            WHERE priority=1 AND wikis.id=pagestatus.wiki
+            WHERE priority=1
+            AND wikis.id=pagestatus.wiki
+            AND pagestatus.id NOT IN ({ids})
             ORDER BY rand()
-            LIMIT 1";
-        if let Some(page) = self.get_page_for_sql(sql).await {
+            LIMIT 1");
+        if let Some(page) = self.get_page_for_sql(&sql).await {
+            running.insert(page.id);
             self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
             return Ok(page)
         }
 
-        // Gets the first 100 pages (by timestamp), then randomly picks one
-        let sql = r#"SELECT * FROM (
+        // Get the oldest page
+        let sql = format!("
             SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
             FROM pagestatus,wikis 
-            WHERE pagestatus.wiki=wikis.id AND wikis.status='ACTIVE' AND pagestatus.status NOT IN ('RUNNING','DELETED')
+            WHERE pagestatus.wiki=wikis.id
+            AND wikis.status='ACTIVE' 
+            AND pagestatus.status NOT IN ('RUNNING','DELETED')
+            AND pagestatus.id NOT IN ({ids})
             ORDER BY pagestatus.timestamp
-            LIMIT 100) ps
-            ORDER BY rand()
-            LIMIT 1"#;
-        let page = self.get_page_for_sql(sql).await.ok_or(anyhow!("prepare_next_single_page:: no pop"))?;
+            LIMIT 1");
+        let page = self.get_page_for_sql(&sql).await.ok_or(anyhow!("prepare_next_single_page:: no pop"))?;
+        running.insert(page.id);
         self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
         Ok(page)
     }
