@@ -71,7 +71,9 @@ impl ListeriaPage {
     }
 
     pub async fn check_namespace(&self) -> Result<()> {
-        let title = wikibase::mediawiki::title::Title::new_from_full(self.page_params.page(), &(*self.page_params.mw_api().read().await));
+        let api = self.page_params.mw_api().read().await;
+        let title = wikibase::mediawiki::title::Title::new_from_full(self.page_params.page(), &api);
+        drop(api);
         if self
             .page_params
             .config()
