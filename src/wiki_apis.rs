@@ -28,27 +28,15 @@ pub struct WikiApis {
 }
 
 impl WikiApis {
-    pub async fn new(mut config: Configuration) -> Result<Self> {
-        let api_url = config.get_default_wiki_api_url();
-        let wikibase_api = Self::create_wiki_api_from_api_url(&api_url, &config).await?;
-        config.fill_template_info(&wikibase_api).await?;
-        let site_matrix = Arc::new(SiteMatrix::new(wikibase_api).await?);
+    pub async fn new(config: Arc<Configuration>) -> Result<Self> {
         let pool = DatabasePool::new(&config)?;
+        let site_matrix = Arc::new(SiteMatrix::new(&config).await?);
         Ok(Self {
             apis: Arc::new(Mutex::new(HashMap::new())),
-            config: Arc::new(config),
+            config,
             site_matrix,
             pool,
         })
-    }
-
-    pub async fn get_default_wbapi(&self) -> Result<ApiLock> {
-        let default_wiki = self.config.default_api();
-        self.get_or_create_wiki_api(default_wiki).await
-    }
-
-    pub fn config(&self) -> &Configuration {
-        &self.config
     }
 
     /// Returns a MediaWiki API instance for the given wiki. Creates a new one and caches it, if required.
@@ -66,13 +54,9 @@ impl WikiApis {
     /// Creates a MediaWiki API instance for the given wiki
     async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let api_url = format!("{}/w/api.php", self.site_matrix.get_server_url_for_wiki(wiki)?);
-        Self::create_wiki_api_from_api_url(&api_url, &self.config).await
-    }
-
-    async fn create_wiki_api_from_api_url(api_url: &str, config: &Configuration) -> Result<ApiLock> {
         let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
         let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
-        mw_api.set_oauth2(config.oauth2_token());
+        mw_api.set_oauth2(self.config.oauth2_token());
         mw_api.set_edit_delay(Some(MS_DELAY_AFTER_EDIT)); // Slow down editing a bit
         Ok(Arc::new(RwLock::new(mw_api)))
     }
@@ -81,16 +65,12 @@ impl WikiApis {
     /// Updates the database to contain all wikis that have a Listeria start template
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
         let q = self.config.get_template_start_q(); // Wikidata item for {{Wikidata list}}
-        // let api = self.config.get_default_wbapi()?;
-        let api_lock = self.get_or_create_wiki_api("wikidatawiki").await?;
-        let api = api_lock.read().await;
+        let api = self.config.get_default_wbapi()?;
         let entities = EntityContainer::new();
         entities
             .load_entities(&api, &vec![q.to_owned()])
             .await
             .map_err(|e|anyhow!("{e}"))?;
-        drop(api);
-        drop(api_lock);
         let entity = entities.get_entity(&q).ok_or_else(||anyhow!("{q} item not found on Wikidata"))?;
         let current_wikis: Vec<String> = entity.sitelinks().iter().flatten().map(|s|s.site().to_owned()).collect(); // All wikis with a start template
         let existing_wikis: HashSet<String> = self.get_wikis_in_database().await?.into_iter().collect();

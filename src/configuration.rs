@@ -21,6 +21,7 @@ impl NamespaceGroup {
 
 #[derive(Debug, Clone, Default)]
 pub struct Configuration {
+    wb_apis: HashMap<String, Arc<Api>>,
     namespace_blocks: HashMap<String, NamespaceGroup>,
     default_api: String,
     prefer_preferred: bool,
@@ -31,11 +32,9 @@ pub struct Configuration {
     shadow_images_check: Vec<String>,
     default_thumbnail_size: Option<u64>,
     location_regions: Vec<String>,
-    default_wiki_api_url: String,
     mysql: Option<Value>,
     oauth2_token: String,
     template_start_q: String,
-    j: Value,
 }
 
 impl Configuration {
@@ -78,17 +77,17 @@ impl Configuration {
         }
 
         // valid WikiBase APIs
-        // let oauth2_token = ret.oauth2_token.to_owned();
-        // if let Some(o) = j["apis"].as_object() {
-        //     for (k, v) in o.iter() {
-        //         if let (name, Some(url)) = (k.as_str(), v.as_str()) {
-        //             let mut api = wikibase::mediawiki::api::Api::new(&url)
-        //                 .await?;
-        //             api.set_oauth2(&oauth2_token);
-        //             // ret.wb_apis.insert(name.to_string(), Arc::new(api));
-        //         }
-        //     }
-        // }
+        let oauth2_token = ret.oauth2_token.to_owned();
+        if let Some(o) = j["apis"].as_object() {
+            for (k, v) in o.iter() {
+                if let (name, Some(url)) = (k.as_str(), v.as_str()) {
+                    let mut api = wikibase::mediawiki::api::Api::new(&url)
+                        .await?;
+                    api.set_oauth2(&oauth2_token);
+                    ret.wb_apis.insert(name.to_string(), Arc::new(api));
+                }
+            }
+        }
 
         // Location template patterns
         if let Some(o) = j["location_templates"].as_object() {
@@ -126,41 +125,26 @@ impl Configuration {
             }
         }
 
-        let default_wiki = &ret.default_api;
-        ret.default_wiki_api_url = match j["apis"][default_wiki].as_str() {
-            Some(url) => url.to_string(),
-            None => return Err(anyhow!("No API URL for default wiki '{default_wiki}'")),
-        };
-
-        ret.j = j;
-
-        Ok(ret)
-    }
-
-    pub async fn fill_template_info(&mut self, api_lock: &ApiLock) -> Result<()> {
         // Start/end template site/page mappings
-        let q_start = match self.j["template_start_q"].as_str() {
+        let api = ret.get_default_wbapi()?;
+        let q_start = match j["template_start_q"].as_str() {
             Some(q) => q.to_string(),
             None => return Err(anyhow!("No template_start_q in config")),
         };
-        let q_end = match self.j["template_end_q"].as_str() {
+        let q_end = match j["template_end_q"].as_str() {
             Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
             None => return Err(anyhow!("No template_end_q in config")),
         };
         let entities = wikibase::entity_container::EntityContainer::new();
-        let api = api_lock.read().await;
         entities
             .load_entities(&api, &vec![q_start.clone(), q_end.clone()])
             .await
             .map_err(|e|anyhow!("{e}"))?;
-        self.template_start_sites = self.get_sitelink_mapping(&entities, &q_start)?;
-        self.template_end_sites = self.get_sitelink_mapping(&entities, &q_end)?;
-        self.template_start_q = q_start;
-        Ok(())
-    }
+        ret.template_start_sites = ret.get_sitelink_mapping(&entities, &q_start)?;
+        ret.template_end_sites = ret.get_sitelink_mapping(&entities, &q_end)?;
+        ret.template_start_q = q_start;
 
-    pub fn get_default_wiki_api_url(&self) -> &str {
-        &self.default_wiki_api_url
+        Ok(ret)
     }
 
     pub fn oauth2_token(&self) -> &String {
@@ -253,28 +237,24 @@ impl Configuration {
         &self.location_regions
     }
 
-    pub fn default_api(&self) -> &str {
-        &self.default_api
+    pub async fn wbapi_login(&mut self, key: &str) -> bool {
+        let oauth2_token = self.oauth2_token().to_owned();
+        match self.wb_apis.get_mut(key) {
+            Some(mut api) => {
+                if let Some(api) = Arc::get_mut(&mut api) {api.set_oauth2(&oauth2_token);}
+                true
+            }
+            None => false,
+        }
     }
 
-    // pub async fn wbapi_login(&mut self, key: &str) -> bool {
-    //     let oauth2_token = self.oauth2_token().to_owned();
-    //     match self.wb_apis.get_mut(key) {
-    //         Some(mut api) => {
-    //             if let Some(api) = Arc::get_mut(&mut api) {api.set_oauth2(&oauth2_token);}
-    //             true
-    //         }
-    //         None => false,
-    //     }
-    // }
+    pub fn get_wbapi(&self, key: &str) -> Option<&Arc<Api>> {
+        self.wb_apis.get(key)
+    }
 
-    // pub fn get_wbapi(&self, key: &str) -> Option<&Arc<Api>> {
-    //     self.wb_apis.get(key)
-    // }
-
-    // pub fn get_default_wbapi(&self) -> Result<&Arc<Api>> {
-    //     self.wb_apis
-    //         .get(&self.default_api)
-    //         .ok_or_else(|| anyhow!("No default API set in config file"))
-    // }
+    pub fn get_default_wbapi(&self) -> Result<&Arc<Api>> {
+        self.wb_apis
+            .get(&self.default_api)
+            .ok_or_else(|| anyhow!("No default API set in config file"))
+    }
 }
