@@ -77,6 +77,19 @@ impl Configuration {
             ret.mysql = Some(j["mysql"].to_owned());
         }
 
+        // valid WikiBase APIs
+        // let oauth2_token = ret.oauth2_token.to_owned();
+        // if let Some(o) = j["apis"].as_object() {
+        //     for (k, v) in o.iter() {
+        //         if let (name, Some(url)) = (k.as_str(), v.as_str()) {
+        //             let mut api = wikibase::mediawiki::api::Api::new(&url)
+        //                 .await?;
+        //             api.set_oauth2(&oauth2_token);
+        //             // ret.wb_apis.insert(name.to_string(), Arc::new(api));
+        //         }
+        //     }
+        // }
+
         // Location template patterns
         if let Some(o) = j["location_templates"].as_object() {
             for (k, v) in o.iter() {
@@ -135,8 +148,9 @@ impl Configuration {
             None => return Err(anyhow!("No template_end_q in config")),
         };
         let entities = wikibase::entity_container::EntityContainer::new();
+        let api = api_lock.read().await;
         entities
-            .load_entities(&(*api_lock.read().await), &vec![q_start.clone(), q_end.clone()])
+            .load_entities(&api, &vec![q_start.clone(), q_end.clone()])
             .await
             .map_err(|e|anyhow!("{e}"))?;
         self.template_start_sites = self.get_sitelink_mapping(&entities, &q_start)?;
@@ -243,4 +257,24 @@ impl Configuration {
         &self.default_api
     }
 
+    // pub async fn wbapi_login(&mut self, key: &str) -> bool {
+    //     let oauth2_token = self.oauth2_token().to_owned();
+    //     match self.wb_apis.get_mut(key) {
+    //         Some(mut api) => {
+    //             if let Some(api) = Arc::get_mut(&mut api) {api.set_oauth2(&oauth2_token);}
+    //             true
+    //         }
+    //         None => false,
+    //     }
+    // }
+
+    // pub fn get_wbapi(&self, key: &str) -> Option<&Arc<Api>> {
+    //     self.wb_apis.get(key)
+    // }
+
+    // pub fn get_default_wbapi(&self) -> Result<&Arc<Api>> {
+    //     self.wb_apis
+    //         .get(&self.default_api)
+    //         .ok_or_else(|| anyhow!("No default API set in config file"))
+    // }
 }

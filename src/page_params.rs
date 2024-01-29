@@ -13,6 +13,7 @@ pub struct PageParams {
     simulated_text: Option<String>,
     simulated_sparql_results: Option<String>,
     simulated_autodesc: Option<Vec<String>>,
+    // config: Arc<Configuration>,
     wiki_apis: Arc<WikiApis>,
     local_file_namespace_prefix: String,
 }
@@ -20,28 +21,28 @@ pub struct PageParams {
 impl PageParams {
     pub async fn new(
         wiki_apis: Arc<WikiApis>,
+        // config: Arc<Configuration>,
         mw_api: ApiLock,
         page: String,
     ) -> Result<Self> {
         let api = mw_api.read().await;
-        let wiki = api.get_site_info_string("general", "wikiid")?.to_string();
-        let language = api.get_site_info_string("general", "lang")?.to_string();
-        let local_file_namespace_prefix = api.get_local_namespace_name(6).unwrap_or("File").to_string();
-        drop(api);
-
         let wb_api = wiki_apis.get_default_wbapi().await?;
         let ret = Self {
-            wiki,
+            wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
             page,
-            language,
+            language: api.get_site_info_string("general", "lang")?.to_string(),
             mw_api: mw_api.clone(),
             wb_api,
             simulate: false,
             simulated_text: None,
             simulated_sparql_results: None,
             simulated_autodesc: None,
+            // config: config.clone(),
             wiki_apis,
-            local_file_namespace_prefix,
+            local_file_namespace_prefix: api
+                .get_local_namespace_name(6)
+                .unwrap_or("File")
+                .to_string(),
         };
         Ok(ret)
     }
