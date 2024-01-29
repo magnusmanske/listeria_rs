@@ -5,7 +5,6 @@ extern crate serde_json;
 
 pub mod column;
 pub mod configuration;
-pub mod wiki_list;
 pub mod database_pool;
 pub mod page_to_process;
 pub mod wiki_page_result;

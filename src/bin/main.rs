@@ -5,7 +5,7 @@ use anyhow::{Result,anyhow};
 use config::{Config, File};
 use listeria::configuration::Configuration;
 use listeria::listeria_page::ListeriaPage;
-use listeria::wiki_list::WikiList;
+use listeria::wiki_apis::WikiApis;
 use std::env;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
 
     if first_arg=="update_wikis" {
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
-        let wiki_list = WikiList::new(config.clone()).await?;
+        let wiki_list = WikiApis::new(config.clone()).await?;
         wiki_list.update_wiki_list_in_database().await?;
         wiki_list.update_all_wikis().await?;
         return Ok(())
