@@ -47,8 +47,12 @@ impl WikiApis {
         }
 
         let mw_api = self.create_wiki_api(wiki).await?;
-        lock.insert(wiki.to_owned(), mw_api.clone());
-        Ok(mw_api)
+        lock.insert(wiki.to_owned(), mw_api);
+
+        lock
+            .get(wiki)
+            .ok_or(anyhow!("Wiki not found: {wiki}"))
+            .map(|api| api.clone())
     }
 
     /// Creates a MediaWiki API instance for the given wiki
@@ -58,7 +62,8 @@ impl WikiApis {
         let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
         mw_api.set_oauth2(self.config.oauth2_token());
         mw_api.set_edit_delay(Some(MS_DELAY_AFTER_EDIT)); // Slow down editing a bit
-        Ok(Arc::new(RwLock::new(mw_api)))
+        let mw_api = Arc::new(RwLock::new(mw_api));
+        Ok(mw_api)
     }
 
 
