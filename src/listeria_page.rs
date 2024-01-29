@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use anyhow::{Result,anyhow};
 
-use crate::{configuration::Configuration, render_wikitext::RendererWikitext, wiki_page_result::WikiPageResult, ApiLock, PageElement, PageParams, Renderer};
+use crate::{configuration::Configuration, page_element::PageElement, page_params::PageParams, render_wikitext::RendererWikitext, renderer::Renderer, wiki_page_result::WikiPageResult, ApiLock};
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
@@ -38,11 +38,11 @@ impl ListeriaPage {
     }
 
     pub fn config(&self) -> &Configuration {
-        &self.page_params.config
+        self.page_params.config()
     }
 
-    pub fn wiki(&self) -> &String {
-        &self.page_params.wiki
+    pub fn wiki(&self) -> &str {
+        self.page_params.wiki()
     }
 
     pub fn do_simulate(
@@ -53,10 +53,7 @@ impl ListeriaPage {
     ) {
         match Arc::get_mut(&mut self.page_params) {
             Some(pp) => {
-                pp.simulate = true;
-                pp.simulated_text = text;
-                pp.simulated_sparql_results = sparql_results;
-                pp.simulated_autodesc = autodesc;
+                pp.set_simulation(text,sparql_results,autodesc);
             }
             None => {
                 panic!("Cannot simulate")
@@ -68,25 +65,25 @@ impl ListeriaPage {
         self.page_params.clone()
     }
 
-    pub fn language(&self) -> &String {
-        &self.page_params.language
+    pub fn language(&self) -> &str {
+        self.page_params.language()
     }
 
     pub async fn check_namespace(&self) -> Result<()> {
-        let api = self.page_params.mw_api.read().await;
-        let title = wikibase::mediawiki::title::Title::new_from_full(&self.page_params.page, &api);
+        let api = self.page_params.mw_api().read().await;
+        let title = wikibase::mediawiki::title::Title::new_from_full(self.page_params.page(), &api);
         drop(api);
         if self
             .page_params
-            .config
-            .can_edit_namespace(&self.page_params.wiki, title.namespace_id())
+            .config()
+            .can_edit_namespace(self.page_params.wiki(), title.namespace_id())
         {
             Ok(())
         } else {
             Err(anyhow!(
                 "Namespace {} not allowed for edit on {}",
                 title.namespace_id(),
-                &self.page_params.wiki
+                self.page_params.wiki()
             ))
         }
     }
@@ -125,8 +122,8 @@ impl ListeriaPage {
 
     fn fail(&self, message: &str) -> WikiPageResult {
         WikiPageResult::fail(
-            &self.wiki(),
-            &self.page_params.page,
+            self.wiki(),
+            self.page_params.page(),
             message
         )
     }
@@ -137,18 +134,18 @@ impl ListeriaPage {
             .map(|x| (x.0.to_string(), x.1.to_string()))
             .collect();
 
-        match &self.page_params.simulated_text {
+        match self.page_params.simulated_text() {
             Some(t) => {
-                params.insert("title".to_string(), self.page_params.page.clone());
+                params.insert("title".to_string(), self.page_params.page().to_string());
                 params.insert("text".to_string(), t.to_string());
             }
             None => {
-                params.insert("page".to_string(), self.page_params.page.clone());
+                params.insert("page".to_string(), self.page_params.page().to_string());
             }
         }
         let result = self
             .page_params
-            .mw_api
+            .mw_api()
             .read()
             .await
             .post_query_api_json(&params)
@@ -158,24 +155,24 @@ impl ListeriaPage {
             match error {
                 "missingtitle" => {
                     return Err(WikiPageResult {
-                        wiki: self.page_params.wiki.to_owned(),
-                        page: self.page_params.page.to_owned(),
+                        wiki: self.page_params.wiki().to_string(),
+                        page: self.page_params.page().to_string(),
                         result: "DELETED".to_string(),
                         message: "Wiki says this page is missing".to_string(),
                     });
                 },
                 "invalid" => {
                     return Err(WikiPageResult {
-                        wiki: self.page_params.wiki.to_owned(),
-                        page: self.page_params.page.to_owned(),
+                        wiki: self.page_params.wiki().to_string(),
+                        page: self.page_params.page().to_string(),
                         result: "INVALID".to_string(),
                         message: "Wiki says this page has an invalid title".to_string(),
                     });
                 },
                 other => {
                     return Err(WikiPageResult {
-                        wiki: self.page_params.wiki.to_owned(),
-                        page: self.page_params.page.to_owned(),
+                        wiki: self.page_params.wiki().to_string(),
+                        page: self.page_params.page().to_string(),
                         result: "FAIL".to_string(),
                         message: other.to_string(),
                     });
@@ -203,7 +200,7 @@ impl ListeriaPage {
     }
 
     async fn save_wikitext_to_page(&self, title: &str, wikitext: &str) -> Result<()> {
-        let mut api = self.page_params.mw_api.write().await;
+        let mut api = self.page_params.mw_api().write().await;
         let token = api.get_edit_token().await?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
@@ -236,7 +233,7 @@ impl ListeriaPage {
         match new_wikitext {
             Some(new_wikitext) => {
                 if old_wikitext != new_wikitext {
-                    self.save_wikitext_to_page(&self.page_params.page, &new_wikitext)
+                    self.save_wikitext_to_page(self.page_params.page(), &new_wikitext)
                         .await
                         .map_err(|e| self.fail(&e.to_string()))?;
                     edited = true;
@@ -253,16 +250,16 @@ impl ListeriaPage {
     }
 
     async fn purge_page(&self) -> Result<()> {
-        if self.page_params.simulate {
+        if self.page_params.simulate() {
             println!(
                 "SIMULATING: purging [[{}]] on {}",
-                &self.page_params.page, self.page_params.wiki
+                self.page_params.page(), self.page_params.wiki()
             );
             return Ok(());
         }
         let params: HashMap<String, String> = vec![
             ("action", "purge"),
-            ("titles", self.page_params.page.as_str()),
+            ("titles", self.page_params.page()),
         ]
         .iter()
         .map(|x| (x.0.to_string(), x.1.to_string()))
@@ -270,7 +267,7 @@ impl ListeriaPage {
 
         let _ = self
             .page_params
-            .mw_api
+            .mw_api()
             .write()
             .await
             .get_query_api_json(&params)
@@ -281,12 +278,18 @@ impl ListeriaPage {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
     use crate::listeria_page::ListeriaPage;
     use crate::render_wikitext::RendererWikitext;
+    use crate::renderer::Renderer;
     use crate::*;
     use std::collections::HashMap;
     use std::fs;
+    use std::io::BufReader;
     use std::path::PathBuf;
+
+    use self::configuration::Configuration;
 
     fn read_fixture_from_file(path: PathBuf) -> HashMap<String, String> {
         let text = fs::read_to_string(path).unwrap();

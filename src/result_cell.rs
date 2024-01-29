@@ -3,7 +3,8 @@ use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
-use crate::{ReferencesParameter, SparqlValue};
+use crate::sparql_value::SparqlValue;
+use crate::template_params::ReferencesParameter;
 use serde_json::Value;
 use std::collections::HashMap;
 use wikibase::entity::EntityTrait;
@@ -341,7 +342,7 @@ impl ResultCell {
 
     pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let mut ret;
-        if list.template_params().wdedit && list.header_template().is_none() {
+        if list.template_params().wdedit() && list.header_template().is_none() {
             ret = match &self.wdedit_class {
                 Some(class) => format!("class='{}'| ", class.to_owned()),
                 None => " ".to_string(),

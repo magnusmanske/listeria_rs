@@ -2,7 +2,8 @@ use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
-use crate::{LinksType, SparqlValue};
+use crate::sparql_value::SparqlValue;
+use crate::template_params::LinksType;
 use anyhow::{Result,anyhow};
 use tempfile::NamedTempFile;
 use std::collections::HashMap;
@@ -133,7 +134,7 @@ impl EntityContainerWrapper {
         if sparql_rows.is_empty() {
             return None;
         }
-        if let LinksType::Local = list.template_params().links {
+        if LinksType::Local == *list.template_params().links() {
             let entity = match self.get_entity(entity_id) {
                 Some(e) => e,
                 None => return None,

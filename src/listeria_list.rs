@@ -1,11 +1,17 @@
 use crate::entity_container_wrapper::*;
+use crate::page_params::PageParams;
 use crate::result_cell::*;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
-use crate::{
-    Column, ColumnType, LinksType, PageParams, ReferencesParameter, SectionType, SortMode,
-    SortOrder, SparqlValue, Template, TemplateParams,
-};
+use crate::sparql_value::SparqlValue;
+use crate::template::Template;
+use crate::template_params::LinksType;
+use crate::template_params::ReferencesParameter;
+use crate::template_params::SectionType;
+use crate::template_params::SortMode;
+use crate::template_params::SortOrder;
+use crate::template_params::TemplateParams;
+use crate::column::{Column, ColumnType};
 use anyhow::{Result,anyhow};
 use serde_json::Value;
 use tokio::time::{sleep,Duration};
@@ -38,7 +44,7 @@ pub struct ListeriaList {
 
 impl ListeriaList {
     pub fn new(template: Template, page_params: Arc<PageParams>) -> Self {
-        let wb_api = page_params.wb_api.clone();
+        let wb_api = page_params.wb_api();
         let mut template = template;
         template.fix_values();
         Self {
@@ -54,7 +60,7 @@ impl ListeriaList {
             local_page_cache: HashMap::new(),
             section_id_to_name: HashMap::new(),
             wb_api,
-            language: page_params.language.to_string(),
+            language: page_params.language().to_string(),
             reference_ids: HashSet::new(),
             profiling:false,
         }
@@ -126,14 +132,14 @@ impl ListeriaList {
 
         self.params = TemplateParams::new_from_params(&template);
         if let Some(s) = self.get_template_value(&template, "links") {
-            self.params.links = LinksType::new_from_string(s.to_string())
+            self.params.set_links(LinksType::new_from_string(s.to_string()))
         }
         if let Some(l) = self.get_template_value(&template, "language") {
             self.language = l.to_lowercase()
         }
 
-        let wikibase = &self.params.wikibase;
-        self.wb_api = match self.page_params.config.get_wbapi(&wikibase.to_lowercase()) {
+        let wikibase = self.params.wikibase();
+        self.wb_api = match self.page_params.config().get_wbapi(&wikibase.to_lowercase()) {
             Some(api) => api.clone(),
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase}'")),
         };
@@ -157,7 +163,7 @@ impl ListeriaList {
 
         let result = match self
             .page_params
-            .mw_api
+            .mw_api()
             .read()
             .await
             .get_query_api_json(&params)
@@ -228,8 +234,8 @@ impl ListeriaList {
         region: Option<String>,
     ) -> String {
         self.page_params
-            .config
-            .get_location_template(&self.page_params.wiki)
+            .config()
+            .get_location_template(self.page_params.wiki())
             .replace("$LAT$", &format!("{}", lat))
             .replace("$LON$", &format!("{}", lon))
             .replace("$ITEM$", &entity_id.unwrap_or_default())
@@ -237,7 +243,7 @@ impl ListeriaList {
     }
 
     pub fn thumbnail_size(&self) -> u64 {
-        let default = self.page_params.config.default_thumbnail_size();
+        let default = self.page_params.config().default_thumbnail_size();
         match self.get_template_value(&self.template, "thumb") {
             Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap_or(default),
             None => default,
@@ -291,10 +297,10 @@ impl ListeriaList {
             // No template
             return Ok(());
         }
-        let api = self.page_params.mw_api.read().await;
+        let api = self.page_params.mw_api().read().await;
         let params: HashMap<String, String> = vec![
             ("action", "expandtemplates"),
-            ("title", &self.page_params.page),
+            ("title", self.page_params.page()),
             ("prop", "wikitext"),
             ("text", sparql),
         ]
@@ -328,8 +334,8 @@ impl ListeriaList {
         self.expand_sparql_templates(&mut sparql).await.map_err(|e|anyhow!("{e}"))?;
 
         // Return simulated results
-        if self.page_params.simulate {
-            match &self.page_params.simulated_sparql_results {
+        if self.page_params.simulate() {
+            match self.page_params.simulated_sparql_results() {
                 Some(json_text) => {
                     let j = serde_json::from_str(&json_text)?;
                     return self.parse_sparql(j);
@@ -341,7 +347,7 @@ impl ListeriaList {
         self.profile("BEGIN run_query: run_sparql_query");
         let j = self.run_sparql_query(&sparql).await?;
         self.profile("END run_query: run_sparql_query");
-        if self.page_params.simulate {
+        if self.page_params.simulate() {
             println!("{}\n{}\n", &sparql, &j);
         }
         self.parse_sparql(j)
@@ -483,10 +489,10 @@ impl ListeriaList {
     }
 
     pub async fn get_autodesc_description(&self, e: &Entity) -> Result<String> {
-        if self.params.autodesc != Some("FALLBACK".to_string()) {
+        if self.params.autodesc() != Some("FALLBACK".to_string()) {
             return Err(anyhow!("Not used"));
         }
-        match &self.page_params.simulated_autodesc {
+        match &self.page_params.simulated_autodesc() {
             Some(autodesc) => {
                 for ad in autodesc {
                     let parts: Vec<&str> = ad.splitn(3, '|').collect();
@@ -502,7 +508,7 @@ impl ListeriaList {
             e.id(),
             self.language
         );
-        let api = self.page_params.mw_api.read().await;
+        let api = self.page_params.mw_api().read().await;
         let body = api
             .query_raw(&url, &api.no_params(), "GET")
             .await?;
@@ -516,7 +522,7 @@ impl ListeriaList {
     pub async fn generate_results(&mut self) -> Result<()> {
         let varname = self.get_var_name()?;
         let mut results: Vec<ResultRow> = vec![];
-        match self.params.one_row_per_item {
+        match self.params.one_row_per_item() {
             true => {
                 let tmp_rows : Vec<(String,Vec<&HashMap<String,SparqlValue>>)>
                     = self.get_ids_from_sparql_rows()?
@@ -585,8 +591,8 @@ impl ListeriaList {
     async fn process_remove_shadow_files(&mut self) -> Result<()> {
         if !self
             .page_params
-            .config
-            .check_for_shadow_images(&self.page_params.wiki)
+            .config()
+            .check_for_shadow_images(&self.page_params.wiki().to_string())
         {
             return Ok(());
         }
@@ -627,7 +633,7 @@ impl ListeriaList {
 
         let api_read = self
         .page_params
-        .mw_api
+        .mw_api()
         .read()
         .await;
 
@@ -690,7 +696,7 @@ impl ListeriaList {
         }
 
         // Remove all rows with existing local page
-        let wiki = self.page_params.wiki.to_owned();
+        let wiki = self.page_params.wiki().to_string();
         for row in self.results.iter_mut() {
             row.set_keep(
                 match self.ecw.get_entity(row.entity_id()) {
@@ -741,7 +747,7 @@ impl ListeriaList {
         labels.sort();
         labels.dedup();
         // TODO in parallel
-        let labels_per_chunk = if self.page_params.mw_api.read().await.user().is_bot() {
+        let labels_per_chunk = if self.page_params.mw_api().read().await.user().is_bot() {
             500
         } else {
             50
@@ -756,7 +762,7 @@ impl ListeriaList {
     async fn process_sort_results(&mut self) -> Result<()> {
         let sortkeys: Vec<String>;
         let mut datatype = SnakDataType::String; // Default
-        match &self.params.sort {
+        match &self.params.sort() {
             SortMode::Label => {
                 self.load_row_entities().await?;
                 sortkeys = self
@@ -801,7 +807,7 @@ impl ListeriaList {
             .for_each(|(rownum, row)| row.set_sortkey(sortkeys[rownum].to_owned()));
 
         self.results.sort_by(|a, b| a.compare_to(b, &datatype));
-        if self.params.sort_order == SortOrder::Descending {
+        if *self.params.sort_order() == SortOrder::Descending {
             self.results.reverse()
         }
 
@@ -821,7 +827,7 @@ impl ListeriaList {
 
     pub async fn process_assign_sections(&mut self) -> Result<()> {
         // TODO all SectionType options
-        let section_property = match &self.params.section {
+        let section_property = match self.params.section() {
             SectionType::Property(p) => p,
             SectionType::SparqlVariable(_v) => {
                 return Err(anyhow!("SPARQL variable section type not supported yet"))
@@ -852,7 +858,7 @@ impl ListeriaList {
         });
 
         // Remove low counts
-        section_count.retain(|&_name, &mut count| count >= self.params.min_section);
+        section_count.retain(|&_name, &mut count| count >= self.params.min_section());
 
         // Sort by section name
         let mut valid_section_names: Vec<String> =
@@ -923,9 +929,9 @@ impl ListeriaList {
 
     fn do_get_regions(&self) -> bool {
         self.page_params
-            .config
+            .config()
             .location_regions()
-            .contains(self.wiki())
+            .contains(&self.wiki().to_string())
     }
 
     pub async fn process_regions(&mut self) -> Result<()> {
@@ -1052,7 +1058,7 @@ impl ListeriaList {
     }
 
     pub fn get_links_type(&self) -> &LinksType {
-        &self.params.links // TODO duplicate code
+        self.params.links()
     }
 
     pub fn get_entity(&self, entity_id: &str) -> Option<wikibase::Entity> {
@@ -1060,11 +1066,11 @@ impl ListeriaList {
     }
 
     pub fn get_row_template(&self) -> &Option<String> {
-        &self.params.row_template
+        self.params.row_template()
     }
 
     pub fn get_reference_parameter(&self) -> &ReferencesParameter {
-        &self.params.references
+        self.params.references()
     }
 
     fn gather_items_for_property(&mut self, prop: &str) -> Result<Vec<String>> {
@@ -1091,7 +1097,7 @@ impl ListeriaList {
 
     fn gather_items_section(&mut self) -> Result<Vec<String>> {
         // TODO support all of SectionType
-        let prop = match &self.params.section {
+        let prop = match self.params.section() {
             SectionType::Property(p) => p.clone(),
             SectionType::SparqlVariable(_v) => {
                 return Err(anyhow!("SPARQL variable section type not supported yet"))
@@ -1102,7 +1108,7 @@ impl ListeriaList {
     }
 
     fn gather_items_sort(&mut self) -> Result<Vec<String>> {
-        let prop = match &self.params.sort {
+        let prop = match self.params.sort() {
             SortMode::Property(prop) => prop.clone(),
             _ => return Ok(vec![]),
         };
@@ -1120,11 +1126,11 @@ impl ListeriaList {
                     .for_each(|entity_id| entities_to_load.push(entity_id.to_string()));
             }
         }
-        if let SortMode::Property(prop) = &self.params.sort {
+        if let SortMode::Property(prop) = self.params.sort() {
             entities_to_load.push(prop.to_string());
         }
 
-        match &self.params.section {
+        match self.params.section() {
             SectionType::Property(prop) => {
                 entities_to_load.push(prop.to_owned());
             }
@@ -1154,7 +1160,7 @@ impl ListeriaList {
     }
 
     pub fn skip_table(&self) -> bool {
-        self.params.skip_table
+        self.params.skip_table()
     }
 
     pub fn get_section_ids(&self) -> Vec<usize> {
@@ -1164,20 +1170,20 @@ impl ListeriaList {
         ret
     }
 
-    pub fn wiki(&self) -> &String {
-        &self.page_params.wiki
+    pub fn wiki(&self) -> &str {
+        self.page_params.wiki()
     }
 
-    pub fn page_title(&self) -> &String {
-        &self.page_params.page
+    pub fn page_title(&self) -> &str {
+        self.page_params.page()
     }
 
     pub fn summary(&self) -> &Option<String> {
-        &self.params.summary
+        self.params.summary()
     }
 
     pub fn header_template(&self) -> &Option<String> {
-        &self.params.header_template
+        self.params.header_template()
     }
 
     pub fn get_label_with_fallback(&self, entity_id: &str, use_language: Option<&str>) -> String {
@@ -1214,7 +1220,7 @@ impl ListeriaList {
     }
 
     pub fn is_wikidatawiki(&self) -> bool {
-        self.page_params.wiki == "wikidatawiki"
+        self.page_params.wiki() == "wikidatawiki"
     }
 
     pub fn get_item_wiki_target(&self, entity_id: &str) -> String {
@@ -1256,7 +1262,7 @@ impl ListeriaList {
             .map(|x| (*x).clone())
             .collect();
 
-        if self.page_params.config.prefer_preferred() {
+        if self.page_params.config().prefer_preferred() {
             let has_preferred = ret
                 .iter()
                 .any(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
@@ -1275,7 +1281,7 @@ impl ListeriaList {
     }
 
     pub fn default_language(&self) -> &str {
-        &self.page_params.config.default_language()
+        &self.page_params.config().default_language()
     }
 
     pub fn template_params(&self) -> &TemplateParams {
@@ -1283,6 +1289,6 @@ impl ListeriaList {
     }
 
     pub fn mw_api(&self) -> crate::ApiLock {
-        self.page_params.mw_api.clone()
+        self.page_params.mw_api().clone()
     }
 }
