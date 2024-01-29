@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use anyhow::{Result,anyhow};
 
-use crate::{configuration::Configuration, page_element::PageElement, page_params::PageParams, render_wikitext::RendererWikitext, renderer::Renderer, wiki_apis::WikiApis, wiki_page_result::WikiPageResult, ApiLock};
+use crate::{configuration::Configuration, page_element::PageElement, page_params::PageParams, render_wikitext::RendererWikitext, renderer::Renderer, wiki_page_result::WikiPageResult, ApiLock};
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
@@ -24,12 +24,11 @@ pub struct ListeriaPage {
 
 impl ListeriaPage {
     pub async fn new(
-        // config: Arc<Configuration>,
-        wiki_apis: Arc<WikiApis>,
+        config: Arc<Configuration>,
         mw_api: ApiLock,
         page: String,
     ) -> Result<Self> {
-        let page_params = PageParams::new(wiki_apis, mw_api, page).await?;
+        let page_params = PageParams::new(config, mw_api, page).await?;
         let page_params = Arc::new(page_params);
         Ok(Self {
             page_params,
@@ -284,7 +283,6 @@ mod tests {
     use crate::listeria_page::ListeriaPage;
     use crate::render_wikitext::RendererWikitext;
     use crate::renderer::Renderer;
-    use crate::wiki_apis::WikiApis;
     use crate::*;
     use std::collections::HashMap;
     use std::fs;
@@ -321,17 +319,6 @@ mod tests {
         data
     }
 
-    // pub async fn wbapi_login(&mut self, key: &str) -> bool {
-    //     let oauth2_token = self.oauth2_token().to_owned();
-    //     match self.wb_apis.get_mut(key) {
-    //         Some(mut api) => {
-    //             if let Some(api) = Arc::get_mut(&mut api) {api.set_oauth2(&oauth2_token);}
-    //             true
-    //         }
-    //         None => false,
-    //     }
-    // }
-
     async fn check_fixture_file(path: PathBuf) {
         let data = read_fixture_from_file(path.clone());
         let mw_api = wikibase::mediawiki::api::Api::new(&data["API"])
@@ -347,19 +334,15 @@ mod tests {
             // HACKISH
             j["prefer_preferred"] = json!(false);
         }
-        let config = Configuration::new_from_json(j.clone()).await.unwrap();
-        let oauth2_token = config.oauth2_token().to_owned();
-        let wiki_apis = Arc::new(WikiApis::new(config).await.unwrap());
+        let mut config = Configuration::new_from_json(j).await.unwrap();
         if path.to_str().unwrap() == "test_data/commons_sparql.fixture" {
             // HACKISH
-            let api = wiki_apis.get_or_create_wiki_api("commonswiki").await.expect("No API found for commonswiki");
-            api.write().await.set_oauth2(&oauth2_token);
+            let _ = config.wbapi_login("commons").await;
             // println!("LOGIN TO COMMONS: {}", result);
         }
-
-        let config = Configuration::new_from_json(j).await.unwrap();
-        let wiki_apis = Arc::new(WikiApis::new(config).await.unwrap());
-        let mut page = ListeriaPage::new(wiki_apis, mw_api, data["PAGETITLE"].clone())
+        let config = Arc::new(config);
+        // let wiki_apis = Arc::new(WikiApis::new(config.clone()).await.unwrap());
+        let mut page = ListeriaPage::new(config, mw_api, data["PAGETITLE"].clone())
             .await
             .unwrap();
         page.do_simulate(
@@ -592,10 +575,9 @@ mod tests {
             .await
             .unwrap();
         let mw_api = Arc::new(RwLock::new(mw_api));
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let wiki_apis = Arc::new(WikiApis::new(config).await.unwrap());
+        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let mut page = ListeriaPage::new(
-            wiki_apis,
+            config,
             mw_api,
             "User:Magnus Manske/listeria test5".to_string(),
         )

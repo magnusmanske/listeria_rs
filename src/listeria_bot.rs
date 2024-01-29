@@ -20,22 +20,22 @@ use std::sync::Arc;
 struct ListeriaBotWiki {
     wiki: String,
     api: ApiLock,
-    wiki_apis: Arc<WikiApis>,
+    config: Arc<Configuration>,
 }
 
 impl ListeriaBotWiki {
-    pub fn new(wiki: &str, api: ApiLock, wiki_apis: Arc<WikiApis>) -> Self {
+    pub fn new(wiki: &str, api: ApiLock, config: Arc<Configuration>) -> Self {
         println!("Creating bot for {}", wiki);
         Self {
             wiki: wiki.to_string(),
             api,
-            wiki_apis,
+            config,
         }
     }
 
     pub async fn process_page(&self, page: &str) -> WikiPageResult {
         let mut listeria_page =
-            match ListeriaPage::new(self.wiki_apis.clone(), self.api.clone(), page.to_owned()).await {
+            match ListeriaPage::new(self.config.clone(), self.api.clone(), page.to_owned()).await {
                 Ok(p) => p,
                 Err(e) => {
                     return WikiPageResult::new(
@@ -61,6 +61,7 @@ impl ListeriaBotWiki {
 
 #[derive(Debug, Clone)]
 pub struct ListeriaBot {
+    config: Arc<Configuration>,
     wiki_apis: Arc<WikiApis>,
     pool: DatabasePool,
     bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
@@ -69,10 +70,11 @@ pub struct ListeriaBot {
 
 impl ListeriaBot {
     pub async fn new(config_file: &str) -> Result<Self> {
-        let config = Configuration::new_from_file(config_file).await?;
+        let config = Arc::new(Configuration::new_from_file(config_file).await?);
         let pool = DatabasePool::new(&config)?;
         Ok(Self {
-            wiki_apis: Arc::new(WikiApis::new(config).await?),
+            config: config.clone(),
+            wiki_apis: Arc::new(WikiApis::new(config.clone()).await?),
             pool,
             bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
             running: Arc::new(Mutex::new(HashSet::default())),
@@ -93,7 +95,7 @@ impl ListeriaBot {
             }
         };
 
-        let bot = ListeriaBotWiki::new(&wiki, mw_api, self.wiki_apis.clone());
+        let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
         lock.insert(wiki.to_string(), bot.clone());
         return Some(bot);
     }

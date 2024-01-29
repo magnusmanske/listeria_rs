@@ -1,10 +1,10 @@
 {
     "apis":{
-        "wikidatawiki" : "https://www.wikidata.org/w/api.php",
-        "commonswiki" : "https://commons.wikimedia.org/w/api.php"
+        "wikidata" : "https://www.wikidata.org/w/api.php",
+        "commons" : "https://commons.wikimedia.org/w/api.php"
     } ,
     "default_language":"en",
-    "default_api":"wikidatawiki",
+    "default_api":"wikidata",
     "prefer_preferred":true,
     "namespace_blocks":{
         "dewiki":[0],

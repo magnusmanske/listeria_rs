@@ -12,7 +12,6 @@ use crate::template_params::SortMode;
 use crate::template_params::SortOrder;
 use crate::template_params::TemplateParams;
 use crate::column::{Column, ColumnType};
-use crate::ApiLock;
 use anyhow::{Result,anyhow};
 use serde_json::Value;
 use tokio::time::{sleep,Duration};
@@ -20,6 +19,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use wikibase::entity::*;
+use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
 use futures::future::join_all;
 
@@ -36,7 +36,7 @@ pub struct ListeriaList {
     shadow_files: Vec<String>,
     local_page_cache: HashMap<String, bool>,
     section_id_to_name: HashMap<usize, String>,
-    wb_api: ApiLock,
+    wb_api: Arc<Api>,
     language: String,
     reference_ids: HashSet<String>,
     profiling:bool,
@@ -139,11 +139,10 @@ impl ListeriaList {
         }
 
         let wikibase = self.params.wikibase();
-        self.wb_api = self.page_params.get_wb_api(&wikibase.to_lowercase()).await?;
-        // self.wb_api = match self.page_params.config().get_wbapi(&wikibase.to_lowercase()) {
-        //     Some(api) => api.clone(),
-        //     None => return Err(anyhow!("No wikibase setup configured for '{wikibase}'")),
-        // };
+        self.wb_api = match self.page_params.config().get_wbapi(&wikibase.to_lowercase()) {
+            Some(api) => api.clone(),
+            None => return Err(anyhow!("No wikibase setup configured for '{wikibase}'")),
+        };
 
         Ok(())
     }
@@ -252,10 +251,9 @@ impl ListeriaList {
     }
 
     pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value> {
-        let wb_api = self.wb_api.read().await;
-        let ep = wb_api.get_site_info_string("general", "wikibase-sparql").map(|s|s.to_string());
-        drop(wb_api);
-        let endpoint = match ep
+        let endpoint = match self
+            .wb_api
+            .get_site_info_string("general", "wikibase-sparql")
         {
             Ok(endpoint) => {
                 // SPARQL service given by site
@@ -263,14 +261,14 @@ impl ListeriaList {
             }
             _ => {
                 // Override SPARQL service (hardcoded for Commons)
-                "https://wcqs-beta.wmflabs.org/sparql".to_string()
+                "https://wcqs-beta.wmflabs.org/sparql"
             }
         };
 
         // SPARQL might need some retries sometimes, bad server or somesuch
         let mut attempts_left = 2;
         loop {
-            let ret = self.wb_api.read().await.sparql_query_endpoint(sparql, &endpoint).await;
+            let ret = self.wb_api.sparql_query_endpoint(sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
             match ret {
                 Ok(ret) => return Ok(ret),
                 Err(e) => { 
@@ -422,9 +420,7 @@ impl ListeriaList {
         if ids.is_empty() {
             return Err(anyhow!("No items to show"));
         }
-        let wb_api = self.wb_api.read().await;
-        self.ecw.load_entities(&wb_api, &ids).await.map_err(|e|anyhow!("{e}"))?;
-        drop(wb_api);
+        self.ecw.load_entities(&self.wb_api, &ids).await.map_err(|e|anyhow!("{e}"))?;
 
         self.label_columns();
 
@@ -825,8 +821,7 @@ impl ListeriaList {
             .map(|row| row.entity_id())
             .cloned()
             .collect();
-        let wb_api = self.wb_api.read().await;
-        self.ecw.load_entities(&wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
+        self.ecw.load_entities(&self.wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
         Ok(())
     }
 
@@ -849,13 +844,11 @@ impl ListeriaList {
             .collect::<Vec<String>>();
 
         // Make sure section name items are loaded
-        let wb_api = self.wb_api.read().await;
-        self.ecw.load_entities(&wb_api, &section_names).await.map_err(|e|anyhow!("{e}"))?;
-        drop(wb_api);
+        self.ecw.load_entities(&self.wb_api, &section_names).await.map_err(|e|anyhow!("{e}"))?;
         let section_names = section_names
-            .iter()
-            .map(|q| self.get_label_with_fallback(q,None))
-            .collect::<Vec<String>>();
+        .iter()
+        .map(|q| self.get_label_with_fallback(q,None))
+        .collect::<Vec<String>>();
 
         // Count names
         let mut section_count = HashMap::new();
@@ -1004,8 +997,7 @@ impl ListeriaList {
         if !items_to_load.is_empty() {
             items_to_load.sort_unstable();
             items_to_load.dedup();
-            let wb_api = self.wb_api.read().await;
-            self.ecw.load_entities(&wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
+            self.ecw.load_entities(&self.wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
         }
         Ok(())
     }
@@ -1147,18 +1139,16 @@ impl ListeriaList {
             }
             SectionType::None => {}
         }
-        let wb_api = self.wb_api.read().await;
         self.ecw
-            .load_entities(&wb_api, &entities_to_load)
+            .load_entities(&self.wb_api, &entities_to_load)
             .await
             .map_err(|e|anyhow!("{e}"))?;
-        drop(wb_api);
+
         entities_to_load = self.gather_items_sort()?;
         let mut v2 = self.gather_items_section()?;
         entities_to_load.append(&mut v2);
-        let wb_api = self.wb_api.read().await;
         match self.ecw
-            .load_entities(&wb_api, &entities_to_load)
+            .load_entities(&self.wb_api, &entities_to_load)
             .await {
                 Ok(ret) => Ok(ret),
                 Err(e) => Err(anyhow!("{e}")),

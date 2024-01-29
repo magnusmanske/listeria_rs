@@ -1,4 +1,4 @@
-use crate::ApiLock;
+use crate::configuration::Configuration;
 use anyhow::{Result,anyhow};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -9,12 +9,14 @@ pub struct SiteMatrix {
 }
 
 impl SiteMatrix {
-    pub async fn new(api: ApiLock) -> Result<Self> {
+    pub async fn new(config: &Configuration) -> Result<Self> {
+        let api = config.get_default_wbapi()?;
         let params: HashMap<String, String> = vec![("action", "sitematrix")]
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        let site_matrix = api.read().await
+
+        let site_matrix = api
             .get_query_api_json(&params)
             .await?;
         Ok(Self { site_matrix })
