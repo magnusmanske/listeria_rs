@@ -1,7 +1,6 @@
-use crate::{configuration::Configuration, ApiLock};
+use crate::{configuration::Configuration, wiki_apis::WikiApis, ApiLock};
 use anyhow::Result;
 use std::sync::Arc;
-use wikibase::mediawiki::api::Api;
 
 #[derive(Debug, Clone)]
 pub struct PageParams {
@@ -9,33 +8,37 @@ pub struct PageParams {
     wiki: String,
     page: String,
     mw_api: ApiLock,
-    wb_api: Arc<Api>,
+    wb_api: ApiLock,
     simulate: bool,
     simulated_text: Option<String>,
     simulated_sparql_results: Option<String>,
     simulated_autodesc: Option<Vec<String>>,
-    config: Arc<Configuration>,
+    // config: Arc<Configuration>,
+    wiki_apis: Arc<WikiApis>,
     local_file_namespace_prefix: String,
 }
 
 impl PageParams {
     pub async fn new(
-        config: Arc<Configuration>,
+        wiki_apis: Arc<WikiApis>,
+        // config: Arc<Configuration>,
         mw_api: ApiLock,
         page: String,
     ) -> Result<Self> {
         let api = mw_api.read().await;
+        let wb_api = wiki_apis.get_default_wbapi().await?;
         let ret = Self {
             wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
             page,
             language: api.get_site_info_string("general", "lang")?.to_string(),
             mw_api: mw_api.clone(),
-            wb_api: config.get_default_wbapi()?.clone(),
+            wb_api,
             simulate: false,
             simulated_text: None,
             simulated_sparql_results: None,
             simulated_autodesc: None,
-            config: config.clone(),
+            // config: config.clone(),
+            wiki_apis,
             local_file_namespace_prefix: api
                 .get_local_namespace_name(6)
                 .unwrap_or("File")
@@ -65,15 +68,19 @@ impl PageParams {
     }
 
     pub fn config(&self) -> &Configuration {
-        &self.config
+        self.wiki_apis.config()
     }
 
     pub fn mw_api(&self) -> &ApiLock {
         &self.mw_api
     }
 
-    pub fn wb_api(&self) -> Arc<Api> {
+    pub fn wb_api(&self) -> ApiLock {
         self.wb_api.clone()
+    }
+
+    pub async fn get_wb_api(&self, wiki: &str) -> Result<ApiLock> {
+        self.wiki_apis.get_or_create_wiki_api(wiki).await
     }
 
     pub fn simulated_text(&self) -> &Option<String> {
