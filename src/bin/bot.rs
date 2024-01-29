@@ -3,7 +3,6 @@ extern crate serde_json;
 
 use anyhow::Result;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use listeria::listeria_bot::ListeriaBot;
 use tokio::time::{sleep, Duration};
 use std::env;
@@ -26,12 +25,11 @@ toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/p
 const DEFAULT_THREADS: usize = 8;
 
 async fn run_singles(threads: usize) -> Result<()> {
-    let running_counter = Arc::new(Mutex::new(0 as usize));
     let bot = ListeriaBot::new("config.json").await?;
     let _ = bot.reset_running().await;
     let bot = Arc::new(bot);
     loop {
-        while *running_counter.lock().await>=threads {
+        while bot.get_running_count().await>=threads {
             sleep(Duration::from_millis(100)).await;
         }
         let page = match bot.prepare_next_single_page().await {
@@ -43,14 +41,12 @@ async fn run_singles(threads: usize) -> Result<()> {
         };
         // println!("{page:?}");
         let bot = bot.clone();
-        let running_counter = running_counter.clone();
-        *running_counter.lock().await += 1 ;
         tokio::spawn(async move {
-            // println!("Running: {} for {:?}",running_counter.lock().await,&page);
+            let pagestatus_id = page.id;
             if let Err(e) = bot.run_single_bot(page).await {
                 println!("{}", &e)
             }
-            *running_counter.lock().await -= 1 ;
+            bot.release_running(pagestatus_id).await;
         });
     }
 }
