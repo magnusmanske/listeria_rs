@@ -39,6 +39,7 @@ impl WikiApis {
         })
     }
 
+    /// Returns a MediaWiki API instance for the given wiki. Creates a new one and caches it, if required.
     pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let mut lock = self.apis.lock().await;
         if let Some(api) = &lock.get(wiki) {
@@ -54,6 +55,7 @@ impl WikiApis {
             .map(|api| api.clone())
     }
 
+    /// Creates a MediaWiki API instance for the given wiki
     async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let api_url = format!("{}/w/api.php", self.site_matrix.get_server_url_for_wiki(wiki)?);
         let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
@@ -65,6 +67,7 @@ impl WikiApis {
     }
 
 
+    /// Updates the database to contain all wikis that have a Listeria start template
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
         let q = self.config.get_template_start_q(); // Wikidata item for {{Wikidata list}}
         let api = self.config.get_default_wbapi()?;
@@ -90,6 +93,7 @@ impl WikiApis {
         Ok(())
     }
 
+    /// Updates the database to have all pages on a given wiki with both Listeria start an end template
     pub async fn update_pages_on_wiki(&self, wiki: &str) -> Result<()> {
         let api_url = self.site_matrix.get_server_url_for_wiki(wiki)? + "/w/api.php";
         let mw_api = Api::new(&api_url).await?;
@@ -130,6 +134,7 @@ impl WikiApis {
         Ok(())
     }
 
+    /// Updates the pages on all wikis in the database
     pub async fn update_all_wikis(&self) -> Result<()> {
         let wikis = self.get_wikis_in_database().await?;
         for wiki in &wikis {
@@ -166,6 +171,7 @@ impl WikiApis {
             .await?)
     }
 
+    /// Returns the numeric ID for a wiki in the database
     async fn get_wiki_id(&self, wiki: &str) -> Result<u64> {
         self.pool.get_conn().await?
             .exec_iter("SELECT `id` FROM `wikis` WHERE `name`=?", (wiki,))
@@ -179,7 +185,7 @@ impl WikiApis {
         
     }
 
-    
+    /// Returns the database connection settings for a given wiki
     fn get_mysql_opts_for_wiki(&self,wiki:&str) -> Result<Opts> {
         let user = self.config.mysql("user").as_str().ok_or_else(||anyhow!("No MySQL user set"))?.to_string();
         let pass = self.config.mysql("password").as_str().ok_or_else(||anyhow!("No MySQL password set"))?.to_string();
@@ -199,6 +205,7 @@ impl WikiApis {
         ".web.db.svc.eqiad.wmflabs"
     }
 
+    /// Adjusts the name of some wikis to work as a DB server name
     pub fn fix_wiki_name(&self,wiki: &str) -> String {
         match wiki {
             "be-taraskwiki" | "be-x-oldwiki" | "be_taraskwiki" | "be_x_oldwiki" => "be_x_oldwiki",
@@ -214,7 +221,6 @@ impl WikiApis {
             Some(_host) => wiki.to_owned() + self.get_db_server_group(),
             None => return Err(anyhow!("No host for MySQL")),
         };
-        // let host = self.config.mysql("host").as_str().ok_or_else(||anyhow!("No MySQL host"))?.to_string();
         let schema = format!("{}_p",wiki);
         Ok((host, schema))
     }
