@@ -252,9 +252,7 @@ impl ListeriaList {
     }
 
     pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value> {
-        let wb_api = self.wb_api.read().await;
-        let ep = wb_api.get_site_info_string("general", "wikibase-sparql").map(|s|s.to_string());
-        drop(wb_api);
+        let ep = self.wb_api.read().await.get_site_info_string("general", "wikibase-sparql").map(|s|s.to_string());
         let endpoint = match ep
         {
             Ok(endpoint) => {
@@ -299,7 +297,6 @@ impl ListeriaList {
             // No template
             return Ok(());
         }
-        let api = self.page_params.mw_api().read().await;
         let params: HashMap<String, String> = vec![
             ("action", "expandtemplates"),
             ("title", self.page_params.page()),
@@ -309,7 +306,7 @@ impl ListeriaList {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let j = api
+        let j = self.wb_api.read().await
             .get_query_api_json(&params)
             .await?;
         if let Some(s) = j["expandtemplates"]["wikitext"].as_str() {
@@ -422,9 +419,7 @@ impl ListeriaList {
         if ids.is_empty() {
             return Err(anyhow!("No items to show"));
         }
-        let wb_api = self.wb_api.read().await;
-        self.ecw.load_entities(&wb_api, &ids).await.map_err(|e|anyhow!("{e}"))?;
-        drop(wb_api);
+        self.ecw.load_entities(&(*self.wb_api.read().await), &ids).await.map_err(|e|anyhow!("{e}"))?;
 
         self.label_columns();
 
@@ -512,9 +507,8 @@ impl ListeriaList {
             e.id(),
             self.language
         );
-        let api = self.page_params.mw_api().read().await;
-        let body = api
-            .query_raw(&url, &api.no_params(), "GET")
+        let body = self.page_params.mw_api().read().await
+            .query_raw(&url, &HashMap::new(), "GET")
             .await?;
         let json: Value = serde_json::from_str(&body)?;
         match json["result"].as_str() {
@@ -636,18 +630,16 @@ impl ListeriaList {
             .collect();
 
         let api_read = self
-        .page_params
-        .mw_api()
-        .read()
-        .await;
-
+            .page_params
+            .mw_api()
+            .read()
+            .await;
         let mut futures = vec![] ;
         for params in &param_list {
             futures.push ( api_read.get_query_api_json(&params) ) ;
         }
-
-        let tmp_results = join_all(futures)
-            .await;
+        let tmp_results = join_all(futures).await;
+        drop(api_read);
         
         let tmp_results : Vec<(&String,Value)> = tmp_results
             .iter()
@@ -825,8 +817,7 @@ impl ListeriaList {
             .map(|row| row.entity_id())
             .cloned()
             .collect();
-        let wb_api = self.wb_api.read().await;
-        self.ecw.load_entities(&wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
+        self.ecw.load_entities(&(*self.wb_api.read().await), &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
         Ok(())
     }
 
@@ -849,9 +840,7 @@ impl ListeriaList {
             .collect::<Vec<String>>();
 
         // Make sure section name items are loaded
-        let wb_api = self.wb_api.read().await;
-        self.ecw.load_entities(&wb_api, &section_names).await.map_err(|e|anyhow!("{e}"))?;
-        drop(wb_api);
+        self.ecw.load_entities(&(*self.wb_api.read().await), &section_names).await.map_err(|e|anyhow!("{e}"))?;
         let section_names = section_names
             .iter()
             .map(|q| self.get_label_with_fallback(q,None))
@@ -1004,8 +993,7 @@ impl ListeriaList {
         if !items_to_load.is_empty() {
             items_to_load.sort_unstable();
             items_to_load.dedup();
-            let wb_api = self.wb_api.read().await;
-            self.ecw.load_entities(&wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
+            self.ecw.load_entities(&(*self.wb_api.read().await), &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
         }
         Ok(())
     }
@@ -1034,6 +1022,7 @@ impl ListeriaList {
                 }
             }
         }
+        drop(mw_api);
         Ok(())
     }
 
@@ -1147,18 +1136,15 @@ impl ListeriaList {
             }
             SectionType::None => {}
         }
-        let wb_api = self.wb_api.read().await;
         self.ecw
-            .load_entities(&wb_api, &entities_to_load)
+            .load_entities(&(*self.wb_api.read().await), &entities_to_load)
             .await
             .map_err(|e|anyhow!("{e}"))?;
-        drop(wb_api);
         entities_to_load = self.gather_items_sort()?;
         let mut v2 = self.gather_items_section()?;
         entities_to_load.append(&mut v2);
-        let wb_api = self.wb_api.read().await;
         match self.ecw
-            .load_entities(&wb_api, &entities_to_load)
+            .load_entities(&(*self.wb_api.read().await), &entities_to_load)
             .await {
                 Ok(ret) => Ok(ret),
                 Err(e) => Err(anyhow!("{e}")),

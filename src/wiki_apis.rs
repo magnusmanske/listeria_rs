@@ -22,7 +22,7 @@ const MS_DELAY_AFTER_EDIT: u64 = 100;
 #[derive(Debug, Clone)]
 pub struct WikiApis {
     config: Configuration,
-    site_matrix: Arc<SiteMatrix>,
+    site_matrix: SiteMatrix,
     apis: Arc<Mutex<HashMap<String, ApiLock>>>,
     pool: DatabasePool,
 }
@@ -35,7 +35,7 @@ impl WikiApis {
         let apis = Arc::new(Mutex::new(HashMap::new()));
         apis.lock().await.insert(default_api,wikibase_api.clone());
         config.fill_template_info(&wikibase_api).await?;
-        let site_matrix = Arc::new(SiteMatrix::new(wikibase_api).await?);
+        let site_matrix = SiteMatrix::new(wikibase_api).await?;
         let pool = DatabasePool::new(&config)?;
         Ok(Self {
             apis,
@@ -85,15 +85,11 @@ impl WikiApis {
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
         let q = self.config.get_template_start_q(); // Wikidata item for {{Wikidata list}}
         // let api = self.config.get_default_wbapi()?;
-        let api_lock = self.get_or_create_wiki_api("wikidatawiki").await?;
-        let api = api_lock.read().await;
         let entities = EntityContainer::new();
         entities
-            .load_entities(&api, &vec![q.to_owned()])
+            .load_entities(&(*self.get_default_wbapi().await?.read().await), &vec![q.to_owned()])
             .await
             .map_err(|e|anyhow!("{e}"))?;
-        drop(api);
-        drop(api_lock);
         let entity = entities.get_entity(&q).ok_or_else(||anyhow!("{q} item not found on Wikidata"))?;
         let current_wikis: Vec<String> = entity.sitelinks().iter().flatten().map(|s|s.site().to_owned()).collect(); // All wikis with a start template
         let existing_wikis: HashSet<String> = self.get_wikis_in_database().await?.into_iter().collect();
