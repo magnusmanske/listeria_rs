@@ -21,7 +21,7 @@ const MS_DELAY_AFTER_EDIT: u64 = 100;
 
 #[derive(Debug, Clone)]
 pub struct WikiApis {
-    config: Arc<Configuration>,
+    config: Configuration,
     site_matrix: Arc<SiteMatrix>,
     apis: Arc<Mutex<HashMap<String, ApiLock>>>,
     pool: DatabasePool,
@@ -29,14 +29,17 @@ pub struct WikiApis {
 
 impl WikiApis {
     pub async fn new(mut config: Configuration) -> Result<Self> {
+        let default_api = config.default_api().to_string();
         let api_url = config.get_default_wiki_api_url();
         let wikibase_api = Self::create_wiki_api_from_api_url(&api_url, &config).await?;
+        let apis = Arc::new(Mutex::new(HashMap::new()));
+        apis.lock().await.insert(default_api,wikibase_api.clone());
         config.fill_template_info(&wikibase_api).await?;
         let site_matrix = Arc::new(SiteMatrix::new(wikibase_api).await?);
         let pool = DatabasePool::new(&config)?;
         Ok(Self {
-            apis: Arc::new(Mutex::new(HashMap::new())),
-            config: Arc::new(config),
+            apis,
+            config,
             site_matrix,
             pool,
         })
