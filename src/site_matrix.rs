@@ -10,6 +10,7 @@ pub struct SiteMatrix {
 
 impl SiteMatrix {
     pub async fn new(config: &Configuration) -> Result<Self> {
+        // Load site matrix
         let api = config.get_default_wbapi()?;
         let params: HashMap<String, String> = vec![("action", "sitematrix")]
             .iter()
