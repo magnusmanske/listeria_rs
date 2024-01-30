@@ -21,6 +21,9 @@ $$$$ EXPECTED
 ! name
 ! instance of
 |-
+| [[Tim Berners-Lee]]
+| [[human]]
+|-
 | [[Albert Einstein]]
 | [[human]]
 |-
@@ -29,9 +32,6 @@ $$$$ EXPECTED
 |-
 | ''[[:d:Q94293196|NVSS J173625-312612]]''
 | [[astronomical radio source]]
-|-
-| [[Tim Berners-Lee]]
-| [[human]]
 |}
 
 $$$$ SPARQL_RESULTS
