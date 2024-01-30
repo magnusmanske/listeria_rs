@@ -48,18 +48,10 @@ impl Configuration {
     pub async fn new_from_json(j: Value) -> Result<Self> {
         let mut ret: Self = Default::default();
 
-        if let Some(s) = j["default_api"].as_str() {
-            ret.default_api = s.to_string()
-        }
-        if let Some(s) = j["default_language"].as_str() {
-            ret.default_language = s.to_string()
-        }
-        if let Some(b) = j["prefer_preferred"].as_bool() {
-            ret.prefer_preferred = b
-        }
-        if let Some(i) = j["default_thumbnail_size"].as_u64() {
-            ret.default_thumbnail_size = Some(i)
-        }
+        ret.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
+        ret.default_language = j["default_language"].as_str().unwrap_or_default().to_string();
+        ret.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
+        ret.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
         if let Some(sic) = j["shadow_images_check"].as_array() {
             ret.shadow_images_check = sic
                 .iter()
@@ -69,9 +61,7 @@ impl Configuration {
         if let Some(lr) = j["location_regions"].as_array() {
             ret.location_regions = lr.iter().map(|s| s.as_str().expect("location_regions needs to be a string").to_string()).collect()
         }
-        if let Some(s) = j["wiki_login"]["token"].as_str() {
-            ret.oauth2_token = s.to_string()
-        }
+        ret.oauth2_token = j["wiki_login"]["token"].as_str().unwrap_or_default().to_string();
         if j["mysql"].is_object() {
             ret.mysql = Some(j["mysql"].to_owned());
         }
@@ -81,8 +71,7 @@ impl Configuration {
         if let Some(o) = j["apis"].as_object() {
             for (k, v) in o.iter() {
                 if let (name, Some(url)) = (k.as_str(), v.as_str()) {
-                    let mut api = wikibase::mediawiki::api::Api::new(&url)
-                        .await?;
+                    let mut api = wikibase::mediawiki::api::Api::new(&url).await?;
                     api.set_oauth2(&oauth2_token);
                     ret.wb_apis.insert(name.to_string(), Arc::new(api));
                 }
