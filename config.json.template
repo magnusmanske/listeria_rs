@@ -15,7 +15,8 @@
         "default":"{{Coord|$LAT$|$LON$|display=inline}}",
         "wikidatawiki":"$LAT$/$LON$",
         "commonswiki":"{{Inline coordinates|$LAT$|$LON$|display=inline}}",
-        "dewiki":"{{Coordinate|text=DMS|NS=$LAT$|EW=$LON$|name=$ITEM$|simple=y|type=landmark|region=$REGION$}}"
+        "dewiki":"{{Coordinate|text=DMS|NS=$LAT$|EW=$LON$|name=$ITEM$|simple=y|type=landmark|region=$REGION$}}",
+        "enwiki":"{{#invoke:Coordinates|coord|$LAT$|$LON$|display=inline}}"
     },
     "wiki_login": {
         "user": "XXX",
