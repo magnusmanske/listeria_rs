@@ -29,6 +29,7 @@
         "port":3306,
         "schema":"XXX"
     },
+    "max_mw_apis_per_wiki": 2,
     "location_regions":["dewiki"],
     "default_thumbnail_size" : 128 ,
     "shadow_images_check" : [ "enwiki" ] ,

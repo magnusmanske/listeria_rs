@@ -19,7 +19,6 @@ use wikibase::mediawiki::api::Api;
 const API_TIMEOUT: Duration = Duration::from_secs(360);
 const MS_DELAY_AFTER_EDIT: u64 = 100;
 const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
-const MAX_MW_API_SHARES_PER_WIKI: usize = 5;
 
 
 #[derive(Debug, Clone)]
@@ -48,8 +47,10 @@ impl WikiApis {
         if let Some(api) = &lock.get(wiki) {
             // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
             // See https://phabricator.wikimedia.org/T356160
-            while Arc::strong_count(&api) > MAX_MW_API_SHARES_PER_WIKI {
-                sleep(Duration::from_millis(100)).await;
+            if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
+                while Arc::strong_count(&api) >= *max {
+                    sleep(Duration::from_millis(100)).await;
+                }        
             }
             return Ok((*api).clone());
         }
