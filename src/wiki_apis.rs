@@ -1,6 +1,7 @@
 use mysql_async::{from_row, prelude::*, Conn};
 use mysql_async::{Opts, OptsBuilder};
 use tokio::sync::Mutex;
+use tokio::time::sleep;
 use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::title::Title;
 use wikibase::EntityTrait;
@@ -17,6 +18,8 @@ use wikibase::mediawiki::api::Api;
 
 const API_TIMEOUT: Duration = Duration::from_secs(360);
 const MS_DELAY_AFTER_EDIT: u64 = 100;
+const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
+const MAX_MW_API_SHARES_PER_WIKI: usize = 5;
 
 
 #[derive(Debug, Clone)]
@@ -43,6 +46,11 @@ impl WikiApis {
     pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let mut lock = self.apis.lock().await;
         if let Some(api) = &lock.get(wiki) {
+            // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
+            // See https://phabricator.wikimedia.org/T356160
+            while Arc::strong_count(&api) > MAX_MW_API_SHARES_PER_WIKI {
+                sleep(Duration::from_millis(100)).await;
+            }
             return Ok((*api).clone());
         }
 
@@ -62,7 +70,12 @@ impl WikiApis {
     }
 
     pub async fn create_wiki_api_from_api_url(api_url: &str, oauth2_token: &str) -> Result<ApiLock> {
-        let builder = wikibase::mediawiki::reqwest::Client::builder().timeout(API_TIMEOUT);
+        let builder = wikibase::mediawiki::reqwest::Client::builder()
+            .timeout(API_TIMEOUT)
+            .user_agent(LISTERIA_USER_AGENT)
+            .gzip(true)
+            .deflate(true)
+            .brotli(true);
         let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
         mw_api.set_oauth2(oauth2_token);
         mw_api.set_edit_delay(Some(MS_DELAY_AFTER_EDIT)); // Slow down editing a bit

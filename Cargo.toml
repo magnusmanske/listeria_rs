@@ -20,3 +20,4 @@ md5 = "*"
 pickledb = "*"
 tempfile = "*"
 anyhow = "*"
+reqwest = { version="*" , features=["gzip","deflate","brotli"] }
