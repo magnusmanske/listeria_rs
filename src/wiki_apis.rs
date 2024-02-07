@@ -44,6 +44,17 @@ impl WikiApis {
     /// Returns a MediaWiki API instance for the given wiki. Creates a new one and caches it, if required.
     pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let mut lock = self.apis.lock().await;
+
+        if let Some(max) = self.config.get_max_mw_apis_total() {
+            loop {
+                let current_strong_locks: usize = lock.iter().map(|(_wiki,api)| Arc::strong_count(&api)).sum();
+                if current_strong_locks < *max {
+                    break;
+                }
+                sleep(Duration::from_millis(100)).await;
+            }        
+        }
+
         if let Some(api) = &lock.get(wiki) {
             // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
             // See https://phabricator.wikimedia.org/T356160

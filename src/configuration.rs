@@ -36,6 +36,7 @@ pub struct Configuration {
     oauth2_token: String,
     template_start_q: String,
     max_mw_apis_per_wiki: Option<usize>,
+    max_mw_apis_total: Option<usize>,
 }
 
 impl Configuration {
@@ -50,6 +51,7 @@ impl Configuration {
         let mut ret: Self = Default::default();
 
         ret.max_mw_apis_per_wiki = j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize);
+        ret.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);
         ret.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
         ret.default_language = j["default_language"].as_str().unwrap_or_default().to_string();
         ret.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
@@ -184,6 +186,10 @@ impl Configuration {
 
     pub fn get_max_mw_apis_per_wiki(&self) -> &Option<usize> {
         &self.max_mw_apis_per_wiki
+    }
+
+    pub fn get_max_mw_apis_total(&self) -> &Option<usize> {
+        &self.max_mw_apis_total
     }
 
     pub fn get_local_template_title_end(&self, wiki: &str) -> Result<String> {
