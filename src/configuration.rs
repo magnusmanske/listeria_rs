@@ -2,7 +2,9 @@ use crate::*;
 use std::{fs::File, io::BufReader, path::Path};
 use anyhow::{Result,anyhow};
 use serde_json::Value;
-use wikibase::EntityTrait;
+use wikibase::{entity_container::EntityContainer, EntityTrait};
+
+pub const MAX_CONCURRENT_ENTITIES_QUERY: usize = 5;
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -128,7 +130,7 @@ impl Configuration {
             Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
             None => return Err(anyhow!("No template_end_q in config")),
         };
-        let entities = wikibase::entity_container::EntityContainer::new();
+        let entities = Self::create_entity_container();
         entities
             .load_entities(&api, &vec![q_start.clone(), q_end.clone()])
             .await
@@ -138,6 +140,12 @@ impl Configuration {
         ret.template_start_q = q_start;
 
         Ok(ret)
+    }
+
+    pub fn create_entity_container() -> EntityContainer {
+        let mut entities = EntityContainer::new();
+        entities.set_max_concurrent(MAX_CONCURRENT_ENTITIES_QUERY);
+        entities
     }
 
     pub fn oauth2_token(&self) -> &String {

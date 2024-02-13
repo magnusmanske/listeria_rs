@@ -2,7 +2,6 @@ use mysql_async::{from_row, prelude::*, Conn};
 use mysql_async::{Opts, OptsBuilder};
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::title::Title;
 use wikibase::EntityTrait;
 use crate::configuration::Configuration;
@@ -100,7 +99,7 @@ impl WikiApis {
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
         let q = self.config.get_template_start_q(); // Wikidata item for {{Wikidata list}}
         let api = self.config.get_default_wbapi()?;
-        let entities = EntityContainer::new();
+        let entities = Configuration::create_entity_container();
         entities
             .load_entities(&api, &vec![q.to_owned()])
             .await

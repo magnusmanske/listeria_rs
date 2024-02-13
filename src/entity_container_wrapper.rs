@@ -1,3 +1,4 @@
+use crate::configuration::Configuration;
 use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
@@ -35,7 +36,7 @@ impl std::fmt::Debug for EntityContainerWrapper {
 impl EntityContainerWrapper {
     pub fn new() -> Self {
         Self {
-            entities: EntityContainer::new(),
+            entities: Configuration::create_entity_container(),
             pickledb: None,
             pickledb_filename: None,
         }
