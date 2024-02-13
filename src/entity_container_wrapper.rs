@@ -15,7 +15,7 @@ use wikibase::mediawiki::api::Api;
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use wikibase::snak::SnakDataType;
 
-const MAX_LOCAL_CACHED_ENTITIES: usize = 50000;//usize::MAX; //100;
+const MAX_LOCAL_CACHED_ENTITIES: usize = 500;//usize::MAX; //100;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
