@@ -2847,7 +2847,7 @@ dependencies = [
 [[package]]
 name = "wikibase"
 version = "0.6.1"
-source = "git+https://gitlab.com/tobias47n9e/wikibase_rs#01964542a3b2ec8d388a55e8f7ac0b77407f98ce"
+source = "git+https://gitlab.com/tobias47n9e/wikibase_rs?branch=concurrent_limiter#435f4ba68f92fbedbfbb74af2a03a79abda8554a"
 dependencies = [
  "curl",
  "futures",

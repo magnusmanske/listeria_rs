@@ -12,7 +12,7 @@ config = "*"
 serde_json = "^1"
 urlencoding = "^2"
 roxmltree = "*"
-wikibase = { git = "https://gitlab.com/tobias47n9e/wikibase_rs" }
+wikibase = { git = "https://gitlab.com/tobias47n9e/wikibase_rs", branch="concurrent_limiter" }
 tokio = { version = "^1", features = ["full","rt-multi-thread"] }
 futures = "*"
 mysql_async = "*"
