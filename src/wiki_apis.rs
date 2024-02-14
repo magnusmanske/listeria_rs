@@ -15,8 +15,6 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use wikibase::mediawiki::api::Api;
 
-const API_TIMEOUT: Duration = Duration::from_secs(360);
-const MS_DELAY_AFTER_EDIT: u64 = 100;
 const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
 
 
@@ -77,19 +75,19 @@ impl WikiApis {
     /// Creates a MediaWiki API instance for the given wiki
     async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let api_url = format!("{}/w/api.php", self.site_matrix.get_server_url_for_wiki(wiki)?);
-        Self::create_wiki_api_from_api_url(&api_url, &self.config.oauth2_token()).await
+        self.create_wiki_api_from_api_url(&api_url, &self.config.oauth2_token()).await
     }
 
-    pub async fn create_wiki_api_from_api_url(api_url: &str, oauth2_token: &str) -> Result<ApiLock> {
+    pub async fn create_wiki_api_from_api_url(&self, api_url: &str, oauth2_token: &str) -> Result<ApiLock> {
         let builder = wikibase::mediawiki::reqwest::Client::builder()
-            .timeout(API_TIMEOUT)
+            .timeout(self.config.api_timeout())
             .user_agent(LISTERIA_USER_AGENT)
             .gzip(true)
             .deflate(true)
             .brotli(true);
         let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
         mw_api.set_oauth2(oauth2_token);
-        mw_api.set_edit_delay(Some(MS_DELAY_AFTER_EDIT)); // Slow down editing a bit
+        mw_api.set_edit_delay(self.config.ms_delay_after_edit()); // Slow down editing a bit
         let mw_api = Arc::new(RwLock::new(mw_api));
         Ok(mw_api)
     }
@@ -99,7 +97,7 @@ impl WikiApis {
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
         let q = self.config.get_template_start_q(); // Wikidata item for {{Wikidata list}}
         let api = self.config.get_default_wbapi()?;
-        let entities = Configuration::create_entity_container();
+        let entities = self.config.create_entity_container();
         entities
             .load_entities(&api, &vec![q.to_owned()])
             .await

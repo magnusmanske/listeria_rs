@@ -3,8 +3,7 @@ use std::{fs::File, io::BufReader, path::Path};
 use anyhow::{Result,anyhow};
 use serde_json::Value;
 use wikibase::{entity_container::EntityContainer, EntityTrait};
-
-pub const MAX_CONCURRENT_ENTITIES_QUERY: usize = 5;
+use std::time::Duration;
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -39,6 +38,10 @@ pub struct Configuration {
     template_start_q: String,
     max_mw_apis_per_wiki: Option<usize>,
     max_mw_apis_total: Option<usize>,
+    max_local_cached_entities: usize,
+    max_concurrent_entry_queries: usize,
+    api_timeout: u64,
+    ms_delay_after_edit: Option<u64>,
 }
 
 impl Configuration {
@@ -58,6 +61,10 @@ impl Configuration {
         ret.default_language = j["default_language"].as_str().unwrap_or_default().to_string();
         ret.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
         ret.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
+        ret.max_local_cached_entities = j["max_local_cached_entities"].as_u64().unwrap_or(5000) as usize;
+        ret.max_concurrent_entry_queries = j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
+        ret.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
+        ret.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
         if let Some(sic) = j["shadow_images_check"].as_array() {
             ret.shadow_images_check = sic
                 .iter()
@@ -130,7 +137,7 @@ impl Configuration {
             Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
             None => return Err(anyhow!("No template_end_q in config")),
         };
-        let entities = Self::create_entity_container();
+        let entities = ret.create_entity_container();
         entities
             .load_entities(&api, &vec![q_start.clone(), q_end.clone()])
             .await
@@ -142,10 +149,18 @@ impl Configuration {
         Ok(ret)
     }
 
-    pub fn create_entity_container() -> EntityContainer {
+    pub fn create_entity_container(&self) -> EntityContainer {
         let mut entities = EntityContainer::new();
-        entities.set_max_concurrent(MAX_CONCURRENT_ENTITIES_QUERY);
+        entities.set_max_concurrent(self.max_concurrent_entry_queries);
         entities
+    }
+
+    pub fn ms_delay_after_edit(&self) -> Option<u64> {
+        self.ms_delay_after_edit
+    }
+
+    pub fn api_timeout(&self) -> Duration {
+        Duration::from_secs(self.api_timeout)
     }
 
     pub fn oauth2_token(&self) -> &String {
@@ -157,6 +172,10 @@ impl Configuration {
             Some(mysql) => mysql[key].to_owned(),
             None => Value::Null,
         }
+    }
+
+    pub fn max_local_cached_entities(&self) -> usize {
+        self.max_local_cached_entities
     }
 
     fn get_sitelink_mapping(
