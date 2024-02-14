@@ -15,13 +15,12 @@ use wikibase::mediawiki::api::Api;
 use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use wikibase::snak::SnakDataType;
 
-const MAX_LOCAL_CACHED_ENTITIES: usize = 5000;//usize::MAX; //100;
-
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
     entities: EntityContainer,
     pickledb: Option<Arc<PickleDb>>,
     pickledb_filename: Option<Arc<NamedTempFile>>,
+    max_local_cached_entities: usize,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
@@ -34,16 +33,17 @@ impl std::fmt::Debug for EntityContainerWrapper {
 }
 
 impl EntityContainerWrapper {
-    pub fn new() -> Self {
+    pub fn new(config: &Configuration) -> Self {
         Self {
-            entities: Configuration::create_entity_container(),
+            entities: config.create_entity_container(),
             pickledb: None,
             pickledb_filename: None,
+            max_local_cached_entities: config.max_local_cached_entities(),
         }
     }
 
     pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
-        self.load_entities_max_size(api, ids, MAX_LOCAL_CACHED_ENTITIES)
+        self.load_entities_max_size(api, ids, self.max_local_cached_entities)
             .await
     }
 
@@ -216,7 +216,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_pickledb() {
-        let mut ecw = EntityContainerWrapper::new();
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let mut ecw = EntityContainerWrapper::new(&config);
         let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
         let ids = ["Q1","Q2","Q3","Q4","Q5"].iter().map(|s|s.to_string()).collect();
         ecw.load_entities_max_size(&api, &ids, 2).await.unwrap();

@@ -235,7 +235,7 @@ impl ResultCellPart {
             }
             ResultCellPart::Uri(url) => url.to_owned(),
             ResultCellPart::ExternalId((property, id)) => {
-                match list.ecw.external_id_url(property, id) {
+                match list.external_id_url(property, id) {
                     Some(url) => "[".to_string() + &url + " " + &id + "]",
                     None => id.to_owned(),
                 }

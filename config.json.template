@@ -29,6 +29,10 @@
         "port":3306,
         "schema":"XXX"
     },
+    "max_local_cached_entities": 5000,
+    "max_concurrent_entry_queries": 10,
+    "api_timeout": 360,
+    "ms_delay_after_edit": 100,
     "max_mw_apis_total": 50,
     "location_regions":["dewiki"],
     "default_thumbnail_size" : 128 ,

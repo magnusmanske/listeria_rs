@@ -31,7 +31,7 @@ pub struct ListeriaList {
     params: TemplateParams,
     sparql_rows: Vec<HashMap<String, SparqlValue>>,
     sparql_main_variable: Option<String>,
-    pub ecw: EntityContainerWrapper,
+    ecw: EntityContainerWrapper,
     results: Vec<ResultRow>,
     shadow_files: Vec<String>,
     local_page_cache: HashMap<String, bool>,
@@ -54,7 +54,7 @@ impl ListeriaList {
             params: TemplateParams::new(),
             sparql_rows: vec![],
             sparql_main_variable: None,
-            ecw: EntityContainerWrapper::new(),
+            ecw: EntityContainerWrapper::new(page_params.config()),
             results: vec![],
             shadow_files: vec![],
             local_page_cache: HashMap::new(),
@@ -86,6 +86,10 @@ impl ListeriaList {
         self.profile("AFTER list::process process_results");
         self.profile("END list::process");
         Ok(())
+    }
+
+    pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
+        self.ecw.external_id_url(prop, id)
     }
 
     pub fn results(&self) -> &Vec<ResultRow> {
