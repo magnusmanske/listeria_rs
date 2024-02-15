@@ -22,14 +22,14 @@ toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/p
 
 */
 
-const DEFAULT_THREADS: usize = 8;
-
-async fn run_singles(threads: usize) -> Result<()> {
+async fn run_singles() -> Result<()> {
     let bot = ListeriaBot::new("config.json").await?;
+    let max_threads = bot.config().max_threads();
+    println!("Starting {max_threads} bots");
     let _ = bot.reset_running().await;
     let bot = Arc::new(bot);
     loop {
-        while bot.get_running_count().await>=threads {
+        while bot.get_running_count().await>=max_threads {
             sleep(Duration::from_millis(100)).await;
         }
         let page = match bot.prepare_next_single_page().await {
@@ -54,13 +54,6 @@ async fn run_singles(threads: usize) -> Result<()> {
 //#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 #[tokio::main]
 async fn main() -> Result<()> {
-    let argv: Vec<_> = env::args_os().collect();
-    let threads = match argv.get(1) {
-        Some(t) => t.to_owned().into_string().unwrap_or("".into()).parse::<usize>().unwrap_or(DEFAULT_THREADS),
-        None => DEFAULT_THREADS
-    };
-    println!("Starting {threads} bots");
-    
     // let threaded_rt = runtime::Builder::new_multi_thread()
     //     .enable_all()
     //     .worker_threads(threads)
@@ -72,6 +65,5 @@ async fn main() -> Result<()> {
     // threaded_rt.block_on(async move {
     //     run_singles(threads).await;
     // });
-    run_singles(threads).await?;
-    Ok(())
+    run_singles().await
 }

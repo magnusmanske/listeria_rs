@@ -81,6 +81,9 @@ impl ListeriaBot {
         })
     }
 
+    pub fn config(&self) -> &Configuration {
+        &self.config
+    }
 
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
         let mut lock = self.bot_per_wiki.lock().await;
