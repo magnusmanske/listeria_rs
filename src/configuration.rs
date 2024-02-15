@@ -42,6 +42,7 @@ pub struct Configuration {
     max_concurrent_entry_queries: usize,
     api_timeout: u64,
     ms_delay_after_edit: Option<u64>,
+    max_threads: usize,
 }
 
 impl Configuration {
@@ -65,6 +66,7 @@ impl Configuration {
         ret.max_concurrent_entry_queries = j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
         ret.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
         ret.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
+        ret.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
         if let Some(sic) = j["shadow_images_check"].as_array() {
             ret.shadow_images_check = sic
                 .iter()
@@ -153,6 +155,10 @@ impl Configuration {
         let mut entities = EntityContainer::new();
         entities.set_max_concurrent(self.max_concurrent_entry_queries);
         entities
+    }
+
+    pub fn max_threads(&self) -> usize {
+        self.max_threads
     }
 
     pub fn ms_delay_after_edit(&self) -> Option<u64> {

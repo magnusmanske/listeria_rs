@@ -29,6 +29,7 @@
         "port":3306,
         "schema":"XXX"
     },
+    "max_threads":6,
     "max_local_cached_entities": 5000,
     "max_concurrent_entry_queries": 10,
     "api_timeout": 360,
