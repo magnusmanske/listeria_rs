@@ -122,21 +122,21 @@ impl Column {
         }
     }
 
-    pub fn generate_label(&mut self, list: &ListeriaList) {
+    pub async fn generate_label(&mut self, list: &ListeriaList) {
         if self.has_label {
             return;
         }
         self.label = match &self.obj {
-            ColumnType::Property(prop) => list.get_label_with_fallback(prop, None),
+            ColumnType::Property(prop) => list.get_label_with_fallback(prop, None).await,
             ColumnType::PropertyQualifier((prop, qual)) => {
-                list.get_label_with_fallback(&prop, None)
+                list.get_label_with_fallback(&prop, None).await
                     + "/"
-                    + &list.get_label_with_fallback(&qual, None)
+                    + &list.get_label_with_fallback(&qual, None).await
             }
             ColumnType::PropertyQualifierValue((prop1, _qual, prop2)) => {
-                list.get_label_with_fallback(&prop1, None)
+                list.get_label_with_fallback(&prop1, None).await
                     + "/"
-                    + &list.get_label_with_fallback(&prop2, None)
+                    + &list.get_label_with_fallback(&prop2, None).await
             }
             _ => self.label.to_owned(), // Fallback
         };

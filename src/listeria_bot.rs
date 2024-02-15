@@ -1,7 +1,6 @@
 use tokio::sync::Mutex;
 use chrono::{DateTime, Utc};
 use crate::configuration::Configuration;
-use crate::database_pool::DatabasePool;
 use crate::listeria_page::ListeriaPage;
 use crate::page_to_process::PageToProcess;
 use crate::wiki_apis::WikiApis;
@@ -63,7 +62,6 @@ impl ListeriaBotWiki {
 pub struct ListeriaBot {
     config: Arc<Configuration>,
     wiki_apis: Arc<WikiApis>,
-    pool: DatabasePool,
     bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
     running: Arc<Mutex<HashSet<u64>>>,
 }
@@ -71,11 +69,9 @@ pub struct ListeriaBot {
 impl ListeriaBot {
     pub async fn new(config_file: &str) -> Result<Self> {
         let config = Arc::new(Configuration::new_from_file(config_file).await?);
-        let pool = DatabasePool::new(&config)?;
         Ok(Self {
             config: config.clone(),
             wiki_apis: Arc::new(WikiApis::new(config.clone()).await?),
-            pool,
             bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
             running: Arc::new(Mutex::new(HashSet::default())),
         })
@@ -104,13 +100,17 @@ impl ListeriaBot {
     }
 
     pub async fn reset_running(&self) -> Result<()> {
+        let mut conn = self.config.pool().get_conn().await?;
         let sql = "UPDATE pagestatus SET status='OK' WHERE status='RUNNING'";
-        let _ = self.pool.get_conn().await?.exec_iter(sql, ()).await;
+        let _ = conn.exec_iter(sql, ()).await;
+
+        let sql = "TRUNCATE `entity_cache`";
+        let _ = conn.exec_iter(sql, ()).await;
         Ok(())
     }
 
     async fn get_page_for_sql(&self, sql: &str) -> Option<PageToProcess> {
-        self.pool.get_conn().await.ok()?
+        self.config.pool().get_conn().await.ok()?
             .exec_iter(sql, ())
             .await.ok()?
             .map_and_drop(|row| PageToProcess::from_row(row))
@@ -210,7 +210,7 @@ impl ListeriaBot {
             `bot_version`=2,
             `priority`={priority}
             WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page") ;
-        self.pool.get_conn().await?
+        self.config.pool().get_conn().await?
             .exec_iter(sql.as_str(), params)
             .await?
             .map_and_drop(|row| from_row::<String>(row))

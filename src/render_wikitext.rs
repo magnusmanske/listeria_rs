@@ -8,13 +8,11 @@ impl Renderer for RendererWikitext {
         Self {}
     }
 
-    fn render(&mut self, list: &ListeriaList) -> Result<String> {
-        let mut wt: String = list
-            .get_section_ids()
-            .iter()
-            .map(|section_id| self.as_wikitext_section(list, *section_id))
-            .collect();
-
+    async fn render(&mut self, list: &ListeriaList) -> Result<String> {
+        let mut wt = String::new();
+        for section_id in list.get_section_ids() {
+            wt += &self.as_wikitext_section(list, section_id).await;
+        }
         if !list.shadow_files().is_empty() {
             wt += "\n----\nThe following local image(s) are not shown in the above list, because they shadow a Commons image of the same name, and might be non-free:";
             for file in list.shadow_files() {
@@ -29,22 +27,23 @@ impl Renderer for RendererWikitext {
         Ok(wt)
     }
 
-    fn get_new_wikitext(
+    async fn get_new_wikitext(
         &self,
         _wikitext: &str,
         page: &ListeriaPage,
     ) -> Result<Option<String>> {
-        let new_wikitext = page
-            .elements()
-            .iter()
-            .filter_map(|element| element.as_wikitext().ok())
-            .collect();
+        let mut new_wikitext = String::new();
+        for element in page.elements() {
+            if let Ok(s) = element.as_wikitext().await {
+                new_wikitext += &s
+            }
+        }
         Ok(Some(new_wikitext))
     }
 }
 
 impl RendererWikitext {
-    fn as_wikitext_section(&self, list: &ListeriaList, section_id: usize) -> String {
+    async fn as_wikitext_section(&self, list: &ListeriaList, section_id: usize) -> String {
         let mut wt = String::new();
 
         if let Some(name) = list.section_name(section_id) {
@@ -71,13 +70,10 @@ impl RendererWikitext {
             .collect();
 
         // Rows
-        let rows = list
-            .results()
-            .iter()
-            .filter(|row| row.section() == section_id)
-            .enumerate()
-            .map(|(rownum, row)| row.as_wikitext(list, rownum))
-            .collect::<Vec<String>>();
+        let mut rows = vec![];
+        for (rownum, row) in list.results().iter().filter(|row| row.section() == section_id).enumerate() {
+            rows.push(row.as_wikitext(list, rownum).await);
+        }
         if list.skip_table() {
             wt += &rows.join("\n");
         } else if list.template_params().wdedit() {

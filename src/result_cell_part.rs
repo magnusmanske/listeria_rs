@@ -1,3 +1,4 @@
+use async_recursion::async_recursion;
 use crate::column::ColumnType;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
@@ -17,19 +18,19 @@ impl PartWithReference {
         Self { part, references }
     }
 
-    pub fn as_wikitext(
+    pub async fn as_wikitext(
         &self,
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
         partnum: usize,
     ) -> String {
-        let wikitext_part = self.part.as_wikitext(list, rownum, colnum, partnum);
+        let wikitext_part = self.part.as_wikitext(list, rownum, colnum, partnum).await;
         let wikitext_reference = match &self.references {
             Some(references) => {
                 let mut wikitext: Vec<String> = vec![];
                 for reference in references.iter() {
-                    let r = reference.as_reference(list);
+                    let r = reference.as_reference(list).await;
                     wikitext.push(r);
                 }
                 wikitext.join("")
@@ -66,16 +67,17 @@ impl ResultCellPart {
         }
     }
 
-    pub fn localize_item_links(&mut self, list: &ListeriaList) {
+    #[async_recursion]
+    pub async fn localize_item_links(&mut self, list: &ListeriaList) {
         match self {
             ResultCellPart::Entity((item, true)) => {
-                if let Some(ll) = list.entity_to_local_link(&item) {
+                if let Some(ll) = list.entity_to_local_link(&item).await {
                     *self = ll
                 };
             }
             ResultCellPart::SnakList(v) => {
                 for part_with_reference in v.iter_mut() {
-                    part_with_reference.part.localize_item_links(list);
+                    part_with_reference.part.localize_item_links(list).await;
                 }
             }
             _ => {}
@@ -147,7 +149,8 @@ impl ResultCellPart {
         ret
     }
 
-    pub fn as_wikitext(
+    #[async_recursion]
+    pub async fn as_wikitext(
         &self,
         list: &ListeriaList,
         rownum: usize,
@@ -169,14 +172,14 @@ impl ResultCellPart {
                         return format!("''[[{}|{}]]''", list.get_item_wiki_target(id), id);
                     }
                 }
-                let entity_id_link = list.get_item_link_with_fallback(id);
-                match list.get_entity(id) {
+                let entity_id_link = list.get_item_link_with_fallback(id).await;
+                match list.get_entity(id).await {
                     Some(e) => {
                         let use_language = match e.label_in_locale(list.language()) {
-                            Some(_) => list.language(),
+                            Some(_) => list.language().to_owned(),
                             None => list.default_language(),
                         };
-                        let use_label = list.get_label_with_fallback(id, Some(use_language));
+                        let use_label = list.get_label_with_fallback(id, Some(&use_language)).await;
                         let labeled_entity_link = if list.is_wikidatawiki() {
                             format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
                         } else {
@@ -235,7 +238,7 @@ impl ResultCellPart {
             }
             ResultCellPart::Uri(url) => url.to_owned(),
             ResultCellPart::ExternalId((property, id)) => {
-                match list.external_id_url(property, id) {
+                match list.external_id_url(property, id).await {
                     Some(url) => "[".to_string() + &url + " " + &id + "]",
                     None => id.to_owned(),
                 }
@@ -258,21 +261,28 @@ impl ResultCellPart {
                     None => text.to_owned(),
                 }
             }
-            ResultCellPart::SnakList(v) => v
-                .iter()
-                .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum, partnum))
-                .collect::<Vec<String>>()
-                .join(" — "),
+            ResultCellPart::SnakList(v) => {
+                let mut ret = vec![];
+                for rcp in v {
+                    ret.push(rcp.part.as_wikitext(list, rownum, colnum, partnum).await);
+                }
+                ret.join(" — ")
+                // v
+                // .iter()
+                // .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum, partnum))
+                // .collect::<Vec<String>>()
+                // .join(" — ")
+            }
         }
     }
 
-    pub fn as_tabbed_data(
+    pub async fn as_tabbed_data(
         &self,
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
         partnum: usize,
     ) -> String {
-        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum, partnum))
+        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum, partnum).await)
     }
 }

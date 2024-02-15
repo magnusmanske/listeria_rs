@@ -94,8 +94,8 @@ impl Reference {
         self.url.is_none() && self.stated_in.is_none()
     }
 
-    pub fn as_reference(&self, list: &ListeriaList) -> String {
-        let wikitext = self.as_wikitext(list);
+    pub async fn as_reference(&self, list: &ListeriaList) -> String {
+        let wikitext = self.as_wikitext(list).await;
         let md5 = match self.md5.read() {
             Ok(s) => s.to_string(),
             _ => return String::new(),
@@ -109,56 +109,58 @@ impl Reference {
         }
     }
 
-    fn as_wikitext(&self, list: &ListeriaList) -> String {
-        match self.wikitext_cache.read() {
-            Ok(cache) => {
-                if let Some(s) = &*cache {
-                    return s.to_string();
+    async fn as_wikitext(&self, list: &ListeriaList) -> String {
+        loop { // TODO FIXME check that this loop does not run forever
+            match self.wikitext_cache.read() {
+                Ok(cache) => {
+                    if let Some(s) = &*cache {
+                        return s.to_string();
+                    }
+                }
+                _ => return String::new(), // No error
+            }
+            let mut s = String::new();
+
+            if self.title.is_some() && self.url.is_some() {
+                s += &format!(
+                    "{{{{cite web|url={}|title={}",
+                    self.url.as_ref().unwrap_or(&String::new()),
+                    self.title.as_ref().unwrap_or(&String::new())
+                );
+                if let Some(stated_in) = &self.stated_in {
+                    s += &format!("|website={}", list.get_item_link_with_fallback(stated_in).await);
+                }
+                if let Some(date) = &self.date {
+                    s += &format!("|access-date={}", &date);
+                }
+                s += "}}";
+            } else if self.url.is_some() {
+                if let Some(x) = self.url.as_ref() {
+                    s += x;
+                }
+            } else if self.stated_in.is_some() {
+                match &self.stated_in {
+                    Some(q) => {
+                        s += &list.get_item_link_with_fallback(&q).await;
+                    }
+                    None => {}
                 }
             }
-            _ => return String::new(), // No error
-        }
-        let mut s = String::new();
 
-        if self.title.is_some() && self.url.is_some() {
-            s += &format!(
-                "{{{{cite web|url={}|title={}",
-                self.url.as_ref().unwrap_or(&String::new()),
-                self.title.as_ref().unwrap_or(&String::new())
-            );
-            if let Some(stated_in) = &self.stated_in {
-                s += &format!("|website={}", list.get_item_link_with_fallback(stated_in));
-            }
-            if let Some(date) = &self.date {
-                s += &format!("|access-date={}", &date);
-            }
-            s += "}}";
-        } else if self.url.is_some() {
-            if let Some(x) = self.url.as_ref() {
-                s += x;
-            }
-        } else if self.stated_in.is_some() {
-            match &self.stated_in {
-                Some(q) => {
-                    s += &list.get_item_link_with_fallback(&q);
+            match self.md5.write() {
+                Ok(mut md5) => {
+                    *md5 = format!("{:x}", md5::compute(s.clone()));
                 }
-                None => {}
+                _ => return String::new(), // No error
             }
-        }
 
-        match self.md5.write() {
-            Ok(mut md5) => {
-                *md5 = format!("{:x}", md5::compute(s.clone()));
+            match self.wikitext_cache.write() {
+                Ok(mut cache) => {
+                    *cache = Some(s);
+                }
+                _ => return String::new(), // No error
             }
-            _ => return String::new(), // No error
         }
-
-        match self.wikitext_cache.write() {
-            Ok(mut cache) => {
-                *cache = Some(s);
-            }
-            _ => return String::new(), // No error
-        }
-        self.as_wikitext(list)
+        // self.as_wikitext(list).await
     }
 }

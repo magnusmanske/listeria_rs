@@ -5,7 +5,6 @@ use anyhow::Result;
 use std::sync::Arc;
 use listeria::listeria_bot::ListeriaBot;
 use tokio::time::{sleep, Duration};
-use std::env;
 
 /*
 TEST DB CONNECT
