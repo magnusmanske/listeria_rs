@@ -107,20 +107,20 @@ impl ResultRow {
         self.sortkey = sortkey;
     }
 
-    pub fn get_sortkey_label(&self, list: &ListeriaList) -> String {
-        match list.get_entity(self.entity_id()) {
-            Some(_entity) => list.get_label_with_fallback(self.entity_id(), None),
+    pub async fn get_sortkey_label(&self, list: &ListeriaList) -> String {
+        match list.get_entity(self.entity_id()).await {
+            Some(_entity) => list.get_label_with_fallback(self.entity_id(), None).await,
             None => "".to_string(),
         }
     }
 
-    pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
+    pub async fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
         lazy_static! {
             static ref RE_SR_JR: Regex = Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse");
             static ref RE_BRACES: Regex = Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse");
             static ref RE_LAST_FIRST: Regex = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
         }
-        match page.get_entity(&self.entity_id) {
+        match page.get_entity(&self.entity_id).await {
             Some(entity) => match entity.label_in_locale(&page.language()) {
                 Some(label) => {
                     let ret = RE_SR_JR.replace_all(label, "");
@@ -143,13 +143,13 @@ impl ResultRow {
         .to_string()
     }
 
-    pub fn get_sortkey_prop(
+    pub async fn get_sortkey_prop(
         &self,
         prop: &str,
         list: &ListeriaList,
         datatype: &SnakDataType,
     ) -> String {
-        match list.get_entity(&self.entity_id) {
+        match list.get_entity(&self.entity_id).await {
             Some(entity) => {
                 match list
                     .get_filtered_claims(&entity, prop) 
@@ -158,7 +158,7 @@ impl ResultRow {
                     .map(|statement| statement.main_snak())
                     .next()
                 {
-                    Some(snak) => self.get_sortkey_from_snak(snak, list),
+                    Some(snak) => self.get_sortkey_from_snak(snak, list).await,
                     None => self.no_value(datatype),
                 }
             }
@@ -183,7 +183,7 @@ impl ResultRow {
         }
     }
 
-    fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak, list: &ListeriaList) -> String {
+    async fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak, list: &ListeriaList) -> String {
         match snak.data_value() {
             Some(data_value) => match data_value.value() {
                 wikibase::value::Value::Coordinate(c) => format!(
@@ -195,7 +195,7 @@ impl ResultRow {
                 wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
                 wikibase::value::Value::Entity(entity) => {
                     // TODO language?
-                    list.get_label_with_fallback(&entity.id(), None)
+                    list.get_label_with_fallback(&entity.id(), None).await
                 }
                 wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikibase::value::Value::StringValue(s) => s.to_owned(),
@@ -242,13 +242,11 @@ impl ResultRow {
         }
     }
 
-    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
-        let mut ret: Vec<Value> = self
-            .cells
-            .iter()
-            .enumerate()
-            .map(|(colnum, cell)| cell.as_tabbed_data(list, rownum, colnum))
-            .collect();
+    pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
+        let mut ret = vec![];
+        for (colnum, cell) in self.cells.iter().enumerate() {
+            ret.push(cell.as_tabbed_data(list, rownum, colnum).await);
+        }
         ret.insert(0, json!(self.section));
         json!(ret)
     }
@@ -272,13 +270,11 @@ impl ResultRow {
             .join("\n| ")
     }
 
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
-        let cells = self
-            .cells
-            .iter()
-            .enumerate()
-            .map(|(colnum, cell)| cell.as_wikitext(list, rownum, colnum))
-            .collect::<Vec<String>>();
+    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
+        let mut cells = vec![];
+        for (colnum, cell) in self.cells.iter().enumerate() {
+            cells.push(cell.as_wikitext(list, rownum, colnum).await);
+        }
         match list.get_row_template() {
             Some(t) => format!(
                 "{{{{{}\n| {}\n}}}}",

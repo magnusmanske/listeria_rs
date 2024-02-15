@@ -64,8 +64,8 @@ impl PageParams {
         &self.language
     }
 
-    pub fn config(&self) -> &Configuration {
-        &self.config
+    pub fn config(&self) -> Arc<Configuration> {
+        self.config.clone()
     }
 
     pub fn mw_api(&self) -> &ApiLock {

@@ -10,23 +10,29 @@ impl Renderer for RendererTabbedData {
         Self {}
     }
 
-    fn render(&mut self, list: &ListeriaList) -> Result<String> {
+    async fn render(&mut self, list: &ListeriaList) -> Result<String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
             if let Some(x) = ret["schema"]["fields"].as_array_mut() {
                 x.push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{list.language().to_owned():col.label}}));
             }
         });
-        ret["data"] = list
-            .results()
-            .iter()
-            .enumerate()
-            .map(|(rownum, row)| row.as_tabbed_data(&list, rownum))
-            .collect();
+        let mut ret_data = vec![];
+        for (rownum, row) in list.results().iter().enumerate() {
+            ret_data.push(row.as_tabbed_data(&list, rownum).await);
+        }
+        ret["data"] = json!(ret_data); // TODO check if this is correct, see below
+
+        // ret["data"] = list
+        //     .results()
+        //     .iter()
+        //     .enumerate()
+        //     .map(|(rownum, row)| row.as_tabbed_data(&list, rownum))
+        //     .collect();
         Ok(format!("{}", ret))
     }
 
-    fn get_new_wikitext(
+    async fn get_new_wikitext(
         &self,
         wikitext: &str,
         _page: &ListeriaPage,

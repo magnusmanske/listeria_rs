@@ -5,6 +5,8 @@ use serde_json::Value;
 use wikibase::{entity_container::EntityContainer, EntityTrait};
 use std::time::Duration;
 
+use self::database_pool::DatabasePool;
+
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
     All,            // All namespaces forbidden
@@ -43,6 +45,7 @@ pub struct Configuration {
     api_timeout: u64,
     ms_delay_after_edit: Option<u64>,
     max_threads: usize,
+    pool: Option<Arc<DatabasePool>>,
 }
 
 impl Configuration {
@@ -148,7 +151,16 @@ impl Configuration {
         ret.template_end_sites = ret.get_sitelink_mapping(&entities, &q_end)?;
         ret.template_start_q = q_start;
 
+        ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
+
         Ok(ret)
+    }
+
+    pub fn pool(&self) -> &Arc<DatabasePool> {
+        match &self.pool {
+            Some(pool) => &pool,
+            None => panic!("Configuration::pool(): pool not defined"),
+        }
     }
 
     pub fn create_entity_container(&self) -> EntityContainer {

@@ -29,7 +29,7 @@ impl ResultCell {
             deduplicate_parts: true,
         };
 
-        let entity = list.get_entity(entity_id);
+        let entity = list.get_entity(entity_id).await;
         match &col.obj {
             ColumnType::Qid => {
                 ret.parts.push(PartWithReference::new(
@@ -320,27 +320,21 @@ impl ResultCell {
         self.parts = parts;
     }
 
-    pub fn localize_item_links_in_parts(list: &ListeriaList, parts: &mut Vec<PartWithReference>) {
+    pub async fn localize_item_links_in_parts(list: &ListeriaList, parts: &mut Vec<PartWithReference>) {
         for part_with_reference in parts.iter_mut() {
-            part_with_reference.part.localize_item_links(list);
+            part_with_reference.part.localize_item_links(list).await;
         }
     }
 
-    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
-        let ret: Vec<String> = self
-            .parts
-            .iter()
-            .enumerate()
-            .map(|(partnum, part_with_reference)| {
-                part_with_reference
-                    .part
-                    .as_tabbed_data(list, rownum, colnum, partnum)
-            })
-            .collect();
+    pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
+        let mut ret = vec![];
+        for (partnum, part_with_reference) in self.parts.iter().enumerate() {
+            ret.push(part_with_reference.part.as_tabbed_data(list, rownum, colnum, partnum).await);
+        }
         json!(ret.join("<br/>"))
     }
 
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let mut ret;
         if list.template_params().wdedit() && list.header_template().is_none() {
             ret = match &self.wdedit_class {
@@ -350,14 +344,11 @@ impl ResultCell {
         } else {
             ret = " ".to_string();
         }
-        let mut parts = self
-            .parts
-            .iter()
-            .enumerate()
-            .map(|(partnum, part_with_reference)| {
-                part_with_reference.as_wikitext(list, rownum, colnum, partnum)
-            })
-            .collect::<Vec<String>>();
+
+        let mut parts = vec![];
+        for (partnum, part_with_reference) in self.parts.iter().enumerate() {
+            parts.push(part_with_reference.part.as_wikitext(list, rownum, colnum, partnum).await);
+        }
         if self.deduplicate_parts {
             let mut parts2 = Vec::new();
             for part in &parts {

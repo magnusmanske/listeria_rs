@@ -6,39 +6,41 @@ use crate::result_row::ResultRow;
 use crate::sparql_value::SparqlValue;
 use crate::template_params::LinksType;
 use anyhow::{Result,anyhow};
-use tempfile::NamedTempFile;
+use mysql_async::from_row;
+use uuid::Uuid;
 use std::collections::HashMap;
 use std::sync::Arc;
 use wikibase::entity::*;
 use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
-use pickledb::{PickleDb, PickleDbDumpPolicy, SerializationMethod};
 use wikibase::snak::SnakDataType;
+use mysql_async::prelude::*;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
+    config: Arc<Configuration>,
     entities: EntityContainer,
-    pickledb: Option<Arc<PickleDb>>,
-    pickledb_filename: Option<Arc<NamedTempFile>>,
     max_local_cached_entities: usize,
+    uuid: String,
+    using_cache: bool,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EntityContainerWrapper")
          .field("entities", &self.entities)
-         .field("pickledb_filename", &self.pickledb_filename)
          .finish()
     }
 }
 
 impl EntityContainerWrapper {
-    pub fn new(config: &Configuration) -> Self {
+    pub fn new(config: Arc<Configuration>) -> Self {
         Self {
+            config: config.clone(),
             entities: config.create_entity_container(),
-            pickledb: None,
-            pickledb_filename: None,
             max_local_cached_entities: config.max_local_cached_entities(),
+            uuid: Uuid::new_v4().into(),
+            using_cache: false,
         }
     }
 
@@ -47,36 +49,38 @@ impl EntityContainerWrapper {
             .await
     }
 
+    async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
+        self.using_cache = true;
+        let chunks = ids.chunks(500) ;
+        for chunk in chunks {
+            if let Err(e) = self.entities.load_entities(api, &chunk.into()).await {
+                return Err(anyhow!("Error loading entities: {e}"))
+            }
+            let mut params= vec![];
+            let mut sql = vec![];
+            for entity_id in chunk {
+                if let Some(entity) = self.entities.get_entity(entity_id) {
+                    let json = entity.to_json();
+                    params.push(self.uuid.to_owned());
+                    params.push(entity.id().to_owned());
+                    params.push(json.to_string());
+                    sql.push(format!("(?,?,?)"));
+                }
+            }
+            if !sql.is_empty() {
+                let sql = format!("INSERT IGNORE INTO `entity_cache` (`uuid`,`entity_id`,`value`) VALUES {}",sql.join(","));
+                self.config.pool().get_conn().await?.exec_drop(sql,params).await?;
+            }
+            self.entities.clear();
+        }
+
+        Ok(())
+    }
+
     pub async fn load_entities_max_size(&mut self, api: &Api, ids: &Vec<String>, max_entities: usize) -> Result<()> {
         let ids = self.entities.unique_shuffle_entity_ids(ids).map_err(|e| anyhow!("{e}"))?;
-        if ids.len()>max_entities { // Use pickledb disk cache
-            self.pickledb_filename = Some(Arc::new(NamedTempFile::new()?));
-            let temp_filename = self.pickledb_filename
-                .as_ref()
-                .ok_or_else(||anyhow!("Can not create pickledb file [1]"))?
-                .path()
-                .to_str()
-                .ok_or_else(||anyhow!("Can not create pickledb file [2]"))?;
-            let mut db = PickleDb::new(
-                temp_filename,
-                PickleDbDumpPolicy::AutoDump,
-                SerializationMethod::Json,
-            );
-            let chunks = ids.chunks(max_entities) ;
-            for chunk in chunks {
-                if let Err(e) = self.entities.load_entities(api, &chunk.into()).await {
-                    return Err(anyhow!("Error loading entities: {e}"))
-                }
-                for entity_id in chunk {
-                    if let Some(entity) = self.entities.get_entity(entity_id) {
-                        let json = entity.to_json();
-                        //let _ = self.hashfile_add_entity(&entity.id(), json);
-                        db.set(&entity.id(), &json)?;
-                    }
-                }
-                self.entities.clear();
-            }
-            self.pickledb = Some(Arc::new(db));
+        if ids.len()>max_entities { // Use entity cache
+            self.load_entities_into_entity_cache(api, &ids).await?;
             Ok(())
         } else {
             match self.entities.load_entities(api, &ids).await {
@@ -86,28 +90,34 @@ impl EntityContainerWrapper {
         }
     }
 
-    pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
+    pub async fn get_entity(&self, entity_id: &str) -> Option<Entity> {
         if let Some(entity) = self.entities.get_entity(entity_id) {
             return Some(entity)
         }
-        // self.hashfile_get_entity(entity_id)
-        let json = self.pickledb.as_ref()?.get::<serde_json::Value>(entity_id)?;
-        Entity::new_from_json(&json).ok()
+        let sql = format!("SELECT `value` FROM `entity_cache` WHERE `uuid`='{}' AND `entity_id`=?",&self.uuid);
+        let json_string = self.config.pool().get_conn().await.ok()?
+            .exec_iter(sql, (entity_id,))
+            .await.ok()?
+            .map_and_drop(|row| from_row::<String>(row))
+            .await.ok()?
+            .pop()?;
+        let json_value = serde_json::from_str(&json_string).ok()? ;
+        Entity::new_from_json(&json_value).ok()
     }
 
-    pub fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
-        self.get_entity(entity_id)?
+    pub async fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
+        self.get_entity(entity_id).await?
             .label_in_locale(language)
             .map(|s| s.to_string())
     }
 
-    pub fn entity_to_local_link(
+    pub async fn entity_to_local_link(
         &self,
         item: &str,
         wiki: &str,
         language: &str,
     ) -> Option<ResultCellPart> {
-        let entity = match self.get_entity(item) {
+        let entity = match self.get_entity(item).await {
             Some(e) => e,
             None => return None,
         };
@@ -119,9 +129,8 @@ impl EntityContainerWrapper {
                 .next(),
             None => None,
         }?;
-        //let title = wikibase::mediawiki::title::Title::new_from_full(page,&mw_api);
         let label = self
-            .get_local_entity_label(item, language)
+            .get_local_entity_label(item, language).await
             .unwrap_or_else(|| page.clone());
         Some(ResultCellPart::LocalLink((page, label, false)))
     }
@@ -136,7 +145,7 @@ impl EntityContainerWrapper {
             return None;
         }
         if LinksType::Local == *list.template_params().links() {
-            let entity = match self.get_entity(entity_id) {
+            let entity = match self.get_entity(entity_id).await {
                 Some(e) => e,
                 None => return None,
             };
@@ -156,8 +165,8 @@ impl EntityContainerWrapper {
         Some(row)
     }
 
-    pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
-        let pi = self.get_entity(prop)?;
+    pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
+        let pi = self.get_entity(prop).await?;
         pi.claims_with_property("P1630")
             .iter()
             .filter_map(|s| {
@@ -172,8 +181,8 @@ impl EntityContainerWrapper {
             .next()
     }
 
-    pub fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
-        match self.get_entity(prop) {
+    pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
+        match self.get_entity(prop).await {
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),
@@ -208,6 +217,15 @@ impl EntityContainerWrapper {
         entities_to_load
     }
 
+    pub async fn clear_entity_cache(&mut self) -> Result<()> {
+        if self.using_cache {
+            let sql = format!("DELETE FROM `entity_cache` WHERE `uuid`='{}'",self.uuid);
+            self.config.pool().get_conn().await?.exec_drop(sql,()).await?;
+            self.using_cache = false;
+        }
+        Ok(())
+    }
+
 }
 
 #[cfg(test)]
@@ -215,19 +233,17 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_pickledb() {
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let mut ecw = EntityContainerWrapper::new(&config);
+    async fn test_entity_caching() {
+        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
+        let mut ecw = EntityContainerWrapper::new(config);
         let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
         let ids = ["Q1","Q2","Q3","Q4","Q5"].iter().map(|s|s.to_string()).collect();
         ecw.load_entities_max_size(&api, &ids, 2).await.unwrap();
         assert_eq!(ecw.entities.len(),0);
 
-        let path = ecw.pickledb_filename.as_ref().unwrap().path();
-        let len = std::fs::metadata(path).unwrap().len();
-        assert!(len>0);
-
-        let e2 = ecw.get_entity("Q2").unwrap();
+        let e2 = ecw.get_entity("Q2").await.unwrap();
         assert_eq!(e2.id(),"Q2");
+
+        ecw.clear_entity_cache().await.unwrap();
     }
 }
