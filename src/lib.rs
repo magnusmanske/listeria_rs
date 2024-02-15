@@ -26,6 +26,7 @@ pub mod result_cell;
 pub mod result_cell_part;
 pub mod result_row;
 pub mod renderer;
+pub mod entity_file_cache;
 
 use crate::listeria_list::ListeriaList;
 use crate::listeria_page::ListeriaPage;
