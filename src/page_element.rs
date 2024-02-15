@@ -181,4 +181,8 @@ impl PageElement {
             None
         }
     }
+
+    pub async fn clear_entity_cache(&mut self) -> Result<()> {
+        self.list.clear_entity_cache().await
+    }
 }

@@ -96,7 +96,11 @@ impl ListeriaPage {
         for element in &mut self.elements {
             promises.push(element.process());
         }
-        try_join_all(promises).await.map_err(|e| self.fail(&e.to_string()))?;
+        let result = try_join_all(promises).await.map_err(|e| self.fail(&e.to_string()));
+        for element in &mut self.elements {
+            let _ = element.clear_entity_cache().await;
+        }
+        let _ = result?; // Act on any error
         Ok(())
     }
 

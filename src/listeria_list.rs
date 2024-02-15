@@ -85,8 +85,11 @@ impl ListeriaList {
         self.process_results().await?;
         self.profile("AFTER list::process process_results");
         self.profile("END list::process");
-        self.ecw.clear_entity_cache().await.unwrap();
         Ok(())
+    }
+
+    pub async fn clear_entity_cache(&mut self) -> Result<()> {
+        self.ecw.clear_entity_cache().await
     }
 
     pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
