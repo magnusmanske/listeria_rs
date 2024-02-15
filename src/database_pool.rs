@@ -1,6 +1,6 @@
 use crate::configuration::Configuration;
 use anyhow::{Result,anyhow};
-use mysql_async::{Conn, OptsBuilder, Pool};
+use mysql_async::{Conn, OptsBuilder, Pool, PoolConstraints, PoolOpts};
 
 #[derive(Debug, Clone)]
 pub struct DatabasePool {
@@ -40,13 +40,23 @@ impl DatabasePool {
             .as_str()
             .ok_or(anyhow!("No password in config"))?
             .to_string();
+        let max_connections = config
+            .mysql("max_connections")
+            .as_u64()
+            .unwrap_or(8)
+            as usize;
+        let constraints = PoolConstraints::new(0, max_connections).unwrap();
+        let pool_opts = PoolOpts::default()
+            .with_constraints(constraints);
+            // .with_inactive_connection_ttl(Duration::from_secs(60));
 
         let opts = OptsBuilder::default()
             .ip_or_hostname(host.to_owned())
             .db_name(Some(schema))
             .user(Some(user))
             .pass(Some(password))
-            .tcp_port(port);
+            .tcp_port(port)
+            .pool_opts(pool_opts);
 
         Ok(opts)
     }

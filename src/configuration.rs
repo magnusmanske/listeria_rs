@@ -4,8 +4,7 @@ use anyhow::{Result,anyhow};
 use serde_json::Value;
 use wikibase::{entity_container::EntityContainer, EntityTrait};
 use std::time::Duration;
-
-use self::database_pool::DatabasePool;
+use crate::database_pool::DatabasePool;
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
