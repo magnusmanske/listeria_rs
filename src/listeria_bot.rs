@@ -158,7 +158,8 @@ impl ListeriaBot {
             AND pagestatus.id NOT IN ({ids})
             ORDER BY pagestatus.timestamp
             LIMIT 1");
-        let page = self.get_page_for_sql(&sql).await.ok_or(anyhow!("prepare_next_single_page:: no pop"))?;
+        let page = self.get_page_for_sql(&sql).await
+            .ok_or(anyhow!("prepare_next_single_page:: no pop\n{sql}\n{ids}"))?;
         running.insert(page.id);
         self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
         Ok(page)
