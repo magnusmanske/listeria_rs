@@ -27,7 +27,8 @@
         "user":"XXX",
         "password":"XXX",
         "port":3306,
-        "schema":"XXX"
+        "schema":"XXX",
+        "max_connections":8
     },
     "max_threads":6,
     "max_local_cached_entities": 5000,
