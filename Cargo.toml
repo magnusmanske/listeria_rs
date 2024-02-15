@@ -21,5 +21,4 @@ pickledb = "*"
 tempfile = "*"
 anyhow = "*"
 reqwest = { version="*" , features=["gzip","deflate","brotli"] }
-uuid = { version="*", features=["v4"] }
 async-recursion = "*"

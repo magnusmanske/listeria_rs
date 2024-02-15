@@ -1,4 +1,5 @@
 use crate::configuration::Configuration;
+use crate::entity_file_cache::EntityFileCache;
 use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
@@ -6,23 +7,21 @@ use crate::result_row::ResultRow;
 use crate::sparql_value::SparqlValue;
 use crate::template_params::LinksType;
 use anyhow::{Result,anyhow};
-use mysql_async::from_row;
-use uuid::Uuid;
 use std::collections::HashMap;
 use std::sync::Arc;
 use wikibase::entity::*;
 use wikibase::entity_container::EntityContainer;
 use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
-use mysql_async::prelude::*;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
-    config: Arc<Configuration>,
+    // config: Arc<Configuration>,
     entities: EntityContainer,
     max_local_cached_entities: usize,
-    uuid: String,
-    using_cache: bool,
+    // uuid: String,
+    // using_cache: bool,
+    entity_file_cache: EntityFileCache,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
@@ -36,50 +35,47 @@ impl std::fmt::Debug for EntityContainerWrapper {
 impl EntityContainerWrapper {
     pub fn new(config: Arc<Configuration>) -> Self {
         Self {
-            config: config.clone(),
+            // config: config.clone(),
             entities: config.create_entity_container(),
             max_local_cached_entities: config.max_local_cached_entities(),
-            uuid: Uuid::new_v4().into(),
-            using_cache: false,
+            // uuid: Uuid::new_v4().into(),
+            // using_cache: false,
+            entity_file_cache: EntityFileCache::new(),
         }
     }
 
-    pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
-        self.load_entities_max_size(api, ids, self.max_local_cached_entities)
-            .await
-    }
-
     async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
-        self.using_cache = true;
-        let chunks = ids.chunks(500) ;
+        // self.using_cache = true;
+        let chunks = ids.chunks(self.max_local_cached_entities) ;
         for chunk in chunks {
             if let Err(e) = self.entities.load_entities(api, &chunk.into()).await {
                 return Err(anyhow!("Error loading entities: {e}"))
             }
-            let mut params= vec![];
-            let mut sql = vec![];
+            // let mut params= vec![];
+            // let mut sql = vec![];
             for entity_id in chunk {
                 if let Some(entity) = self.entities.get_entity(entity_id) {
                     let json = entity.to_json();
-                    params.push(self.uuid.to_owned());
-                    params.push(entity.id().to_owned());
-                    params.push(json.to_string());
-                    sql.push(format!("(?,?,?)"));
+                    self.entity_file_cache.add_entity(entity_id, &json.to_string()).await?;
+                    // params.push(self.uuid.to_owned());
+                    // params.push(entity.id().to_owned());
+                    // params.push(json.to_string());
+                    // sql.push(format!("(?,?,?)"));
                 }
             }
-            if !sql.is_empty() {
-                let sql = format!("INSERT IGNORE INTO `entity_cache` (`uuid`,`entity_id`,`value`) VALUES {}",sql.join(","));
-                self.config.pool().get_conn().await?.exec_drop(sql,params).await?;
-            }
+            // if !sql.is_empty() {
+            //     let sql = format!("INSERT IGNORE INTO `entity_cache` (`uuid`,`entity_id`,`value`) VALUES {}",sql.join(","));
+            //     self.config.pool().get_conn().await?.exec_drop(sql,params).await?;
+            // }
             self.entities.clear();
         }
 
         Ok(())
     }
 
-    pub async fn load_entities_max_size(&mut self, api: &Api, ids: &Vec<String>, max_entities: usize) -> Result<()> {
+    pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
         let ids = self.entities.unique_shuffle_entity_ids(ids).map_err(|e| anyhow!("{e}"))?;
-        if ids.len()>max_entities { // Use entity cache
+        if ids.len()>self.max_local_cached_entities { // Use entity cache
             self.load_entities_into_entity_cache(api, &ids).await?;
             Ok(())
         } else {
@@ -94,15 +90,18 @@ impl EntityContainerWrapper {
         if let Some(entity) = self.entities.get_entity(entity_id) {
             return Some(entity)
         }
-        let sql = format!("SELECT `value` FROM `entity_cache` WHERE `uuid`='{}' AND `entity_id`=?",&self.uuid);
-        let json_string = self.config.pool().get_conn().await.ok()?
-            .exec_iter(sql, (entity_id,))
-            .await.ok()?
-            .map_and_drop(|row| from_row::<String>(row))
-            .await.ok()?
-            .pop()?;
+        let json_string = self.entity_file_cache.get_entity(entity_id).await?;
         let json_value = serde_json::from_str(&json_string).ok()? ;
         Entity::new_from_json(&json_value).ok()
+        // let sql = format!("SELECT `value` FROM `entity_cache` WHERE `uuid`='{}' AND `entity_id`=?",&self.uuid);
+        // let json_string = self.config.pool().get_conn().await.ok()?
+        //     .exec_iter(sql, (entity_id,))
+        //     .await.ok()?
+        //     .map_and_drop(|row| from_row::<String>(row))
+        //     .await.ok()?
+        //     .pop()?;
+        // let json_value = serde_json::from_str(&json_string).ok()? ;
+        // Entity::new_from_json(&json_value).ok()
     }
 
     pub async fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
@@ -217,15 +216,6 @@ impl EntityContainerWrapper {
         entities_to_load
     }
 
-    pub async fn clear_entity_cache(&mut self) -> Result<()> {
-        if self.using_cache {
-            let sql = format!("DELETE FROM `entity_cache` WHERE `uuid`='{}'",self.uuid);
-            self.config.pool().get_conn().await?.exec_drop(sql,()).await?;
-            self.using_cache = false;
-        }
-        Ok(())
-    }
-
 }
 
 #[cfg(test)]
@@ -238,12 +228,11 @@ mod tests {
         let mut ecw = EntityContainerWrapper::new(config);
         let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
         let ids = ["Q1","Q2","Q3","Q4","Q5"].iter().map(|s|s.to_string()).collect();
-        ecw.load_entities_max_size(&api, &ids, 2).await.unwrap();
+        ecw.max_local_cached_entities = 2;
+        ecw.load_entities(&api, &ids).await.unwrap();
         assert_eq!(ecw.entities.len(),0);
 
         let e2 = ecw.get_entity("Q2").await.unwrap();
         assert_eq!(e2.id(),"Q2");
-
-        ecw.clear_entity_cache().await.unwrap();
     }
 }
