@@ -16,11 +16,8 @@ use wikibase::snak::SnakDataType;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
-    // config: Arc<Configuration>,
     entities: EntityContainer,
     max_local_cached_entities: usize,
-    // uuid: String,
-    // using_cache: bool,
     entity_file_cache: EntityFileCache,
 }
 
@@ -35,46 +32,36 @@ impl std::fmt::Debug for EntityContainerWrapper {
 impl EntityContainerWrapper {
     pub fn new(config: Arc<Configuration>) -> Self {
         Self {
-            // config: config.clone(),
             entities: config.create_entity_container(),
             max_local_cached_entities: config.max_local_cached_entities(),
-            // uuid: Uuid::new_v4().into(),
-            // using_cache: false,
             entity_file_cache: EntityFileCache::new(),
         }
     }
 
     async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
-        // self.using_cache = true;
         let chunks = ids.chunks(self.max_local_cached_entities) ;
         for chunk in chunks {
             if let Err(e) = self.entities.load_entities(api, &chunk.into()).await {
                 return Err(anyhow!("Error loading entities: {e}"))
             }
-            // let mut params= vec![];
-            // let mut sql = vec![];
             for entity_id in chunk {
                 if let Some(entity) = self.entities.get_entity(entity_id) {
                     let json = entity.to_json();
                     self.entity_file_cache.add_entity(entity_id, &json.to_string()).await?;
-                    // params.push(self.uuid.to_owned());
-                    // params.push(entity.id().to_owned());
-                    // params.push(json.to_string());
-                    // sql.push(format!("(?,?,?)"));
                 }
             }
-            // if !sql.is_empty() {
-            //     let sql = format!("INSERT IGNORE INTO `entity_cache` (`uuid`,`entity_id`,`value`) VALUES {}",sql.join(","));
-            //     self.config.pool().get_conn().await?.exec_drop(sql,params).await?;
-            // }
             self.entities.clear();
         }
-
         Ok(())
     }
 
     pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
-        let ids = self.entities.unique_shuffle_entity_ids(ids).map_err(|e| anyhow!("{e}"))?;
+        let ids: Vec<String> = ids.iter()
+            .filter(|id| !self.entities.has_entity(id.as_str()))
+            .filter(|id| !self.entity_file_cache.has_entity(id))
+            .map(|id| id.to_owned())
+            .collect();
+        let ids = self.entities.unique_shuffle_entity_ids(&ids).map_err(|e| anyhow!("{e}"))?;
         if ids.len()>self.max_local_cached_entities { // Use entity cache
             self.load_entities_into_entity_cache(api, &ids).await?;
             Ok(())
