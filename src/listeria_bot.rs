@@ -133,12 +133,15 @@ impl ListeriaBot {
         let ids: String = running.iter().map(|id|format!("{id}")).collect::<Vec<String>>().join(",");
         let ids = if ids.is_empty() { "0".to_string() } else { ids } ;
         info!(target: "lock","Getting next page, without {ids}");
+        let ignore_status = "'RUNNING','DELETED','TRANSLATION'";
         
         // Tries to find a "priority" page
         let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
             FROM pagestatus,wikis 
             WHERE priority=1
             AND wikis.id=pagestatus.wiki
+            AND wikis.status='ACTIVE' 
+            AND pagestatus.status NOT IN ({ignore_status})
             AND pagestatus.id NOT IN ({ids})
             ORDER BY rand()
             LIMIT 1");
@@ -156,7 +159,7 @@ impl ListeriaBot {
             FROM pagestatus,wikis 
             WHERE pagestatus.wiki=wikis.id
             AND wikis.status='ACTIVE' 
-            AND pagestatus.status NOT IN ('RUNNING','DELETED')
+            AND pagestatus.status NOT IN ({ignore_status})
             AND pagestatus.id NOT IN ({ids})
             ORDER BY pagestatus.timestamp
             LIMIT 1");
@@ -177,7 +180,10 @@ impl ListeriaBot {
                 return Err(anyhow!("ListeriaBot::run_single_bot: No such wiki '{}'",page.wiki))
             }
         };
-        let wpr = bot.process_page(&page.title).await;
+        let mut wpr = bot.process_page(&page.title).await;
+        if wpr.message.contains("Connection reset by peer (os error 104)") {
+            wpr.result = "TRANSLATION".into();
+        }
         self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message).await?;
         if wpr.message.contains("Connection reset by peer (os error 104)") {
             self.reset_wiki(&page.wiki).await;
