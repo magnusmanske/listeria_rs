@@ -12,6 +12,7 @@ use mysql_async::prelude::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use log::info;
 
 
 
@@ -86,6 +87,7 @@ impl ListeriaBot {
         if let Some(bot) = lock.get(wiki) {
             return Some(bot.to_owned())
         }
+        info!("Creating bot for {wiki}");
         let mw_api = match self.wiki_apis.get_or_create_wiki_api(&wiki).await {
             Ok(mw_api) => mw_api,
             Err(e) => {
@@ -96,6 +98,7 @@ impl ListeriaBot {
 
         let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
         lock.insert(wiki.to_string(), bot.clone());
+        info!("Created bot for {wiki}");
         return Some(bot);
     }
 
@@ -133,6 +136,7 @@ impl ListeriaBot {
         let mut running = self.running.lock().await;
         let ids: String = running.iter().map(|id|format!("{id}")).collect::<Vec<String>>().join(",");
         let ids = if ids.is_empty() { "0".to_string() } else { ids } ;
+        info!(target: "lock","Getting next page, without {ids}");
         
         // Tries to find a "priority" page
         let sql = format!("SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
@@ -144,7 +148,9 @@ impl ListeriaBot {
             LIMIT 1");
         if let Some(page) = self.get_page_for_sql(&sql).await {
             running.insert(page.id);
+            drop(running); // Release mutex
             self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
+            info!(target: "lock","Found a priority page: {:?}",&page);
             return Ok(page)
         }
 
@@ -161,6 +167,8 @@ impl ListeriaBot {
         let page = self.get_page_for_sql(&sql).await
             .ok_or(anyhow!("prepare_next_single_page:: no pop\n{sql}\n{ids}"))?;
         running.insert(page.id);
+        info!(target: "lock","Found a page: {:?}",&page);
+        drop(running); // Release mutex
         self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
         Ok(page)
     }

@@ -11,6 +11,7 @@ use std::io::SeekFrom;
 pub struct EntityFileCache {
     id2pos: HashMap<String,(u64,u64)>,
     file_handle: Option<Arc<Mutex<File>>>,
+    last_action_was_read: Arc<Mutex<bool>>,
 }
 
 impl EntityFileCache {
@@ -22,7 +23,11 @@ impl EntityFileCache {
         let fh = self.get_or_create_file_handle();
         let mut fh = fh.lock().await;
         let before = fh.metadata()?.len();
-        fh.seek(SeekFrom::End(0))?; // TODO only if required
+        // Writes occur only at the end of the file, so only seek if the last action was "read"
+        if *self.last_action_was_read.lock().await {
+            fh.seek(SeekFrom::End(0))?;
+        }
+        *self.last_action_was_read.lock().await = false;
         fh.write_all(json.as_bytes())?;
         let after = fh.metadata()?.len();
         let diff = after-before;
@@ -36,6 +41,7 @@ impl EntityFileCache {
             Some(fh) => fh.lock().await,
             None => return None,
         };
+        *self.last_action_was_read.lock().await = true;
         let (start,length) = self.id2pos.get(entity)?;
         fh.seek(SeekFrom::Start(*start)).ok()?;
         let mut buffer: Vec<u8> = Vec::new();

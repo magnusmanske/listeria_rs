@@ -17,8 +17,8 @@ tokio = { version = "^1", features = ["full","rt-multi-thread"] }
 futures = "*"
 mysql_async = "*"
 md5 = "*"
-pickledb = "*"
 tempfile = "*"
 anyhow = "*"
 reqwest = { version="*" , features=["gzip","deflate","brotli"] }
 async-recursion = "*"
+log = "*"
