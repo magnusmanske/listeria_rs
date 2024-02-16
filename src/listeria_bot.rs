@@ -103,12 +103,8 @@ impl ListeriaBot {
     }
 
     pub async fn reset_running(&self) -> Result<()> {
-        let mut conn = self.config.pool().get_conn().await?;
         let sql = "UPDATE pagestatus SET status='OK' WHERE status='RUNNING'";
-        let _ = conn.exec_iter(sql, ()).await;
-
-        let sql = "TRUNCATE `entity_cache`";
-        let _ = conn.exec_iter(sql, ()).await;
+        let _ = self.config.pool().get_conn().await?.exec_iter(sql, ()).await;
         Ok(())
     }
 
