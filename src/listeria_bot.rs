@@ -183,6 +183,10 @@ impl ListeriaBot {
         let mut wpr = bot.process_page(&page.title).await;
         if wpr.message.contains("This page is a translation of the page") {
             wpr.result = "TRANSLATION".into();
+            wpr.message = "This page is a translation".into();
+        }
+        if wpr.message.contains("Connection reset by peer (os error 104)") {
+            wpr.message = "Connection reset by peer (os error 104)".into();
         }
         self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message).await?;
         if wpr.message.contains("Connection reset by peer (os error 104)") {
