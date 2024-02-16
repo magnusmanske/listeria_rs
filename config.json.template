@@ -30,6 +30,7 @@
         "schema":"XXX",
         "max_connections":8
     },
+    "profiling": false,
     "max_threads":6,
     "max_local_cached_entities": 5000,
     "max_concurrent_entry_queries": 10,

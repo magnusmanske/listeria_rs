@@ -45,6 +45,7 @@ pub struct Configuration {
     ms_delay_after_edit: Option<u64>,
     max_threads: usize,
     pool: Option<Arc<DatabasePool>>,
+    profiling: bool,
 }
 
 impl Configuration {
@@ -69,6 +70,7 @@ impl Configuration {
         ret.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
         ret.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
         ret.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
+        ret.profiling = j["profiling"].as_bool().unwrap_or_default();
         if let Some(sic) = j["shadow_images_check"].as_array() {
             ret.shadow_images_check = sic
                 .iter()
@@ -153,6 +155,10 @@ impl Configuration {
         ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
 
         Ok(ret)
+    }
+
+    pub fn profiling(&self) -> bool {
+        self.profiling
     }
 
     pub fn pool(&self) -> &Arc<DatabasePool> {

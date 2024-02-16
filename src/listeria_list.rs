@@ -13,11 +13,14 @@ use crate::template_params::SortOrder;
 use crate::template_params::TemplateParams;
 use crate::column::{Column, ColumnType};
 use anyhow::{Result,anyhow};
+use chrono::DateTime;
+use chrono::Utc;
 use serde_json::Value;
 use tokio::time::{sleep,Duration};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::Mutex;
 use wikibase::entity::*;
 use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
@@ -40,6 +43,7 @@ pub struct ListeriaList {
     language: String,
     reference_ids: HashSet<String>,
     profiling:bool,
+    last_timestamp: Arc<Mutex<DateTime<Utc>>>,
 }
 
 impl ListeriaList {
@@ -62,13 +66,19 @@ impl ListeriaList {
             wb_api,
             language: page_params.language().to_string(),
             reference_ids: HashSet::new(),
-            profiling:false,
+            profiling: page_params.config().profiling(),
+            last_timestamp: Arc::new(Mutex::new(Utc::now())),
         }
     }
 
     fn profile(&self, msg:&str) {
         if self.profiling {
-            println!("{}",msg);
+            let now: DateTime<Utc> = Utc::now();
+            let last = *self.last_timestamp.lock().unwrap();
+            let diff = now-last;
+            let timestamp = now.format("%Y%m%d%H%M%S").to_string();
+            let time_diff = format!("{}",diff.num_milliseconds());
+            println!("{timestamp} {msg} [{time_diff}ms]");
         }
     }
 
