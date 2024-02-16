@@ -36,13 +36,17 @@ impl EntityFileCache {
         Ok(())
     }
 
-    pub async fn get_entity(&self, entity: &str) -> Option<String> {
+    pub fn has_entity(&self, entity_id: &str) -> bool {
+        self.id2pos.contains_key(entity_id)
+    }
+
+    pub async fn get_entity(&self, entity_id: &str) -> Option<String> {
         let mut fh = match &self.file_handle {
             Some(fh) => fh.lock().await,
             None => return None,
         };
         *self.last_action_was_read.lock().await = true;
-        let (start,length) = self.id2pos.get(entity)?;
+        let (start,length) = self.id2pos.get(entity_id)?;
         fh.seek(SeekFrom::Start(*start)).ok()?;
         let mut buffer: Vec<u8> = Vec::new();
         buffer.resize(*length as usize, 0);

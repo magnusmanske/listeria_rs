@@ -857,9 +857,6 @@ impl ListeriaList {
             let label = self.get_label_with_fallback(&q,None).await;
             section_names.push(label);
         }
-        // .iter()
-        // .map(|q| self.get_label_with_fallback(q,None).await)
-        // .collect::<Vec<String>>();
 
         // Count names
         let mut section_count = HashMap::new();
