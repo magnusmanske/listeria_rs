@@ -1,3 +1,4 @@
+use log::{info, warn};
 use mysql_async::{from_row, prelude::*, Conn};
 use mysql_async::{Opts, OptsBuilder};
 use tokio::sync::Mutex;
@@ -49,6 +50,7 @@ impl WikiApis {
                     break;
                 }
                 sleep(Duration::from_millis(100)).await;
+                warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
             }        
         }
 
@@ -58,6 +60,7 @@ impl WikiApis {
             if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
                 while Arc::strong_count(&api) >= *max {
                     sleep(Duration::from_millis(100)).await;
+                    warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
                 }        
             }
             return Ok((*api).clone());
@@ -65,6 +68,7 @@ impl WikiApis {
 
         let mw_api = self.create_wiki_api(wiki).await?;
         lock.insert(wiki.to_owned(), mw_api);
+        info!(target: "lock", "WikiApis::get_or_create_wiki_api: new wiki {wiki} created");
 
         lock
             .get(wiki)
