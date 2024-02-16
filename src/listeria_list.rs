@@ -75,10 +75,12 @@ impl ListeriaList {
         if self.profiling {
             let now: DateTime<Utc> = Utc::now();
             let last = *self.last_timestamp.lock().unwrap();
+            *self.last_timestamp.lock().unwrap() = now;
             let diff = now-last;
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
             let time_diff = format!("{}",diff.num_milliseconds());
-            println!("{timestamp} {msg} [{time_diff}ms]");
+            let section = format!("{}:{}",self.page_params.wiki(),self.page_params.page());
+            println!("{timestamp} {section}: {msg} [{time_diff}ms]");
         }
     }
 
