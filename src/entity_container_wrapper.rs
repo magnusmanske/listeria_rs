@@ -63,6 +63,9 @@ impl EntityContainerWrapper {
             .filter(|id| !self.entity_file_cache.has_entity(id))
             .map(|id| id.to_owned())
             .collect();
+        if ids.is_empty() {
+            return Ok(());
+        }
         let ids = self.entities.unique_shuffle_entity_ids(&ids).map_err(|e| anyhow!("{e}"))?;
         if self.profiling {
             println!("ECW::load_entities: loading {} entities on top of {} loaded, cutoff is {}",ids.len(),self.entities.len(),self.max_local_cached_entities);
