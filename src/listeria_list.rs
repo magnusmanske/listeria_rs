@@ -533,43 +533,29 @@ impl ListeriaList {
         }
     }
 
-    pub async fn generate_results(&mut self) -> Result<()> {
+    fn get_tmp_rows(&self) -> Result<HashMap<String,Vec<&HashMap<String,SparqlValue>>>> {
         let varname = self.get_var_name()?;
+        let sparql_row_ids: HashSet<String> = self.get_ids_from_sparql_rows()?.into_iter().collect();
+        let mut tmp_rows: HashMap<String,Vec<&HashMap<String,SparqlValue>>> = HashMap::new();
+        for sparql_row in &self.sparql_rows {
+            let id = match sparql_row.get(varname) {
+                Some(SparqlValue::Entity(id)) => id,
+                _ => continue,
+            };
+            if !sparql_row_ids.contains(id) {
+                continue;
+            }
+            tmp_rows.entry(id.to_owned()).or_default().push(sparql_row);
+        }
+        Ok(tmp_rows)
+}
+
+    pub async fn generate_results(&mut self) -> Result<()> {
         let mut results: Vec<ResultRow> = vec![];
         match self.params.one_row_per_item() {
             true => {
                 self.profile("BEGIN generate_results tmp_rows");
-                let sparql_row_ids: HashSet<String> = self.get_ids_from_sparql_rows()?.into_iter().collect();
-
-                // TODO iterator?
-                let mut tmp_rows: HashMap<String,Vec<&HashMap<String,SparqlValue>>> = HashMap::new();
-                for sparql_row in &self.sparql_rows {
-                    let id = match sparql_row.get(varname) {
-                        Some(SparqlValue::Entity(id)) => id,
-                        _ => continue,
-                    };
-                    if !sparql_row_ids.contains(id) {
-                        continue;
-                    }
-                    tmp_rows.entry(id.to_owned()).or_default().push(sparql_row);
-                }
-                drop(sparql_row_ids);
-
-                // let tmp_rows : Vec<(String,Vec<&HashMap<String,SparqlValue>>)>
-                //     = self.get_ids_from_sparql_rows()?
-                //     .iter()
-                //     .map(|id| {
-                //         let sparql_rows: Vec<&HashMap<String, SparqlValue>> = self
-                //             .sparql_rows
-                //             .iter()
-                //             .filter(|row| match row.get(varname) {
-                //                 Some(SparqlValue::Entity(v)) => v == id,
-                //                 _ => false,
-                //             })
-                //             .collect();
-                //             (id.to_owned(),sparql_rows)
-                //         })
-                //     .collect();
+                let tmp_rows = self.get_tmp_rows()?;
                 self.profile("END generate_results tmp_rows");
                 
                 let mut futures = vec!() ;
@@ -587,6 +573,7 @@ impl ListeriaList {
 
             }
             false => {
+                let varname = self.get_var_name()?;
                 for row in self.sparql_rows.iter() {
                     if let Some(SparqlValue::Entity(id)) = row.get(varname) {
                         if let Some(x) = self.ecw.get_result_row(id, &[&row], &self).await {
