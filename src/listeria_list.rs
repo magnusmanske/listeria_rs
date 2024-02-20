@@ -296,7 +296,7 @@ impl ListeriaList {
                                 continue;
                             } else {
                                 if s=="error decoding response body: expected value at line 1 column 1" {
-                                    return Err(anyhow!("SPARQL is probably broken"));
+                                    return Err(anyhow!("SPARQL is probably broken: {sparql}"));
                                 }
                                 return Err(anyhow!("{e}"))
                             }
