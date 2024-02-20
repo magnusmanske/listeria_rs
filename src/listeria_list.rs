@@ -26,6 +26,8 @@ use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
 use futures::future::join_all;
 
+const MAX_SPARQL_ATTEMPTS: u64 = 5;
+
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
     page_params: Arc<PageParams>,
@@ -282,7 +284,7 @@ impl ListeriaList {
         };
 
         // SPARQL might need some retries sometimes, bad server or somesuch
-        let mut attempts_left = 2;
+        let mut attempts_left = MAX_SPARQL_ATTEMPTS;
         loop {
             let ret = self.wb_api.sparql_query_endpoint(sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
             match ret {
@@ -291,15 +293,14 @@ impl ListeriaList {
                     match &e {
                         wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
                             if attempts_left>0 && s=="error decoding response body: expected value at line 1 column 1" {
-                                sleep(Duration::from_millis(500)).await;
+                                sleep(Duration::from_millis(500*(MAX_SPARQL_ATTEMPTS-attempts_left+1))).await;
                                 attempts_left -= 1;
                                 continue;
-                            } else {
-                                if s=="error decoding response body: expected value at line 1 column 1" {
-                                    return Err(anyhow!("SPARQL is probably broken: {sparql}"));
-                                }
-                                return Err(anyhow!("{e}"))
                             }
+                            if s=="error decoding response body: expected value at line 1 column 1" {
+                                return Err(anyhow!("SPARQL is probably broken: {sparql}"));
+                            }
+                            return Err(anyhow!("{e}"))
                         },
                         e => return Err(anyhow!("{e}"))
                     }
