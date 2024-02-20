@@ -554,10 +554,7 @@ impl ListeriaList {
         let mut results: Vec<ResultRow> = vec![];
         match self.params.one_row_per_item() {
             true => {
-                self.profile("BEGIN generate_results tmp_rows");
                 let tmp_rows = self.get_tmp_rows()?;
-                self.profile("END generate_results tmp_rows");
-                
                 let mut futures = vec!() ;
                 for (id,sparql_rows) in &tmp_rows {
                     futures.push(self.ecw.get_result_row(&id, &sparql_rows, &self));
