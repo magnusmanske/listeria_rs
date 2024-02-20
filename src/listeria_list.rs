@@ -865,12 +865,13 @@ impl ListeriaList {
         
         // Make sure section name items are loaded
         self.ecw.load_entities(&self.wb_api, &section_names_q).await.map_err(|e|anyhow!("{e}"))?;
+        self.profile("AFTER list::process_assign_sections 3a");
         let mut section_names = vec![];
         for q in section_names_q {
             let label = self.get_label_with_fallback(&q,None).await;
             section_names.push(label);
         }
-        self.profile("AFTER list::process_assign_sections 3");
+        self.profile("AFTER list::process_assign_sections 3b");
 
         // Count names
         let mut section_count = HashMap::new();
