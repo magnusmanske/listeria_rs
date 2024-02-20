@@ -871,7 +871,6 @@ impl ListeriaList {
             let label = self.get_label_with_fallback(&q,None).await;
             section_names.push(label);
         }
-        self.profile("AFTER list::process_assign_sections 3b");
 
         // Count names
         let mut section_count = HashMap::new();
