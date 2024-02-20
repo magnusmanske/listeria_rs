@@ -539,21 +539,37 @@ impl ListeriaList {
         match self.params.one_row_per_item() {
             true => {
                 self.profile("BEGIN generate_results tmp_rows");
-                let tmp_rows : Vec<(String,Vec<&HashMap<String,SparqlValue>>)>
-                    = self.get_ids_from_sparql_rows()?
-                    .iter()
-                    .map(|id| {
-                        let sparql_rows: Vec<&HashMap<String, SparqlValue>> = self
-                            .sparql_rows
-                            .iter()
-                            .filter(|row| match row.get(varname) {
-                                Some(SparqlValue::Entity(v)) => v == id,
-                                _ => false,
-                            })
-                            .collect();
-                            (id.to_owned(),sparql_rows)
-                        })
-                    .collect();
+                let sparql_row_ids: HashSet<String> = self.get_ids_from_sparql_rows()?.into_iter().collect();
+
+                // TODO iterator?
+                let mut tmp_rows: HashMap<String,Vec<&HashMap<String,SparqlValue>>> = HashMap::new();
+                for sparql_row in &self.sparql_rows {
+                    let id = match sparql_row.get(varname) {
+                        Some(SparqlValue::Entity(id)) => id,
+                        _ => continue,
+                    };
+                    if !sparql_row_ids.contains(id) {
+                        continue;
+                    }
+                    tmp_rows.entry(id.to_owned()).or_default().push(sparql_row);
+                }
+                drop(sparql_row_ids);
+
+                // let tmp_rows : Vec<(String,Vec<&HashMap<String,SparqlValue>>)>
+                //     = self.get_ids_from_sparql_rows()?
+                //     .iter()
+                //     .map(|id| {
+                //         let sparql_rows: Vec<&HashMap<String, SparqlValue>> = self
+                //             .sparql_rows
+                //             .iter()
+                //             .filter(|row| match row.get(varname) {
+                //                 Some(SparqlValue::Entity(v)) => v == id,
+                //                 _ => false,
+                //             })
+                //             .collect();
+                //             (id.to_owned(),sparql_rows)
+                //         })
+                //     .collect();
                 self.profile("END generate_results tmp_rows");
                 
                 let mut futures = vec!() ;
