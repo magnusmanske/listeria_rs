@@ -555,12 +555,19 @@ impl ListeriaList {
         match self.params.one_row_per_item() {
             true => {
                 let tmp_rows = self.get_tmp_rows()?;
-                let mut futures = vec!() ;
-                for (id,sparql_rows) in &tmp_rows {
-                    futures.push(self.ecw.get_result_row(&id, &sparql_rows, &self));
-                }
                 self.profile("BEGIN generate_results join_all");
-                let tmp_results = join_all(futures).await;
+
+                let mut tmp_results = vec![];
+                for (id,sparql_rows) in &tmp_rows {
+                    tmp_results.push(self.ecw.get_result_row(&id, &sparql_rows, &self).await);
+                }
+
+                // let mut futures = vec!() ;
+                // for (id,sparql_rows) in &tmp_rows {
+                //     futures.push(self.ecw.get_result_row(&id, &sparql_rows, &self));
+                // }
+                // let tmp_results = join_all(futures).await;
+
                 self.profile("END generate_results join_all");
                 results = tmp_results
                     .iter()
