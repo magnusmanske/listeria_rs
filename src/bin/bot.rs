@@ -50,8 +50,8 @@ async fn run_singles() -> Result<()> {
     }
 }
 
-//#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-#[tokio::main]
+// #[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     // let threaded_rt = runtime::Builder::new_multi_thread()
     //     .enable_all()
