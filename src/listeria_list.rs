@@ -287,7 +287,7 @@ impl ListeriaList {
         let mut sparql = sparql.to_string();
         let mut attempts_left = MAX_SPARQL_ATTEMPTS;
         loop {
-            let ret = self.wb_api.sparql_query_endpoint(sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
+            let ret = self.wb_api.sparql_query_endpoint(&sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
             match ret {
                 Ok(ret) => return Ok(ret),
                 Err(e) => { 
