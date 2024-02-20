@@ -557,11 +557,11 @@ impl ListeriaList {
                 let tmp_rows = self.get_tmp_rows()?;
                 self.profile("BEGIN generate_results join_all");
 
+                // Doesn't seem to be faster with join_all
                 let mut tmp_results = vec![];
                 for (id,sparql_rows) in &tmp_rows {
                     tmp_results.push(self.ecw.get_result_row(&id, &sparql_rows, &self).await);
                 }
-
                 // let mut futures = vec!() ;
                 // for (id,sparql_rows) in &tmp_rows {
                 //     futures.push(self.ecw.get_result_row(&id, &sparql_rows, &self));
@@ -843,6 +843,8 @@ impl ListeriaList {
     }
 
     pub async fn process_assign_sections(&mut self) -> Result<()> {
+        self.profile("BEFORE list::process_assign_sections");
+
         // TODO all SectionType options
         let section_property = match self.params.section() {
             SectionType::Property(p) => p,
@@ -853,11 +855,13 @@ impl ListeriaList {
         }.to_owned();
         self.load_row_entities().await?;
         let datatype = self.ecw.get_datatype_for_property(&section_property).await;
+        self.profile("AFTER list::process_assign_sections 1");
 
         let mut section_names_q = vec![];
         for row in &self.results {
             section_names_q.push(row.get_sortkey_prop(&section_property, self, &datatype).await);
         }
+        self.profile("AFTER list::process_assign_sections 2");
         
         // Make sure section name items are loaded
         self.ecw.load_entities(&self.wb_api, &section_names_q).await.map_err(|e|anyhow!("{e}"))?;
@@ -866,6 +870,7 @@ impl ListeriaList {
             let label = self.get_label_with_fallback(&q,None).await;
             section_names.push(label);
         }
+        self.profile("AFTER list::process_assign_sections 3");
 
         // Count names
         let mut section_count = HashMap::new();
@@ -873,14 +878,18 @@ impl ListeriaList {
             let counter = section_count.entry(name).or_insert(0);
             *counter += 1;
         });
+        self.profile("AFTER list::process_assign_sections 4");
 
         // Remove low counts
         section_count.retain(|&_name, &mut count| count >= self.params.min_section());
+        self.profile("AFTER list::process_assign_sections 5");
 
         // Sort by section name
         let mut valid_section_names: Vec<String> =
             section_count.iter().map(|(k, _v)| k.to_string()).collect();
         valid_section_names.sort();
+        self.profile("AFTER list::process_assign_sections 6");
+
 
         let misc_id = valid_section_names.len();
         valid_section_names.push("Misc".to_string());
@@ -893,11 +902,13 @@ impl ListeriaList {
             .enumerate()
             .map(|(num, name)| (name.to_string(), num))
             .collect();
+        self.profile("AFTER list::process_assign_sections 7");
 
         self.section_id_to_name = name2id
             .iter()
             .map(|x| (x.1.to_owned(), x.0.to_owned()))
             .collect();
+        self.profile("AFTER list::process_assign_sections 8");
 
         self.results.iter_mut().enumerate().for_each(|(num, row)| {
             let section_name = match section_names.get(num) {
@@ -910,6 +921,7 @@ impl ListeriaList {
             };
             row.set_section(section_id);
         });
+        self.profile("AFTER list::process_assign_sections 9");
 
         Ok(())
     }
