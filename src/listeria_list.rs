@@ -284,6 +284,7 @@ impl ListeriaList {
         };
 
         // SPARQL might need some retries sometimes, bad server or somesuch
+        let mut sparql = sparql.to_string();
         let mut attempts_left = MAX_SPARQL_ATTEMPTS;
         loop {
             let ret = self.wb_api.sparql_query_endpoint(sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
@@ -294,6 +295,7 @@ impl ListeriaList {
                         wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
                             if attempts_left>0 && s=="error decoding response body: expected value at line 1 column 1" {
                                 sleep(Duration::from_millis(500*(MAX_SPARQL_ATTEMPTS-attempts_left+1))).await;
+                                sparql += &format!(" /* {attempts_left} */");
                                 attempts_left -= 1;
                                 continue;
                             }
