@@ -25,6 +25,7 @@ async fn run_singles() -> Result<()> {
     let bot = ListeriaBot::new("config.json").await?;
     let max_threads = bot.config().max_threads();
     println!("Starting {max_threads} bots");
+
     let _ = bot.reset_running().await;
     let bot = Arc::new(bot);
     loop {
@@ -51,8 +52,17 @@ async fn run_singles() -> Result<()> {
 }
 
 // #[tokio::main]
-#[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<()> {
+//#[tokio::main(flavor = "multi_thread")]
+fn main() -> Result<()> {
+    let max_threads = 12;
+    let threaded_rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(max_threads)
+            .thread_name("listeria")
+            .thread_stack_size(32 * 1024 * 1024)
+            .thread_keep_alive(Duration::from_secs(300)) // 5 min
+            .build()
+            .expect("Could not create tokio runtime");
     // let threaded_rt = runtime::Builder::new_multi_thread()
     //     .enable_all()
     //     .worker_threads(threads)
@@ -61,8 +71,9 @@ async fn main() -> Result<()> {
     //     .thread_keep_alive(Duration::from_secs(300)) // 5 min
     //     .build()?;
 
-    // threaded_rt.block_on(async move {
-    //     run_singles(threads).await;
-    // });
-    run_singles().await
+    threaded_rt.block_on(async move {
+        let _ = run_singles().await;
+    });
+    // run_singles().await
+    Ok(())
 }
