@@ -19,6 +19,7 @@ pub struct EntityContainerWrapper {
     entities: EntityContainer,
     max_local_cached_entities: usize,
     entity_file_cache: EntityFileCache,
+    profiling: bool,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
@@ -35,6 +36,7 @@ impl EntityContainerWrapper {
             entities: config.create_entity_container(),
             max_local_cached_entities: config.max_local_cached_entities(),
             entity_file_cache: EntityFileCache::new(),
+            profiling: config.profiling(),
         }
     }
 
@@ -62,7 +64,10 @@ impl EntityContainerWrapper {
             .map(|id| id.to_owned())
             .collect();
         let ids = self.entities.unique_shuffle_entity_ids(&ids).map_err(|e| anyhow!("{e}"))?;
-        if ids.len()>self.max_local_cached_entities { // Use entity cache
+        if self.profiling {
+            println!("ECW::load_entities: loading {} entities on top of {} loaded, cutoff is {}",ids.len(),self.entities.len(),self.max_local_cached_entities);
+        }
+        if ids.len()+self.entities.len()>self.max_local_cached_entities { // Use entity cache
             self.load_entities_into_entity_cache(api, &ids).await?;
             Ok(())
         } else {
@@ -80,15 +85,6 @@ impl EntityContainerWrapper {
         let json_string = self.entity_file_cache.get_entity(entity_id).await?;
         let json_value = serde_json::from_str(&json_string).ok()? ;
         Entity::new_from_json(&json_value).ok()
-        // let sql = format!("SELECT `value` FROM `entity_cache` WHERE `uuid`='{}' AND `entity_id`=?",&self.uuid);
-        // let json_string = self.config.pool().get_conn().await.ok()?
-        //     .exec_iter(sql, (entity_id,))
-        //     .await.ok()?
-        //     .map_and_drop(|row| from_row::<String>(row))
-        //     .await.ok()?
-        //     .pop()?;
-        // let json_value = serde_json::from_str(&json_string).ok()? ;
-        // Entity::new_from_json(&json_value).ok()
     }
 
     pub async fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
