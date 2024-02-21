@@ -273,6 +273,23 @@ impl ListeriaList {
     }
 
     pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value> {
+        if true {
+            self.run_sparql_query_wb_api(sparql).await
+        } else {
+            self.run_sparql_query_mutex(sparql).await
+        }
+    }
+
+    async fn run_sparql_query_wb_api(&self, sparql: &str) -> Result<Value> {
+        let wikibase_key = self.params.wikibase().to_lowercase();
+        let api = match self.page_params.config().get_wbapi(&wikibase_key) {
+            Some(api) => api.clone(),
+            None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
+        };
+        self.run_sparql_query_api(&api, sparql).await
+    }
+    
+    async fn run_sparql_query_mutex(&self, sparql: &str) -> Result<Value> {
         let mut wb_apis_sparql = WB_APIS.lock().await;
 
         let wikibase_key = self.params.wikibase().to_lowercase();
@@ -287,7 +304,10 @@ impl ListeriaList {
                 wb_apis_sparql.get(&wikibase_key).unwrap() // Safe
             }
         };
+        self.run_sparql_query_api(&wb_api_sparql, sparql).await
+    }
 
+    async fn run_sparql_query_api(&self, wb_api_sparql: &Api, sparql: &str) -> Result<Value> {
         let endpoint = match wb_api_sparql.get_site_info_string("general", "wikibase-sparql")
         {
             Ok(endpoint) => {

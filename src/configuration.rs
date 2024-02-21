@@ -45,6 +45,7 @@ pub struct Configuration {
     ms_delay_after_edit: Option<u64>,
     max_threads: usize,
     pool: Option<Arc<DatabasePool>>,
+    use_sparql_mutex: bool,
     profiling: bool,
 }
 
@@ -64,6 +65,7 @@ impl Configuration {
         ret.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
         ret.default_language = j["default_language"].as_str().unwrap_or_default().to_string();
         ret.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
+        ret.use_sparql_mutex = j["use_sparql_mutex"].as_bool().unwrap_or_default();
         ret.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
         ret.max_local_cached_entities = j["max_local_cached_entities"].as_u64().unwrap_or(5000) as usize;
         ret.max_concurrent_entry_queries = j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
