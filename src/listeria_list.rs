@@ -310,14 +310,14 @@ impl ListeriaList {
                 Err(e) => { 
                     match &e {
                         wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
-                            if attempts_left>0 && s=="error decoding response body: expected value at line 1 column 1" {
+                            if attempts_left>0 && s.contains("error decoding response body: expected value at line 1 column 1") {
                                 sleep(Duration::from_millis(500*(MAX_SPARQL_ATTEMPTS-attempts_left+1))).await;
                                 sparql += &format!(" /* {attempts_left} */");
                                 attempts_left -= 1;
                                 continue;
                             }
-                            if s=="error decoding response body: expected value at line 1 column 1" {
-                                return Err(anyhow!("SPARQL is probably broken: {sparql}"));
+                            if s.contains("error decoding response body: expected value at line 1 column 1") {
+                                return Err(anyhow!("SPARQL is probably broken: {s}\n{sparql}"));
                             }
                             return Err(anyhow!("{e}"))
                         },
