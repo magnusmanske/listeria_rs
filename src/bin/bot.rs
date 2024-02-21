@@ -2,7 +2,7 @@ extern crate config;
 extern crate serde_json;
 
 use anyhow::Result;
-use std::sync::Arc;
+use std::{env, sync::Arc};
 use listeria::listeria_bot::ListeriaBot;
 use tokio::time::{sleep, Duration};
 
@@ -21,8 +21,8 @@ toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/p
 
 */
 
-async fn run_singles() -> Result<()> {
-    let bot = ListeriaBot::new("config.json").await?;
+async fn run_singles(config_file: &str) -> Result<()> {
+    let bot = ListeriaBot::new(config_file).await?;
     let max_threads = bot.config().max_threads();
     println!("Starting {max_threads} bots");
     let _ = bot.reset_running().await;
@@ -53,6 +53,10 @@ async fn run_singles() -> Result<()> {
 //#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 #[tokio::main]
 async fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+    let config_file = args.get(1).map(|s|s.to_owned()).unwrap_or_else(|| "config.json".to_string());
+    run_singles(&config_file).await
+
     // let threaded_rt = runtime::Builder::new_multi_thread()
     //     .enable_all()
     //     .worker_threads(threads)
@@ -64,5 +68,4 @@ async fn main() -> Result<()> {
     // threaded_rt.block_on(async move {
     //     run_singles(threads).await;
     // });
-    run_singles().await
 }
