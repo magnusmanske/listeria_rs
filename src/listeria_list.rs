@@ -16,17 +16,21 @@ use anyhow::{Result,anyhow};
 use chrono::DateTime;
 use chrono::Utc;
 use serde_json::Value;
+use tokio::sync::Mutex;
 use tokio::time::{sleep,Duration};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::Mutex;
 use wikibase::entity::*;
 use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
 use futures::future::join_all;
 
 const MAX_SPARQL_ATTEMPTS: u64 = 5;
+
+lazy_static! {
+    static ref WB_APIS: Mutex<HashMap<String,Api>> = Mutex::new(HashMap::new());
+}
 
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
@@ -73,11 +77,11 @@ impl ListeriaList {
         }
     }
 
-    fn profile(&self, msg:&str) {
+    async fn profile(&self, msg:&str) {
         if self.profiling {
             let now: DateTime<Utc> = Utc::now();
-            let last = *self.last_timestamp.lock().unwrap();
-            *self.last_timestamp.lock().unwrap() = now;
+            let last = *self.last_timestamp.lock().await;
+            *self.last_timestamp.lock().await = now;
             let diff = now-last;
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
             let time_diff = format!("{}",diff.num_milliseconds());
@@ -87,18 +91,18 @@ impl ListeriaList {
     }
 
     pub async fn process(&mut self) -> Result<()> {
-        self.profile("START list::process");
+        self.profile("START list::process").await;
         self.process_template().await?;
-        self.profile("AFTER list::process process_template");
+        self.profile("AFTER list::process process_template").await;
         self.run_query().await?;
-        self.profile("AFTER list::process run_query");
+        self.profile("AFTER list::process run_query").await;
         self.load_entities().await?;
-        self.profile("AFTER list::process load_entities");
+        self.profile("AFTER list::process load_entities").await;
         self.generate_results().await?;
-        self.profile("AFTER list::process generate_results");
+        self.profile("AFTER list::process generate_results").await;
         self.process_results().await?;
-        self.profile("AFTER list::process process_results");
-        self.profile("END list::process");
+        self.profile("AFTER list::process process_results").await;
+        self.profile("END list::process").await;
         Ok(())
     }
 
@@ -269,9 +273,22 @@ impl ListeriaList {
     }
 
     pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value> {
-        let endpoint = match self
-            .wb_api
-            .get_site_info_string("general", "wikibase-sparql")
+        let mut wb_apis_sparql = WB_APIS.lock().await;
+
+        let wikibase_key = self.params.wikibase().to_lowercase();
+        let wb_api_sparql = match wb_apis_sparql.get(&wikibase_key).clone() {
+            Some(api) => api,
+            None => {
+                let api = match self.page_params.config().get_wbapi(&wikibase_key) {
+                    Some(api) => (**api).clone(),
+                    None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
+                };
+                wb_apis_sparql.insert(wikibase_key.to_string(),api);
+                wb_apis_sparql.get(&wikibase_key).unwrap() // Safe
+            }
+        };
+
+        let endpoint = match wb_api_sparql.get_site_info_string("general", "wikibase-sparql")
         {
             Ok(endpoint) => {
                 // SPARQL service given by site
@@ -287,7 +304,7 @@ impl ListeriaList {
         let mut sparql = sparql.to_string();
         let mut attempts_left = MAX_SPARQL_ATTEMPTS;
         loop {
-            let ret = self.wb_api.sparql_query_endpoint(&sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
+            let ret = wb_api_sparql.sparql_query_endpoint(&sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
             match ret {
                 Ok(ret) => return Ok(ret),
                 Err(e) => { 
@@ -363,9 +380,9 @@ impl ListeriaList {
             }
         }
 
-        self.profile("BEGIN run_query: run_sparql_query");
+        self.profile("BEGIN run_query: run_sparql_query").await;
         let j = self.run_sparql_query(&sparql).await?;
-        self.profile("END run_query: run_sparql_query");
+        self.profile("END run_query: run_sparql_query").await;
         if self.page_params.simulate() {
             println!("{}\n{}\n", &sparql, &j);
         }
@@ -558,7 +575,7 @@ impl ListeriaList {
         match self.params.one_row_per_item() {
             true => {
                 let tmp_rows = self.get_tmp_rows()?;
-                self.profile("BEGIN generate_results join_all");
+                self.profile("BEGIN generate_results join_all").await;
 
                 // Doesn't seem to be faster with join_all
                 let mut tmp_results = vec![];
@@ -571,7 +588,7 @@ impl ListeriaList {
                 // }
                 // let tmp_results = join_all(futures).await;
 
-                self.profile("END generate_results join_all");
+                self.profile("END generate_results join_all").await;
                 results = tmp_results
                     .iter()
                     .cloned()
@@ -846,7 +863,7 @@ impl ListeriaList {
     }
 
     pub async fn process_assign_sections(&mut self) -> Result<()> {
-        self.profile("BEFORE list::process_assign_sections");
+        self.profile("BEFORE list::process_assign_sections").await;
 
         // TODO all SectionType options
         let section_property = match self.params.section() {
@@ -858,17 +875,17 @@ impl ListeriaList {
         }.to_owned();
         self.load_row_entities().await?;
         let datatype = self.ecw.get_datatype_for_property(&section_property).await;
-        self.profile("AFTER list::process_assign_sections 1");
+        self.profile("AFTER list::process_assign_sections 1").await;
 
         let mut section_names_q = vec![];
         for row in &self.results {
             section_names_q.push(row.get_sortkey_prop(&section_property, self, &datatype).await);
         }
-        self.profile("AFTER list::process_assign_sections 2");
+        self.profile("AFTER list::process_assign_sections 2").await;
         
         // Make sure section name items are loaded
         self.ecw.load_entities(&self.wb_api, &section_names_q).await.map_err(|e|anyhow!("{e}"))?;
-        self.profile("AFTER list::process_assign_sections 3a");
+        self.profile("AFTER list::process_assign_sections 3a").await;
         let mut section_names = vec![];
         for q in section_names_q {
             let label = self.get_label_with_fallback(&q,None).await;
@@ -881,17 +898,17 @@ impl ListeriaList {
             let counter = section_count.entry(name).or_insert(0);
             *counter += 1;
         });
-        self.profile("AFTER list::process_assign_sections 4");
+        self.profile("AFTER list::process_assign_sections 4").await;
 
         // Remove low counts
         section_count.retain(|&_name, &mut count| count >= self.params.min_section());
-        self.profile("AFTER list::process_assign_sections 5");
+        self.profile("AFTER list::process_assign_sections 5").await;
 
         // Sort by section name
         let mut valid_section_names: Vec<String> =
             section_count.iter().map(|(k, _v)| k.to_string()).collect();
         valid_section_names.sort();
-        self.profile("AFTER list::process_assign_sections 6");
+        self.profile("AFTER list::process_assign_sections 6").await;
 
 
         let misc_id = valid_section_names.len();
@@ -905,13 +922,13 @@ impl ListeriaList {
             .enumerate()
             .map(|(num, name)| (name.to_string(), num))
             .collect();
-        self.profile("AFTER list::process_assign_sections 7");
+        self.profile("AFTER list::process_assign_sections 7").await;
 
         self.section_id_to_name = name2id
             .iter()
             .map(|x| (x.1.to_owned(), x.0.to_owned()))
             .collect();
-        self.profile("AFTER list::process_assign_sections 8");
+        self.profile("AFTER list::process_assign_sections 8").await;
 
         self.results.iter_mut().enumerate().for_each(|(num, row)| {
             let section_name = match section_names.get(num) {
@@ -924,7 +941,7 @@ impl ListeriaList {
             };
             row.set_section(section_id);
         });
-        self.profile("AFTER list::process_assign_sections 9");
+        self.profile("AFTER list::process_assign_sections 9").await;
 
         Ok(())
     }
@@ -1062,30 +1079,30 @@ impl ListeriaList {
     }
 
     pub async fn process_results(&mut self) -> Result<()> {
-        self.profile("START list::process_results");
+        self.profile("START list::process_results").await;
         self.gather_and_load_items().await?;
-        self.profile("AFTER list::process_results gather_and_load_items");
+        self.profile("AFTER list::process_results gather_and_load_items").await;
         self.process_redlinks_only().await?;
-        self.profile("AFTER list::process_results process_redlinks_only");
+        self.profile("AFTER list::process_results process_redlinks_only").await;
         self.process_items_to_local_links().await?;
-        self.profile("AFTER list::process_results process_items_to_local_links");
+        self.profile("AFTER list::process_results process_items_to_local_links").await;
         self.process_redlinks().await?;
-        self.profile("AFTER list::process_results process_redlinks");
+        self.profile("AFTER list::process_results process_redlinks").await;
         self.process_remove_shadow_files().await?;
-        self.profile("AFTER list::process_results process_remove_shadow_files");
+        self.profile("AFTER list::process_results process_remove_shadow_files").await;
         self.process_excess_files();
-        self.profile("AFTER list::process_results process_excess_files");
+        self.profile("AFTER list::process_results process_excess_files").await;
         self.process_reference_items().await?;
-        self.profile("AFTER list::process_results process_reference_items");
+        self.profile("AFTER list::process_results process_reference_items").await;
         self.process_sort_results().await?;
-        self.profile("AFTER list::process_results process_sort_results");
+        self.profile("AFTER list::process_results process_sort_results").await;
         self.process_assign_sections().await?;
-        self.profile("AFTER list::process_results process_assign_sections");
+        self.profile("AFTER list::process_results process_assign_sections").await;
         self.process_regions().await?;
-        self.profile("AFTER list::process_results process_regions");
+        self.profile("AFTER list::process_results process_regions").await;
         self.fix_local_links().await?;
-        self.profile("AFTER list::process_results fix_local_links");
-        self.profile("END list::process_results");
+        self.profile("AFTER list::process_results fix_local_links").await;
+        self.profile("END list::process_results").await;
         Ok(())
     }
 
