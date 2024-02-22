@@ -30,7 +30,7 @@
         "schema":"XXX",
         "max_connections":8
     },
-    "use_sparql_mutex": false,
+    "max_sparql_simultaneous": 10,
     "profiling": false,
     "max_threads":6,
     "max_local_cached_entities": 5000,

@@ -29,7 +29,7 @@ use futures::future::join_all;
 const MAX_SPARQL_ATTEMPTS: u64 = 5;
 
 lazy_static! {
-    static ref WB_APIS: Mutex<HashMap<String,Api>> = Mutex::new(HashMap::new());
+    static ref SPARQL_REQUEST_COUNTER: Mutex<u64> = Mutex::new(0);
 }
 
 #[derive(Debug, Clone)]
@@ -273,38 +273,18 @@ impl ListeriaList {
     }
 
     pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value> {
-        if true {
-            self.run_sparql_query_wb_api(sparql).await
-        } else {
-            self.run_sparql_query_mutex(sparql).await
-        }
-    }
-
-    async fn run_sparql_query_wb_api(&self, sparql: &str) -> Result<Value> {
         let wikibase_key = self.params.wikibase().to_lowercase();
         let api = match self.page_params.config().get_wbapi(&wikibase_key) {
             Some(api) => api.clone(),
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
         };
-        self.run_sparql_query_api(&api, sparql).await
-    }
-    
-    async fn run_sparql_query_mutex(&self, sparql: &str) -> Result<Value> {
-        let mut wb_apis_sparql = WB_APIS.lock().await;
-
-        let wikibase_key = self.params.wikibase().to_lowercase();
-        let wb_api_sparql = match wb_apis_sparql.get(&wikibase_key).clone() {
-            Some(api) => api,
-            None => {
-                let api = match self.page_params.config().get_wbapi(&wikibase_key) {
-                    Some(api) => (**api).clone(),
-                    None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
-                };
-                wb_apis_sparql.insert(wikibase_key.to_string(),api);
-                wb_apis_sparql.get(&wikibase_key).unwrap() // Safe
-            }
-        };
-        self.run_sparql_query_api(&wb_api_sparql, sparql).await
+        while *SPARQL_REQUEST_COUNTER.lock().await > self.page_params.config().max_sparql_simultaneous() {
+            sleep(Duration::from_millis(100)).await;
+        }
+        *SPARQL_REQUEST_COUNTER.lock().await += 1;
+        let result = self.run_sparql_query_api(&api, sparql).await;
+        *SPARQL_REQUEST_COUNTER.lock().await -= 1;
+        result
     }
 
     async fn run_sparql_query_api(&self, wb_api_sparql: &Api, sparql: &str) -> Result<Value> {
