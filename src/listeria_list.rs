@@ -574,19 +574,18 @@ impl ListeriaList {
         let mut results: Vec<ResultRow> = vec![];
         match self.params.one_row_per_item() {
             true => {
+                let sparql_row_ids: Vec<String> = self.get_ids_from_sparql_rows()?.into_iter().collect(); // To preserve the original order
                 let tmp_rows = self.get_tmp_rows()?;
                 self.profile("BEGIN generate_results join_all").await;
 
-                // Doesn't seem to be faster with join_all
                 let mut tmp_results = vec![];
-                for (id,sparql_rows) in &tmp_rows {
+                for id in &sparql_row_ids {
+                    let sparql_rows = match tmp_rows.get(id) {
+                        Some(rows) => rows,
+                        None => continue, // TODO this should never happen, but maybe throw error if it does?
+                    };
                     tmp_results.push(self.ecw.get_result_row(&id, &sparql_rows, &self).await);
                 }
-                // let mut futures = vec!() ;
-                // for (id,sparql_rows) in &tmp_rows {
-                //     futures.push(self.ecw.get_result_row(&id, &sparql_rows, &self));
-                // }
-                // let tmp_results = join_all(futures).await;
 
                 self.profile("END generate_results join_all").await;
                 results = tmp_results
