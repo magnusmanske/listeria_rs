@@ -119,6 +119,7 @@ impl ListeriaBot {
 
     /// Removed a pagestatus ID from the running list
     pub async fn release_running(&self, pagestatus_id: u64) {
+        println!("Releasing {pagestatus_id}");
         self.running.lock().await.remove(&pagestatus_id);
     }
 
@@ -146,10 +147,9 @@ impl ListeriaBot {
             ORDER BY rand()
             LIMIT 1");
         if let Some(page) = self.get_page_for_sql(&sql).await {
-            running.insert(page.id);
-            drop(running); // Release mutex
             self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
             info!(target: "lock","Found a priority page: {:?}",&page);
+            running.insert(page.id);
             return Ok(page)
         }
 
@@ -165,10 +165,9 @@ impl ListeriaBot {
             LIMIT 1");
         let page = self.get_page_for_sql(&sql).await
             .ok_or(anyhow!("prepare_next_single_page:: no pop\n{sql}\n{ids}"))?;
-        running.insert(page.id);
         info!(target: "lock","Found a page: {:?}",&page);
-        drop(running); // Release mutex
         self.update_page_status(&page.title,&page.wiki,"RUNNING","PREPARING").await?;
+        running.insert(page.id);
         Ok(page)
     }
 

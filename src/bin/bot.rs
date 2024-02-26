@@ -47,8 +47,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
                 println!("{}", &e)
             }
             let end_time = Instant::now();
-            let diff = end_time-start_time;
-            let diff = diff.as_secs();
+            let diff = (end_time-start_time).as_secs();
             let _ = bot.set_runtime(pagestatus_id,diff).await;
             bot.release_running(pagestatus_id).await;
         });
@@ -56,7 +55,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
 }
 
 //#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let config_file = args.get(1).map(|s|s.to_owned()).unwrap_or_else(|| "config.json".to_string());
