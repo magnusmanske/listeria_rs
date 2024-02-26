@@ -4,7 +4,7 @@ extern crate serde_json;
 use anyhow::Result;
 use std::{env, sync::Arc};
 use listeria::listeria_bot::ListeriaBot;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 
 /*
 TEST DB CONNECT
@@ -42,9 +42,14 @@ async fn run_singles(config_file: &str) -> Result<()> {
         let bot = bot.clone();
         tokio::spawn(async move {
             let pagestatus_id = page.id;
+            let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
                 println!("{}", &e)
             }
+            let end_time = Instant::now();
+            let diff = end_time-start_time;
+            let diff = diff.as_secs();
+            let _ = bot.set_runtime(pagestatus_id,diff).await;
             bot.release_running(pagestatus_id).await;
         });
     }

@@ -172,6 +172,12 @@ impl ListeriaBot {
         Ok(page)
     }
 
+    pub async fn set_runtime(&self, pagestatus_id: u64,seconds: u64) -> Result<()> {
+        let sql = "UPDATE `pagestatus` SET `last_runtime_sec`=? WHERE `id`=?";
+        self.config.pool().get_conn().await?.exec_drop(sql,(seconds, pagestatus_id,)).await?;
+        Ok(())
+    }
+
     pub async fn run_single_bot(&self, page: PageToProcess ) -> Result<()> {
         let bot = match self.create_bot_for_wiki(&page.wiki).await {
             Some(bot) => bot.to_owned(),
