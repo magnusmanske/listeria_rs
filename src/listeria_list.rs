@@ -26,7 +26,7 @@ use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
 use futures::future::join_all;
 
-const MAX_SPARQL_ATTEMPTS: u64 = 5;
+const MAX_SPARQL_ATTEMPTS: u64 = 1;
 
 lazy_static! {
     static ref SPARQL_REQUEST_COUNTER: Mutex<u64> = Mutex::new(0);

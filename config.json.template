@@ -31,6 +31,7 @@
         "max_connections":8
     },
     "max_sparql_simultaneous": 10,
+    "max_sparql_attempts": 5,
     "profiling": false,
     "max_threads":6,
     "max_local_cached_entities": 5000,
