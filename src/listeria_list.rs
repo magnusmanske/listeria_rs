@@ -26,8 +26,6 @@ use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
 use futures::future::join_all;
 
-const MAX_SPARQL_ATTEMPTS: u64 = 1;
-
 lazy_static! {
     static ref SPARQL_REQUEST_COUNTER: Mutex<u64> = Mutex::new(0);
 }
@@ -302,7 +300,8 @@ impl ListeriaList {
 
         // SPARQL might need some retries sometimes, bad server or somesuch
         let mut sparql = sparql.to_string();
-        let mut attempts_left = MAX_SPARQL_ATTEMPTS;
+        let max_sparql_attempts = self.page_params.config().max_sparql_attempts();
+        let mut attempts_left = max_sparql_attempts;
         loop {
             let ret = wb_api_sparql.sparql_query_endpoint(&sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
             match ret {
@@ -311,7 +310,7 @@ impl ListeriaList {
                     match &e {
                         wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
                             if attempts_left>0 && s.contains("error decoding response body: expected value at line 1 column 1") {
-                                sleep(Duration::from_millis(500*(MAX_SPARQL_ATTEMPTS-attempts_left+1))).await;
+                                sleep(Duration::from_millis(500*(max_sparql_attempts-attempts_left+1))).await;
                                 sparql += &format!(" /* {attempts_left} */");
                                 attempts_left -= 1;
                                 continue;
