@@ -54,22 +54,21 @@ async fn run_singles(config_file: &str) -> Result<()> {
     }
 }
 
-//#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
-#[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<()> {
+// #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+// #[tokio::main(flavor = "multi_thread")]
+fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let config_file = args.get(1).map(|s|s.to_owned()).unwrap_or_else(|| "config.json".to_string());
-    run_singles(&config_file).await
+    // run_singles(&config_file).await
 
-    // let threaded_rt = runtime::Builder::new_multi_thread()
-    //     .enable_all()
-    //     .worker_threads(threads)
-    //     .thread_name("listeria")
-    //     .thread_stack_size(threads * 1024 * 1024)
-    //     .thread_keep_alive(Duration::from_secs(300)) // 5 min
-    //     .build()?;
-
-    // threaded_rt.block_on(async move {
-    //     run_singles(threads).await;
-    // });
+    let threads = 3; // TODO read from config file
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .worker_threads(threads)
+        .thread_name("listeria")
+        // .thread_stack_size(threads * 1024 * 1024)
+        // .thread_keep_alive(Duration::from_secs(600)) // 10 min
+        .build()?
+        .block_on(async move { let _ = run_singles(&config_file).await; });
+    Ok(())
 }
