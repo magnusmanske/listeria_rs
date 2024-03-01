@@ -196,9 +196,20 @@ impl ListeriaBot {
         if wpr.message.contains("api.php): operation timed out") {
             wpr.message = "WIKI_TIMEOUT".into();
         }
+        if wpr.message.contains("/sparql): operation timed out") {
+            wpr.message = "SPARQL_TIMEOUT".into();
+        }
         if wpr.message.contains("expected value at line 1 column 1: SPARQL-QUERY:") {
             wpr.message = "SPARQL_ERROR".into();
         }
+        if wpr.message.contains("No 'sparql' parameter in Template") {
+            wpr.message = format!("SPARQL_ERROR {}",wpr.message);
+        }
+        if wpr.message.contains("Could not determine SPARQL variable for item") {
+            wpr.message = format!("SPARQL_ERROR {}",wpr.message);
+        }
+        
+        
         self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message).await?;
         if wpr.message.contains("104_RESET_BY_PEER") {
             self.reset_wiki(&page.wiki).await;
