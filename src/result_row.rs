@@ -108,19 +108,19 @@ impl ResultRow {
     }
 
     pub async fn get_sortkey_label(&self, list: &ListeriaList) -> String {
-        match list.get_entity(self.entity_id()).await {
+        match list.get_entity(self.entity_id()) {
             Some(_entity) => list.get_label_with_fallback(self.entity_id(), None).await,
             None => "".to_string(),
         }
     }
 
-    pub async fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
+    pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
         lazy_static! {
             static ref RE_SR_JR: Regex = Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse");
             static ref RE_BRACES: Regex = Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse");
             static ref RE_LAST_FIRST: Regex = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
         }
-        match page.get_entity(&self.entity_id).await {
+        match page.get_entity(&self.entity_id) {
             Some(entity) => match entity.label_in_locale(&page.language()) {
                 Some(label) => {
                     let ret = RE_SR_JR.replace_all(label, "");
@@ -149,7 +149,7 @@ impl ResultRow {
         list: &ListeriaList,
         datatype: &SnakDataType,
     ) -> String {
-        match list.get_entity(&self.entity_id).await {
+        match list.get_entity(&self.entity_id) {
             Some(entity) => {
                 match list
                     .get_filtered_claims(&entity, prop) 
