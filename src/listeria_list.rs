@@ -16,18 +16,18 @@ use anyhow::{Result,anyhow};
 use chrono::DateTime;
 use chrono::Utc;
 use serde_json::Value;
-use tokio::sync::Mutex;
 use tokio::time::{sleep,Duration};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::Mutex;
 use wikibase::entity::*;
 use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
 use futures::future::join_all;
 
 lazy_static! {
-    static ref SPARQL_REQUEST_COUNTER: Mutex<u64> = Mutex::new(0);
+    static ref SPARQL_REQUEST_COUNTER: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
 }
 
 #[derive(Debug, Clone)]
@@ -75,11 +75,13 @@ impl ListeriaList {
         }
     }
 
-    async fn profile(&self, msg:&str) {
+    fn profile(&self, msg:&str) {
         if self.profiling {
             let now: DateTime<Utc> = Utc::now();
-            let last = *self.last_timestamp.lock().await;
-            *self.last_timestamp.lock().await = now;
+            let mut lock = self.last_timestamp.lock().expect("ListeriaList: Mutex is bad");
+            let last = (*lock).to_owned();
+            *lock = now;
+            drop(lock);
             let diff = now-last;
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
             let time_diff = format!("{}",diff.num_milliseconds());
@@ -89,23 +91,23 @@ impl ListeriaList {
     }
 
     pub async fn process(&mut self) -> Result<()> {
-        self.profile("START list::process").await;
-        self.process_template().await?;
-        self.profile("AFTER list::process process_template").await;
+        self.profile("START list::process");
+        self.process_template()?;
+        self.profile("AFTER list::process process_template");
         self.run_query().await?;
-        self.profile("AFTER list::process run_query").await;
+        self.profile("AFTER list::process run_query");
         self.load_entities().await?;
-        self.profile("AFTER list::process load_entities").await;
+        self.profile("AFTER list::process load_entities");
         self.generate_results().await?;
-        self.profile("AFTER list::process generate_results").await;
+        self.profile("AFTER list::process generate_results");
         self.process_results().await?;
-        self.profile("AFTER list::process process_results").await;
-        self.profile("END list::process").await;
+        self.profile("AFTER list::process process_results");
+        self.profile("END list::process");
         Ok(())
     }
 
-    pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
-        self.ecw.external_id_url(prop, id).await
+    pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
+        self.ecw.external_id_url(prop, id)
     }
 
     pub fn results(&self) -> &Vec<ResultRow> {
@@ -136,7 +138,7 @@ impl ListeriaList {
         self.section_id_to_name.get(&id)
     }
 
-    pub async fn process_template(&mut self) -> Result<()> {
+    pub fn process_template(&mut self) -> Result<()> {
         let template = self.template.clone();
         match self.get_template_value(&template, "columns") {
             Some(columns) => {
@@ -277,15 +279,14 @@ impl ListeriaList {
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
         };
         loop {
-            let mut lock = SPARQL_REQUEST_COUNTER.lock().await;
-            if *lock < self.page_params.config().max_sparql_simultaneous() {
-                *lock += 1 ;
+            if *SPARQL_REQUEST_COUNTER.lock().expect("ListeriaList: Mutex is bad") < self.page_params.config().max_sparql_simultaneous() {
                 break;
             }
+            *SPARQL_REQUEST_COUNTER.lock().expect("ListeriaList: Mutex is bad") += 1;
             sleep(Duration::from_millis(100)).await;
         }
         let result = self.run_sparql_query_api(&api, sparql).await;
-        *SPARQL_REQUEST_COUNTER.lock().await -= 1;
+        *SPARQL_REQUEST_COUNTER.lock().expect("ListeriaList: Mutex is bad") -= 1;
         result
     }
 
@@ -386,9 +387,9 @@ impl ListeriaList {
             }
         }
 
-        self.profile("BEGIN run_query: run_sparql_query").await;
+        self.profile("BEGIN run_query: run_sparql_query");
         let j = self.run_sparql_query(&sparql).await?;
-        self.profile("END run_query: run_sparql_query").await;
+        self.profile("END run_query: run_sparql_query");
         if self.page_params.simulate() {
             println!("{}\n{}\n", &sparql, &j);
         }
@@ -464,16 +465,16 @@ impl ListeriaList {
         }
         self.ecw.load_entities(&self.wb_api, &ids).await.map_err(|e|anyhow!("{e}"))?;
 
-        self.label_columns().await;
+        self.label_columns();
 
         Ok(())
     }
 
-    async fn label_columns(&mut self) {
+    fn label_columns(&mut self) {
         let mut columns = vec![];
         for c in &self.columns {
             let mut c = c.clone();
-            c.generate_label(self).await;
+            c.generate_label(self);
             columns.push(c);
         }
         self.columns = columns;
@@ -582,7 +583,7 @@ impl ListeriaList {
             true => {
                 let sparql_row_ids: Vec<String> = self.get_ids_from_sparql_rows()?.into_iter().collect(); // To preserve the original order
                 let tmp_rows = self.get_tmp_rows()?;
-                self.profile("BEGIN generate_results join_all").await;
+                self.profile("BEGIN generate_results join_all");
 
                 let mut tmp_results = vec![];
                 for id in &sparql_row_ids {
@@ -593,7 +594,7 @@ impl ListeriaList {
                     tmp_results.push(self.ecw.get_result_row(&id, &sparql_rows, &self).await);
                 }
 
-                self.profile("END generate_results join_all").await;
+                self.profile("END generate_results join_all");
                 results = tmp_results
                     .iter()
                     .cloned()
@@ -616,17 +617,15 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn process_items_to_local_links(&mut self) -> Result<()> {
+    fn process_items_to_local_links(&mut self) -> Result<()> {
         // Try to change items to local link
-        // TODO get rid of clone()
-        let mut results = self.results.clone();
-        self.results.clear();
-        for row in results.iter_mut() {
+        let wiki = self.wiki().to_owned();
+        let language = self.language().to_owned();
+        for row in self.results.iter_mut() {
             for cell in row.cells_mut().iter_mut() {
-                ResultCell::localize_item_links_in_parts(self, cell.parts_mut()).await;
+                ResultCell::localize_item_links_in_parts(cell.parts_mut(), &self.ecw, &wiki, &language);
             }
         }
-        self.results = results;
         Ok(())
     }
 
@@ -814,7 +813,7 @@ impl ListeriaList {
             SortMode::Label => {
                 self.load_row_entities().await?;
                 for row in &self.results {
-                    sortkeys.push(row.get_sortkey_label(&self).await);
+                    sortkeys.push(row.get_sortkey_label(&self));
                 }
             }
             SortMode::FamilyName => {
@@ -823,9 +822,9 @@ impl ListeriaList {
                 }
             }
             SortMode::Property(prop) => {
-                datatype = self.ecw.get_datatype_for_property(prop).await;
+                datatype = self.ecw.get_datatype_for_property(prop);
                 for row in &self.results {
-                    sortkeys.push(row.get_sortkey_prop(&prop, &self, &datatype).await);
+                    sortkeys.push(row.get_sortkey_prop(&prop, &self, &datatype));
                 }
             }
             SortMode::SparqlVariable(variable) => {
@@ -868,7 +867,7 @@ impl ListeriaList {
     }
 
     pub async fn process_assign_sections(&mut self) -> Result<()> {
-        self.profile("BEFORE list::process_assign_sections").await;
+        self.profile("BEFORE list::process_assign_sections");
 
         // TODO all SectionType options
         let section_property = match self.params.section() {
@@ -879,21 +878,21 @@ impl ListeriaList {
             SectionType::None => return Ok(()), // Nothing to do
         }.to_owned();
         self.load_row_entities().await?;
-        let datatype = self.ecw.get_datatype_for_property(&section_property).await;
-        self.profile("AFTER list::process_assign_sections 1").await;
+        let datatype = self.ecw.get_datatype_for_property(&section_property);
+        self.profile("AFTER list::process_assign_sections 1");
 
         let mut section_names_q = vec![];
         for row in &self.results {
-            section_names_q.push(row.get_sortkey_prop(&section_property, self, &datatype).await);
+            section_names_q.push(row.get_sortkey_prop(&section_property, self, &datatype));
         }
-        self.profile("AFTER list::process_assign_sections 2").await;
+        self.profile("AFTER list::process_assign_sections 2");
         
         // Make sure section name items are loaded
         self.ecw.load_entities(&self.wb_api, &section_names_q).await.map_err(|e|anyhow!("{e}"))?;
-        self.profile("AFTER list::process_assign_sections 3a").await;
+        self.profile("AFTER list::process_assign_sections 3a");
         let mut section_names = vec![];
         for q in section_names_q {
-            let label = self.get_label_with_fallback(&q,None).await;
+            let label = self.get_label_with_fallback(&q,None);
             section_names.push(label);
         }
 
@@ -903,17 +902,17 @@ impl ListeriaList {
             let counter = section_count.entry(name).or_insert(0);
             *counter += 1;
         });
-        self.profile("AFTER list::process_assign_sections 4").await;
+        self.profile("AFTER list::process_assign_sections 4");
 
         // Remove low counts
         section_count.retain(|&_name, &mut count| count >= self.params.min_section());
-        self.profile("AFTER list::process_assign_sections 5").await;
+        self.profile("AFTER list::process_assign_sections 5");
 
         // Sort by section name
         let mut valid_section_names: Vec<String> =
             section_count.iter().map(|(k, _v)| k.to_string()).collect();
         valid_section_names.sort();
-        self.profile("AFTER list::process_assign_sections 6").await;
+        self.profile("AFTER list::process_assign_sections 6");
 
 
         let misc_id = valid_section_names.len();
@@ -927,13 +926,13 @@ impl ListeriaList {
             .enumerate()
             .map(|(num, name)| (name.to_string(), num))
             .collect();
-        self.profile("AFTER list::process_assign_sections 7").await;
+        self.profile("AFTER list::process_assign_sections 7");
 
         self.section_id_to_name = name2id
             .iter()
             .map(|x| (x.1.to_owned(), x.0.to_owned()))
             .collect();
-        self.profile("AFTER list::process_assign_sections 8").await;
+        self.profile("AFTER list::process_assign_sections 8");
 
         self.results.iter_mut().enumerate().for_each(|(num, row)| {
             let section_name = match section_names.get(num) {
@@ -946,7 +945,7 @@ impl ListeriaList {
             };
             row.set_section(section_id);
         });
-        self.profile("AFTER list::process_assign_sections 9").await;
+        self.profile("AFTER list::process_assign_sections 9");
 
         Ok(())
     }
@@ -1084,30 +1083,30 @@ impl ListeriaList {
     }
 
     pub async fn process_results(&mut self) -> Result<()> {
-        self.profile("START list::process_results").await;
+        self.profile("START list::process_results");
         self.gather_and_load_items().await?;
-        self.profile("AFTER list::process_results gather_and_load_items").await;
+        self.profile("AFTER list::process_results gather_and_load_items");
         self.process_redlinks_only().await?;
-        self.profile("AFTER list::process_results process_redlinks_only").await;
-        self.process_items_to_local_links().await?;
-        self.profile("AFTER list::process_results process_items_to_local_links").await;
+        self.profile("AFTER list::process_results process_redlinks_only");
+        self.process_items_to_local_links()?;
+        self.profile("AFTER list::process_results process_items_to_local_links");
         self.process_redlinks().await?;
-        self.profile("AFTER list::process_results process_redlinks").await;
+        self.profile("AFTER list::process_results process_redlinks");
         self.process_remove_shadow_files().await?;
-        self.profile("AFTER list::process_results process_remove_shadow_files").await;
+        self.profile("AFTER list::process_results process_remove_shadow_files");
         self.process_excess_files();
-        self.profile("AFTER list::process_results process_excess_files").await;
+        self.profile("AFTER list::process_results process_excess_files");
         self.process_reference_items().await?;
-        self.profile("AFTER list::process_results process_reference_items").await;
+        self.profile("AFTER list::process_results process_reference_items");
         self.process_sort_results().await?;
-        self.profile("AFTER list::process_results process_sort_results").await;
+        self.profile("AFTER list::process_results process_sort_results");
         self.process_assign_sections().await?;
-        self.profile("AFTER list::process_results process_assign_sections").await;
+        self.profile("AFTER list::process_results process_assign_sections");
         self.process_regions().await?;
-        self.profile("AFTER list::process_results process_regions").await;
+        self.profile("AFTER list::process_results process_regions");
         self.fix_local_links().await?;
-        self.profile("AFTER list::process_results fix_local_links").await;
-        self.profile("END list::process_results").await;
+        self.profile("AFTER list::process_results fix_local_links");
+        self.profile("END list::process_results");
         Ok(())
     }
 
@@ -1240,7 +1239,7 @@ impl ListeriaList {
         self.params.header_template()
     }
 
-    pub async fn get_label_with_fallback(&self, entity_id: &str, use_language: Option<&str>) -> String {
+    pub fn get_label_with_fallback(&self, entity_id: &str, use_language: Option<&str>) -> String {
         let use_language = match use_language {
             Some(l) => l,
             None => self.language(),
@@ -1287,9 +1286,9 @@ impl ListeriaList {
         format!("{}{}", prefix, entity_id)
     }
 
-    pub async fn get_item_link_with_fallback(&self, entity_id: &str) -> String {
+    pub fn get_item_link_with_fallback(&self, entity_id: &str) -> String {
         let quotes = if self.is_wikidatawiki() { "" } else { "''" };
-        let label = self.get_label_with_fallback(entity_id, None).await;
+        let label = self.get_label_with_fallback(entity_id, None);
         let label_part = if self.is_wikidatawiki() && entity_id == label {
             String::new()
         } else {

@@ -150,7 +150,7 @@ impl EntityContainerWrapper {
         Some(row)
     }
 
-    pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
+    pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
         let pi = self.get_entity(prop)?;
         pi.claims_with_property("P1630")
             .iter()
@@ -166,7 +166,7 @@ impl EntityContainerWrapper {
             .next()
     }
 
-    pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
+    pub fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         match self.get_entity(prop) {
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {

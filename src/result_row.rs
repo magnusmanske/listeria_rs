@@ -107,9 +107,9 @@ impl ResultRow {
         self.sortkey = sortkey;
     }
 
-    pub async fn get_sortkey_label(&self, list: &ListeriaList) -> String {
+    pub fn get_sortkey_label(&self, list: &ListeriaList) -> String {
         match list.get_entity(self.entity_id()) {
-            Some(_entity) => list.get_label_with_fallback(self.entity_id(), None).await,
+            Some(_entity) => list.get_label_with_fallback(self.entity_id(), None),
             None => "".to_string(),
         }
     }
@@ -143,7 +143,7 @@ impl ResultRow {
         .to_string()
     }
 
-    pub async fn get_sortkey_prop(
+    pub fn get_sortkey_prop(
         &self,
         prop: &str,
         list: &ListeriaList,
@@ -158,7 +158,7 @@ impl ResultRow {
                     .map(|statement| statement.main_snak())
                     .next()
                 {
-                    Some(snak) => self.get_sortkey_from_snak(snak, list).await,
+                    Some(snak) => self.get_sortkey_from_snak(snak, list),
                     None => self.no_value(datatype),
                 }
             }
@@ -183,7 +183,7 @@ impl ResultRow {
         }
     }
 
-    async fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak, list: &ListeriaList) -> String {
+    fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak, list: &ListeriaList) -> String {
         match snak.data_value() {
             Some(data_value) => match data_value.value() {
                 wikibase::value::Value::Coordinate(c) => format!(
@@ -195,7 +195,7 @@ impl ResultRow {
                 wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
                 wikibase::value::Value::Entity(entity) => {
                     // TODO language?
-                    list.get_label_with_fallback(&entity.id(), None).await
+                    list.get_label_with_fallback(&entity.id(), None)
                 }
                 wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikibase::value::Value::StringValue(s) => s.to_owned(),
