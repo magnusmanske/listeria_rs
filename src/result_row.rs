@@ -91,14 +91,14 @@ impl ResultRow {
         });
     }
 
-    pub async fn from_columns(
+    pub fn from_columns(
         &mut self,
         list: &ListeriaList,
         sparql_rows: &[&HashMap<String, SparqlValue>],
     ) {
         self.cells.clear();
         for column in list.columns().iter() {
-            let x = ResultCell::new(list, &self.entity_id, sparql_rows, column).await;
+            let x = ResultCell::new(list, &self.entity_id, sparql_rows, column);
             self.cells.push(x);
         }
     }

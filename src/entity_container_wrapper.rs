@@ -120,7 +120,7 @@ impl EntityContainerWrapper {
         Some(ResultCellPart::LocalLink((page, label, false)))
     }
 
-    pub async fn get_result_row(
+    pub fn get_result_row(
         &self,
         entity_id: &str,
         sparql_rows: &[&HashMap<String, SparqlValue>],
@@ -146,7 +146,7 @@ impl EntityContainerWrapper {
         }
 
         let mut row = ResultRow::new(entity_id);
-        row.from_columns(list, sparql_rows).await;
+        row.from_columns(list, sparql_rows);
         Some(row)
     }
 

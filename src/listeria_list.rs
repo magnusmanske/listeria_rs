@@ -98,7 +98,8 @@ impl ListeriaList {
         self.profile("AFTER list::process run_query");
         self.load_entities().await?;
         self.profile("AFTER list::process load_entities");
-        self.generate_results().await?;
+        // TODO spawn_blocking?
+        self.generate_results()?;
         self.profile("AFTER list::process generate_results");
         self.process_results().await?;
         self.profile("AFTER list::process process_results");
@@ -577,7 +578,7 @@ impl ListeriaList {
         Ok(tmp_rows)
 }
 
-    pub async fn generate_results(&mut self) -> Result<()> {
+    pub fn generate_results(&mut self) -> Result<()> {
         let mut results: Vec<ResultRow> = vec![];
         match self.params.one_row_per_item() {
             true => {
@@ -591,7 +592,7 @@ impl ListeriaList {
                         Some(rows) => rows,
                         None => continue, // TODO this should never happen, but maybe throw error if it does?
                     };
-                    tmp_results.push(self.ecw.get_result_row(&id, &sparql_rows, &self).await);
+                    tmp_results.push(self.ecw.get_result_row(&id, &sparql_rows, &self));
                 }
 
                 self.profile("END generate_results join_all");
@@ -606,7 +607,7 @@ impl ListeriaList {
                 let varname = self.get_var_name()?;
                 for row in self.sparql_rows.iter() {
                     if let Some(SparqlValue::Entity(id)) = row.get(varname) {
-                        if let Some(x) = self.ecw.get_result_row(id, &[&row], &self).await {
+                        if let Some(x) = self.ecw.get_result_row(id, &[&row], &self) {
                             results.push(x);
                         }
                     }
@@ -679,15 +680,16 @@ impl ListeriaList {
             .collect();
 
         let api_read = self
-        .page_params
-        .mw_api()
-        .read()
-        .await;
+            .page_params
+            .mw_api()
+            .read()
+            .await;
 
         let mut futures = vec![] ;
         for params in &param_list {
             futures.push ( api_read.get_query_api_json(&params) ) ;
         }
+        self.profile(&format!("ListeriaList::process_remove_shadow_files running {} futures",futures.len()));
 
         let tmp_results = join_all(futures)
             .await;
