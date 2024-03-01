@@ -313,6 +313,9 @@ impl ListeriaList {
                 Err(e) => { 
                     match &e {
                         wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
+                            if s.contains("expected value at line 1 column 1: SPARQL-QUERY:") {
+                                return Err(anyhow!("SPARQL is broken: {s}\n{sparql}"));
+                            }
                             if attempts_left>0 && s.contains("error decoding response body: expected value at line 1 column 1") {
                                 sleep(Duration::from_millis(500*(max_sparql_attempts-attempts_left+1))).await;
                                 sparql += &format!(" /* {attempts_left} */");

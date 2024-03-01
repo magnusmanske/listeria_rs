@@ -191,10 +191,16 @@ impl ListeriaBot {
             wpr.message = "This page is a translation".into();
         }
         if wpr.message.contains("Connection reset by peer (os error 104)") {
-            wpr.message = "Connection reset by peer (os error 104)".into();
+            wpr.message = "104_RESET_BY_PEER".into();
+        }
+        if wpr.message.contains("api.php): operation timed out") {
+            wpr.message = "WIKI_TIMEOUT".into();
+        }
+        if wpr.message.contains("expected value at line 1 column 1: SPARQL-QUERY:") {
+            wpr.message = "SPARQL_ERROR".into();
         }
         self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message).await?;
-        if wpr.message.contains("Connection reset by peer (os error 104)") {
+        if wpr.message.contains("104_RESET_BY_PEER") {
             self.reset_wiki(&page.wiki).await;
         }
         Ok(())
@@ -202,7 +208,7 @@ impl ListeriaBot {
 
     async fn reset_wiki(&self, wiki: &str) {
         let _ = self.bot_per_wiki.lock().await.remove(wiki);
-        std::process::exit(0); // Seems that os error 104 is a system wide thing with Wikimedia, best to quit the app and restart
+        // std::process::exit(0); // Seems that os error 104 is a system wide thing with Wikimedia, best to quit the app and restart
     }
 
     async fn update_page_status(
