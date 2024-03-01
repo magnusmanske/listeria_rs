@@ -1,4 +1,5 @@
 use crate::column::*;
+use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
 use crate::result_cell_part::PartWithReference;
@@ -320,9 +321,9 @@ impl ResultCell {
         self.parts = parts;
     }
 
-    pub async fn localize_item_links_in_parts(list: &ListeriaList, parts: &mut Vec<PartWithReference>) {
+    pub fn localize_item_links_in_parts(parts: &mut Vec<PartWithReference>, ecw: &EntityContainerWrapper, wiki: &str, language: &str) {
         for part_with_reference in parts.iter_mut() {
-            part_with_reference.part.localize_item_links(list).await;
+            part_with_reference.part.localize_item_links(ecw, wiki, language);
         }
     }
 

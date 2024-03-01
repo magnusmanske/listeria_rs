@@ -1,5 +1,6 @@
 use async_recursion::async_recursion;
 use crate::column::ColumnType;
+use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
 use crate::sparql_value::SparqlValue;
@@ -30,7 +31,7 @@ impl PartWithReference {
             Some(references) => {
                 let mut wikitext: Vec<String> = vec![];
                 for reference in references.iter() {
-                    let r = reference.as_reference(list).await;
+                    let r = reference.as_reference(list);
                     wikitext.push(r);
                 }
                 wikitext.join("")
@@ -67,17 +68,16 @@ impl ResultCellPart {
         }
     }
 
-    #[async_recursion]
-    pub async fn localize_item_links(&mut self, list: &ListeriaList) {
+    pub fn localize_item_links(&mut self, ecw: &EntityContainerWrapper, wiki: &str, language: &str) {
         match self {
             ResultCellPart::Entity((item, true)) => {
-                if let Some(ll) = list.entity_to_local_link(&item) {
+                if let Some(ll) = ecw.entity_to_local_link(item, wiki, language) {
                     *self = ll
                 };
             }
             ResultCellPart::SnakList(v) => {
                 for part_with_reference in v.iter_mut() {
-                    part_with_reference.part.localize_item_links(list).await;
+                    part_with_reference.part.localize_item_links(ecw, wiki, language);
                 }
             }
             _ => {}
@@ -172,14 +172,14 @@ impl ResultCellPart {
                         return format!("''[[{}|{}]]''", list.get_item_wiki_target(id), id);
                     }
                 }
-                let entity_id_link = list.get_item_link_with_fallback(id).await;
+                let entity_id_link = list.get_item_link_with_fallback(id);
                 match list.get_entity(id) {
                     Some(e) => {
                         let use_language = match e.label_in_locale(list.language()) {
                             Some(_) => list.language().to_owned(),
                             None => list.default_language(),
                         };
-                        let use_label = list.get_label_with_fallback(id, Some(&use_language)).await;
+                        let use_label = list.get_label_with_fallback(id, Some(&use_language));
                         let labeled_entity_link = if list.is_wikidatawiki() {
                             format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
                         } else {
@@ -238,7 +238,7 @@ impl ResultCellPart {
             }
             ResultCellPart::Uri(url) => url.to_owned(),
             ResultCellPart::ExternalId((property, id)) => {
-                match list.external_id_url(property, id).await {
+                match list.external_id_url(property, id) {
                     Some(url) => "[".to_string() + &url + " " + &id + "]",
                     None => id.to_owned(),
                 }

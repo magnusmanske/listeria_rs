@@ -94,8 +94,8 @@ impl Reference {
         self.url.is_none() && self.stated_in.is_none()
     }
 
-    pub async fn as_reference(&self, list: &ListeriaList) -> String {
-        let wikitext = self.as_wikitext(list).await;
+    pub fn as_reference(&self, list: &ListeriaList) -> String {
+        let wikitext = self.as_wikitext(list);
         let md5 = match self.md5.read() {
             Ok(s) => s.to_string(),
             _ => return String::new(),
@@ -109,7 +109,7 @@ impl Reference {
         }
     }
 
-    async fn as_wikitext(&self, list: &ListeriaList) -> String {
+    fn as_wikitext(&self, list: &ListeriaList) -> String {
         loop { // TODO FIXME check that this loop does not run forever
             match self.wikitext_cache.read() {
                 Ok(cache) => {
@@ -128,7 +128,7 @@ impl Reference {
                     self.title.as_ref().unwrap_or(&String::new())
                 );
                 if let Some(stated_in) = &self.stated_in {
-                    s += &format!("|website={}", list.get_item_link_with_fallback(stated_in).await);
+                    s += &format!("|website={}", list.get_item_link_with_fallback(stated_in));
                 }
                 if let Some(date) = &self.date {
                     s += &format!("|access-date={}", &date);
@@ -141,7 +141,7 @@ impl Reference {
             } else if self.stated_in.is_some() {
                 match &self.stated_in {
                     Some(q) => {
-                        s += &list.get_item_link_with_fallback(&q).await;
+                        s += &list.get_item_link_with_fallback(&q);
                     }
                     None => {}
                 }
@@ -161,6 +161,5 @@ impl Reference {
                 _ => return String::new(), // No error
             }
         }
-        // self.as_wikitext(list).await
     }
 }
