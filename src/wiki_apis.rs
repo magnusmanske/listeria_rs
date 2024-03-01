@@ -43,26 +43,26 @@ impl WikiApis {
     pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
         let mut lock = self.apis.lock().await;
 
-        // if let Some(max) = self.config.get_max_mw_apis_total() {
-        //     loop {
-        //         let current_strong_locks: usize = lock.iter().map(|(_wiki,api)| Arc::strong_count(&api)).sum();
-        //         if current_strong_locks < *max {
-        //             break;
-        //         }
-        //         sleep(Duration::from_millis(100)).await;
-        //         warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
-        //     }        
-        // }
+        if let Some(max) = self.config.get_max_mw_apis_total() {
+            loop {
+                let current_strong_locks: usize = lock.iter().map(|(_wiki,api)| Arc::strong_count(&api)).sum();
+                if current_strong_locks < *max {
+                    break;
+                }
+                sleep(Duration::from_millis(100)).await;
+                warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
+            }        
+        }
 
         if let Some(api) = &lock.get(wiki) {
             // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
             // See https://phabricator.wikimedia.org/T356160
-            // if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
-            //     while Arc::strong_count(&api) >= *max {
-            //         sleep(Duration::from_millis(100)).await;
-            //         warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
-            //     }        
-            // }
+            if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
+                while Arc::strong_count(&api) >= *max {
+                    sleep(Duration::from_millis(100)).await;
+                    warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
+                }        
+            }
             return Ok((*api).clone());
         }
 

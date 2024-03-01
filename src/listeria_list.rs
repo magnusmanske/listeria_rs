@@ -276,12 +276,16 @@ impl ListeriaList {
             Some(api) => api.clone(),
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
         };
-        // while *SPARQL_REQUEST_COUNTER.lock().await > self.page_params.config().max_sparql_simultaneous() {
-        //     sleep(Duration::from_millis(100)).await;
-        // }
-        // *SPARQL_REQUEST_COUNTER.lock().await += 1;
+        loop {
+            let mut lock = SPARQL_REQUEST_COUNTER.lock().await;
+            if *lock < self.page_params.config().max_sparql_simultaneous() {
+                *lock += 1 ;
+                break;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
         let result = self.run_sparql_query_api(&api, sparql).await;
-        // *SPARQL_REQUEST_COUNTER.lock().await -= 1;
+        *SPARQL_REQUEST_COUNTER.lock().await -= 1;
         result
     }
 
@@ -310,7 +314,7 @@ impl ListeriaList {
                     match &e {
                         wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
                             if attempts_left>0 && s.contains("error decoding response body: expected value at line 1 column 1") {
-                                // sleep(Duration::from_millis(500*(max_sparql_attempts-attempts_left+1))).await;
+                                sleep(Duration::from_millis(500*(max_sparql_attempts-attempts_left+1))).await;
                                 sparql += &format!(" /* {attempts_left} */");
                                 attempts_left -= 1;
                                 continue;
