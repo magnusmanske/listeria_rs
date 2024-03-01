@@ -185,11 +185,11 @@ impl ListeriaPage {
         }
     }
 
-    pub async fn as_wikitext(&self) -> Result<Vec<String>> {
+    pub fn as_wikitext(&self) -> Result<Vec<String>> {
         let mut ret: Vec<String> = vec![];
         for element in &self.elements {
             if !element.is_just_text() {
-                ret.push(element.new_inside().await?);
+                ret.push(element.new_inside()?);
             }
         }
         Ok(ret)
@@ -229,7 +229,7 @@ impl ListeriaPage {
         let renderer = RendererWikitext::new();
         let mut edited = false;
         let old_wikitext = self.load_page_as("wikitext").await?;
-        let new_wikitext = renderer.get_new_wikitext(&old_wikitext, self).await.map_err(|e| self.fail(&e.to_string()))?; // Safe
+        let new_wikitext = renderer.get_new_wikitext(&old_wikitext, self).map_err(|e| self.fail(&e.to_string()))?; // Safe
         match new_wikitext {
             Some(new_wikitext) => {
                 if old_wikitext != new_wikitext {
@@ -352,7 +352,7 @@ mod tests {
                 .map(|s| s.to_string().split('\n').map(|s| s.to_string()).collect()),
         );
         page.run().await.unwrap();
-        let wt = page.as_wikitext().await.unwrap();
+        let wt = page.as_wikitext().unwrap();
         let wt = wt.join("\n\n----\n\n");
         let wt = wt.trim().to_string();
         if data.contains_key("EXPECTED") {
@@ -596,7 +596,6 @@ mod tests {
         let renderer = RendererWikitext::new();
         let wt = renderer
             .get_new_wikitext(&wikitext, &page)
-            .await
             .expect("FAILED get_new_wikitext")
             .expect("new_wikitext not Some()");
         let wt = wt.trim().to_string();

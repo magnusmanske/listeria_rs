@@ -1,4 +1,3 @@
-use async_recursion::async_recursion;
 use crate::column::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
@@ -19,14 +18,14 @@ impl PartWithReference {
         Self { part, references }
     }
 
-    pub async fn as_wikitext(
+    pub fn as_wikitext(
         &self,
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
         partnum: usize,
     ) -> String {
-        let wikitext_part = self.part.as_wikitext(list, rownum, colnum, partnum).await;
+        let wikitext_part = self.part.as_wikitext(list, rownum, colnum, partnum);
         let wikitext_reference = match &self.references {
             Some(references) => {
                 let mut wikitext: Vec<String> = vec![];
@@ -149,8 +148,7 @@ impl ResultCellPart {
         ret
     }
 
-    #[async_recursion]
-    pub async fn as_wikitext(
+    pub fn as_wikitext(
         &self,
         list: &ListeriaList,
         rownum: usize,
@@ -264,7 +262,7 @@ impl ResultCellPart {
             ResultCellPart::SnakList(v) => {
                 let mut ret = vec![];
                 for rcp in v {
-                    ret.push(rcp.part.as_wikitext(list, rownum, colnum, partnum).await);
+                    ret.push(rcp.part.as_wikitext(list, rownum, colnum, partnum));
                 }
                 ret.join(" — ")
                 // v
@@ -276,13 +274,13 @@ impl ResultCellPart {
         }
     }
 
-    pub async fn as_tabbed_data(
+    pub fn as_tabbed_data(
         &self,
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
         partnum: usize,
     ) -> String {
-        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum, partnum).await)
+        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum, partnum))
     }
 }
