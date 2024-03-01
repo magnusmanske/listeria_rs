@@ -29,7 +29,7 @@ impl ResultCell {
             deduplicate_parts: true,
         };
 
-        let entity = list.get_entity(entity_id).await;
+        let entity = list.get_entity(entity_id);
         match &col.obj {
             ColumnType::Qid => {
                 ret.parts.push(PartWithReference::new(

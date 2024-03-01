@@ -71,7 +71,7 @@ impl ResultCellPart {
     pub async fn localize_item_links(&mut self, list: &ListeriaList) {
         match self {
             ResultCellPart::Entity((item, true)) => {
-                if let Some(ll) = list.entity_to_local_link(&item).await {
+                if let Some(ll) = list.entity_to_local_link(&item) {
                     *self = ll
                 };
             }
@@ -173,7 +173,7 @@ impl ResultCellPart {
                     }
                 }
                 let entity_id_link = list.get_item_link_with_fallback(id).await;
-                match list.get_entity(id).await {
+                match list.get_entity(id) {
                     Some(e) => {
                         let use_language = match e.label_in_locale(list.language()) {
                             Some(_) => list.language().to_owned(),

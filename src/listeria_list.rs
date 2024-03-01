@@ -747,7 +747,7 @@ impl ListeriaList {
         let wiki = self.page_params.wiki().to_string();
         for row in self.results.iter_mut() {
             row.set_keep(
-                match self.ecw.get_entity(row.entity_id()).await {
+                match self.ecw.get_entity(row.entity_id()) {
                     Some(entity) => {
                         match entity.sitelinks() {
                             Some(sl) => sl.iter().filter(|s| *s.site() == wiki).count() == 0,
@@ -785,7 +785,7 @@ impl ListeriaList {
         ids.dedup();
         let mut labels = vec![];
         for id in ids {
-            if let Some(e) = self.get_entity(id).await {
+            if let Some(e) = self.get_entity(id) {
                 if let Some(l) = e.label_in_locale(self.language()) {
                     labels.push(l.to_string());
                 }
@@ -819,7 +819,7 @@ impl ListeriaList {
             }
             SortMode::FamilyName => {
                 for row in &self.results {
-                    sortkeys.push(row.get_sortkey_family_name(&self).await);
+                    sortkeys.push(row.get_sortkey_family_name(&self));
                 }
             }
             SortMode::Property(prop) => {
@@ -1115,8 +1115,8 @@ impl ListeriaList {
         self.params.links()
     }
 
-    pub async fn get_entity(&self, entity_id: &str) -> Option<wikibase::Entity> {
-        self.ecw.get_entity(entity_id).await
+    pub fn get_entity(&self, entity_id: &str) -> Option<wikibase::Entity> {
+        self.ecw.get_entity(entity_id)
     }
 
     pub fn get_row_template(&self) -> &Option<String> {
@@ -1130,7 +1130,7 @@ impl ListeriaList {
     async fn gather_items_for_property(&mut self, prop: &str) -> Result<Vec<String>> {
         let mut entities_to_load = vec![];
         for row in self.results.iter() {
-            if let Some(entity) = self.ecw.get_entity(row.entity_id()).await {
+            if let Some(entity) = self.ecw.get_entity(row.entity_id()) {
                 self
                     .get_filtered_claims(&entity, prop)
                     .iter()
@@ -1245,7 +1245,7 @@ impl ListeriaList {
             Some(l) => l,
             None => self.language(),
         };
-        match self.get_entity(entity_id).await {
+        match self.get_entity(entity_id) {
             Some(entity) => {
                 match entity.label_in_locale(use_language).map(|s| s.to_string()) {
                     Some(s) => s,
@@ -1259,7 +1259,7 @@ impl ListeriaList {
                             }
                         }
                         // Try any label, any language
-                        if let Some(entity) = self.get_entity(entity_id).await {
+                        if let Some(entity) = self.get_entity(entity_id) {
                             if let Some(label) = entity.labels().get(0) {
                                 return label.value().to_string();
                             }
@@ -1329,10 +1329,8 @@ impl ListeriaList {
         }
     }
 
-    pub async fn entity_to_local_link(&self, item: &str) -> Option<ResultCellPart> {
-        self.ecw
-            .entity_to_local_link(item, self.wiki(), &self.language)
-            .await
+    pub fn entity_to_local_link(&self, item: &str) -> Option<ResultCellPart> {
+        self.ecw.entity_to_local_link(item, self.wiki(), &self.language)
     }
 
     pub fn default_language(&self) -> String {

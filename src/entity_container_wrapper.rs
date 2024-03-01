@@ -49,7 +49,7 @@ impl EntityContainerWrapper {
             for entity_id in chunk {
                 if let Some(entity) = self.entities.get_entity(entity_id) {
                     let json = entity.to_json();
-                    self.entity_file_cache.add_entity(entity_id, &json.to_string()).await?;
+                    self.entity_file_cache.add_entity(entity_id, &json.to_string())?;
                 }
             }
             self.entities.clear();
@@ -81,28 +81,28 @@ impl EntityContainerWrapper {
         }
     }
 
-    pub async fn get_entity(&self, entity_id: &str) -> Option<Entity> {
+    pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
         if let Some(entity) = self.entities.get_entity(entity_id) {
             return Some(entity)
         }
-        let json_string = self.entity_file_cache.get_entity(entity_id).await?;
+        let json_string = self.entity_file_cache.get_entity(entity_id)?;
         let json_value = serde_json::from_str(&json_string).ok()? ;
         Entity::new_from_json(&json_value).ok()
     }
 
-    pub async fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
-        self.get_entity(entity_id).await?
+    pub fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
+        self.get_entity(entity_id)?
             .label_in_locale(language)
             .map(|s| s.to_string())
     }
 
-    pub async fn entity_to_local_link(
+    pub fn entity_to_local_link(
         &self,
         item: &str,
         wiki: &str,
         language: &str,
     ) -> Option<ResultCellPart> {
-        let entity = match self.get_entity(item).await {
+        let entity = match self.get_entity(item) {
             Some(e) => e,
             None => return None,
         };
@@ -115,7 +115,7 @@ impl EntityContainerWrapper {
             None => None,
         }?;
         let label = self
-            .get_local_entity_label(item, language).await
+            .get_local_entity_label(item, language)
             .unwrap_or_else(|| page.clone());
         Some(ResultCellPart::LocalLink((page, label, false)))
     }
@@ -130,7 +130,7 @@ impl EntityContainerWrapper {
             return None;
         }
         if LinksType::Local == *list.template_params().links() {
-            let entity = match self.get_entity(entity_id).await {
+            let entity = match self.get_entity(entity_id) {
                 Some(e) => e,
                 None => return None,
             };
@@ -151,7 +151,7 @@ impl EntityContainerWrapper {
     }
 
     pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
-        let pi = self.get_entity(prop).await?;
+        let pi = self.get_entity(prop)?;
         pi.claims_with_property("P1630")
             .iter()
             .filter_map(|s| {
@@ -167,7 +167,7 @@ impl EntityContainerWrapper {
     }
 
     pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
-        match self.get_entity(prop).await {
+        match self.get_entity(prop) {
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),
@@ -218,7 +218,7 @@ mod tests {
         ecw.load_entities(&api, &ids).await.unwrap();
         assert_eq!(ecw.entities.len(),0);
 
-        let e2 = ecw.get_entity("Q2").await.unwrap();
+        let e2 = ecw.get_entity("Q2").unwrap();
         assert_eq!(e2.id(),"Q2");
     }
 }
