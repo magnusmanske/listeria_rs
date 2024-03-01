@@ -18,7 +18,7 @@ pub struct ResultCell {
 }
 
 impl ResultCell {
-    pub async fn new(
+    pub fn new(
         list: &ListeriaList,
         entity_id: &str,
         sparql_rows: &[&HashMap<String, SparqlValue>],
@@ -59,10 +59,12 @@ impl ResultCell {
                             ));
                         }
                         None => {
-                            if let Ok(s) = list.get_autodesc_description(&e).await {
-                                ret.parts
-                                    .push(PartWithReference::new(ResultCellPart::Text(s), None));
-                            }
+                            // TODO FIXME autodesc deactivated for performance reasons
+                            ret.parts.push(PartWithReference::new(ResultCellPart::Text(format!("autodesc unavailable")), None));
+                            // if let Ok(s) = list.get_autodesc_description(&e).await {
+                            //     ret.parts
+                            //         .push(PartWithReference::new(ResultCellPart::Text(s), None));
+                            // }
                         }
                     }
                 }
