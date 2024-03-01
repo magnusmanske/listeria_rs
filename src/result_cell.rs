@@ -327,15 +327,15 @@ impl ResultCell {
         }
     }
 
-    pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
+    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
         let mut ret = vec![];
         for (partnum, part_with_reference) in self.parts.iter().enumerate() {
-            ret.push(part_with_reference.part.as_tabbed_data(list, rownum, colnum, partnum).await);
+            ret.push(part_with_reference.part.as_tabbed_data(list, rownum, colnum, partnum));
         }
         json!(ret.join("<br/>"))
     }
 
-    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let mut ret;
         if list.template_params().wdedit() && list.header_template().is_none() {
             ret = match &self.wdedit_class {
@@ -348,7 +348,7 @@ impl ResultCell {
 
         let mut parts = vec![];
         for (partnum, part_with_reference) in self.parts.iter().enumerate() {
-            parts.push(part_with_reference.part.as_wikitext(list, rownum, colnum, partnum).await);
+            parts.push(part_with_reference.part.as_wikitext(list, rownum, colnum, partnum));
         }
         if self.deduplicate_parts {
             let mut parts2 = Vec::new();

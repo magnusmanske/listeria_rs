@@ -129,23 +129,23 @@ impl PageElement {
         ret
     }
 
-    pub async fn new_inside(&self) -> Result<String> {
+    pub fn new_inside(&self) -> Result<String> {
         match self.is_just_text {
             true => Ok(String::new()),
             false => {
                 let mut renderer = RendererWikitext::new();
-                renderer.render(&self.list).await
+                renderer.render(&self.list)
             }
         }
     }
 
-    pub async fn as_wikitext(&self) -> Result<String> {
+    pub fn as_wikitext(&self) -> Result<String> {
         match self.is_just_text {
             true => Ok(self.before.clone()),
             false => Ok(self.before.clone()
                 + &self.template_start
                 + "\n"
-                + &self.new_inside().await?
+                + &self.new_inside()?
                 + "\n"
                 + &self.template_end
                 + &self.after),

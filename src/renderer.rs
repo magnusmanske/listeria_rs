@@ -4,10 +4,10 @@ use anyhow::Result;
 
 pub trait Renderer {
     fn new() -> Self;
-    fn render(&mut self, page: &ListeriaList) -> impl std::future::Future<Output = Result<String>> + Send;
+    fn render(&mut self, page: &ListeriaList) -> Result<String>;
     fn get_new_wikitext(
         &self,
         wikitext: &str,
         page: &ListeriaPage,
-    ) -> impl std::future::Future<Output = Result<Option<String>>> + Send;
+    ) -> Result<Option<String>>;
 }

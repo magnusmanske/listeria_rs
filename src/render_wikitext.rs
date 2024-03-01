@@ -8,10 +8,10 @@ impl Renderer for RendererWikitext {
         Self {}
     }
 
-    async fn render(&mut self, list: &ListeriaList) -> Result<String> {
+    fn render(&mut self, list: &ListeriaList) -> Result<String> {
         let mut wt = String::new();
         for section_id in list.get_section_ids() {
-            wt += &self.as_wikitext_section(list, section_id).await;
+            wt += &self.as_wikitext_section(list, section_id);
         }
         if !list.shadow_files().is_empty() {
             wt += "\n----\nThe following local image(s) are not shown in the above list, because they shadow a Commons image of the same name, and might be non-free:";
@@ -27,14 +27,14 @@ impl Renderer for RendererWikitext {
         Ok(wt)
     }
 
-    async fn get_new_wikitext(
+    fn get_new_wikitext(
         &self,
         _wikitext: &str,
         page: &ListeriaPage,
     ) -> Result<Option<String>> {
         let mut new_wikitext = String::new();
         for element in page.elements() {
-            if let Ok(s) = element.as_wikitext().await {
+            if let Ok(s) = element.as_wikitext() {
                 new_wikitext += &s
             }
         }
@@ -43,7 +43,7 @@ impl Renderer for RendererWikitext {
 }
 
 impl RendererWikitext {
-    async fn as_wikitext_section(&self, list: &ListeriaList, section_id: usize) -> String {
+    fn as_wikitext_section(&self, list: &ListeriaList, section_id: usize) -> String {
         let mut wt = String::new();
 
         if let Some(name) = list.section_name(section_id) {
@@ -72,7 +72,7 @@ impl RendererWikitext {
         // Rows
         let mut rows = vec![];
         for (rownum, row) in list.results().iter().filter(|row| row.section() == section_id).enumerate() {
-            rows.push(row.as_wikitext(list, rownum).await);
+            rows.push(row.as_wikitext(list, rownum));
         }
         if list.skip_table() {
             wt += &rows.join("\n");

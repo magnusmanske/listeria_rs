@@ -242,10 +242,10 @@ impl ResultRow {
         }
     }
 
-    pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
+    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
         let mut ret = vec![];
         for (colnum, cell) in self.cells.iter().enumerate() {
-            ret.push(cell.as_tabbed_data(list, rownum, colnum).await);
+            ret.push(cell.as_tabbed_data(list, rownum, colnum));
         }
         ret.insert(0, json!(self.section));
         json!(ret)
@@ -270,10 +270,10 @@ impl ResultRow {
             .join("\n| ")
     }
 
-    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
+    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
         let mut cells = vec![];
         for (colnum, cell) in self.cells.iter().enumerate() {
-            cells.push(cell.as_wikitext(list, rownum, colnum).await);
+            cells.push(cell.as_wikitext(list, rownum, colnum));
         }
         match list.get_row_template() {
             Some(t) => format!(

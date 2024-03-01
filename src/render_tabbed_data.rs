@@ -10,7 +10,7 @@ impl Renderer for RendererTabbedData {
         Self {}
     }
 
-    async fn render(&mut self, list: &ListeriaList) -> Result<String> {
+    fn render(&mut self, list: &ListeriaList) -> Result<String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
             if let Some(x) = ret["schema"]["fields"].as_array_mut() {
@@ -19,7 +19,7 @@ impl Renderer for RendererTabbedData {
         });
         let mut ret_data = vec![];
         for (rownum, row) in list.results().iter().enumerate() {
-            ret_data.push(row.as_tabbed_data(&list, rownum).await);
+            ret_data.push(row.as_tabbed_data(&list, rownum));
         }
         ret["data"] = json!(ret_data); // TODO check if this is correct, see below
 
@@ -32,7 +32,7 @@ impl Renderer for RendererTabbedData {
         Ok(format!("{}", ret))
     }
 
-    async fn get_new_wikitext(
+    fn get_new_wikitext(
         &self,
         wikitext: &str,
         _page: &ListeriaPage,
