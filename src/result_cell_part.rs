@@ -45,13 +45,12 @@ impl PartWithReference {
 #[derive(Debug, Clone)]
 pub struct AutoDesc {
     entity: Entity,
-    tried: bool,
     desc: Option<String>,
 }
 
 impl PartialEq for AutoDesc {
     fn eq(&self, other: &Self) -> bool {
-        self.entity.id() == other.entity.id() && self.tried==other.tried && self.desc==other.desc
+        self.entity.id() == other.entity.id() && self.desc==other.desc
     }
 }
 
@@ -59,9 +58,16 @@ impl AutoDesc {
     pub fn new(entity: &Entity) -> Self {
         Self {
             entity: entity.to_owned(),
-            tried: false,
             desc: None,
         }
+    }
+
+    pub fn entity(&self) -> &Entity {
+        &self.entity
+    }
+
+    pub fn set_description(&mut self, description: &str) {
+        self.desc = Some(description.to_string());
     }
 }
 

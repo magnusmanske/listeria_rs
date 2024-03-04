@@ -1088,6 +1088,8 @@ impl ListeriaList {
         self.profile("START list::process_results");
         self.gather_and_load_items().await?;
         self.profile("AFTER list::process_results gather_and_load_items");
+        self.fill_autodesc().await?;
+        self.profile("AFTER list::process_results fill_autodesc");
         self.process_redlinks_only()?;
         self.profile("AFTER list::process_results process_redlinks_only");
         self.process_items_to_local_links()?;
@@ -1109,6 +1111,39 @@ impl ListeriaList {
         self.fix_local_links().await?;
         self.profile("AFTER list::process_results fix_local_links");
         self.profile("END list::process_results");
+        Ok(())
+    }
+
+    async fn fill_autodesc(&mut self) -> Result<()> {
+        // Done in two different steps, otherwise get_autodesc_description() would borrow self when &mut self is already borrowed
+        // TODO Maybe gather futures and run get_autodesc_description() in async/parallel?
+
+        // Gather descriptions
+        let mut autodescs = HashMap::new();
+        for row in &self.results {
+            for cell in row.cells() {
+                for part_with_reference in cell.parts() {
+                    if let ResultCellPart::AutoDesc(ad) = &part_with_reference.part {
+                        if let Ok(desc) = self.get_autodesc_description(ad.entity()).await {
+                            autodescs.insert(ad.entity().id().to_owned(),desc);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Set descriptions
+        for row in &mut self.results {
+            for cell in row.cells_mut() {
+                for part_with_reference in cell.parts_mut() {
+                    if let ResultCellPart::AutoDesc(ad) = &mut part_with_reference.part {
+                        if let Some(desc) = autodescs.get(ad.entity().id()) {
+                            ad.set_description(desc)
+                        }
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
