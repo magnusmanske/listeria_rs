@@ -204,7 +204,7 @@ impl EntityContainerWrapper {
                     entities_to_load.push(property.to_owned());
                 }
                 ResultCellPart::SnakList(v) => self
-                    .gather_entities_and_external_properties(&v)
+                    .gather_entities_and_external_properties(v)
                     .iter()
                     .for_each(|entity_id| entities_to_load.push(entity_id.to_string())),
                 _ => {}
