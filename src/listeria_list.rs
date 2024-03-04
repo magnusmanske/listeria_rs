@@ -98,7 +98,7 @@ impl ListeriaList {
         self.profile("AFTER list::process run_query");
         self.load_entities().await?;
         self.profile("AFTER list::process load_entities");
-        // TODO spawn_blocking?
+        // TODO task::block_in_place(move || { or task::spawn_blocking(move || {
         self.generate_results()?;
         self.profile("AFTER list::process generate_results");
         self.process_results().await?;
@@ -739,7 +739,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    async fn process_redlinks_only(&mut self) -> Result<()> {
+    fn process_redlinks_only(&mut self) -> Result<()> {
         if *self.get_links_type() != LinksType::RedOnly {
             return Ok(());
         }
@@ -1088,7 +1088,7 @@ impl ListeriaList {
         self.profile("START list::process_results");
         self.gather_and_load_items().await?;
         self.profile("AFTER list::process_results gather_and_load_items");
-        self.process_redlinks_only().await?;
+        self.process_redlinks_only()?;
         self.profile("AFTER list::process_results process_redlinks_only");
         self.process_items_to_local_links()?;
         self.profile("AFTER list::process_results process_items_to_local_links");

@@ -2,6 +2,7 @@ use crate::column::*;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
+use crate::result_cell_part::AutoDesc;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::sparql_value::SparqlValue;
@@ -59,8 +60,8 @@ impl ResultCell {
                             ));
                         }
                         None => {
-                            // TODO FIXME autodesc deactivated for performance reasons
-                            ret.parts.push(PartWithReference::new(ResultCellPart::Text(format!("autodesc unavailable")), None));
+                            // TODO FIXME autodesc deactivated for performance reasons, actually fill later
+                            ret.parts.push(PartWithReference::new(ResultCellPart::AutoDesc(AutoDesc::new(&e)), None));
                             // if let Ok(s) = list.get_autodesc_description(&e).await {
                             //     ret.parts
                             //         .push(PartWithReference::new(ResultCellPart::Text(s), None));
