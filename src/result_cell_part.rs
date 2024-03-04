@@ -24,9 +24,8 @@ impl PartWithReference {
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
-        partnum: usize,
     ) -> String {
-        let wikitext_part = self.part.as_wikitext(list, rownum, colnum, partnum);
+        let wikitext_part = self.part.as_wikitext(list, rownum, colnum);
         let wikitext_reference = match &self.references {
             Some(references) => {
                 let mut wikitext: Vec<String> = vec![];
@@ -133,7 +132,7 @@ impl ResultCellPart {
                     _ => ResultCellPart::Text(v.to_string()),
                 },
                 wikibase::Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
-                wikibase::Value::Time(v) => match ResultCellPart::reduce_time(&v) {
+                wikibase::Value::Time(v) => match ResultCellPart::reduce_time(v) {
                     Some(part) => ResultCellPart::Time(part),
                     None => ResultCellPart::Text("No/unknown value".to_string()),
                 },
@@ -165,9 +164,9 @@ impl ResultCellPart {
             }
         };
         Some(match v.precision() {
-            6 => format!("{}th millenium", year[0..year.len() - 2].to_string()),
-            7 => format!("{}th century", year[0..year.len() - 2].to_string()),
-            8 => format!("{}0s", year[0..year.len() - 2].to_string()),
+            6 => format!("{}th millenium", &year[0..year.len() - 2]),
+            7 => format!("{}th century", &year[0..year.len() - 2]),
+            8 => format!("{}0s", &year[0..year.len() - 2]),
             9 => year,
             10 => format!("{}-{}", year, month),
             11 => format!("{}-{}-{}", year, month, day),
@@ -176,7 +175,7 @@ impl ResultCellPart {
     }
 
     fn tabbed_string_safe(&self, s: String) -> String {
-        let ret = s.replace("\n", " ").replace("\t", " ");
+        let ret = s.replace(['\n', '\t'], " ");
         // 400 chars Max
         if ret.len() >= 380 {
             ret[0..380].to_string();
@@ -189,9 +188,7 @@ impl ResultCellPart {
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
-        partnum: usize,
     ) -> String {
-        //format!("CELL ROW {} COL {} PART {}", rownum, colnum, partnum)
         match self {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
@@ -255,10 +252,7 @@ impl ResultCellPart {
             }
             ResultCellPart::Time(time) => time.to_owned(),
             ResultCellPart::Location((lat, lon, region)) => {
-                let entity_id = match list.results().get(rownum) {
-                    Some(row) => Some(row.entity_id().to_string()),
-                    None => None,
-                };
+                let entity_id = list.results().get(rownum).map(|e| e.entity_id().to_string());
                 list.get_location_template(*lat, *lon, entity_id, region.to_owned())
             }
             ResultCellPart::File(file) => {
@@ -296,16 +290,11 @@ impl ResultCellPart {
                 }
             }
             ResultCellPart::SnakList(v) => {
-                let mut ret = vec![];
-                for rcp in v {
-                    ret.push(rcp.part.as_wikitext(list, rownum, colnum, partnum));
-                }
-                ret.join(" — ")
-                // v
-                // .iter()
-                // .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum, partnum))
-                // .collect::<Vec<String>>()
-                // .join(" — ")
+                v
+                    .iter()
+                    .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum))
+                    .collect::<Vec<String>>()
+                    .join(" — ")
             }
             ResultCellPart::AutoDesc(ad) => {
                 match &ad.desc {
@@ -321,8 +310,7 @@ impl ResultCellPart {
         list: &ListeriaList,
         rownum: usize,
         colnum: usize,
-        partnum: usize,
     ) -> String {
-        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum, partnum))
+        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum))
     }
 }

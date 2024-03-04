@@ -65,7 +65,7 @@ impl ResultRow {
 
     pub fn remove_excess_files(&mut self) {
         self.cells.iter_mut().for_each(|cell| {
-            if let Some(part) = cell.parts().get(0) {
+            if let Some(part) = cell.parts().first() {
                 let has_files = matches!(part.part, ResultCellPart::File(_));
                 if has_files {
                     let mut parts = cell.parts().clone();
@@ -82,7 +82,7 @@ impl ResultRow {
                 cell.parts()
                     .iter()
                     .filter(|part_with_reference| match &part_with_reference.part {
-                        ResultCellPart::File(file) => !shadow_files.contains(&file),
+                        ResultCellPart::File(file) => !shadow_files.contains(file),
                         _ => true,
                     })
                     .cloned()
@@ -124,7 +124,7 @@ impl ResultRow {
                 Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
         }
         match page.get_entity(&self.entity_id) {
-            Some(entity) => match entity.label_in_locale(&page.language()) {
+            Some(entity) => match entity.label_in_locale(page.language()) {
                 Some(label) => {
                     let ret = RE_SR_JR.replace_all(label, "");
                     let ret = RE_BRACES.replace_all(&ret, "");
@@ -198,7 +198,7 @@ impl ResultRow {
                 wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
                 wikibase::value::Value::Entity(entity) => {
                     // TODO language?
-                    list.get_label_with_fallback(&entity.id(), None)
+                    list.get_label_with_fallback(entity.id(), None)
                 }
                 wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikibase::value::Value::StringValue(s) => s.to_owned(),

@@ -59,9 +59,11 @@ impl Configuration {
     }
 
     pub async fn new_from_json(j: Value) -> Result<Self> {
-        let mut ret: Self = Default::default();
+        let mut ret: Self = Self {
+            max_mw_apis_per_wiki: j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize),
+            .. Default::default()
+        };
 
-        ret.max_mw_apis_per_wiki = j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize);
         ret.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);
         ret.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
         ret.default_language = j["default_language"]
@@ -113,7 +115,7 @@ impl Configuration {
         if let Some(o) = j["apis"].as_object() {
             for (k, v) in o.iter() {
                 if let (name, Some(url)) = (k.as_str(), v.as_str()) {
-                    let mut api = wikibase::mediawiki::api::Api::new(&url).await?;
+                    let mut api = wikibase::mediawiki::api::Api::new(url).await?;
                     api.set_oauth2(&oauth2_token);
                     ret.wb_apis.insert(name.to_string(), Arc::new(api));
                 }
@@ -170,7 +172,7 @@ impl Configuration {
         };
         let entities = ret.create_entity_container();
         entities
-            .load_entities(&api, &vec![q_start.clone(), q_end.clone()])
+            .load_entities(api, &vec![q_start.clone(), q_end.clone()])
             .await
             .map_err(|e| anyhow!("{e}"))?;
         ret.template_start_sites = ret.get_sitelink_mapping(&entities, &q_start)?;
@@ -196,7 +198,7 @@ impl Configuration {
 
     pub fn pool(&self) -> &Arc<DatabasePool> {
         match &self.pool {
-            Some(pool) => &pool,
+            Some(pool) => pool,
             None => panic!("Configuration::pool(): pool not defined"),
         }
     }
@@ -328,8 +330,8 @@ impl Configuration {
     pub async fn wbapi_login(&mut self, key: &str) -> bool {
         let oauth2_token = self.oauth2_token().to_owned();
         match self.wb_apis.get_mut(key) {
-            Some(mut api) => {
-                if let Some(api) = Arc::get_mut(&mut api) {
+            Some(api) => {
+                if let Some(api) = Arc::get_mut(api) {
                     api.set_oauth2(&oauth2_token);
                 }
                 true

@@ -1,7 +1,7 @@
 extern crate config;
 extern crate serde_json;
 
-use anyhow::{Result,anyhow};
+use anyhow::{anyhow, Result};
 use config::{Config, File};
 use listeria::configuration::Configuration;
 use listeria::listeria_page::ListeriaPage;
@@ -17,12 +17,18 @@ async fn update_page(_settings: &Config, page_title: &str, api_url: &str) -> Res
 
     let mw_api = Arc::new(RwLock::new(mw_api));
     let mut page = ListeriaPage::new(config, mw_api, page_title.into()).await?;
-    page.run().await.map_err(|e|anyhow!("{e:?}"))?;
+    page.run().await.map_err(|e| anyhow!("{e:?}"))?;
 
-    Ok(match page.update_source_page().await.map_err(|e|anyhow!("{e:?}"))? {
-        true => format!("{page_title} edited"),
-        false => format!("{page_title} not edited"),
-    })
+    Ok(
+        match page
+            .update_source_page()
+            .await
+            .map_err(|e| anyhow!("{e:?}"))?
+        {
+            true => format!("{page_title} edited"),
+            false => format!("{page_title} not edited"),
+        },
+    )
 }
 
 #[tokio::main]
@@ -39,19 +45,19 @@ async fn main() -> Result<()> {
         .get(1)
         .ok_or_else(|| anyhow!("No wiki server argument"))?;
 
-    if first_arg=="update_wikis" {
+    if first_arg == "update_wikis" {
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let wiki_list = WikiApis::new(config.clone()).await?;
         wiki_list.update_wiki_list_in_database().await?;
         wiki_list.update_all_wikis().await?;
-        return Ok(())
+        return Ok(());
     }
 
     let wiki_server = first_arg;
     let page = args.get(2).ok_or_else(|| anyhow!("No page argument"))?;
 
     let wiki_api = format!("https://{}/w/api.php", &wiki_server);
-    let message = match update_page(&settings, &page, &wiki_api).await {
+    let message = match update_page(&settings, page, &wiki_api).await {
         Ok(m) => format!("OK: {}", m),
         Err(e) => format!("ERROR: {}", e),
     };

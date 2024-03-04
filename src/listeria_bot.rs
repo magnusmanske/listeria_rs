@@ -84,7 +84,7 @@ impl ListeriaBot {
             return Some(bot.to_owned());
         }
         info!("Creating bot for {wiki}");
-        let mw_api = match self.wiki_apis.get_or_create_wiki_api(&wiki).await {
+        let mw_api = match self.wiki_apis.get_or_create_wiki_api(wiki).await {
             Ok(mw_api) => mw_api,
             Err(e) => {
                 eprintln!("{e}");
@@ -92,10 +92,10 @@ impl ListeriaBot {
             }
         };
 
-        let bot = ListeriaBotWiki::new(&wiki, mw_api, self.config.clone());
+        let bot = ListeriaBotWiki::new(wiki, mw_api, self.config.clone());
         lock.insert(wiki.to_string(), bot.clone());
         info!("Created bot for {wiki}");
-        return Some(bot);
+        Some(bot)
     }
 
     pub async fn reset_running(&self) -> Result<()> {
@@ -119,7 +119,7 @@ impl ListeriaBot {
             .exec_iter(sql, ())
             .await
             .ok()?
-            .map_and_drop(|row| PageToProcess::from_row(row))
+            .map_and_drop(PageToProcess::from_row)
             .await
             .ok()?
             .pop()
@@ -305,7 +305,7 @@ impl ListeriaBot {
             .await?
             .exec_iter(sql.as_str(), params)
             .await?
-            .map_and_drop(|row| from_row::<String>(row))
+            .map_and_drop(from_row::<String>)
             .await?;
         Ok(())
     }

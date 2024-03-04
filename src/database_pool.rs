@@ -9,7 +9,7 @@ pub struct DatabasePool {
 
 impl DatabasePool {
     pub fn new(config: &Configuration) -> Result<Self> {
-        let opts = Self::pool_opts_from_config(&config)?;
+        let opts = Self::pool_opts_from_config(config)?;
         Ok(Self {
             pool: Pool::new(opts),
         })

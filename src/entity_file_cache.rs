@@ -54,8 +54,7 @@ impl EntityFileCache {
         *self.last_action_was_read.lock().ok()? = true;
         let (start, length) = self.id2pos.get(entity_id)?;
         fh.seek(SeekFrom::Start(*start)).ok()?;
-        let mut buffer: Vec<u8> = Vec::new();
-        buffer.resize(*length as usize, 0);
+        let mut buffer: Vec<u8> = vec![0; *length as usize];
         fh.read_exact(&mut buffer).ok()?;
         let s: String = String::from_utf8(buffer).ok()?;
         Some(s)

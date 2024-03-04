@@ -42,17 +42,16 @@ impl SparqlValue {
             None => return None,
         };
         match j["type"].as_str() {
-            Some("uri") => match RE_ENTITY.captures(&value) {
-                Some(caps) => match caps.get(1) {
-                    Some(caps1) => Some(SparqlValue::Entity(caps1.as_str().to_string())),
-                    None => None,
-                },
-                None => match RE_FILE.captures(&value) {
+            Some("uri") => match RE_ENTITY.captures(value) {
+                Some(caps) => caps
+                    .get(1)
+                    .map(|caps1| SparqlValue::Entity(caps1.as_str().to_string())),
+                None => match RE_FILE.captures(value) {
                     Some(caps) => match caps.get(1) {
                         Some(caps1) => {
                             let file = caps1.as_str().to_string();
                             let file = urlencoding::decode(&file).ok()?;
-                            let file = file.replace("_", " ");
+                            let file = file.replace('_', " ");
                             Some(SparqlValue::File(file))
                         }
                         None => None,
@@ -62,7 +61,7 @@ impl SparqlValue {
             },
             Some("literal") => match j["datatype"].as_str() {
                 Some("http://www.opengis.net/ont/geosparql#wktLiteral") => {
-                    match RE_POINT.captures(&value) {
+                    match RE_POINT.captures(value) {
                         Some(caps) => {
                             let lat: f64 = caps.get(2)?.as_str().parse().ok()?;
                             let lon: f64 = caps.get(1)?.as_str().parse().ok()?;
@@ -73,7 +72,7 @@ impl SparqlValue {
                 }
                 Some("http://www.w3.org/2001/XMLSchema#dateTime") => {
                     let time = value.to_string();
-                    let time = match RE_DATE.captures(&value) {
+                    let time = match RE_DATE.captures(value) {
                         Some(caps) => {
                             let date: String = caps.get(1)?.as_str().to_string();
                             date
@@ -84,10 +83,7 @@ impl SparqlValue {
                 }
                 _ => Some(SparqlValue::Literal(value.to_string())),
             },
-            Some("bnode") => match j["value"].as_str() {
-                Some(value) => Some(SparqlValue::Literal(value.to_string())),
-                None => None,
-            },
+            Some("bnode") => j["value"].as_str().map(|value| SparqlValue::Literal(value.to_string())),
             _ => None,
         }
     }
