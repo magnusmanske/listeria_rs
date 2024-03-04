@@ -44,10 +44,8 @@ impl WikiApis {
 
         if let Some(max) = self.config.get_max_mw_apis_total() {
             loop {
-                let current_strong_locks: usize = lock
-                    .iter()
-                    .map(|(_wiki, api)| Arc::strong_count(api))
-                    .sum();
+                let current_strong_locks: usize =
+                    lock.iter().map(|(_wiki, api)| Arc::strong_count(api)).sum();
                 if current_strong_locks < *max {
                     break;
                 }

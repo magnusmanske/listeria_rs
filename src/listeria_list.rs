@@ -152,8 +152,7 @@ impl ListeriaList {
                     .for_each(|column| self.columns.push(column));
             }
             None => {
-                let column =
-                    Column::new("item").ok_or_else(|| anyhow!("Bad column: item"))?;
+                let column = Column::new("item").ok_or_else(|| anyhow!("Bad column: item"))?;
                 self.columns.push(column);
             }
         }
@@ -943,7 +942,8 @@ impl ListeriaList {
         self.profile("AFTER list::process_assign_sections 5");
 
         // Sort by section name
-        let mut valid_section_names: Vec<String> = section_count.keys().map(|k|(*k).to_owned()).collect();
+        let mut valid_section_names: Vec<String> =
+            section_count.keys().map(|k| (*k).to_owned()).collect();
         valid_section_names.sort();
         self.profile("AFTER list::process_assign_sections 6");
 

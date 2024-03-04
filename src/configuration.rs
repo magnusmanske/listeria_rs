@@ -61,7 +61,7 @@ impl Configuration {
     pub async fn new_from_json(j: Value) -> Result<Self> {
         let mut ret: Self = Self {
             max_mw_apis_per_wiki: j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize),
-            .. Default::default()
+            ..Default::default()
         };
 
         ret.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);

@@ -19,12 +19,7 @@ impl PartWithReference {
         Self { part, references }
     }
 
-    pub fn as_wikitext(
-        &self,
-        list: &ListeriaList,
-        rownum: usize,
-        colnum: usize,
-    ) -> String {
+    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let wikitext_part = self.part.as_wikitext(list, rownum, colnum);
         let wikitext_reference = match &self.references {
             Some(references) => {
@@ -183,12 +178,7 @@ impl ResultCellPart {
         ret
     }
 
-    pub fn as_wikitext(
-        &self,
-        list: &ListeriaList,
-        rownum: usize,
-        colnum: usize,
-    ) -> String {
+    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         match self {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
@@ -252,7 +242,10 @@ impl ResultCellPart {
             }
             ResultCellPart::Time(time) => time.to_owned(),
             ResultCellPart::Location((lat, lon, region)) => {
-                let entity_id = list.results().get(rownum).map(|e| e.entity_id().to_string());
+                let entity_id = list
+                    .results()
+                    .get(rownum)
+                    .map(|e| e.entity_id().to_string());
                 list.get_location_template(*lat, *lon, entity_id, region.to_owned())
             }
             ResultCellPart::File(file) => {
@@ -289,13 +282,11 @@ impl ResultCellPart {
                     None => text.to_owned(),
                 }
             }
-            ResultCellPart::SnakList(v) => {
-                v
-                    .iter()
-                    .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum))
-                    .collect::<Vec<String>>()
-                    .join(" — ")
-            }
+            ResultCellPart::SnakList(v) => v
+                .iter()
+                .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum))
+                .collect::<Vec<String>>()
+                .join(" — "),
             ResultCellPart::AutoDesc(ad) => {
                 match &ad.desc {
                     Some(desc) => desc.to_owned(),
@@ -305,12 +296,7 @@ impl ResultCellPart {
         }
     }
 
-    pub fn as_tabbed_data(
-        &self,
-        list: &ListeriaList,
-        rownum: usize,
-        colnum: usize,
-    ) -> String {
+    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum))
     }
 }
