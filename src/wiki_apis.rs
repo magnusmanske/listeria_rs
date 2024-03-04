@@ -46,7 +46,7 @@ impl WikiApis {
             loop {
                 let current_strong_locks: usize = lock
                     .iter()
-                    .map(|(_wiki, api)| Arc::strong_count(&api))
+                    .map(|(_wiki, api)| Arc::strong_count(api))
                     .sum();
                 if current_strong_locks < *max {
                     break;
@@ -60,7 +60,7 @@ impl WikiApis {
             // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
             // See https://phabricator.wikimedia.org/T356160
             if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
-                while Arc::strong_count(&api) >= *max {
+                while Arc::strong_count(api) >= *max {
                     sleep(Duration::from_millis(100)).await;
                     warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
                 }
@@ -83,7 +83,7 @@ impl WikiApis {
             "{}/w/api.php",
             self.site_matrix.get_server_url_for_wiki(wiki)?
         );
-        self.create_wiki_api_from_api_url(&api_url, &self.config.oauth2_token())
+        self.create_wiki_api_from_api_url(&api_url, self.config.oauth2_token())
             .await
     }
 
@@ -98,7 +98,7 @@ impl WikiApis {
             .gzip(true)
             .deflate(true)
             .brotli(true);
-        let mut mw_api = Api::new_from_builder(&api_url, builder).await?;
+        let mut mw_api = Api::new_from_builder(api_url, builder).await?;
         mw_api.set_oauth2(oauth2_token);
         mw_api.set_edit_delay(self.config.ms_delay_after_edit()); // Slow down editing a bit
         let mw_api = Arc::new(RwLock::new(mw_api));
@@ -111,7 +111,7 @@ impl WikiApis {
         let api = self.config.get_default_wbapi()?;
         let entities = self.config.create_entity_container();
         entities
-            .load_entities(&api, &vec![q.to_owned()])
+            .load_entities(api, &vec![q.to_owned()])
             .await
             .map_err(|e| anyhow!("{e}"))?;
         let entity = entities
@@ -164,7 +164,7 @@ impl WikiApis {
             .await?
             .exec_iter(sql, (template_start, template_end))
             .await?
-            .map_and_drop(|row| from_row::<(i64, String)>(row))
+            .map_and_drop(from_row::<(i64, String)>)
             .await?
             .iter()
             .filter(|(nsid, _title)| self.config.can_edit_namespace(wiki, *nsid))
@@ -222,7 +222,7 @@ impl WikiApis {
             .await?
             .exec_iter("SELECT `name` FROM `wikis`", ())
             .await?
-            .map_and_drop(|row| from_row::<String>(row))
+            .map_and_drop(from_row::<String>)
             .await?)
     }
 
@@ -236,7 +236,7 @@ impl WikiApis {
             .await?
             .exec_iter(sql, (wiki,))
             .await?
-            .map_and_drop(|row| from_row::<String>(row))
+            .map_and_drop(from_row::<String>)
             .await?)
     }
 
@@ -247,7 +247,7 @@ impl WikiApis {
             .await?
             .exec_iter("SELECT `id` FROM `wikis` WHERE `name`=?", (wiki,))
             .await?
-            .map_and_drop(|row| from_row::<u64>(row))
+            .map_and_drop(from_row::<u64>)
             .await?
             .iter()
             .cloned()
@@ -269,7 +269,7 @@ impl WikiApis {
             .as_str()
             .ok_or_else(|| anyhow!("No MySQL password set"))?
             .to_string();
-        let (host, schema) = self.db_host_and_schema_for_wiki(&wiki)?;
+        let (host, schema) = self.db_host_and_schema_for_wiki(wiki)?;
         let port: u16 = if host == "127.0.0.1" {
             3307
         } else {

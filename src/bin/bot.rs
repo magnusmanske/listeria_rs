@@ -2,8 +2,8 @@ extern crate config;
 extern crate serde_json;
 
 use anyhow::Result;
-use std::{env, sync::Arc};
 use listeria::listeria_bot::ListeriaBot;
+use std::{env, sync::Arc};
 use tokio::time::{sleep, Duration, Instant};
 
 /*
@@ -28,14 +28,14 @@ async fn run_singles(config_file: &str) -> Result<()> {
     let _ = bot.reset_running().await;
     let bot = Arc::new(bot);
     loop {
-        while bot.get_running_count().await>=max_threads {
+        while bot.get_running_count().await >= max_threads {
             sleep(Duration::from_millis(100)).await;
         }
         let page = match bot.prepare_next_single_page().await {
             Ok(page) => page,
             Err(e) => {
                 eprintln!("{e}");
-                continue
+                continue;
             }
         };
         // println!("{page:?}");
@@ -47,8 +47,8 @@ async fn run_singles(config_file: &str) -> Result<()> {
                 println!("{}", &e)
             }
             let end_time = Instant::now();
-            let diff = (end_time-start_time).as_secs();
-            let _ = bot.set_runtime(pagestatus_id,diff).await;
+            let diff = (end_time - start_time).as_secs();
+            let _ = bot.set_runtime(pagestatus_id, diff).await;
             bot.release_running(pagestatus_id).await;
         });
     }
@@ -58,7 +58,10 @@ async fn run_singles(config_file: &str) -> Result<()> {
 // #[tokio::main(flavor = "multi_thread")]
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
-    let config_file = args.get(1).map(|s|s.to_owned()).unwrap_or_else(|| "config.json".to_string());
+    let config_file = args
+        .get(1)
+        .map(|s| s.to_owned())
+        .unwrap_or_else(|| "config.json".to_string());
     // run_singles(&config_file).await
 
     let threads = 3; // TODO read from config file
@@ -69,6 +72,8 @@ fn main() -> Result<()> {
         // .thread_stack_size(threads * 1024 * 1024)
         // .thread_keep_alive(Duration::from_secs(600)) // 10 min
         .build()?
-        .block_on(async move { let _ = run_singles(&config_file).await; });
+        .block_on(async move {
+            let _ = run_singles(&config_file).await;
+        });
     Ok(())
 }

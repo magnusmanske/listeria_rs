@@ -109,7 +109,7 @@ impl ListeriaPage {
         let mut ret = vec![];
         let mut again: bool = true;
         while again {
-            let mut element = match PageElement::new_from_text(&text, &self) {
+            let mut element = match PageElement::new_from_text(&text, self) {
                 Some(pe) => pe,
                 None => {
                     again = false;
@@ -129,7 +129,7 @@ impl ListeriaPage {
     }
 
     pub async fn load_page_as(&self, mode: &str) -> Result<String, WikiPageResult> {
-        let mut params: HashMap<String, String> = vec![("action", "parse"), ("prop", mode)]
+        let mut params: HashMap<String, String> = [("action", "parse"), ("prop", mode)]
             .iter()
             .map(|x| (x.0.to_string(), x.1.to_string()))
             .collect();
@@ -261,7 +261,7 @@ impl ListeriaPage {
             return Ok(());
         }
         let params: HashMap<String, String> =
-            vec![("action", "purge"), ("titles", self.page_params.page())]
+            [("action", "purge"), ("titles", self.page_params.page())]
                 .iter()
                 .map(|x| (x.0.to_string(), x.1.to_string()))
                 .collect();

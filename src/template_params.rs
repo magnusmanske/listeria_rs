@@ -1,5 +1,3 @@
-//use crate::{LinksType, ReferencesParameter, SectionType, SortMode, SortOrder, Template};
-
 use regex::Regex;
 
 use crate::template::Template;

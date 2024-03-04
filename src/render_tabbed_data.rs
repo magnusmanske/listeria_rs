@@ -19,7 +19,7 @@ impl Renderer for RendererTabbedData {
         });
         let mut ret_data = vec![];
         for (rownum, row) in list.results().iter().enumerate() {
-            ret_data.push(row.as_tabbed_data(&list, rownum));
+            ret_data.push(row.as_tabbed_data(list, rownum));
         }
         ret["data"] = json!(ret_data); // TODO check if this is correct, see below
 
@@ -51,7 +51,7 @@ impl Renderer for RendererTabbedData {
             .dot_matches_new_line(true)
             .build()?;
 
-        let (before, blob, end_template, after) = match re_wikitext1.captures(&wikitext) {
+        let (before, blob, end_template, after) = match re_wikitext1.captures(wikitext) {
             Some(caps) => (
                 match caps.get(1) {
                     Some(a) => a,
@@ -74,7 +74,7 @@ impl Renderer for RendererTabbedData {
                 }
                 .as_str(),
             ),
-            None => match re_wikitext2.captures(&wikitext) {
+            None => match re_wikitext2.captures(wikitext) {
                 Some(caps) => (
                     match caps.get(1) {
                         Some(a) => a,
@@ -93,7 +93,7 @@ impl Renderer for RendererTabbedData {
             },
         };
 
-        let (start_template, rest) = match self.separate_start_template(&blob.to_string()) {
+        let (start_template, rest) = match self.separate_start_template(blob) {
             Some(parts) => parts,
             None => return Err(anyhow!("Can't split start template")),
         };
@@ -128,7 +128,7 @@ impl Renderer for RendererTabbedData {
 
 impl RendererTabbedData {
     pub fn tabbed_data_page_name(&self, list: &ListeriaList) -> Option<String> {
-        let ret = "Data:Listeria/".to_string() + &list.wiki() + "/" + &list.page_title() + ".tab";
+        let ret = "Data:Listeria/".to_string() + list.wiki() + "/" + list.page_title() + ".tab";
         if ret.len() > 250 {
             return None; // Page title too long
         }

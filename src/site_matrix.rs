@@ -12,7 +12,7 @@ impl SiteMatrix {
     pub async fn new(config: &Configuration) -> Result<Self> {
         // Load site matrix
         let api = config.get_default_wbapi()?;
-        let params: HashMap<String, String> = vec![("action", "sitematrix")]
+        let params: HashMap<String, String> = [("action", "sitematrix")]
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
@@ -41,10 +41,7 @@ impl SiteMatrix {
         match site[key_match].as_str() {
             Some(site_url) => {
                 if value == site_url {
-                    match site[key_return].as_str() {
-                        Some(url) => Some(url.to_string()),
-                        None => None,
-                    }
+                    site[key_return].as_str().map(|url| url.to_string())
                 } else {
                     None
                 }
@@ -54,7 +51,7 @@ impl SiteMatrix {
     }
 
     pub fn get_server_url_for_wiki(&self, wiki: &str) -> Result<String> {
-        match wiki.replace("_", "-").as_str() {
+        match wiki.replace('_', "-").as_str() {
             "be-taraskwiki" | "be-x-oldwiki" => {
                 return Ok("https://be-tarask.wikipedia.org".to_string())
             }

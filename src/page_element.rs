@@ -23,19 +23,19 @@ impl PageElement {
     pub fn new_from_text(text: &str, page: &ListeriaPage) -> Option<Self> {
         let start_template = page
             .config()
-            .get_local_template_title_start(&page.wiki())
+            .get_local_template_title_start(page.wiki())
             .ok()?;
         let end_template = page
             .config()
-            .get_local_template_title_end(&page.wiki())
+            .get_local_template_title_end(page.wiki())
             .ok()?;
         let pattern_string_start = r#"\{\{(Wikidata[ _]list[^\|]*|"#.to_string()
-            + &start_template.replace(" ", "[ _]")
+            + &start_template.replace(' ', "[ _]")
             //+ r#")\s*\|"#; // New version
             + r#"[^\|]*)"#; // Orig
                             //+ r#")"#;
         let pattern_string_end = r#"\{\{(Wikidata[ _]list[ _]end|"#.to_string()
-            + &end_template.replace(" ", "[ _]")
+            + &end_template.replace(' ', "[ _]")
             + r#")(\s*\}\})"#;
         let seperator_start: Regex = RegexBuilder::new(&pattern_string_start)
             .multi_line(true)
@@ -50,12 +50,12 @@ impl PageElement {
             .build()
             .ok()?;
 
-        let match_start = match seperator_start.find(&text) {
+        let match_start = match seperator_start.find(text) {
             Some(m) => m,
             None => return None,
         };
 
-        let (match_end, single_template) = match seperator_end.find_at(&text, match_start.start()) {
+        let (match_end, single_template) = match seperator_end.find_at(text, match_start.start()) {
             Some(m) => (m, false),
             None => (match_start, true), // No end template, could be tabbed data
         };

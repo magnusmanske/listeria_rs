@@ -103,7 +103,7 @@ impl ResultCell {
                         .for_each(|statement| {
                             let references = match list.get_reference_parameter() {
                                 ReferencesParameter::All => {
-                                    Self::get_references_for_statement(&statement, list.language())
+                                    Self::get_references_for_statement(statement, list.language())
                                 }
                                 _ => None,
                             };
@@ -298,7 +298,7 @@ impl ResultCell {
     }
 
     pub fn get_sortkey(&self) -> String {
-        match self.parts.get(0) {
+        match self.parts.first() {
             Some(part_with_reference) => match &part_with_reference.part {
                 ResultCellPart::Entity((id, _)) => id.to_owned(),
                 ResultCellPart::LocalLink((page, _label, _)) => page.to_owned(),
@@ -326,7 +326,7 @@ impl ResultCell {
     }
 
     pub fn localize_item_links_in_parts(
-        parts: &mut Vec<PartWithReference>,
+        parts: &mut [PartWithReference],
         ecw: &EntityContainerWrapper,
         wiki: &str,
         language: &str,
@@ -339,14 +339,15 @@ impl ResultCell {
     }
 
     pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
-        let mut ret = vec![];
-        for (partnum, part_with_reference) in self.parts.iter().enumerate() {
-            ret.push(
+        let ret: Vec<String> = self
+            .parts
+            .iter()
+            .map(|part_with_reference| {
                 part_with_reference
                     .part
-                    .as_tabbed_data(list, rownum, colnum, partnum),
-            );
-        }
+                    .as_tabbed_data(list, rownum, colnum)
+            })
+            .collect();
         json!(ret.join("<br/>"))
     }
 
@@ -361,15 +362,13 @@ impl ResultCell {
             ret = " ".to_string();
         }
 
-        let mut parts = vec![];
-        for (partnum, part_with_reference) in self.parts.iter().enumerate() {
-            parts.push(
-                part_with_reference
-                    .part
-                    .as_wikitext(list, rownum, colnum, partnum),
-            );
-        }
+        let mut parts: Vec<String> = self
+            .parts
+            .iter()
+            .map(|part_with_reference| part_with_reference.part.as_wikitext(list, rownum, colnum))
+            .collect();
         if self.deduplicate_parts {
+            // Deduplicate but keep order?
             let mut parts2 = Vec::new();
             for part in &parts {
                 if !parts2.contains(part) {

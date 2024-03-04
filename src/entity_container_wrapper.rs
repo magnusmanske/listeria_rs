@@ -40,11 +40,7 @@ impl EntityContainerWrapper {
         }
     }
 
-    async fn load_entities_into_entity_cache(
-        &mut self,
-        api: &Api,
-        ids: &Vec<String>,
-    ) -> Result<()> {
+    async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &[String]) -> Result<()> {
         let chunks = ids.chunks(self.max_local_cached_entities);
         for chunk in chunks {
             if let Err(e) = self.entities.load_entities(api, &chunk.into()).await {
@@ -62,7 +58,7 @@ impl EntityContainerWrapper {
         Ok(())
     }
 
-    pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
+    pub async fn load_entities(&mut self, api: &Api, ids: &[String]) -> Result<()> {
         let ids: Vec<String> = ids
             .iter()
             .filter(|id| !self.entities.has_entity(id.as_str()))
@@ -229,7 +225,7 @@ mod tests {
         let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
             .await
             .unwrap();
-        let ids = ["Q1", "Q2", "Q3", "Q4", "Q5"]
+        let ids: Vec<String> = ["Q1", "Q2", "Q3", "Q4", "Q5"]
             .iter()
             .map(|s| s.to_string())
             .collect();

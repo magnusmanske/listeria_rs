@@ -47,28 +47,28 @@ impl ColumnType {
             "qid" => return ColumnType::Qid,
             _ => {}
         }
-        if let Some(caps) = RE_LABEL_LANG.captures(&s) {
+        if let Some(caps) = RE_LABEL_LANG.captures(s) {
             let ret = caps
                 .get(1)
                 .map(|s| s.as_str().to_lowercase())
                 .unwrap_or_default();
             return ColumnType::LabelLang(ret);
         }
-        if let Some(caps) = RE_ALIAS_LANG.captures(&s) {
+        if let Some(caps) = RE_ALIAS_LANG.captures(s) {
             let ret = caps
                 .get(1)
                 .map(|s| s.as_str().to_lowercase())
                 .unwrap_or_default();
             return ColumnType::AliasLang(ret);
         }
-        if let Some(caps) = RE_PROPERTY.captures(&s) {
+        if let Some(caps) = RE_PROPERTY.captures(s) {
             let ret = caps
                 .get(1)
                 .map(|s| s.as_str().to_uppercase())
                 .unwrap_or_default();
             return ColumnType::Property(ret);
         }
-        if let Some(caps) = RE_PROP_QUAL.captures(&s) {
+        if let Some(caps) = RE_PROP_QUAL.captures(s) {
             return ColumnType::PropertyQualifier((
                 caps.get(1)
                     .map(|s| s.as_str().to_uppercase())
@@ -78,7 +78,7 @@ impl ColumnType {
                     .unwrap_or_default(),
             ));
         }
-        if let Some(caps) = RE_PROP_QUAL_VAL.captures(&s) {
+        if let Some(caps) = RE_PROP_QUAL_VAL.captures(s) {
             return ColumnType::PropertyQualifierValue((
                 caps.get(1)
                     .map(|s| s.as_str().to_uppercase())
@@ -91,7 +91,7 @@ impl ColumnType {
                     .unwrap_or_default(),
             ));
         }
-        if let Some(caps) = RE_FIELD.captures(&s) {
+        if let Some(caps) = RE_FIELD.captures(s) {
             let ret = caps
                 .get(1)
                 .map(|s| s.as_str().to_uppercase())
@@ -134,14 +134,14 @@ impl Column {
             static ref RE_COLUMN_LABEL: Regex =
                 Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).expect("RE_COLUMN_LABEL does not parse");
         }
-        match RE_COLUMN_LABEL.captures(&s) {
+        match RE_COLUMN_LABEL.captures(s) {
             Some(caps) => Some(Self {
-                obj: ColumnType::new(&caps.get(1)?.as_str().to_string()),
+                obj: ColumnType::new(caps.get(1)?.as_str()),
                 label: caps.get(2)?.as_str().to_string(),
                 has_label: !caps.get(2)?.as_str().is_empty(),
             }),
             None => Some(Self {
-                obj: ColumnType::new(&s.trim().to_string()),
+                obj: ColumnType::new(s.trim()),
                 label: s.trim().to_string(),
                 has_label: false,
             }),
@@ -155,14 +155,14 @@ impl Column {
         self.label = match &self.obj {
             ColumnType::Property(prop) => list.get_label_with_fallback(prop, None),
             ColumnType::PropertyQualifier((prop, qual)) => {
-                list.get_label_with_fallback(&prop, None)
+                list.get_label_with_fallback(prop, None)
                     + "/"
-                    + &list.get_label_with_fallback(&qual, None)
+                    + &list.get_label_with_fallback(qual, None)
             }
             ColumnType::PropertyQualifierValue((prop1, _qual, prop2)) => {
-                list.get_label_with_fallback(&prop1, None)
+                list.get_label_with_fallback(prop1, None)
                     + "/"
-                    + &list.get_label_with_fallback(&prop2, None)
+                    + &list.get_label_with_fallback(prop2, None)
             }
             _ => self.label.to_owned(), // Fallback
         };

@@ -148,12 +148,12 @@ impl ListeriaList {
             Some(columns) => {
                 columns
                     .split(',')
-                    .filter_map(|part| Column::new(&part))
+                    .filter_map(Column::new)
                     .for_each(|column| self.columns.push(column));
             }
             None => {
                 let column =
-                    Column::new(&"item".to_string()).ok_or_else(|| anyhow!("Bad column: item"))?;
+                    Column::new("item").ok_or_else(|| anyhow!("Bad column: item"))?;
                 self.columns.push(column);
             }
         }
@@ -185,7 +185,7 @@ impl ListeriaList {
     }
 
     async fn cache_local_pages_exist(&mut self, pages: &[String]) {
-        let params: HashMap<String, String> = vec![
+        let params: HashMap<String, String> = [
             ("action", "query"),
             ("prop", ""),
             ("titles", pages.join("|").as_str()),
@@ -243,7 +243,7 @@ impl ListeriaList {
             .unwrap_or(&false)
     }
 
-    fn first_letter_to_upper_case(&self, s1: &String) -> String {
+    fn first_letter_to_upper_case(&self, s1: &str) -> String {
         let mut c = s1.chars();
         match c.next() {
             None => String::new(),
@@ -402,7 +402,7 @@ impl ListeriaList {
         if self.page_params.simulate() {
             match self.page_params.simulated_sparql_results() {
                 Some(json_text) => {
-                    let j = serde_json::from_str(&json_text)?;
+                    let j = serde_json::from_str(json_text)?;
                     return self.parse_sparql(j);
                 }
                 None => {}
@@ -425,7 +425,7 @@ impl ListeriaList {
         if false {
             // Use first variable
             let first_var = match j["head"]["vars"].as_array() {
-                Some(a) => match a.get(0) {
+                Some(a) => match a.first() {
                     Some(v) => v
                         .as_str()
                         .ok_or(anyhow!("Can't parse first variable"))?
@@ -453,7 +453,7 @@ impl ListeriaList {
             let mut row: HashMap<String, SparqlValue> = HashMap::new();
             if let Some(bo) = b.as_object() {
                 for (k, v) in bo.iter() {
-                    match SparqlValue::new_from_json(&v) {
+                    match SparqlValue::new_from_json(v) {
                         Some(v2) => row.insert(k.to_owned(), v2),
                         None => {
                             return Err(anyhow!("Can't parse SPARQL value: {} => {:?}", &k, &v))
@@ -622,17 +622,17 @@ impl ListeriaList {
                         Some(rows) => rows,
                         None => continue, // TODO this should never happen, but maybe throw error if it does?
                     };
-                    tmp_results.push(self.ecw.get_result_row(&id, &sparql_rows, &self));
+                    tmp_results.push(self.ecw.get_result_row(id, sparql_rows, self));
                 }
 
                 self.profile("END generate_results join_all");
-                results = tmp_results.iter().cloned().filter_map(|x| x).collect();
+                results = tmp_results.iter().flatten().cloned().collect();
             }
             false => {
                 let varname = self.get_var_name()?;
                 for row in self.sparql_rows.iter() {
                     if let Some(SparqlValue::Entity(id)) = row.get(varname) {
-                        if let Some(x) = self.ecw.get_result_row(id, &[&row], &self) {
+                        if let Some(x) = self.ecw.get_result_row(id, &[&row], self) {
                             results.push(x);
                         }
                     }
@@ -697,7 +697,7 @@ impl ListeriaList {
                     self.page_params.local_file_namespace_prefix(),
                     &filename
                 );
-                let params: HashMap<String, String> = vec![
+                let params: HashMap<String, String> = [
                     ("action", "query"),
                     ("titles", prefixed_filename.as_str()),
                     ("prop", "imageinfo"),
@@ -713,7 +713,7 @@ impl ListeriaList {
 
         let mut futures = vec![];
         for params in &param_list {
-            futures.push(api_read.get_query_api_json(&params));
+            futures.push(api_read.get_query_api_json(params));
         }
         self.profile(&format!(
             "ListeriaList::process_remove_shadow_files running {} futures",
@@ -840,25 +840,25 @@ impl ListeriaList {
             SortMode::Label => {
                 self.load_row_entities().await?;
                 for row in &self.results {
-                    sortkeys.push(row.get_sortkey_label(&self));
+                    sortkeys.push(row.get_sortkey_label(self));
                 }
             }
             SortMode::FamilyName => {
                 for row in &self.results {
-                    sortkeys.push(row.get_sortkey_family_name(&self));
+                    sortkeys.push(row.get_sortkey_family_name(self));
                 }
             }
             SortMode::Property(prop) => {
                 datatype = self.ecw.get_datatype_for_property(prop);
                 for row in &self.results {
-                    sortkeys.push(row.get_sortkey_prop(&prop, &self, &datatype));
+                    sortkeys.push(row.get_sortkey_prop(prop, self, &datatype));
                 }
             }
             SortMode::SparqlVariable(variable) => {
                 sortkeys = self
                     .results
                     .iter()
-                    .map(|row| row.get_sortkey_sparql(&variable, &self))
+                    .map(|row| row.get_sortkey_sparql(variable, self))
                     .collect();
             }
             SortMode::None => return Ok(()),
@@ -883,7 +883,7 @@ impl ListeriaList {
     }
 
     async fn load_row_entities(&mut self) -> Result<()> {
-        let items_to_load = self
+        let items_to_load: Vec<String> = self
             .results
             .iter()
             .map(|row| row.entity_id())
@@ -943,8 +943,7 @@ impl ListeriaList {
         self.profile("AFTER list::process_assign_sections 5");
 
         // Sort by section name
-        let mut valid_section_names: Vec<String> =
-            section_count.iter().map(|(k, _v)| k.to_string()).collect();
+        let mut valid_section_names: Vec<String> = section_count.keys().map(|k|(*k).to_owned()).collect();
         valid_section_names.sort();
         self.profile("AFTER list::process_assign_sections 6");
 
@@ -1331,7 +1330,7 @@ impl ListeriaList {
                         }
                         // Try any label, any language
                         if let Some(entity) = self.get_entity(entity_id) {
-                            if let Some(label) = entity.labels().get(0) {
+                            if let Some(label) = entity.labels().first() {
                                 return label.value().to_string();
                             }
                         }

@@ -47,7 +47,7 @@ impl Template {
             }
         });
         parts.push(part.into_iter().collect());
-        if quoted == true {
+        if quoted {
             return Err(anyhow!("Unclosed quote: {quote_char}"));
         }
 
