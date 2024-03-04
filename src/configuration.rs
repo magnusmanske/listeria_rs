@@ -1,10 +1,10 @@
-use crate::*;
-use std::{fs::File, io::BufReader, path::Path};
-use anyhow::{Result,anyhow};
-use serde_json::Value;
-use wikibase::{entity_container::EntityContainer, EntityTrait};
-use std::time::Duration;
 use crate::database_pool::DatabasePool;
+use crate::*;
+use anyhow::{anyhow, Result};
+use serde_json::Value;
+use std::time::Duration;
+use std::{fs::File, io::BufReader, path::Path};
+use wikibase::{entity_container::EntityContainer, EntityTrait};
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -64,13 +64,18 @@ impl Configuration {
         ret.max_mw_apis_per_wiki = j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize);
         ret.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);
         ret.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
-        ret.default_language = j["default_language"].as_str().unwrap_or_default().to_string();
+        ret.default_language = j["default_language"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         ret.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
         ret.max_sparql_simultaneous = j["max_sparql_simultaneous"].as_u64().unwrap_or(10);
         ret.max_sparql_attempts = j["max_sparql_attempts"].as_u64().unwrap_or(5);
         ret.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
-        ret.max_local_cached_entities = j["max_local_cached_entities"].as_u64().unwrap_or(5000) as usize;
-        ret.max_concurrent_entry_queries = j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
+        ret.max_local_cached_entities =
+            j["max_local_cached_entities"].as_u64().unwrap_or(5000) as usize;
+        ret.max_concurrent_entry_queries =
+            j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
         ret.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
         ret.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
         ret.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
@@ -78,13 +83,27 @@ impl Configuration {
         if let Some(sic) = j["shadow_images_check"].as_array() {
             ret.shadow_images_check = sic
                 .iter()
-                .map(|s| s.as_str().expect("shadow_images_check needs to be a string").to_string())
+                .map(|s| {
+                    s.as_str()
+                        .expect("shadow_images_check needs to be a string")
+                        .to_string()
+                })
                 .collect()
         }
         if let Some(lr) = j["location_regions"].as_array() {
-            ret.location_regions = lr.iter().map(|s| s.as_str().expect("location_regions needs to be a string").to_string()).collect()
+            ret.location_regions = lr
+                .iter()
+                .map(|s| {
+                    s.as_str()
+                        .expect("location_regions needs to be a string")
+                        .to_string()
+                })
+                .collect()
         }
-        ret.oauth2_token = j["wiki_login"]["token"].as_str().unwrap_or_default().to_string();
+        ret.oauth2_token = j["wiki_login"]["token"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         if j["mysql"].is_object() {
             ret.mysql = Some(j["mysql"].to_owned());
         }
@@ -120,7 +139,9 @@ impl Configuration {
                         ret.namespace_blocks
                             .insert(k.to_string(), NamespaceGroup::All);
                     } else {
-                        return Err(anyhow!("Unrecognized string value for namespace_blocks[{k}]:{v}"));
+                        return Err(anyhow!(
+                            "Unrecognized string value for namespace_blocks[{k}]:{v}"
+                        ));
                     }
                 }
 
@@ -151,7 +172,7 @@ impl Configuration {
         entities
             .load_entities(&api, &vec![q_start.clone(), q_end.clone()])
             .await
-            .map_err(|e|anyhow!("{e}"))?;
+            .map_err(|e| anyhow!("{e}"))?;
         ret.template_start_sites = ret.get_sitelink_mapping(&entities, &q_start)?;
         ret.template_end_sites = ret.get_sitelink_mapping(&entities, &q_end)?;
         ret.template_start_q = q_start;
@@ -276,7 +297,11 @@ impl Configuration {
     pub fn get_location_template(&self, wiki: &str) -> String {
         match self.location_templates.get(wiki) {
             Some(s) => s.to_owned(),
-            None => self.location_templates.get(&"default".to_string()).map(|s|s.to_owned()).unwrap_or_default()
+            None => self
+                .location_templates
+                .get(&"default".to_string())
+                .map(|s| s.to_owned())
+                .unwrap_or_default(),
         }
     }
 
@@ -304,7 +329,9 @@ impl Configuration {
         let oauth2_token = self.oauth2_token().to_owned();
         match self.wb_apis.get_mut(key) {
             Some(mut api) => {
-                if let Some(api) = Arc::get_mut(&mut api) {api.set_oauth2(&oauth2_token);}
+                if let Some(api) = Arc::get_mut(&mut api) {
+                    api.set_oauth2(&oauth2_token);
+                }
                 true
             }
             None => false,

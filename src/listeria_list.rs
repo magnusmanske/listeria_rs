@@ -1,3 +1,4 @@
+use crate::column::{Column, ColumnType};
 use crate::entity_container_wrapper::*;
 use crate::page_params::PageParams;
 use crate::result_cell::*;
@@ -11,20 +12,19 @@ use crate::template_params::SectionType;
 use crate::template_params::SortMode;
 use crate::template_params::SortOrder;
 use crate::template_params::TemplateParams;
-use crate::column::{Column, ColumnType};
-use anyhow::{Result,anyhow};
+use anyhow::{anyhow, Result};
 use chrono::DateTime;
 use chrono::Utc;
+use futures::future::join_all;
 use serde_json::Value;
-use tokio::time::{sleep,Duration};
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio::time::{sleep, Duration};
 use wikibase::entity::*;
 use wikibase::mediawiki::api::Api;
 use wikibase::snak::SnakDataType;
-use futures::future::join_all;
 
 lazy_static! {
     static ref SPARQL_REQUEST_COUNTER: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
@@ -46,7 +46,7 @@ pub struct ListeriaList {
     wb_api: Arc<Api>,
     language: String,
     reference_ids: HashSet<String>,
-    profiling:bool,
+    profiling: bool,
     last_timestamp: Arc<Mutex<DateTime<Utc>>>,
 }
 
@@ -75,17 +75,20 @@ impl ListeriaList {
         }
     }
 
-    fn profile(&self, msg:&str) {
+    fn profile(&self, msg: &str) {
         if self.profiling {
             let now: DateTime<Utc> = Utc::now();
-            let mut lock = self.last_timestamp.lock().expect("ListeriaList: Mutex is bad");
+            let mut lock = self
+                .last_timestamp
+                .lock()
+                .expect("ListeriaList: Mutex is bad");
             let last = (*lock).to_owned();
             *lock = now;
             drop(lock);
-            let diff = now-last;
+            let diff = now - last;
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-            let time_diff = format!("{}",diff.num_milliseconds());
-            let section = format!("{}:{}",self.page_params.wiki(),self.page_params.page());
+            let time_diff = format!("{}", diff.num_milliseconds());
+            let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
             println!("{timestamp} {section}: {msg} [{time_diff}ms]");
         }
     }
@@ -143,26 +146,33 @@ impl ListeriaList {
         let template = self.template.clone();
         match self.get_template_value(&template, "columns") {
             Some(columns) => {
-                columns.split(',')
-                    .filter_map(|part| Column::new(&part) )
+                columns
+                    .split(',')
+                    .filter_map(|part| Column::new(&part))
                     .for_each(|column| self.columns.push(column));
             }
             None => {
-                let column = Column::new(&"item".to_string()).ok_or_else(||anyhow!("Bad column: item"))?;
+                let column =
+                    Column::new(&"item".to_string()).ok_or_else(|| anyhow!("Bad column: item"))?;
                 self.columns.push(column);
             }
         }
 
         self.params = TemplateParams::new_from_params(&template);
         if let Some(s) = self.get_template_value(&template, "links") {
-            self.params.set_links(LinksType::new_from_string(s.to_string()))
+            self.params
+                .set_links(LinksType::new_from_string(s.to_string()))
         }
         if let Some(l) = self.get_template_value(&template, "language") {
             self.language = l.to_lowercase()
         }
 
         let wikibase = self.params.wikibase();
-        self.wb_api = match self.page_params.config().get_wbapi(&wikibase.to_lowercase()) {
+        self.wb_api = match self
+            .page_params
+            .config()
+            .get_wbapi(&wikibase.to_lowercase())
+        {
             Some(api) => api.clone(),
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase}'")),
         };
@@ -280,20 +290,27 @@ impl ListeriaList {
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
         };
         loop {
-            if *SPARQL_REQUEST_COUNTER.lock().expect("ListeriaList: Mutex is bad") < self.page_params.config().max_sparql_simultaneous() {
+            if *SPARQL_REQUEST_COUNTER
+                .lock()
+                .expect("ListeriaList: Mutex is bad")
+                < self.page_params.config().max_sparql_simultaneous()
+            {
                 break;
             }
-            *SPARQL_REQUEST_COUNTER.lock().expect("ListeriaList: Mutex is bad") += 1;
+            *SPARQL_REQUEST_COUNTER
+                .lock()
+                .expect("ListeriaList: Mutex is bad") += 1;
             sleep(Duration::from_millis(100)).await;
         }
         let result = self.run_sparql_query_api(&api, sparql).await;
-        *SPARQL_REQUEST_COUNTER.lock().expect("ListeriaList: Mutex is bad") -= 1;
+        *SPARQL_REQUEST_COUNTER
+            .lock()
+            .expect("ListeriaList: Mutex is bad") -= 1;
         result
     }
 
     async fn run_sparql_query_api(&self, wb_api_sparql: &Api, sparql: &str) -> Result<Value> {
-        let endpoint = match wb_api_sparql.get_site_info_string("general", "wikibase-sparql")
-        {
+        let endpoint = match wb_api_sparql.get_site_info_string("general", "wikibase-sparql") {
             Ok(endpoint) => {
                 // SPARQL service given by site
                 endpoint
@@ -309,10 +326,10 @@ impl ListeriaList {
         let max_sparql_attempts = self.page_params.config().max_sparql_attempts();
         let mut attempts_left = max_sparql_attempts;
         loop {
-            let ret = wb_api_sparql.sparql_query_endpoint(&sparql, endpoint).await;//.map_err(|e|anyhow!("{e}"))
+            let ret = wb_api_sparql.sparql_query_endpoint(&sparql, endpoint).await; //.map_err(|e|anyhow!("{e}"))
             match ret {
                 Ok(ret) => return Ok(ret),
-                Err(e) => { 
+                Err(e) => {
                     match &e {
                         wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
                             if s.contains("expected value at line 1 column 1: SPARQL-QUERY:") {
@@ -324,12 +341,14 @@ impl ListeriaList {
                                 attempts_left -= 1;
                                 continue;
                             }
-                            if s.contains("error decoding response body: expected value at line 1 column 1") {
+                            if s.contains(
+                                "error decoding response body: expected value at line 1 column 1",
+                            ) {
                                 return Err(anyhow!("SPARQL is probably broken: {s}\n{sparql}"));
                             }
-                            return Err(anyhow!("{e}"))
-                        },
-                        e => return Err(anyhow!("{e}"))
+                            return Err(anyhow!("{e}"));
+                        }
+                        e => return Err(anyhow!("{e}")),
                     }
                 }
             }
@@ -351,9 +370,7 @@ impl ListeriaList {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let j = api
-            .get_query_api_json(&params)
-            .await?;
+        let j = api.get_query_api_json(&params).await?;
         if let Some(s) = j["expandtemplates"]["wikitext"].as_str() {
             *sparql = s.to_string();
         }
@@ -362,9 +379,11 @@ impl ListeriaList {
 
     fn get_template_value(&self, template: &Template, key: &str) -> Option<String> {
         // template.params.get(key).map(|s|s.to_owned())
-        template.params.iter()
-            .filter(|(k,_v)|k.to_lowercase()==key.to_lowercase())
-            .map(|(_k,v)|v.to_owned())
+        template
+            .params
+            .iter()
+            .filter(|(k, _v)| k.to_lowercase() == key.to_lowercase())
+            .map(|(_k, v)| v.to_owned())
             .next()
     }
 
@@ -375,7 +394,9 @@ impl ListeriaList {
         }
         .to_string();
 
-        self.expand_sparql_templates(&mut sparql).await.map_err(|e|anyhow!("{e}"))?;
+        self.expand_sparql_templates(&mut sparql)
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
 
         // Return simulated results
         if self.page_params.simulate() {
@@ -405,7 +426,10 @@ impl ListeriaList {
             // Use first variable
             let first_var = match j["head"]["vars"].as_array() {
                 Some(a) => match a.get(0) {
-                    Some(v) => v.as_str().ok_or(anyhow!("Can't parse first variable"))?.to_string(),
+                    Some(v) => v
+                        .as_str()
+                        .ok_or(anyhow!("Can't parse first variable"))?
+                        .to_string(),
                     None => return Err(anyhow!("Bad SPARQL head.vars")),
                 },
                 None => return Err(anyhow!("Bad SPARQL head.vars")),
@@ -451,9 +475,12 @@ impl ListeriaList {
         if self
             .columns
             .iter()
-            .filter(
-                |c| !matches!(c.obj, ColumnType::Number | ColumnType::Item | ColumnType::Field(_)),
-            )
+            .filter(|c| {
+                !matches!(
+                    c.obj,
+                    ColumnType::Number | ColumnType::Item | ColumnType::Field(_)
+                )
+            })
             .count()
             == 0
         {
@@ -464,7 +491,10 @@ impl ListeriaList {
         if ids.is_empty() {
             return Err(anyhow!("No items to show"));
         }
-        self.ecw.load_entities(&self.wb_api, &ids).await.map_err(|e|anyhow!("{e}"))?;
+        self.ecw
+            .load_entities(&self.wb_api, &ids)
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
 
         self.label_columns();
 
@@ -551,9 +581,7 @@ impl ListeriaList {
             self.language
         );
         let api = self.page_params.mw_api().read().await;
-        let body = api
-            .query_raw(&url, &api.no_params(), "GET")
-            .await?;
+        let body = api.query_raw(&url, &api.no_params(), "GET").await?;
         let json: Value = serde_json::from_str(&body)?;
         match json["result"].as_str() {
             Some(result) => Ok(result.to_string()),
@@ -561,10 +589,11 @@ impl ListeriaList {
         }
     }
 
-    fn get_tmp_rows(&self) -> Result<HashMap<String,Vec<&HashMap<String,SparqlValue>>>> {
+    fn get_tmp_rows(&self) -> Result<HashMap<String, Vec<&HashMap<String, SparqlValue>>>> {
         let varname = self.get_var_name()?;
-        let sparql_row_ids: HashSet<String> = self.get_ids_from_sparql_rows()?.into_iter().collect();
-        let mut tmp_rows: HashMap<String,Vec<&HashMap<String,SparqlValue>>> = HashMap::new();
+        let sparql_row_ids: HashSet<String> =
+            self.get_ids_from_sparql_rows()?.into_iter().collect();
+        let mut tmp_rows: HashMap<String, Vec<&HashMap<String, SparqlValue>>> = HashMap::new();
         for sparql_row in &self.sparql_rows {
             let id = match sparql_row.get(varname) {
                 Some(SparqlValue::Entity(id)) => id,
@@ -576,13 +605,14 @@ impl ListeriaList {
             tmp_rows.entry(id.to_owned()).or_default().push(sparql_row);
         }
         Ok(tmp_rows)
-}
+    }
 
     pub fn generate_results(&mut self) -> Result<()> {
         let mut results: Vec<ResultRow> = vec![];
         match self.params.one_row_per_item() {
             true => {
-                let sparql_row_ids: Vec<String> = self.get_ids_from_sparql_rows()?.into_iter().collect(); // To preserve the original order
+                let sparql_row_ids: Vec<String> =
+                    self.get_ids_from_sparql_rows()?.into_iter().collect(); // To preserve the original order
                 let tmp_rows = self.get_tmp_rows()?;
                 self.profile("BEGIN generate_results join_all");
 
@@ -596,12 +626,7 @@ impl ListeriaList {
                 }
 
                 self.profile("END generate_results join_all");
-                results = tmp_results
-                    .iter()
-                    .cloned()
-                    .filter_map(|x| x)
-                    .collect();
-
+                results = tmp_results.iter().cloned().filter_map(|x| x).collect();
             }
             false => {
                 let varname = self.get_var_name()?;
@@ -624,7 +649,12 @@ impl ListeriaList {
         let language = self.language().to_owned();
         for row in self.results.iter_mut() {
             for cell in row.cells_mut().iter_mut() {
-                ResultCell::localize_item_links_in_parts(cell.parts_mut(), &self.ecw, &wiki, &language);
+                ResultCell::localize_item_links_in_parts(
+                    cell.parts_mut(),
+                    &self.ecw,
+                    &wiki,
+                    &language,
+                );
             }
         }
         Ok(())
@@ -659,9 +689,9 @@ impl ListeriaList {
 
         self.shadow_files.clear();
 
-        let param_list : Vec<HashMap<String,String>> = files_to_check
+        let param_list: Vec<HashMap<String, String>> = files_to_check
             .iter()
-            .map(|filename|{
+            .map(|filename| {
                 let prefixed_filename = format!(
                     "{}:{}",
                     self.page_params.local_file_namespace_prefix(),
@@ -679,32 +709,29 @@ impl ListeriaList {
             })
             .collect();
 
-        let api_read = self
-            .page_params
-            .mw_api()
-            .read()
-            .await;
+        let api_read = self.page_params.mw_api().read().await;
 
-        let mut futures = vec![] ;
+        let mut futures = vec![];
         for params in &param_list {
-            futures.push ( api_read.get_query_api_json(&params) ) ;
+            futures.push(api_read.get_query_api_json(&params));
         }
-        self.profile(&format!("ListeriaList::process_remove_shadow_files running {} futures",futures.len()));
+        self.profile(&format!(
+            "ListeriaList::process_remove_shadow_files running {} futures",
+            futures.len()
+        ));
 
-        let tmp_results = join_all(futures)
-            .await;
-        
-        let tmp_results : Vec<(&String,Value)> = tmp_results
+        let tmp_results = join_all(futures).await;
+
+        let tmp_results: Vec<(&String, Value)> = tmp_results
             .iter()
             .zip(files_to_check)
-            .filter_map(|(result,filename)| match result {
-                Ok(j) => Some((filename,j.to_owned())),
-                _ => None
+            .filter_map(|(result, filename)| match result {
+                Ok(j) => Some((filename, j.to_owned())),
+                _ => None,
             })
-            .collect()
-        ;
+            .collect();
 
-        for (filename,j) in tmp_results {
+        for (filename, j) in tmp_results {
             let mut could_be_local = false;
             match j["query"]["pages"].as_object() {
                 Some(results) => {
@@ -747,17 +774,15 @@ impl ListeriaList {
         // Remove all rows with existing local page
         let wiki = self.page_params.wiki().to_string();
         for row in self.results.iter_mut() {
-            row.set_keep(
-                match self.ecw.get_entity(row.entity_id()) {
-                    Some(entity) => {
-                        match entity.sitelinks() {
-                            Some(sl) => sl.iter().filter(|s| *s.site() == wiki).count() == 0,
-                            None => true, // No sitelinks, keep
-                        }
+            row.set_keep(match self.ecw.get_entity(row.entity_id()) {
+                Some(entity) => {
+                    match entity.sitelinks() {
+                        Some(sl) => sl.iter().filter(|s| *s.site() == wiki).count() == 0,
+                        None => true, // No sitelinks, keep
                     }
-                    _ => false,
-                },
-            );
+                }
+                _ => false,
+            });
         }
         self.results.retain(|row| row.keep());
         Ok(())
@@ -864,7 +889,10 @@ impl ListeriaList {
             .map(|row| row.entity_id())
             .cloned()
             .collect();
-        self.ecw.load_entities(&self.wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
+        self.ecw
+            .load_entities(&self.wb_api, &items_to_load)
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
         Ok(())
     }
 
@@ -878,7 +906,8 @@ impl ListeriaList {
                 return Err(anyhow!("SPARQL variable section type not supported yet"))
             }
             SectionType::None => return Ok(()), // Nothing to do
-        }.to_owned();
+        }
+        .to_owned();
         self.load_row_entities().await?;
         let datatype = self.ecw.get_datatype_for_property(&section_property);
         self.profile("AFTER list::process_assign_sections 1");
@@ -888,13 +917,16 @@ impl ListeriaList {
             section_names_q.push(row.get_sortkey_prop(&section_property, self, &datatype));
         }
         self.profile("AFTER list::process_assign_sections 2");
-        
+
         // Make sure section name items are loaded
-        self.ecw.load_entities(&self.wb_api, &section_names_q).await.map_err(|e|anyhow!("{e}"))?;
+        self.ecw
+            .load_entities(&self.wb_api, &section_names_q)
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
         self.profile("AFTER list::process_assign_sections 3a");
         let mut section_names = vec![];
         for q in section_names_q {
-            let label = self.get_label_with_fallback(&q,None);
+            let label = self.get_label_with_fallback(&q, None);
             section_names.push(label);
         }
 
@@ -915,7 +947,6 @@ impl ListeriaList {
             section_count.iter().map(|(k, _v)| k.to_string()).collect();
         valid_section_names.sort();
         self.profile("AFTER list::process_assign_sections 6");
-
 
         let misc_id = valid_section_names.len();
         valid_section_names.push("Misc".to_string());
@@ -1052,7 +1083,10 @@ impl ListeriaList {
         if !items_to_load.is_empty() {
             items_to_load.sort_unstable();
             items_to_load.dedup();
-            self.ecw.load_entities(&self.wb_api, &items_to_load).await.map_err(|e|anyhow!("{e}"))?;
+            self.ecw
+                .load_entities(&self.wb_api, &items_to_load)
+                .await
+                .map_err(|e| anyhow!("{e}"))?;
         }
         Ok(())
     }
@@ -1125,7 +1159,7 @@ impl ListeriaList {
                 for part_with_reference in cell.parts() {
                     if let ResultCellPart::AutoDesc(ad) = &part_with_reference.part {
                         if let Ok(desc) = self.get_autodesc_description(ad.entity()).await {
-                            autodescs.insert(ad.entity().id().to_owned(),desc);
+                            autodescs.insert(ad.entity().id().to_owned(), desc);
                         }
                     }
                 }
@@ -1167,8 +1201,7 @@ impl ListeriaList {
         let mut entities_to_load = vec![];
         for row in self.results.iter() {
             if let Some(entity) = self.ecw.get_entity(row.entity_id()) {
-                self
-                    .get_filtered_claims(&entity, prop)
+                self.get_filtered_claims(&entity, prop)
                     .iter()
                     .filter(|statement| statement.property() == prop)
                     .map(|statement| statement.main_snak())
@@ -1232,17 +1265,19 @@ impl ListeriaList {
         self.ecw
             .load_entities(&self.wb_api, &entities_to_load)
             .await
-            .map_err(|e|anyhow!("{e}"))?;
+            .map_err(|e| anyhow!("{e}"))?;
 
         entities_to_load = self.gather_items_sort().await?;
         let mut v2 = self.gather_items_section().await?;
         entities_to_load.append(&mut v2);
-        match self.ecw
+        match self
+            .ecw
             .load_entities(&self.wb_api, &entities_to_load)
-            .await {
-                Ok(ret) => Ok(ret),
-                Err(e) => Err(anyhow!("{e}")),
-            }
+            .await
+        {
+            Ok(ret) => Ok(ret),
+            Err(e) => Err(anyhow!("{e}")),
+        }
     }
 
     pub fn column(&self, column_id: usize) -> Option<&Column> {
@@ -1340,7 +1375,6 @@ impl ListeriaList {
         )
     }
 
-
     pub fn get_filtered_claims(
         &self,
         e: &wikibase::entity::Entity,
@@ -1366,7 +1400,8 @@ impl ListeriaList {
     }
 
     pub fn entity_to_local_link(&self, item: &str) -> Option<ResultCellPart> {
-        self.ecw.entity_to_local_link(item, self.wiki(), &self.language)
+        self.ecw
+            .entity_to_local_link(item, self.wiki(), &self.language)
     }
 
     pub fn default_language(&self) -> String {

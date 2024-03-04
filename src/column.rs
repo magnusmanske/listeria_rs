@@ -29,12 +29,15 @@ impl ColumnType {
                 .case_insensitive(true)
                 .build()
                 .expect("RE_ALIAS_LANG does not parse");
-            static ref RE_PROPERTY: Regex = Regex::new(r#"^([Pp]\d+)$"#).expect("RE_PROPERTY does not parse");
-            static ref RE_PROP_QUAL: Regex =
-                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#).expect("RE_PROP_QUAL does not parse");
+            static ref RE_PROPERTY: Regex =
+                Regex::new(r#"^([Pp]\d+)$"#).expect("RE_PROPERTY does not parse");
+            static ref RE_PROP_QUAL: Regex = Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#)
+                .expect("RE_PROP_QUAL does not parse");
             static ref RE_PROP_QUAL_VAL: Regex =
-                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#).expect("RE_PROP_QUAL_VAL does not parse");
-            static ref RE_FIELD: Regex = Regex::new(r#"^\?(.+)$"#).expect("RE_FIELD does not parse");
+                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#)
+                    .expect("RE_PROP_QUAL_VAL does not parse");
+            static ref RE_FIELD: Regex =
+                Regex::new(r#"^\?(.+)$"#).expect("RE_FIELD does not parse");
         }
         match s.to_lowercase().as_str() {
             "number" => return ColumnType::Number,
@@ -45,32 +48,54 @@ impl ColumnType {
             _ => {}
         }
         if let Some(caps) = RE_LABEL_LANG.captures(&s) {
-            let ret = caps.get(1).map(|s|s.as_str().to_lowercase()).unwrap_or_default();
+            let ret = caps
+                .get(1)
+                .map(|s| s.as_str().to_lowercase())
+                .unwrap_or_default();
             return ColumnType::LabelLang(ret);
         }
         if let Some(caps) = RE_ALIAS_LANG.captures(&s) {
-            let ret = caps.get(1).map(|s|s.as_str().to_lowercase()).unwrap_or_default();
+            let ret = caps
+                .get(1)
+                .map(|s| s.as_str().to_lowercase())
+                .unwrap_or_default();
             return ColumnType::AliasLang(ret);
         }
         if let Some(caps) = RE_PROPERTY.captures(&s) {
-            let ret = caps.get(1).map(|s|s.as_str().to_uppercase()).unwrap_or_default();
+            let ret = caps
+                .get(1)
+                .map(|s| s.as_str().to_uppercase())
+                .unwrap_or_default();
             return ColumnType::Property(ret);
         }
         if let Some(caps) = RE_PROP_QUAL.captures(&s) {
             return ColumnType::PropertyQualifier((
-                caps.get(1).map(|s|s.as_str().to_uppercase()).unwrap_or_default(),
-                caps.get(2).map(|s|s.as_str().to_uppercase()).unwrap_or_default(),
+                caps.get(1)
+                    .map(|s| s.as_str().to_uppercase())
+                    .unwrap_or_default(),
+                caps.get(2)
+                    .map(|s| s.as_str().to_uppercase())
+                    .unwrap_or_default(),
             ));
         }
         if let Some(caps) = RE_PROP_QUAL_VAL.captures(&s) {
             return ColumnType::PropertyQualifierValue((
-                caps.get(1).map(|s|s.as_str().to_uppercase()).unwrap_or_default(),
-                caps.get(2).map(|s|s.as_str().to_uppercase()).unwrap_or_default(),
-                caps.get(3).map(|s|s.as_str().to_uppercase()).unwrap_or_default(),
+                caps.get(1)
+                    .map(|s| s.as_str().to_uppercase())
+                    .unwrap_or_default(),
+                caps.get(2)
+                    .map(|s| s.as_str().to_uppercase())
+                    .unwrap_or_default(),
+                caps.get(3)
+                    .map(|s| s.as_str().to_uppercase())
+                    .unwrap_or_default(),
             ));
         }
         if let Some(caps) = RE_FIELD.captures(&s) {
-            let ret = caps.get(1).map(|s|s.as_str().to_uppercase()).unwrap_or_default();
+            let ret = caps
+                .get(1)
+                .map(|s| s.as_str().to_uppercase())
+                .unwrap_or_default();
             return ColumnType::Field(ret);
         }
         ColumnType::Unknown
@@ -106,7 +131,8 @@ pub struct Column {
 impl Column {
     pub fn new(s: &str) -> Option<Self> {
         lazy_static! {
-            static ref RE_COLUMN_LABEL: Regex = Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).expect("RE_COLUMN_LABEL does not parse");
+            static ref RE_COLUMN_LABEL: Regex =
+                Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).expect("RE_COLUMN_LABEL does not parse");
         }
         match RE_COLUMN_LABEL.captures(&s) {
             Some(caps) => Some(Self {

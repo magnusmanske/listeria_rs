@@ -19,11 +19,7 @@ pub struct PageParams {
 }
 
 impl PageParams {
-    pub async fn new(
-        config: Arc<Configuration>,
-        mw_api: ApiLock,
-        page: String,
-    ) -> Result<Self> {
+    pub async fn new(config: Arc<Configuration>, mw_api: ApiLock, page: String) -> Result<Self> {
         let api = mw_api.read().await;
         let ret = Self {
             wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
@@ -88,7 +84,12 @@ impl PageParams {
         &self.simulated_autodesc
     }
 
-    pub fn set_simulation(&mut self, text: Option<String>, sparql_results: Option<String>, autodesc: Option<Vec<String>>) {
+    pub fn set_simulation(
+        &mut self,
+        text: Option<String>,
+        sparql_results: Option<String>,
+        autodesc: Option<Vec<String>>,
+    ) {
         self.simulate = true;
         self.simulated_text = text;
         self.simulated_sparql_results = sparql_results;

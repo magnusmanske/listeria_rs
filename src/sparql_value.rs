@@ -26,14 +26,16 @@ pub enum SparqlValue {
 impl SparqlValue {
     pub fn new_from_json(j: &Value) -> Option<Self> {
         lazy_static! {
-            static ref RE_ENTITY: Regex =
-                Regex::new(r#"^https{0,1}://[^/]+/entity/([A-Z]\d+)$"#).expect("RE_ENTITY does not parse");
+            static ref RE_ENTITY: Regex = Regex::new(r#"^https{0,1}://[^/]+/entity/([A-Z]\d+)$"#)
+                .expect("RE_ENTITY does not parse");
             static ref RE_FILE: Regex =
-                Regex::new(r#"^https{0,1}://[^/]+/wiki/Special:FilePath/(.+?)$"#).expect("RE_FILE does not parse");
+                Regex::new(r#"^https{0,1}://[^/]+/wiki/Special:FilePath/(.+?)$"#)
+                    .expect("RE_FILE does not parse");
             static ref RE_POINT: Regex =
-                Regex::new(r#"^Point\((-{0,1}\d+[\.0-9]+) (-{0,1}\d+[\.0-9]+)\)$"#).expect("RE_POINT does not parse");
-            static ref RE_DATE: Regex =
-                Regex::new(r#"^([+-]{0,1}\d+-\d{2}-\d{2})T00:00:00Z$"#).expect("RE_DATE does not parse");
+                Regex::new(r#"^Point\((-{0,1}\d+[\.0-9]+) (-{0,1}\d+[\.0-9]+)\)$"#)
+                    .expect("RE_POINT does not parse");
+            static ref RE_DATE: Regex = Regex::new(r#"^([+-]{0,1}\d+-\d{2}-\d{2})T00:00:00Z$"#)
+                .expect("RE_DATE does not parse");
         }
         let value = match j["value"].as_str() {
             Some(v) => v,

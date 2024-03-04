@@ -1,9 +1,13 @@
+use anyhow::{anyhow, Result};
 use futures::future::try_join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
-use anyhow::{Result,anyhow};
 
-use crate::{configuration::Configuration, page_element::PageElement, page_params::PageParams, render_wikitext::RendererWikitext, renderer::Renderer, wiki_page_result::WikiPageResult, ApiLock};
+use crate::{
+    configuration::Configuration, page_element::PageElement, page_params::PageParams,
+    render_wikitext::RendererWikitext, renderer::Renderer, wiki_page_result::WikiPageResult,
+    ApiLock,
+};
 
 /* TODO
 - Sort by P/P, P/Q/P DOES NOT WORK IN LISTERIA-PHP
@@ -23,11 +27,7 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub async fn new(
-        config: Arc<Configuration>,
-        mw_api: ApiLock,
-        page: String,
-    ) -> Result<Self> {
+    pub async fn new(config: Arc<Configuration>, mw_api: ApiLock, page: String) -> Result<Self> {
         let page_params = PageParams::new(config, mw_api, page).await?;
         let page_params = Arc::new(page_params);
         Ok(Self {
@@ -53,7 +53,7 @@ impl ListeriaPage {
     ) {
         match Arc::get_mut(&mut self.page_params) {
             Some(pp) => {
-                pp.set_simulation(text,sparql_results,autodesc);
+                pp.set_simulation(text, sparql_results, autodesc);
             }
             None => {
                 panic!("Cannot simulate")
@@ -88,24 +88,28 @@ impl ListeriaPage {
         }
     }
 
-    pub async fn run(&mut self) -> Result<(),WikiPageResult> {
-        self.check_namespace().await.map_err(|e| self.fail(&e.to_string()))?;
+    pub async fn run(&mut self) -> Result<(), WikiPageResult> {
+        self.check_namespace()
+            .await
+            .map_err(|e| self.fail(&e.to_string()))?;
         self.elements = self.load_page().await?;
 
         let mut promises = Vec::new();
         for element in &mut self.elements {
             promises.push(element.process());
         }
-        let _ = try_join_all(promises).await.map_err(|e| self.fail(&e.to_string()))?;
+        let _ = try_join_all(promises)
+            .await
+            .map_err(|e| self.fail(&e.to_string()))?;
         Ok(())
     }
 
-    async fn load_page(&mut self) -> Result<Vec<PageElement>,WikiPageResult> {
+    async fn load_page(&mut self) -> Result<Vec<PageElement>, WikiPageResult> {
         let mut text = self.load_page_as("wikitext").await?;
         let mut ret = vec![];
         let mut again: bool = true;
         while again {
-                let mut element = match PageElement::new_from_text(&text, &self) {
+            let mut element = match PageElement::new_from_text(&text, &self) {
                 Some(pe) => pe,
                 None => {
                     again = false;
@@ -121,14 +125,10 @@ impl ListeriaPage {
     }
 
     fn fail(&self, message: &str) -> WikiPageResult {
-        WikiPageResult::fail(
-            self.wiki(),
-            self.page_params.page(),
-            message
-        )
+        WikiPageResult::fail(self.wiki(), self.page_params.page(), message)
     }
 
-    pub async fn load_page_as(&self, mode: &str) -> Result<String,WikiPageResult> {
+    pub async fn load_page_as(&self, mode: &str) -> Result<String, WikiPageResult> {
         let mut params: HashMap<String, String> = vec![("action", "parse"), ("prop", mode)]
             .iter()
             .map(|x| (x.0.to_string(), x.1.to_string()))
@@ -160,7 +160,7 @@ impl ListeriaPage {
                         result: "DELETED".to_string(),
                         message: "Wiki says this page is missing".to_string(),
                     });
-                },
+                }
                 "invalid" => {
                     return Err(WikiPageResult {
                         wiki: self.page_params.wiki().to_string(),
@@ -168,7 +168,7 @@ impl ListeriaPage {
                         result: "INVALID".to_string(),
                         message: "Wiki says this page has an invalid title".to_string(),
                     });
-                },
+                }
                 other => {
                     return Err(WikiPageResult {
                         wiki: self.page_params.wiki().to_string(),
@@ -208,14 +208,12 @@ impl ListeriaPage {
             ("text", wikitext),
             ("summary", "Wikidata list updated [V2]"),
             ("token", &token),
-            ("bot","1"),
+            ("bot", "1"),
         ]
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let j = api
-            .post_query_api_json(&params)
-            .await?;
+        let j = api.post_query_api_json(&params).await?;
         match j["error"].as_object() {
             Some(o) => {
                 let msg = o["info"].as_str().unwrap_or("Error while saving");
@@ -225,11 +223,13 @@ impl ListeriaPage {
         }
     }
 
-    pub async fn update_source_page(&mut self) -> Result<bool,WikiPageResult> {
+    pub async fn update_source_page(&mut self) -> Result<bool, WikiPageResult> {
         let renderer = RendererWikitext::new();
         let mut edited = false;
         let old_wikitext = self.load_page_as("wikitext").await?;
-        let new_wikitext = renderer.get_new_wikitext(&old_wikitext, self).map_err(|e| self.fail(&e.to_string()))?; // Safe
+        let new_wikitext = renderer
+            .get_new_wikitext(&old_wikitext, self)
+            .map_err(|e| self.fail(&e.to_string()))?; // Safe
         match new_wikitext {
             Some(new_wikitext) => {
                 if old_wikitext != new_wikitext {
@@ -241,7 +241,9 @@ impl ListeriaPage {
             }
             None => {
                 if self.data_has_changed {
-                    self.purge_page().await.map_err(|e| self.fail(&e.to_string()))?;
+                    self.purge_page()
+                        .await
+                        .map_err(|e| self.fail(&e.to_string()))?;
                 }
             }
         }
@@ -253,17 +255,16 @@ impl ListeriaPage {
         if self.page_params.simulate() {
             println!(
                 "SIMULATING: purging [[{}]] on {}",
-                self.page_params.page(), self.page_params.wiki()
+                self.page_params.page(),
+                self.page_params.wiki()
             );
             return Ok(());
         }
-        let params: HashMap<String, String> = vec![
-            ("action", "purge"),
-            ("titles", self.page_params.page()),
-        ]
-        .iter()
-        .map(|x| (x.0.to_string(), x.1.to_string()))
-        .collect();
+        let params: HashMap<String, String> =
+            vec![("action", "purge"), ("titles", self.page_params.page())]
+                .iter()
+                .map(|x| (x.0.to_string(), x.1.to_string()))
+                .collect();
 
         let _ = self
             .page_params

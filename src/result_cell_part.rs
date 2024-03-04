@@ -50,7 +50,7 @@ pub struct AutoDesc {
 
 impl PartialEq for AutoDesc {
     fn eq(&self, other: &Self) -> bool {
-        self.entity.id() == other.entity.id() && self.desc==other.desc
+        self.entity.id() == other.entity.id() && self.desc == other.desc
     }
 }
 
@@ -98,7 +98,12 @@ impl ResultCellPart {
         }
     }
 
-    pub fn localize_item_links(&mut self, ecw: &EntityContainerWrapper, wiki: &str, language: &str) {
+    pub fn localize_item_links(
+        &mut self,
+        ecw: &EntityContainerWrapper,
+        wiki: &str,
+        language: &str,
+    ) {
         match self {
             ResultCellPart::Entity((item, true)) => {
                 if let Some(ll) = ecw.entity_to_local_link(item, wiki, language) {
@@ -107,7 +112,9 @@ impl ResultCellPart {
             }
             ResultCellPart::SnakList(v) => {
                 for part_with_reference in v.iter_mut() {
-                    part_with_reference.part.localize_item_links(ecw, wiki, language);
+                    part_with_reference
+                        .part
+                        .localize_item_links(ecw, wiki, language);
                 }
             }
             _ => {}
@@ -126,12 +133,10 @@ impl ResultCellPart {
                     _ => ResultCellPart::Text(v.to_string()),
                 },
                 wikibase::Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
-                wikibase::Value::Time(v) => {
-                    match ResultCellPart::reduce_time(&v) {
-                        Some(part) => ResultCellPart::Time(part),
-                        None => ResultCellPart::Text("No/unknown value".to_string()),
-                    }
-                }
+                wikibase::Value::Time(v) => match ResultCellPart::reduce_time(&v) {
+                    Some(part) => ResultCellPart::Time(part),
+                    None => ResultCellPart::Text("No/unknown value".to_string()),
+                },
                 wikibase::Value::Coordinate(v) => {
                     ResultCellPart::Location((*v.latitude(), *v.longitude(), None))
                 }
@@ -145,8 +150,8 @@ impl ResultCellPart {
 
     pub fn reduce_time(v: &wikibase::TimeValue) -> Option<String> {
         lazy_static! {
-            static ref RE_DATE: Regex =
-                Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#).expect("RE_DATE does not parse");
+            static ref RE_DATE: Regex = Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#)
+                .expect("RE_DATE does not parse");
         }
         let s = v.time().to_string();
         let (year, month, day) = match RE_DATE.captures(&s) {
@@ -301,13 +306,13 @@ impl ResultCellPart {
                 // .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum, partnum))
                 // .collect::<Vec<String>>()
                 // .join(" — ")
-            },
+            }
             ResultCellPart::AutoDesc(ad) => {
                 match &ad.desc {
                     Some(desc) => desc.to_owned(),
                     None => String::new(), // TODO check - manual description should have already been tried?
                 }
-            },
+            }
         }
     }
 

@@ -66,7 +66,7 @@ impl ResultRow {
     pub fn remove_excess_files(&mut self) {
         self.cells.iter_mut().for_each(|cell| {
             if let Some(part) = cell.parts().get(0) {
-                let has_files =matches!(part.part, ResultCellPart::File(_));
+                let has_files = matches!(part.part, ResultCellPart::File(_));
                 if has_files {
                     let mut parts = cell.parts().clone();
                     parts.truncate(1);
@@ -116,9 +116,12 @@ impl ResultRow {
 
     pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
         lazy_static! {
-            static ref RE_SR_JR: Regex = Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse");
-            static ref RE_BRACES: Regex = Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse");
-            static ref RE_LAST_FIRST: Regex = Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
+            static ref RE_SR_JR: Regex =
+                Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse");
+            static ref RE_BRACES: Regex =
+                Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse");
+            static ref RE_LAST_FIRST: Regex =
+                Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
         }
         match page.get_entity(&self.entity_id) {
             Some(entity) => match entity.label_in_locale(&page.language()) {
@@ -152,7 +155,7 @@ impl ResultRow {
         match list.get_entity(&self.entity_id) {
             Some(entity) => {
                 match list
-                    .get_filtered_claims(&entity, prop) 
+                    .get_filtered_claims(&entity, prop)
                     .iter()
                     .filter(|statement| statement.property() == prop)
                     .map(|statement| statement.main_snak())

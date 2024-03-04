@@ -1,4 +1,3 @@
-
 #[derive(Debug, Clone)]
 pub struct WikiPageResult {
     pub wiki: String,
@@ -20,11 +19,6 @@ impl WikiPageResult {
     }
 
     pub fn fail(wiki: &str, page: &str, message: &str) -> Self {
-        Self::new(
-            wiki,
-            page,
-            "FAIL",
-            message.to_string()
-        )
+        Self::new(wiki, page, "FAIL", message.to_string())
     }
 }

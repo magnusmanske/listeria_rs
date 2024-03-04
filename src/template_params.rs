@@ -136,7 +136,6 @@ impl SectionType {
     }
 }
 
-
 #[derive(Debug, Clone)]
 pub struct TemplateParams {
     links: LinksType,

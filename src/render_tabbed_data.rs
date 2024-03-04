@@ -32,11 +32,7 @@ impl Renderer for RendererTabbedData {
         Ok(format!("{}", ret))
     }
 
-    fn get_new_wikitext(
-        &self,
-        wikitext: &str,
-        _page: &ListeriaPage,
-    ) -> Result<Option<String>> {
+    fn get_new_wikitext(&self, wikitext: &str, _page: &ListeriaPage) -> Result<Option<String>> {
         // TODO use local template name
 
         // Start/end template
@@ -149,9 +145,7 @@ impl RendererTabbedData {
             .tabbed_data_page_name(list)
             .ok_or(anyhow!("Data page name too long"))?;
         let text = ::serde_json::to_string(&tabbed_data_json)?;
-        let token = commons_api
-            .get_edit_token()
-            .await?;
+        let token = commons_api.get_edit_token().await?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", data_page.as_str()),
