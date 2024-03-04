@@ -3,3 +3,4 @@ target/
 
 # Specific configuration
 config.json
+listeria.ini
