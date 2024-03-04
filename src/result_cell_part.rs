@@ -6,6 +6,7 @@ use crate::sparql_value::SparqlValue;
 use crate::template_params::LinksType;
 use regex::Regex;
 use wikibase::entity::EntityTrait;
+use wikibase::Entity;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartWithReference {
@@ -41,6 +42,29 @@ impl PartWithReference {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct AutoDesc {
+    entity: Entity,
+    tried: bool,
+    desc: Option<String>,
+}
+
+impl PartialEq for AutoDesc {
+    fn eq(&self, other: &Self) -> bool {
+        self.entity.id() == other.entity.id() && self.tried==other.tried && self.desc==other.desc
+    }
+}
+
+impl AutoDesc {
+    pub fn new(entity: &Entity) -> Self {
+        Self {
+            entity: entity.to_owned(),
+            tried: false,
+            desc: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResultCellPart {
     Number,
@@ -53,6 +77,7 @@ pub enum ResultCellPart {
     ExternalId((String, String)), // Property, ID
     Text(String),
     SnakList(Vec<PartWithReference>), // PP and PQP
+    AutoDesc(AutoDesc),
 }
 
 impl ResultCellPart {
@@ -270,7 +295,13 @@ impl ResultCellPart {
                 // .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum, partnum))
                 // .collect::<Vec<String>>()
                 // .join(" — ")
-            }
+            },
+            ResultCellPart::AutoDesc(ad) => {
+                match &ad.desc {
+                    Some(desc) => desc.to_owned(),
+                    None => String::new(), // TODO check - manual description should have already been tried?
+                }
+            },
         }
     }
 

@@ -11,6 +11,7 @@ pub struct Reference {
     md5: Arc<RwLock<String>>,
     wikitext_cache: Arc<RwLock<Option<String>>>,
 }
+
 impl PartialEq for Reference {
     fn eq(&self, other: &Self) -> bool {
         self.url == other.url
