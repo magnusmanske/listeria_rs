@@ -111,7 +111,8 @@ impl Reference {
     }
 
     fn as_wikitext(&self, list: &ListeriaList) -> String {
-        loop { // TODO FIXME check that this loop does not run forever
+        loop {
+            // TODO FIXME check that this loop does not run forever
             match self.wikitext_cache.read() {
                 Ok(cache) => {
                     if let Some(s) = &*cache {

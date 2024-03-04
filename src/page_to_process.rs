@@ -9,7 +9,7 @@ pub struct PageToProcess {
 }
 
 impl PageToProcess {
-    pub fn from_parts(parts: (u64,String,String,String)) -> Self {
+    pub fn from_parts(parts: (u64, String, String, String)) -> Self {
         Self {
             id: parts.0,
             title: parts.1,

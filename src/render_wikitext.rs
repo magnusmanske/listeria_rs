@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
+use anyhow::Result;
 
 pub struct RendererWikitext {}
 
@@ -27,11 +27,7 @@ impl Renderer for RendererWikitext {
         Ok(wt)
     }
 
-    fn get_new_wikitext(
-        &self,
-        _wikitext: &str,
-        page: &ListeriaPage,
-    ) -> Result<Option<String>> {
+    fn get_new_wikitext(&self, _wikitext: &str, page: &ListeriaPage) -> Result<Option<String>> {
         let mut new_wikitext = String::new();
         for element in page.elements() {
             if let Ok(s) = element.as_wikitext() {
@@ -71,7 +67,12 @@ impl RendererWikitext {
 
         // Rows
         let mut rows = vec![];
-        for (rownum, row) in list.results().iter().filter(|row| row.section() == section_id).enumerate() {
+        for (rownum, row) in list
+            .results()
+            .iter()
+            .filter(|row| row.section() == section_id)
+            .enumerate()
+        {
             rows.push(row.as_wikitext(list, rownum));
         }
         if list.skip_table() {
@@ -80,11 +81,9 @@ impl RendererWikitext {
             let x: Vec<String> = row_entity_ids
                 .iter()
                 .zip(rows.iter())
-                .map(|(entity_id, row)| {
-                    match &list.header_template() {
-                        Some(_) => row.to_string(),
-                        None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row)
-                    }
+                .map(|(entity_id, row)| match &list.header_template() {
+                    Some(_) => row.to_string(),
+                    None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row),
                 })
                 .collect();
             wt += &x.join("").trim();

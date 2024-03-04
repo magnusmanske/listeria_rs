@@ -51,17 +51,18 @@ impl ResultCell {
                         Some(s) => {
                             ret.wdedit_class = match &list.header_template() {
                                 Some(_) => None,
-                                None => Some("wd_desc".to_string())
-                            } ;
+                                None => Some("wd_desc".to_string()),
+                            };
                             let s = Self::fix_wikitext_for_output(s);
-                            ret.parts.push(PartWithReference::new(
-                                ResultCellPart::Text(s),
-                                None,
-                            ));
+                            ret.parts
+                                .push(PartWithReference::new(ResultCellPart::Text(s), None));
                         }
                         None => {
                             // TODO FIXME autodesc deactivated for performance reasons, actually fill later
-                            ret.parts.push(PartWithReference::new(ResultCellPart::AutoDesc(AutoDesc::new(&e)), None));
+                            ret.parts.push(PartWithReference::new(
+                                ResultCellPart::AutoDesc(AutoDesc::new(&e)),
+                                None,
+                            ));
                             // if let Ok(s) = list.get_autodesc_description(&e).await {
                             //     ret.parts
                             //         .push(PartWithReference::new(ResultCellPart::Text(s), None));
@@ -95,8 +96,8 @@ impl ResultCell {
                 if let Some(e) = entity {
                     ret.wdedit_class = match &list.header_template() {
                         Some(_) => None,
-                        None => Some(format!("wd_{}", property.to_lowercase()))
-                    } ;
+                        None => Some(format!("wd_{}", property.to_lowercase())),
+                    };
                     list.get_filtered_claims(&e, property)
                         .iter()
                         .for_each(|statement| {
@@ -180,8 +181,8 @@ impl ResultCell {
                 if let Some(e) = entity {
                     ret.wdedit_class = match &list.header_template() {
                         Some(_) => None,
-                        None => Some("wd_label".to_string())
-                    } ;
+                        None => Some("wd_label".to_string()),
+                    };
                     let label = match e.label_in_locale(list.language()) {
                         Some(s) => s.to_string(),
                         None => entity_id.to_string(),
@@ -221,7 +222,7 @@ impl ResultCell {
     }
 
     fn fix_wikitext_for_output(s: &str) -> String {
-        s.replace('\'',"&#39;").replace('<',"&lt;")
+        s.replace('\'', "&#39;").replace('<', "&lt;")
     }
 
     fn get_parts_p_p(
@@ -324,16 +325,27 @@ impl ResultCell {
         self.parts = parts;
     }
 
-    pub fn localize_item_links_in_parts(parts: &mut Vec<PartWithReference>, ecw: &EntityContainerWrapper, wiki: &str, language: &str) {
+    pub fn localize_item_links_in_parts(
+        parts: &mut Vec<PartWithReference>,
+        ecw: &EntityContainerWrapper,
+        wiki: &str,
+        language: &str,
+    ) {
         for part_with_reference in parts.iter_mut() {
-            part_with_reference.part.localize_item_links(ecw, wiki, language);
+            part_with_reference
+                .part
+                .localize_item_links(ecw, wiki, language);
         }
     }
 
     pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
         let mut ret = vec![];
         for (partnum, part_with_reference) in self.parts.iter().enumerate() {
-            ret.push(part_with_reference.part.as_tabbed_data(list, rownum, colnum, partnum));
+            ret.push(
+                part_with_reference
+                    .part
+                    .as_tabbed_data(list, rownum, colnum, partnum),
+            );
         }
         json!(ret.join("<br/>"))
     }
@@ -351,7 +363,11 @@ impl ResultCell {
 
         let mut parts = vec![];
         for (partnum, part_with_reference) in self.parts.iter().enumerate() {
-            parts.push(part_with_reference.part.as_wikitext(list, rownum, colnum, partnum));
+            parts.push(
+                part_with_reference
+                    .part
+                    .as_wikitext(list, rownum, colnum, partnum),
+            );
         }
         if self.deduplicate_parts {
             let mut parts2 = Vec::new();

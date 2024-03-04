@@ -86,7 +86,8 @@ impl PageElement {
                 text.as_bytes()[match_start.end()..template_start_end_bytes - 2].to_vec(),
             )
             .ok()?,
-        ).ok()?;
+        )
+        .ok()?;
 
         Some(Self {
             before: String::from_utf8(text.as_bytes()[0..match_start.start()].to_vec()).ok()?,

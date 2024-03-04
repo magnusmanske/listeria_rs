@@ -1,6 +1,5 @@
-use anyhow::{Result,anyhow};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
-
 
 #[derive(Debug, Clone, Default)]
 pub struct Template {
@@ -13,17 +12,17 @@ impl Template {
         let mut curly_braces = 0;
         let mut parts: Vec<String> = vec![];
         let mut part: Vec<char> = vec![];
-        let mut quoted = false ;
-        let mut quote_char : char = ' ' ;
+        let mut quoted = false;
+        let mut quote_char: char = ' ';
         text.chars().for_each(|c| match c {
-            '\''|'"' => {
+            '\'' | '"' => {
                 if quoted {
                     if quote_char == c {
-                        quoted = false ;
+                        quoted = false;
                     }
                 } else {
-                    quoted = true ;
-                    quote_char = c ;
+                    quoted = true;
+                    quote_char = c;
                 }
                 part.push(c);
             }
@@ -48,8 +47,8 @@ impl Template {
             }
         });
         parts.push(part.into_iter().collect());
-        if quoted==true {
-            return Err ( anyhow!("Unclosed quote: {quote_char}") ) ;
+        if quoted == true {
+            return Err(anyhow!("Unclosed quote: {quote_char}"));
         }
 
         let params: HashMap<String, String> = parts
@@ -61,7 +60,7 @@ impl Template {
                 Some((k, v))
             })
             .collect();
-        Ok ( Self { title, params } )
+        Ok(Self { title, params })
     }
 
     pub fn fix_values(&mut self) {

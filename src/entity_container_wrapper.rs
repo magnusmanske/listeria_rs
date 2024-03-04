@@ -6,7 +6,7 @@ use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
 use crate::sparql_value::SparqlValue;
 use crate::template_params::LinksType;
-use anyhow::{Result,anyhow};
+use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use wikibase::entity::*;
@@ -25,8 +25,8 @@ pub struct EntityContainerWrapper {
 impl std::fmt::Debug for EntityContainerWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EntityContainerWrapper")
-         .field("entities", &self.entities)
-         .finish()
+            .field("entities", &self.entities)
+            .finish()
     }
 }
 
@@ -40,16 +40,21 @@ impl EntityContainerWrapper {
         }
     }
 
-    async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
-        let chunks = ids.chunks(self.max_local_cached_entities) ;
+    async fn load_entities_into_entity_cache(
+        &mut self,
+        api: &Api,
+        ids: &Vec<String>,
+    ) -> Result<()> {
+        let chunks = ids.chunks(self.max_local_cached_entities);
         for chunk in chunks {
             if let Err(e) = self.entities.load_entities(api, &chunk.into()).await {
-                return Err(anyhow!("Error loading entities: {e}"))
+                return Err(anyhow!("Error loading entities: {e}"));
             }
             for entity_id in chunk {
                 if let Some(entity) = self.entities.get_entity(entity_id) {
                     let json = entity.to_json();
-                    self.entity_file_cache.add_entity(entity_id, &json.to_string())?;
+                    self.entity_file_cache
+                        .add_entity(entity_id, &json.to_string())?;
                 }
             }
             self.entities.clear();
@@ -58,7 +63,8 @@ impl EntityContainerWrapper {
     }
 
     pub async fn load_entities(&mut self, api: &Api, ids: &Vec<String>) -> Result<()> {
-        let ids: Vec<String> = ids.iter()
+        let ids: Vec<String> = ids
+            .iter()
             .filter(|id| !self.entities.has_entity(id.as_str()))
             .filter(|id| !self.entity_file_cache.has_entity(id))
             .map(|id| id.to_owned())
@@ -66,11 +72,20 @@ impl EntityContainerWrapper {
         if ids.is_empty() {
             return Ok(());
         }
-        let ids = self.entities.unique_shuffle_entity_ids(&ids).map_err(|e| anyhow!("{e}"))?;
+        let ids = self
+            .entities
+            .unique_shuffle_entity_ids(&ids)
+            .map_err(|e| anyhow!("{e}"))?;
         if self.profiling {
-            println!("ECW::load_entities: loading {} entities on top of {} loaded, cutoff is {}",ids.len(),self.entities.len(),self.max_local_cached_entities);
+            println!(
+                "ECW::load_entities: loading {} entities on top of {} loaded, cutoff is {}",
+                ids.len(),
+                self.entities.len(),
+                self.max_local_cached_entities
+            );
         }
-        if ids.len()+self.entities.len()>self.max_local_cached_entities { // Use entity cache
+        if ids.len() + self.entities.len() > self.max_local_cached_entities {
+            // Use entity cache
             self.load_entities_into_entity_cache(api, &ids).await?;
             Ok(())
         } else {
@@ -83,10 +98,10 @@ impl EntityContainerWrapper {
 
     pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
         if let Some(entity) = self.entities.get_entity(entity_id) {
-            return Some(entity)
+            return Some(entity);
         }
         let json_string = self.entity_file_cache.get_entity(entity_id)?;
-        let json_value = serde_json::from_str(&json_string).ok()? ;
+        let json_value = serde_json::from_str(&json_string).ok()?;
         Entity::new_from_json(&json_value).ok()
     }
 
@@ -201,7 +216,6 @@ impl EntityContainerWrapper {
         }
         entities_to_load
     }
-
 }
 
 #[cfg(test)]
@@ -212,13 +226,18 @@ mod tests {
     async fn test_entity_caching() {
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let mut ecw = EntityContainerWrapper::new(config);
-        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await.unwrap();
-        let ids = ["Q1","Q2","Q3","Q4","Q5"].iter().map(|s|s.to_string()).collect();
+        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
+            .await
+            .unwrap();
+        let ids = ["Q1", "Q2", "Q3", "Q4", "Q5"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         ecw.max_local_cached_entities = 2;
         ecw.load_entities(&api, &ids).await.unwrap();
-        assert_eq!(ecw.entities.len(),0);
+        assert_eq!(ecw.entities.len(), 0);
 
         let e2 = ecw.get_entity("Q2").unwrap();
-        assert_eq!(e2.id(),"Q2");
+        assert_eq!(e2.id(), "Q2");
     }
 }
