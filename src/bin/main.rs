@@ -33,14 +33,17 @@ async fn update_page(_settings: &Config, page_title: &str, api_url: &str) -> Res
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let ini_file = "listeria.ini";
+    let args: Vec<String> = env::args().collect();
+    let ini_file = args
+        .get(3)
+        .map(|s| s.to_owned())
+        .unwrap_or("listeria.ini".to_string());
 
     let settings = Config::builder()
-        .add_source(File::new(ini_file, config::FileFormat::Ini))
+        .add_source(File::new(&ini_file, config::FileFormat::Ini))
         .build()
         .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
 
-    let args: Vec<String> = env::args().collect();
     let first_arg = args
         .get(1)
         .ok_or_else(|| anyhow!("No wiki server argument"))?;
