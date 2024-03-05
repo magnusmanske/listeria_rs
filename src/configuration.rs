@@ -196,6 +196,10 @@ impl Configuration {
         self.profiling
     }
 
+    pub fn set_profiling(&mut self, profiling: bool) {
+        self.profiling = profiling;
+    }
+
     pub fn pool(&self) -> &Arc<DatabasePool> {
         match &self.pool {
             Some(pool) => pool,

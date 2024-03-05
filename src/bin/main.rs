@@ -42,11 +42,8 @@ async fn main() -> Result<()> {
         .map(|s| s.to_owned())
         .unwrap_or("listeria.ini".to_string());
 
-    let config = Arc::new(Configuration::new_from_file(&config_file).await.unwrap());
-    // let settings = Config::builder()
-    //     .add_source(File::new(&ini_file, config::FileFormat::Ini))
-    //     .build()
-    //     .map_err(|_e| anyhow!("INI file '{}' can't be opened or is invalid", ini_file))?;
+    let mut config = Configuration::new_from_file(&config_file).await.unwrap();
+    config.set_profiling(true); // Force profiling on for manual single job
 
     let first_arg = args
         .get(1)
@@ -64,7 +61,7 @@ async fn main() -> Result<()> {
     let page = args.get(2).ok_or_else(|| anyhow!("No page argument"))?;
 
     let wiki_api = format!("https://{}/w/api.php", &wiki_server);
-    let message = match update_page(config, page, &wiki_api).await {
+    let message = match update_page(Arc::new(config), page, &wiki_api).await {
         Ok(m) => format!("OK: {}", m),
         Err(e) => format!("ERROR: {}", e),
     };
