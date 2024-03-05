@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
     let settings = Config::builder()
         .add_source(File::new(&ini_file, config::FileFormat::Ini))
         .build()
-        .unwrap_or_else(|_| panic!("INI file '{}' can't be opened", ini_file));
+        .map_err(|_e| anyhow!("INI file '{}' can't be opened or is invalid", ini_file))?;
 
     let first_arg = args
         .get(1)
