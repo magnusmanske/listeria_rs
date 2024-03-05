@@ -1279,6 +1279,7 @@ dependencies = [
  "log",
  "md5",
  "mysql_async",
+ "rayon",
  "regex",
  "reqwest",
  "roxmltree",
