@@ -170,8 +170,7 @@ impl ListeriaBot {
 
         // Get the oldest page
         let sql = format!(
-            "
-            SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki 
+            "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
             FROM pagestatus,wikis 
             WHERE pagestatus.wiki=wikis.id
             AND wikis.status='ACTIVE' 
