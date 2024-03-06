@@ -296,11 +296,11 @@ impl ListeriaList {
             {
                 break;
             }
-            *SPARQL_REQUEST_COUNTER
-                .lock()
-                .expect("ListeriaList: Mutex is bad") += 1;
             sleep(Duration::from_millis(100)).await;
         }
+        *SPARQL_REQUEST_COUNTER
+            .lock()
+            .expect("ListeriaList: Mutex is bad") += 1;
         let result = self.run_sparql_query_api(&api, sparql).await;
         *SPARQL_REQUEST_COUNTER
             .lock()
