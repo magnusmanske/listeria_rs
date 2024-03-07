@@ -87,9 +87,15 @@ impl ListeriaList {
             drop(lock);
             let diff = now - last;
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-            let time_diff = format!("{}", diff.num_milliseconds());
+            let time_diff = diff.num_milliseconds();
             let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
             println!("{timestamp} {section}: {msg} [{time_diff}ms]");
+            // let sql = "INSERT INTO `list_log` (wiki,page,timestamp,diff_ms,message) VALUES (?,?,?,?,?)";
+            // self.pool
+            //     .get_conn()
+            //     .await?
+            //     .exec_drop(sql, (self.page_params.wiki(),self.page_params.page(),timestamp,time_diff,msg))
+            //     .await?;
         }
     }
 
