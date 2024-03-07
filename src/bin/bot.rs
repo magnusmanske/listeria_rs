@@ -41,7 +41,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
         // println!("{page:?}");
         let bot = bot.clone();
         tokio::spawn(async move {
-            let pagestatus_id = page.id;
+            let pagestatus_id = page.id();
             let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
                 println!("{}", &e)
