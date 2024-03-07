@@ -284,7 +284,7 @@ impl ListeriaBot {
             "status" => status,
             "message" => message.chars().take(200).collect::<String>(),
         };
-        let priority = if status == "OK" || status == "FAILED" {
+        let priority = if status == "OK" || status == "FAIL" {
             "0"
         } else {
             "`priority`"
