@@ -146,7 +146,7 @@ impl ListeriaBot {
             .join(",");
         let ids = if ids.is_empty() { "0".to_string() } else { ids };
         info!(target: "lock","Getting next page, without {ids}");
-        let ignore_status = "'RUNNING','DELETED','TRANSLATION'";
+        const IGNORE_STATUS: &str = "'RUNNING','DELETED','TRANSLATION'";
 
         // Tries to find a "priority" page
         let sql = format!(
@@ -155,16 +155,16 @@ impl ListeriaBot {
             WHERE priority=1
             AND wikis.id=pagestatus.wiki
             AND wikis.status='ACTIVE' 
-            AND pagestatus.status NOT IN ({ignore_status})
+            AND pagestatus.status NOT IN ({IGNORE_STATUS})
             AND pagestatus.id NOT IN ({ids})
             ORDER BY pagestatus.timestamp
             LIMIT 1"
         );
         if let Some(page) = self.get_page_for_sql(&sql).await {
-            self.update_page_status(&page.title, &page.wiki, "RUNNING", "PREPARING")
+            self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
                 .await?;
             info!(target: "lock","Found a priority page: {:?}",&page);
-            running.insert(page.id);
+            running.insert(page.id());
             return Ok(page);
         }
 
@@ -174,7 +174,7 @@ impl ListeriaBot {
             FROM pagestatus,wikis 
             WHERE pagestatus.wiki=wikis.id
             AND wikis.status='ACTIVE' 
-            AND pagestatus.status NOT IN ({ignore_status})
+            AND pagestatus.status NOT IN ({IGNORE_STATUS})
             AND pagestatus.id NOT IN ({ids})
             ORDER BY pagestatus.timestamp
             LIMIT 1"
@@ -184,9 +184,9 @@ impl ListeriaBot {
             .await
             .ok_or(anyhow!("prepare_next_single_page:: no pop\n{sql}\n{ids}"))?;
         info!(target: "lock","Found a page: {:?}",&page);
-        self.update_page_status(&page.title, &page.wiki, "RUNNING", "PREPARING")
+        self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
             .await?;
-        running.insert(page.id);
+        running.insert(page.id());
         Ok(page)
     }
 
@@ -202,23 +202,23 @@ impl ListeriaBot {
     }
 
     pub async fn run_single_bot(&self, page: PageToProcess) -> Result<()> {
-        let bot = match self.create_bot_for_wiki(&page.wiki).await {
+        let bot = match self.create_bot_for_wiki(page.wiki()).await {
             Some(bot) => bot.to_owned(),
             None => {
                 self.update_page_status(
-                    &page.title,
-                    &page.wiki,
+                    page.title(),
+                    page.wiki(),
                     "FAIL",
-                    &format!("No such wiki: {}", &page.wiki),
+                    &format!("No such wiki: {}", page.wiki()),
                 )
                 .await?;
                 return Err(anyhow!(
                     "ListeriaBot::run_single_bot: No such wiki '{}'",
-                    page.wiki
+                    page.wiki()
                 ));
             }
         };
-        let mut wpr = bot.process_page(&page.title).await;
+        let mut wpr = bot.process_page(page.title()).await;
         if wpr
             .message
             .contains("This page is a translation of the page")
@@ -257,7 +257,7 @@ impl ListeriaBot {
         self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message)
             .await?;
         if wpr.message.contains("104_RESET_BY_PEER") {
-            self.reset_wiki(&page.wiki).await;
+            self.reset_wiki(page.wiki()).await;
         }
         Ok(())
     }
