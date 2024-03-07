@@ -110,6 +110,18 @@ impl ListeriaBot {
         Ok(())
     }
 
+    pub async fn clear_deleted(&self) -> Result<()> {
+        let sql = "DELETE FROM `pagestatus` WHERE `status`='DELETED'";
+        let _ = self
+            .config
+            .pool()
+            .get_conn()
+            .await?
+            .exec_iter(sql, ())
+            .await;
+        Ok(())
+    }
+
     async fn get_page_for_sql(&self, sql: &str) -> Option<PageToProcess> {
         self.config
             .pool()
@@ -284,11 +296,11 @@ impl ListeriaBot {
             "status" => status,
             "message" => message.chars().take(200).collect::<String>(),
         };
-        let priority = if status == "OK" || status == "FAIL" {
-            "0"
-        } else {
-            "`priority`"
-        }; // Reset priority on OK or FAIL
+        let priority = match status {
+            // Reset priority on OK or FAIL
+            "OK" | "FAIL" => "0",
+            _ => "`priority`",
+        };
         let sql = format!(
             "UPDATE `pagestatus` SET
             `status`=:status,
