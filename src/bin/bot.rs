@@ -26,6 +26,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
     let max_threads = bot.config().max_threads();
     println!("Starting {max_threads} bots");
     let _ = bot.reset_running().await;
+    let _ = bot.clear_deleted().await;
     let bot = Arc::new(bot);
     loop {
         while bot.get_running_count().await >= max_threads {
@@ -41,7 +42,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
         // println!("{page:?}");
         let bot = bot.clone();
         tokio::spawn(async move {
-            let pagestatus_id = page.id;
+            let pagestatus_id = page.id();
             let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
                 println!("{}", &e)
