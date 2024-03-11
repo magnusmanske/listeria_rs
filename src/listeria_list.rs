@@ -1248,8 +1248,7 @@ impl ListeriaList {
         let mut entities_to_load: Vec<String> = vec![];
         for row in self.results.iter() {
             for cell in row.cells() {
-                self.ecw
-                    .gather_entities_and_external_properties(cell.parts())
+                EntityContainerWrapper::gather_entities_and_external_properties(cell.parts())
                     .iter()
                     .for_each(|entity_id| entities_to_load.push(entity_id.to_string()));
             }
