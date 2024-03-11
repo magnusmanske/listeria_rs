@@ -231,53 +231,19 @@ impl ListeriaBot {
             }
         };
         let mut wpr = bot.process_page(page.title()).await;
-        if wpr
-            .message
-            .contains("This page is a translation of the page")
-        {
-            wpr.result = "TRANSLATION".into();
-            wpr.message = "This page is a translation".into();
-        }
-        if wpr
-            .message
-            .contains("Connection reset by peer (os error 104)")
-        {
-            wpr.message = "104_RESET_BY_PEER".into();
-        }
-        if wpr.message.contains("api.php): operation timed out") {
-            wpr.message = "WIKI_TIMEOUT".into();
-        }
-        if wpr.message.contains("/sparql): operation timed out") {
-            wpr.message = "SPARQL_TIMEOUT".into();
-        }
-        if wpr
-            .message
-            .contains("expected value at line 1 column 1: SPARQL-QUERY:")
-        {
-            wpr.message = "SPARQL_ERROR".into();
-        }
-        if wpr.message.contains("No 'sparql' parameter in Template") {
-            wpr.message = format!("SPARQL_ERROR {}", wpr.message);
-        }
-        if wpr
-            .message
-            .contains("Could not determine SPARQL variable for item")
-        {
-            wpr.message = format!("SPARQL_ERROR {}", wpr.message);
-        }
-
+        wpr.standardize_meassage();
         self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message)
             .await?;
-        if wpr.message.contains("104_RESET_BY_PEER") {
-            self.reset_wiki(page.wiki()).await;
-        }
+        // if wpr.message.contains("104_RESET_BY_PEER") {
+        //     self.reset_wiki(page.wiki()).await;
+        // }
         Ok(())
     }
 
-    async fn reset_wiki(&self, wiki: &str) {
-        let _ = self.bot_per_wiki.lock().await.remove(wiki);
-        // std::process::exit(0); // Seems that os error 104 is a system wide thing with Wikimedia, best to quit the app and restart
-    }
+    // async fn reset_wiki(&self, wiki: &str) {
+    //     let _ = self.bot_per_wiki.lock().await.remove(wiki);
+    //     std::process::exit(0); // Seems that os error 104 is a system wide thing with Wikimedia, best to quit the app and restart
+    // }
 
     async fn update_page_status(
         &self,

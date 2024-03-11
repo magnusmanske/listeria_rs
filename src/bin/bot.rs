@@ -1,7 +1,7 @@
 extern crate config;
 extern crate serde_json;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use listeria::listeria_bot::ListeriaBot;
 use std::{env, sync::Arc};
 use tokio::time::{sleep, Duration, Instant};
@@ -28,9 +28,15 @@ async fn run_singles(config_file: &str) -> Result<()> {
     let _ = bot.reset_running().await;
     let _ = bot.clear_deleted().await;
     let bot = Arc::new(bot);
+    const MAX_SECONDS_WAIT_FOR_NEW_JOB: u64 = 15 * 60;
     loop {
+        let wait_start = Instant::now();
         while bot.get_running_count().await >= max_threads {
             sleep(Duration::from_millis(100)).await;
+            let diff = (Instant::now() - wait_start).as_secs();
+            if diff > MAX_SECONDS_WAIT_FOR_NEW_JOB {
+                return Err(anyhow!("Waited over {MAX_SECONDS_WAIT_FOR_NEW_JOB} seconds for new job to start, probably stuck, restarting"));
+            }
         }
         let page = match bot.prepare_next_single_page().await {
             Ok(page) => page,
