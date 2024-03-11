@@ -16,6 +16,7 @@ use wikibase::snak::SnakDataType;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
+    config: Arc<Configuration>,
     entities: EntityContainer,
     max_local_cached_entities: usize,
     entity_file_cache: EntityFileCache,
@@ -33,6 +34,7 @@ impl std::fmt::Debug for EntityContainerWrapper {
 impl EntityContainerWrapper {
     pub fn new(config: Arc<Configuration>) -> Self {
         Self {
+            config: config.clone(),
             entities: config.create_entity_container(),
             max_local_cached_entities: config.max_local_cached_entities(),
             entity_file_cache: EntityFileCache::new(),
@@ -43,17 +45,17 @@ impl EntityContainerWrapper {
     async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &[String]) -> Result<()> {
         let chunks = ids.chunks(self.max_local_cached_entities);
         for chunk in chunks {
-            if let Err(e) = self.entities.load_entities(api, &chunk.into()).await {
+            let entities = self.config.create_entity_container();
+            if let Err(e) = entities.load_entities(api, &chunk.into()).await {
                 return Err(anyhow!("Error loading entities: {e}"));
             }
             for entity_id in chunk {
-                if let Some(entity) = self.entities.get_entity(entity_id) {
+                if let Some(entity) = entities.get_entity(entity_id) {
                     let json = entity.to_json();
                     self.entity_file_cache
                         .add_entity(entity_id, &json.to_string())?;
                 }
             }
-            self.entities.clear();
         }
         Ok(())
     }
