@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     let config_file = args
         .get(3)
         .map(|s| s.to_owned())
-        .unwrap_or("listeria.ini".to_string());
+        .unwrap_or("config.json".to_string());
 
     let mut config = Configuration::new_from_file(&config_file).await.unwrap();
     config.set_profiling(true); // Force profiling on for manual single job
