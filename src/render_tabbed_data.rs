@@ -17,18 +17,13 @@ impl Renderer for RendererTabbedData {
                 x.push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{list.language().to_owned():col.label}}));
             }
         });
-        let mut ret_data = vec![];
-        for (rownum, row) in list.results().iter().enumerate() {
-            ret_data.push(row.as_tabbed_data(list, rownum));
-        }
-        ret["data"] = json!(ret_data); // TODO check if this is correct, see below
-
-        // ret["data"] = list
-        //     .results()
-        //     .iter()
-        //     .enumerate()
-        //     .map(|(rownum, row)| row.as_tabbed_data(&list, rownum))
-        //     .collect();
+        let ret_data: Vec<Value> = list
+            .results()
+            .iter()
+            .enumerate()
+            .map(|(rownum, row)| row.as_tabbed_data(list, rownum))
+            .collect();
+        ret["data"] = json!(ret_data);
         Ok(format!("{}", ret))
     }
 
@@ -52,48 +47,14 @@ impl Renderer for RendererTabbedData {
             .build()?;
 
         let (before, blob, end_template, after) = match re_wikitext1.captures(wikitext) {
-            Some(caps) => (
-                match caps.get(1) {
-                    Some(a) => a,
-                    _ => unreachable!(),
-                }
-                .as_str(),
-                match caps.get(2) {
-                    Some(a) => a,
-                    _ => unreachable!(),
-                }
-                .as_str(),
-                match caps.get(3) {
-                    Some(a) => a,
-                    _ => unreachable!(),
-                }
-                .as_str(),
-                match caps.get(4) {
-                    Some(a) => a,
-                    _ => unreachable!(),
-                }
-                .as_str(),
-            ),
+            Some(caps) => Self::get_wikitext_captures(caps),
             None => match re_wikitext2.captures(wikitext) {
-                Some(caps) => (
-                    match caps.get(1) {
-                        Some(a) => a,
-                        _ => unreachable!(),
-                    }
-                    .as_str(),
-                    match caps.get(2) {
-                        Some(a) => a,
-                        _ => unreachable!(),
-                    }
-                    .as_str(),
-                    "",
-                    "",
-                ),
+                Some(caps) => Self::get_wikitext_captures(caps),
                 None => return Err(anyhow!("No template/end template found")),
             },
         };
 
-        let (start_template, rest) = match self.separate_start_template(blob) {
+        let (start_template, rest) = match self.separate_start_template(&blob) {
             Some(parts) => parts,
             None => return Err(anyhow!("Can't split start template")),
         };
@@ -133,6 +94,23 @@ impl RendererTabbedData {
             return None; // Page title too long
         }
         Some(ret)
+    }
+
+    fn get_wikitext_captures(caps: regex::Captures<'_>) -> (String, String, String, String) {
+        (
+            caps.get(1)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default(),
+            caps.get(2)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default(),
+            caps.get(3)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default(),
+            caps.get(4)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default(),
+        )
     }
 
     pub async fn write_tabbed_data(
