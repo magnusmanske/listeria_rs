@@ -20,7 +20,6 @@ pub struct EntityContainerWrapper {
     entities: EntityContainer,
     max_local_cached_entities: usize,
     entity_file_cache: EntityFileCache,
-    profiling: bool,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
@@ -38,7 +37,6 @@ impl EntityContainerWrapper {
             entities: config.create_entity_container(),
             max_local_cached_entities: config.max_local_cached_entities(),
             entity_file_cache: EntityFileCache::new(),
-            profiling: config.profiling(),
         }
     }
 
@@ -60,32 +58,38 @@ impl EntityContainerWrapper {
         Ok(())
     }
 
-    pub async fn load_entities(&mut self, api: &Api, ids: &[String]) -> Result<()> {
+    /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times
+    fn filter_ids(&self, ids: &[String]) -> Result<Vec<String>> {
         let ids: Vec<String> = ids
             .iter()
             .filter(|id| !self.entities.has_entity(id.as_str()))
             .filter(|id| !self.entity_file_cache.has_entity(id))
             .map(|id| id.to_owned())
             .collect();
-        if ids.is_empty() {
-            return Ok(());
-        }
         let ids = self
             .entities
             .unique_shuffle_entity_ids(&ids)
             .map_err(|e| anyhow!("{e}"))?;
-        if self.profiling {
-            println!(
-                "ECW::load_entities: loading {} entities on top of {} loaded, cutoff is {}",
-                ids.len(),
-                self.entities.len(),
-                self.max_local_cached_entities
-            );
+        Ok(ids)
+    }
+
+    pub fn len(&self) -> usize {
+        self.entities.len() + self.entity_file_cache.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entities.len() == 0 && self.entity_file_cache.is_empty()
+    }
+
+    /// Loads the entities for the given IDs
+    pub async fn load_entities(&mut self, api: &Api, ids: &[String]) -> Result<()> {
+        let ids = self.filter_ids(ids)?;
+        if ids.is_empty() {
+            return Ok(());
         }
-        if ids.len() + self.entities.len() > self.max_local_cached_entities {
-            // Use entity cache
-            self.load_entities_into_entity_cache(api, &ids).await?;
-            Ok(())
+
+        if ids.len() + self.len() > self.max_local_cached_entities {
+            self.load_entities_into_entity_cache(api, &ids).await
         } else {
             match self.entities.load_entities(api, &ids).await {
                 Ok(_) => Ok(()),
@@ -95,12 +99,17 @@ impl EntityContainerWrapper {
     }
 
     pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
-        if let Some(entity) = self.entities.get_entity(entity_id) {
-            return Some(entity);
-        }
-        let json_string = self.entity_file_cache.get_entity(entity_id)?;
-        let json_value = serde_json::from_str(&json_string).ok()?;
-        Entity::new_from_json(&json_value).ok()
+        self.entities.get_entity(entity_id).or_else(|| {
+            let json_string = self.entity_file_cache.get_entity(entity_id)?;
+            let json_value = serde_json::from_str(&json_string).ok()?;
+            Entity::new_from_json(&json_value).ok()
+        })
+        // if let Some(entity) = self.entities.get_entity(entity_id) {
+        //     return Some(entity);
+        // }
+        // let json_string = self.entity_file_cache.get_entity(entity_id)?;
+        // let json_value = serde_json::from_str(&json_string).ok()?;
+        // Entity::new_from_json(&json_value).ok()
     }
 
     pub fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
@@ -210,6 +219,7 @@ impl EntityContainerWrapper {
 
     pub fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         match self.get_entity(prop) {
+            /* trunk-ignore(clippy/collapsible_match) */
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),

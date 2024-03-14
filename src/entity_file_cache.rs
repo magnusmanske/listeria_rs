@@ -18,6 +18,14 @@ impl EntityFileCache {
         Self::default()
     }
 
+    pub fn len(&self) -> usize {
+        self.id2pos.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.id2pos.is_empty()
+    }
+
     pub fn add_entity(&mut self, entity: &str, json: &str) -> Result<()> {
         let fh = self.get_or_create_file_handle();
         let mut fh = fh.lock().map_err(|e| anyhow!(format!("{e}")))?;
