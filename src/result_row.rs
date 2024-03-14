@@ -109,7 +109,7 @@ impl ResultRow {
 
     pub fn get_sortkey_label(&self, list: &ListeriaList) -> String {
         match list.get_entity(self.entity_id()) {
-            Some(_entity) => list.get_label_with_fallback(self.entity_id(), None),
+            Some(_entity) => list.get_label_with_fallback(self.entity_id()),
             None => "".to_string(),
         }
     }
@@ -198,7 +198,7 @@ impl ResultRow {
                 wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
                 wikibase::value::Value::Entity(entity) => {
                     // TODO language?
-                    list.get_label_with_fallback(entity.id(), None)
+                    list.get_label_with_fallback(entity.id())
                 }
                 wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikibase::value::Value::StringValue(s) => s.to_owned(),

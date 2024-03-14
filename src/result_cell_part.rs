@@ -201,7 +201,7 @@ impl ResultCellPart {
                             Some(_) => list.language().to_owned(),
                             None => list.default_language(),
                         };
-                        let use_label = list.get_label_with_fallback(id, Some(&use_language));
+                        let use_label = list.get_label_with_fallback_lang(id, &use_language);
                         let labeled_entity_link = if list.is_wikidatawiki() {
                             format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
                         } else {

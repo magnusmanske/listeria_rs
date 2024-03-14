@@ -109,6 +109,35 @@ impl EntityContainerWrapper {
             .map(|s| s.to_string())
     }
 
+    pub fn get_entity_label_with_fallback(&self, entity_id: &str, language: &str) -> String {
+        match self.get_entity(entity_id) {
+            Some(entity) => {
+                match entity.label_in_locale(language).map(|s| s.to_string()) {
+                    Some(s) => s,
+                    None => {
+                        // Try the usual suspects
+                        for language in ["en", "de", "fr", "es", "it", "el", "nl"].iter() {
+                            if let Some(label) =
+                                entity.label_in_locale(language).map(|s| s.to_string())
+                            {
+                                return label;
+                            }
+                        }
+                        // Try any label, any language
+                        if let Some(entity) = self.get_entity(entity_id) {
+                            if let Some(label) = entity.labels().first() {
+                                return label.value().to_string();
+                            }
+                        }
+                        // Fallback to item ID as label
+                        entity_id.to_string()
+                    }
+                }
+            }
+            None => entity_id.to_string(), // Fallback
+        }
+    }
+
     pub fn entity_to_local_link(
         &self,
         item: &str,
@@ -181,7 +210,6 @@ impl EntityContainerWrapper {
 
     pub fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         match self.get_entity(prop) {
-            /* trunk-ignore(clippy/collapsible_match) */
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),
