@@ -210,25 +210,7 @@ impl ResultCellPart {
                 } else {
                     format!("''[[{}|{}]]''", list.get_item_wiki_target(id), use_label)
                 };
-
-                match list.get_links_type() {
-                    LinksType::Text => use_label,
-                    LinksType::Red | LinksType::RedOnly => {
-                        let contains_colon = use_label.contains(':');
-                        if list.local_page_exists(&use_label) {
-                            let category_prefix = if contains_colon { ":" } else { "" };
-                            format!("[[{}{} ({})|]]", category_prefix, &use_label, &id)
-                        } else if contains_colon {
-                            format!("[[:{}|]]", &use_label)
-                        } else {
-                            format!("[[{}]]", &use_label)
-                        }
-                    }
-                    LinksType::Reasonator => {
-                        format!("[https://reasonator.toolforge.org/?q={} {}]", id, use_label)
-                    }
-                    _ => labeled_entity_link,
-                }
+                Self::render_entity_link(list, use_label, id, labeled_entity_link)
             }
             None => entity_id_link,
         }
@@ -306,5 +288,31 @@ impl ResultCellPart {
 
     pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum))
+    }
+
+    fn render_entity_link(
+        list: &ListeriaList,
+        use_label: String,
+        id: &str,
+        labeled_entity_link: String,
+    ) -> String {
+        match list.get_links_type() {
+            LinksType::Text => use_label,
+            LinksType::Red | LinksType::RedOnly => {
+                let contains_colon = use_label.contains(':');
+                if list.local_page_exists(&use_label) {
+                    let category_prefix = if contains_colon { ":" } else { "" };
+                    format!("[[{}{} ({})|]]", category_prefix, &use_label, &id)
+                } else if contains_colon {
+                    format!("[[:{}|]]", &use_label)
+                } else {
+                    format!("[[{}]]", &use_label)
+                }
+            }
+            LinksType::Reasonator => {
+                format!("[https://reasonator.toolforge.org/?q={} {}]", id, use_label)
+            }
+            _ => labeled_entity_link,
+        }
     }
 }
