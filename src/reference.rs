@@ -22,6 +22,7 @@ impl PartialEq for Reference {
 }
 
 impl Reference {
+    /// Creates a new reference from a snak array
     pub fn new_from_snaks(snaks: &[wikibase::snak::Snak], language: &str) -> Option<Self> {
         let mut ret = Self {
             ..Default::default()
@@ -29,57 +30,10 @@ impl Reference {
 
         for snak in snaks.iter() {
             match snak.property() {
-                "P854" => {
-                    // Reference URL
-                    if let Some(dv) = snak.data_value() {
-                        if let wikibase::Value::StringValue(url) = dv.value() {
-                            ret.url = Some(url.to_owned());
-                        }
-                    }
-                }
-                "P1476" => {
-                    // Title
-                    if let Some(dv) = snak.data_value() {
-                        if let wikibase::Value::MonoLingual(mlt) = dv.value() {
-                            if mlt.language() == language {
-                                ret.title = Some(mlt.text().to_owned());
-                            }
-                        }
-                    }
-                }
-                "P813" => {
-                    // Timestamp/last access
-                    if let Some(dv) = snak.data_value() {
-                        if let wikibase::Value::Time(tv) = dv.value() {
-                            if let Some(pos) = tv.time().find('T') {
-                                let (date, _) = tv.time().split_at(pos);
-                                let mut date = date.replace('+', "").to_string();
-                                if *tv.precision() >= 11 { // Day
-                                     // Keep
-                                } else if *tv.precision() == 10 {
-                                    // Month
-                                    if let Some(pos) = date.rfind('-') {
-                                        date = date.split_at(pos).0.to_string();
-                                    }
-                                } else if *tv.precision() <= 9 {
-                                    // Year etc TODO century etc
-                                    if let Some(pos) = date.find('-') {
-                                        date = date.split_at(pos).0.to_string();
-                                    }
-                                }
-                                ret.date = Some(date);
-                            }
-                        }
-                    }
-                }
-                "P248" => {
-                    // Stated in
-                    if let Some(dv) = snak.data_value() {
-                        if let wikibase::Value::Entity(item) = dv.value() {
-                            ret.stated_in = Some(item.id().to_owned());
-                        }
-                    }
-                }
+                "P854" => Self::extract_reference_url(snak, &mut ret),
+                "P1476" => Self::extract_title(snak, language, &mut ret),
+                "P813" => Self::extract_timestamp(snak, &mut ret),
+                "P248" => Self::extract_stated_in(snak, &mut ret),
                 _ => {}
             }
         }
@@ -91,10 +45,12 @@ impl Reference {
         }
     }
 
+    /// Returns true if the reference is empty
     fn is_empty(&self) -> bool {
         self.url.is_none() && self.stated_in.is_none()
     }
 
+    /// Returns the reference as a wikitext string
     pub fn as_reference(&self, list: &ListeriaList) -> String {
         let wikitext = self.as_wikitext(list);
         let md5 = match self.md5.read() {
@@ -110,6 +66,7 @@ impl Reference {
         }
     }
 
+    /// Returns the wikitext representation of the reference
     fn as_wikitext(&self, list: &ListeriaList) -> String {
         loop {
             // TODO FIXME check that this loop does not run forever
@@ -161,6 +118,65 @@ impl Reference {
                     *cache = Some(s);
                 }
                 _ => return String::new(), // No error
+            }
+        }
+    }
+
+    /// Extracts the stated_in info from a snak
+    fn extract_stated_in(snak: &wikibase::Snak, ret: &mut Reference) {
+        // Stated in
+        if let Some(dv) = snak.data_value() {
+            if let wikibase::Value::Entity(item) = dv.value() {
+                ret.stated_in = Some(item.id().to_owned());
+            }
+        }
+    }
+
+    /// Extracts the timestamp from a snak
+    fn extract_timestamp(snak: &wikibase::Snak, ret: &mut Reference) {
+        // Timestamp/last access
+        if let Some(dv) = snak.data_value() {
+            if let wikibase::Value::Time(tv) = dv.value() {
+                if let Some(pos) = tv.time().find('T') {
+                    let (date, _) = tv.time().split_at(pos);
+                    let mut date = date.replace('+', "").to_string();
+                    if *tv.precision() >= 11 { // Day
+                         // Keep
+                    } else if *tv.precision() == 10 {
+                        // Month
+                        if let Some(pos) = date.rfind('-') {
+                            date = date.split_at(pos).0.to_string();
+                        }
+                    } else if *tv.precision() <= 9 {
+                        // Year etc TODO century etc
+                        if let Some(pos) = date.find('-') {
+                            date = date.split_at(pos).0.to_string();
+                        }
+                    }
+                    ret.date = Some(date);
+                }
+            }
+        }
+    }
+
+    /// Extracts the title from a snak
+    fn extract_title(snak: &wikibase::Snak, language: &str, ret: &mut Reference) {
+        // Title
+        if let Some(dv) = snak.data_value() {
+            if let wikibase::Value::MonoLingual(mlt) = dv.value() {
+                if mlt.language() == language {
+                    ret.title = Some(mlt.text().to_owned());
+                }
+            }
+        }
+    }
+
+    /// Extracts the reference URL from a snak
+    fn extract_reference_url(snak: &wikibase::Snak, ret: &mut Reference) {
+        // Reference URL
+        if let Some(dv) = snak.data_value() {
+            if let wikibase::Value::StringValue(url) = dv.value() {
+                ret.url = Some(url.to_owned());
             }
         }
     }
