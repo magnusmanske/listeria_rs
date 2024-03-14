@@ -66,6 +66,7 @@ impl AutoDesc {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+/* trunk-ignore(clippy/large_enum_variant) */
 pub enum ResultCellPart {
     Number,
     Entity((String, bool)),            // ID, try_localize
