@@ -15,7 +15,9 @@ impl Renderer for RendererWikitext {
         }
         if !list.shadow_files().is_empty() {
             wt += "\n----\nThe following local image(s) are not shown in the above list, because they shadow a Commons image of the same name, and might be non-free:";
-            for file in list.shadow_files() {
+            let mut shadow_files: Vec<String> = list.shadow_files().iter().cloned().collect();
+            shadow_files.sort(); // For prettier, consistent display
+            for file in shadow_files {
                 wt += format!("\n# [[:{}:{}|]]", list.local_file_namespace_prefix(), file).as_str();
             }
         }

@@ -104,12 +104,6 @@ impl EntityContainerWrapper {
             let json_value = serde_json::from_str(&json_string).ok()?;
             Entity::new_from_json(&json_value).ok()
         })
-        // if let Some(entity) = self.entities.get_entity(entity_id) {
-        //     return Some(entity);
-        // }
-        // let json_string = self.entity_file_cache.get_entity(entity_id)?;
-        // let json_value = serde_json::from_str(&json_string).ok()?;
-        // Entity::new_from_json(&json_value).ok()
     }
 
     pub fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
