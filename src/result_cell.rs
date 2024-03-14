@@ -33,184 +33,22 @@ impl ResultCell {
 
         let entity = list.get_entity(entity_id);
         match &col.obj {
-            ColumnType::Qid => {
-                ret.parts.push(PartWithReference::new(
-                    ResultCellPart::Text(entity_id.to_string()),
-                    None,
-                ));
-            }
-            ColumnType::Item => {
-                ret.parts.push(PartWithReference::new(
-                    ResultCellPart::Entity((entity_id.to_owned(), false)),
-                    None,
-                ));
-            }
-            ColumnType::Description => {
-                if let Some(e) = entity {
-                    match e.description_in_locale(list.language()) {
-                        Some(s) => {
-                            ret.wdedit_class = match &list.header_template() {
-                                Some(_) => None,
-                                None => Some("wd_desc".to_string()),
-                            };
-                            let s = Self::fix_wikitext_for_output(s);
-                            ret.parts
-                                .push(PartWithReference::new(ResultCellPart::Text(s), None));
-                        }
-                        None => {
-                            ret.parts.push(PartWithReference::new(
-                                ResultCellPart::AutoDesc(AutoDesc::new(&e)),
-                                None,
-                            ));
-                        }
-                    }
-                }
-            }
-            ColumnType::Field(varname) => {
-                let varname = varname.to_lowercase();
-                let mut found_varname: Option<String> = None;
-                for row in sparql_rows.iter() {
-                    if found_varname.is_none() {
-                        for x in row.keys() {
-                            if x.to_lowercase() == varname {
-                                found_varname = Some(x.to_string());
-                            }
-                        }
-                    }
-                    if let Some(ref the_varname) = found_varname {
-                        if let Some(x) = row.get(the_varname) {
-                            ret.parts.push(PartWithReference::new(
-                                ResultCellPart::from_sparql_value(x),
-                                None,
-                            ));
-                        }
-                    }
-                }
-            }
-            ColumnType::Property(property) => {
-                if let Some(e) = entity {
-                    ret.wdedit_class = match &list.header_template() {
-                        Some(_) => None,
-                        None => Some(format!("wd_{}", property.to_lowercase())),
-                    };
-                    list.get_filtered_claims(&e, property)
-                        .iter()
-                        .for_each(|statement| {
-                            let references = match list.get_reference_parameter() {
-                                ReferencesParameter::All => {
-                                    Self::get_references_for_statement(statement, list.language())
-                                }
-                                _ => None,
-                            };
-                            ret.parts.push(PartWithReference::new(
-                                ResultCellPart::from_snak(statement.main_snak()),
-                                references,
-                            ));
-                        });
-                }
-            }
-            ColumnType::PropertyQualifier((p1, p2)) => {
-                if let Some(e) = entity {
-                    list.get_filtered_claims(&e, p1)
-                        .iter()
-                        .for_each(|statement| {
-                            ret.get_parts_p_p(statement, p2).iter().for_each(|part| {
-                                ret.parts
-                                    .push(PartWithReference::new(part.to_owned(), None))
-                            });
-                        });
-                }
-            }
+            ColumnType::Qid => Self::ct_qid(&mut ret, entity_id),
+            ColumnType::Item => Self::ct_item(&mut ret, entity_id),
+            ColumnType::Description => Self::ct_description(&entity, list, &mut ret),
+            ColumnType::Field(varname) => Self::ct_field(varname, sparql_rows, &mut ret),
+            ColumnType::Property(property) => Self::ct_property(&entity, &mut ret, list, property),
+            ColumnType::PropertyQualifier((p1, p2)) => Self::ct_pq(&entity, list, p1, &mut ret, p2),
             ColumnType::PropertyQualifierValue((p1, q1, p2)) => {
-                if let Some(e) = entity {
-                    list.get_filtered_claims(&e, p1)
-                        .iter()
-                        .for_each(|statement| {
-                            ret.get_parts_p_q_p(statement, q1, p2)
-                                .iter()
-                                .for_each(|part| {
-                                    ret.parts
-                                        .push(PartWithReference::new(part.to_owned(), None))
-                                });
-                        });
-                }
+                Self::ct_pqv(&entity, list, p1, &mut ret, q1, p2)
             }
             ColumnType::LabelLang(language) => {
-                if let Some(e) = entity {
-                    match e.label_in_locale(language) {
-                        Some(s) => {
-                            ret.parts.push(PartWithReference::new(
-                                ResultCellPart::Text(s.to_string()),
-                                None,
-                            ));
-                        }
-                        None => {
-                            if let Some(s) = e.label_in_locale(list.language()) {
-                                ret.parts.push(PartWithReference::new(
-                                    ResultCellPart::Text(s.to_string()),
-                                    None,
-                                ));
-                            }
-                        }
-                    }
-                }
+                Self::ct_label_lang(&entity, language, &mut ret, list)
             }
-            ColumnType::AliasLang(language) => {
-                if let Some(e) = entity {
-                    let mut aliases: Vec<String> = e
-                        .aliases()
-                        .iter()
-                        .filter(|alias| alias.language() == language)
-                        .map(|alias| alias.value().to_string())
-                        .collect();
-                    aliases.sort();
-                    aliases.iter().for_each(|alias| {
-                        ret.parts.push(PartWithReference::new(
-                            ResultCellPart::Text(alias.to_owned()),
-                            None,
-                        ));
-                    });
-                }
-            }
-            ColumnType::Label => {
-                if let Some(e) = entity {
-                    ret.wdedit_class = match &list.header_template() {
-                        Some(_) => None,
-                        None => Some("wd_label".to_string()),
-                    };
-                    let label = match e.label_in_locale(list.language()) {
-                        Some(s) => s.to_string(),
-                        None => entity_id.to_string(),
-                    };
-                    let local_page = match e.sitelinks() {
-                        Some(sl) => sl
-                            .iter()
-                            .filter(|s| *s.site() == *list.wiki())
-                            .map(|s| s.title().to_string())
-                            .next(),
-                        None => None,
-                    };
-                    match local_page {
-                        Some(page) => {
-                            ret.parts.push(PartWithReference::new(
-                                ResultCellPart::LocalLink((page, label, false)),
-                                None,
-                            ));
-                        }
-                        None => {
-                            ret.parts.push(PartWithReference::new(
-                                ResultCellPart::Entity((entity_id.to_string(), true)),
-                                None,
-                            ));
-                        }
-                    }
-                }
-            }
+            ColumnType::AliasLang(language) => Self::ct_alias_lang(&entity, language, &mut ret),
+            ColumnType::Label => Self::ct_label(entity, &mut ret, list, entity_id),
             ColumnType::Unknown => {} // Ignore
-            ColumnType::Number => {
-                ret.parts
-                    .push(PartWithReference::new(ResultCellPart::Number, None));
-            }
+            ColumnType::Number => Self::ct_number(&mut ret),
         }
 
         ret
@@ -368,5 +206,239 @@ impl ResultCell {
         }
         ret += &parts.join("<br/>");
         ret
+    }
+
+    fn ct_number(ret: &mut ResultCell) {
+        ret.parts
+            .push(PartWithReference::new(ResultCellPart::Number, None));
+    }
+
+    fn ct_label(
+        entity: Option<wikibase::Entity>,
+        ret: &mut ResultCell,
+        list: &ListeriaList,
+        entity_id: &str,
+    ) {
+        if let Some(e) = entity {
+            ret.wdedit_class = match &list.header_template() {
+                Some(_) => None,
+                None => Some("wd_label".to_string()),
+            };
+            let label = match e.label_in_locale(list.language()) {
+                Some(s) => s.to_string(),
+                None => entity_id.to_string(),
+            };
+            let local_page = match e.sitelinks() {
+                Some(sl) => sl
+                    .iter()
+                    .filter(|s| *s.site() == *list.wiki())
+                    .map(|s| s.title().to_string())
+                    .next(),
+                None => None,
+            };
+            match local_page {
+                Some(page) => {
+                    ret.parts.push(PartWithReference::new(
+                        ResultCellPart::LocalLink((page, label, false)),
+                        None,
+                    ));
+                }
+                None => {
+                    ret.parts.push(PartWithReference::new(
+                        ResultCellPart::Entity((entity_id.to_string(), true)),
+                        None,
+                    ));
+                }
+            }
+        }
+    }
+
+    fn ct_alias_lang(entity: &Option<wikibase::Entity>, language: &String, ret: &mut ResultCell) {
+        if let Some(e) = entity {
+            let mut aliases: Vec<String> = e
+                .aliases()
+                .iter()
+                .filter(|alias| alias.language() == language)
+                .map(|alias| alias.value().to_string())
+                .collect();
+            aliases.sort();
+            aliases.iter().for_each(|alias| {
+                ret.parts.push(PartWithReference::new(
+                    ResultCellPart::Text(alias.to_owned()),
+                    None,
+                ));
+            });
+        }
+    }
+
+    fn ct_label_lang(
+        entity: &Option<wikibase::Entity>,
+        language: &str,
+        ret: &mut ResultCell,
+        list: &ListeriaList,
+    ) {
+        if let Some(e) = entity {
+            match e.label_in_locale(language) {
+                Some(s) => {
+                    ret.parts.push(PartWithReference::new(
+                        ResultCellPart::Text(s.to_string()),
+                        None,
+                    ));
+                }
+                None => {
+                    if let Some(s) = e.label_in_locale(list.language()) {
+                        ret.parts.push(PartWithReference::new(
+                            ResultCellPart::Text(s.to_string()),
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    fn ct_pqv(
+        entity: &Option<wikibase::Entity>,
+        list: &ListeriaList,
+        p1: &str,
+        ret: &mut ResultCell,
+        q1: &str,
+        p2: &str,
+    ) {
+        if let Some(e) = entity {
+            list.get_filtered_claims(e, p1)
+                .iter()
+                .for_each(|statement| {
+                    ret.get_parts_p_q_p(statement, q1, p2)
+                        .iter()
+                        .for_each(|part| {
+                            ret.parts
+                                .push(PartWithReference::new(part.to_owned(), None))
+                        });
+                });
+        }
+    }
+
+    fn ct_pq(
+        entity: &Option<wikibase::Entity>,
+        list: &ListeriaList,
+        p1: &str,
+        ret: &mut ResultCell,
+        p2: &str,
+    ) {
+        if let Some(e) = entity {
+            list.get_filtered_claims(e, p1)
+                .iter()
+                .for_each(|statement| {
+                    ret.get_parts_p_p(statement, p2).iter().for_each(|part| {
+                        ret.parts
+                            .push(PartWithReference::new(part.to_owned(), None))
+                    });
+                });
+        }
+    }
+
+    fn ct_property(
+        entity: &Option<wikibase::Entity>,
+        ret: &mut ResultCell,
+        list: &ListeriaList,
+        property: &str,
+    ) {
+        if let Some(e) = entity {
+            ret.wdedit_class = match &list.header_template() {
+                Some(_) => None,
+                None => Some(format!("wd_{}", property.to_lowercase())),
+            };
+            list.get_filtered_claims(e, property)
+                .iter()
+                .for_each(|statement| {
+                    let references = match list.get_reference_parameter() {
+                        ReferencesParameter::All => {
+                            Self::get_references_for_statement(statement, list.language())
+                        }
+                        _ => None,
+                    };
+                    ret.parts.push(PartWithReference::new(
+                        ResultCellPart::from_snak(statement.main_snak()),
+                        references,
+                    ));
+                });
+        }
+    }
+
+    fn ct_field(
+        varname: &str,
+        sparql_rows: &[&HashMap<String, SparqlValue>],
+        ret: &mut ResultCell,
+    ) {
+        let varname = varname.to_lowercase();
+        let mut found_varname: Option<String> = None;
+        for row in sparql_rows.iter() {
+            if found_varname.is_none() {
+                for x in row.keys() {
+                    if x.to_lowercase() == varname {
+                        found_varname = Some(x.to_string());
+                    }
+                }
+            }
+            if let Some(ref the_varname) = found_varname {
+                if let Some(x) = row.get(the_varname) {
+                    ret.parts.push(PartWithReference::new(
+                        ResultCellPart::from_sparql_value(x),
+                        None,
+                    ));
+                }
+            }
+        }
+    }
+
+    fn ct_description(
+        entity: &Option<wikibase::Entity>,
+        list: &ListeriaList,
+        ret: &mut ResultCell,
+    ) {
+        if let Some(e) = entity {
+            match e.description_in_locale(list.language()) {
+                Some(s) => {
+                    ret.wdedit_class = match &list.header_template() {
+                        Some(_) => None,
+                        None => Some("wd_desc".to_string()),
+                    };
+                    let s = Self::fix_wikitext_for_output(s);
+                    ret.parts
+                        .push(PartWithReference::new(ResultCellPart::Text(s), None));
+                }
+                None => {
+                    ret.parts.push(PartWithReference::new(
+                        ResultCellPart::AutoDesc(AutoDesc::new(e)),
+                        None,
+                    ));
+                }
+            }
+        }
+    }
+
+    fn ct_item(ret: &mut ResultCell, entity_id: &str) {
+        ret.parts.push(PartWithReference::new(
+            ResultCellPart::Entity((entity_id.to_owned(), false)),
+            None,
+        ));
+    }
+
+    fn ct_qid(ret: &mut ResultCell, entity_id: &str) {
+        ret.parts.push(PartWithReference::new(
+            ResultCellPart::Text(entity_id.to_string()),
+            None,
+        ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fix_wikitext_for_output() {
+        assert_eq!(ResultCell::fix_wikitext_for_output("a'b<c"), "a&#39;b&lt;c");
     }
 }
