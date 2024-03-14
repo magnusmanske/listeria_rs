@@ -39,3 +39,22 @@ impl PageToProcess {
         &self.wiki
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_parts() {
+        let p2p = PageToProcess::from_parts((
+            123,
+            "foo".to_string(),
+            "bar".to_string(),
+            "baz".to_string(),
+        ));
+        assert_eq!(p2p.id(), 123);
+        assert_eq!(p2p.title(), "foo");
+        assert_eq!(p2p.status(), "bar");
+        assert_eq!(p2p.wiki(), "baz");
+    }
+}

@@ -179,59 +179,66 @@ impl ResultCellPart {
         ret
     }
 
+    fn as_wikitext_entity(
+        &self,
+        list: &ListeriaList,
+        id: &str,
+        try_localize: bool,
+        colnum: usize,
+    ) -> String {
+        if !try_localize {
+            let is_item_column = match list.column(colnum) {
+                Some(col) => col.obj == ColumnType::Item,
+                None => false,
+            };
+            if list.is_wikidatawiki() || is_item_column {
+                return format!("[[{}|{}]]", list.get_item_wiki_target(id), id);
+            } else {
+                return format!("''[[{}|{}]]''", list.get_item_wiki_target(id), id);
+            }
+        }
+        let entity_id_link = list.get_item_link_with_fallback(id);
+        match list.get_entity(id) {
+            Some(e) => {
+                let use_language = match e.label_in_locale(list.language()) {
+                    Some(_) => list.language().to_owned(),
+                    None => list.default_language(),
+                };
+                let use_label = list.get_label_with_fallback_lang(id, &use_language);
+                let labeled_entity_link = if list.is_wikidatawiki() {
+                    format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
+                } else {
+                    format!("''[[{}|{}]]''", list.get_item_wiki_target(id), use_label)
+                };
+
+                match list.get_links_type() {
+                    LinksType::Text => use_label,
+                    LinksType::Red | LinksType::RedOnly => {
+                        let contains_colon = use_label.contains(':');
+                        if list.local_page_exists(&use_label) {
+                            let category_prefix = if contains_colon { ":" } else { "" };
+                            format!("[[{}{} ({})|]]", category_prefix, &use_label, &id)
+                        } else if contains_colon {
+                            format!("[[:{}|]]", &use_label)
+                        } else {
+                            format!("[[{}]]", &use_label)
+                        }
+                    }
+                    LinksType::Reasonator => {
+                        format!("[https://reasonator.toolforge.org/?q={} {}]", id, use_label)
+                    }
+                    _ => labeled_entity_link,
+                }
+            }
+            None => entity_id_link,
+        }
+    }
+
     pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         match self {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
-                if !try_localize {
-                    let is_item_column = match list.column(colnum) {
-                        Some(col) => col.obj == ColumnType::Item,
-                        None => false,
-                    };
-                    if list.is_wikidatawiki() || is_item_column {
-                        return format!("[[{}|{}]]", list.get_item_wiki_target(id), id);
-                    } else {
-                        return format!("''[[{}|{}]]''", list.get_item_wiki_target(id), id);
-                    }
-                }
-                let entity_id_link = list.get_item_link_with_fallback(id);
-                match list.get_entity(id) {
-                    Some(e) => {
-                        let use_language = match e.label_in_locale(list.language()) {
-                            Some(_) => list.language().to_owned(),
-                            None => list.default_language(),
-                        };
-                        let use_label = list.get_label_with_fallback_lang(id, &use_language);
-                        let labeled_entity_link = if list.is_wikidatawiki() {
-                            format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
-                        } else {
-                            format!("''[[{}|{}]]''", list.get_item_wiki_target(id), use_label)
-                        };
-
-                        match list.get_links_type() {
-                            LinksType::Text => use_label,
-                            LinksType::Red | LinksType::RedOnly => {
-                                let contains_colon = use_label.contains(':');
-                                if list.local_page_exists(&use_label) {
-                                    let category_prefix = if contains_colon { ":" } else { "" };
-                                    format!("[[{}{} ({})|]]", category_prefix, &use_label, &id)
-                                } else if contains_colon {
-                                    format!("[[:{}|]]", &use_label)
-                                } else {
-                                    format!("[[{}]]", &use_label)
-                                }
-                            }
-                            LinksType::Reasonator => {
-                                format!(
-                                    "[https://reasonator.toolforge.org/?q={} {}]",
-                                    id, use_label
-                                )
-                            }
-                            _ => labeled_entity_link,
-                        }
-                    }
-                    None => entity_id_link,
-                }
+                self.as_wikitext_entity(list, id, *try_localize, colnum)
             }
             ResultCellPart::LocalLink((title, label, is_category)) => {
                 let start = if *is_category { "[[:" } else { "[[" };

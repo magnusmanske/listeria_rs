@@ -58,15 +58,10 @@ impl ResultCell {
                                 .push(PartWithReference::new(ResultCellPart::Text(s), None));
                         }
                         None => {
-                            // TODO FIXME autodesc deactivated for performance reasons, actually fill later
                             ret.parts.push(PartWithReference::new(
                                 ResultCellPart::AutoDesc(AutoDesc::new(&e)),
                                 None,
                             ));
-                            // if let Ok(s) = list.get_autodesc_description(&e).await {
-                            //     ret.parts
-                            //         .push(PartWithReference::new(ResultCellPart::Text(s), None));
-                            // }
                         }
                     }
                 }
@@ -283,16 +278,10 @@ impl ResultCell {
             .iter()
             .filter(|snak| *snak.property() == *property)
             .map(|snak| {
-                ResultCellPart::SnakList(vec![
-                    /*
-                    // prefix with the Q in p_q_p
-                    PartWithReference::new(
-                        ResultCellPart::from_snak(statement.main_snak()),
-                        None
-                    ),
-                    */
-                    PartWithReference::new(ResultCellPart::from_snak(snak), None),
-                ])
+                ResultCellPart::SnakList(vec![PartWithReference::new(
+                    ResultCellPart::from_snak(snak),
+                    None,
+                )])
             })
             .collect()
     }
