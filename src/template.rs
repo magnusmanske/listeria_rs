@@ -72,3 +72,18 @@ impl Template {
         // TODO proper template replacement
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fix_values() {
+        let mut t = Template {
+            title: String::new(),
+            params: HashMap::from([("foo".to_string(), "bar{{!}}baz".to_string())]),
+        };
+        t.fix_values();
+        assert_eq!(t.params.get("foo"), Some(&"bar|baz".to_string()));
+    }
+}
