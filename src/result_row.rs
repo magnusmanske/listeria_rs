@@ -63,6 +63,7 @@ impl ResultRow {
         self.cells = cells;
     }
 
+    /// Remove all but the first part of each cell
     pub fn remove_excess_files(&mut self) {
         self.cells.iter_mut().for_each(|cell| {
             if let Some(part) = cell.parts().first() {
@@ -76,6 +77,7 @@ impl ResultRow {
         });
     }
 
+    /// Remove shadow files from cells
     pub fn remove_shadow_files(&mut self, shadow_files: &HashSet<String>) {
         self.cells.iter_mut().for_each(|cell| {
             cell.set_parts(
@@ -114,6 +116,7 @@ impl ResultRow {
         }
     }
 
+    /// Get the sortkey for the family name of the entity
     pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
         lazy_static! {
             static ref RE_SR_JR: Regex =
@@ -146,6 +149,7 @@ impl ResultRow {
         .to_string()
     }
 
+    /// Get the sortkey for a property
     pub fn get_sortkey_prop(
         &self,
         prop: &str,
@@ -169,6 +173,7 @@ impl ResultRow {
         }
     }
 
+    /// Get the sortkey for a sparql value
     pub fn get_sortkey_sparql(&self, variable: &str, list: &ListeriaList) -> String {
         let obj = ColumnType::Field(variable.to_lowercase());
         // TODO sort by actual sparql values instead?
@@ -186,6 +191,7 @@ impl ResultRow {
         }
     }
 
+    /// Get the sortkey from a snak
     fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak, list: &ListeriaList) -> String {
         match snak.data_value() {
             Some(data_value) => match data_value.value() {
@@ -245,6 +251,7 @@ impl ResultRow {
         }
     }
 
+    /// Get the cells as tabbed data
     pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
         let mut ret = vec![];
         for (colnum, cell) in self.cells.iter().enumerate() {
@@ -254,6 +261,7 @@ impl ResultRow {
         json!(ret)
     }
 
+    /// Get the cells as wikitext
     fn cells_as_wikitext(&self, list: &ListeriaList, cells: &[String]) -> String {
         cells
             .iter()
@@ -273,6 +281,7 @@ impl ResultRow {
             .join("\n| ")
     }
 
+    /// Get the row as wikitext
     pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
         let mut cells = vec![];
         for (colnum, cell) in self.cells.iter().enumerate() {
