@@ -931,7 +931,7 @@ impl ListeriaList {
         self.profile("AFTER list::process_assign_sections 3a");
         let mut section_names = vec![];
         for q in section_names_q {
-            let label = self.get_label_with_fallback(&q, None);
+            let label = self.get_label_with_fallback(&q);
             section_names.push(label);
         }
 
@@ -1315,37 +1315,13 @@ impl ListeriaList {
         self.params.header_template()
     }
 
-    pub fn get_label_with_fallback(&self, entity_id: &str, use_language: Option<&str>) -> String {
-        let use_language = match use_language {
-            Some(l) => l,
-            None => self.language(),
-        };
-        match self.get_entity(entity_id) {
-            Some(entity) => {
-                match entity.label_in_locale(use_language).map(|s| s.to_string()) {
-                    Some(s) => s,
-                    None => {
-                        // Try the usual suspects
-                        for language in ["en", "de", "fr", "es", "it", "el", "nl"].iter() {
-                            if let Some(label) =
-                                entity.label_in_locale(language).map(|s| s.to_string())
-                            {
-                                return label;
-                            }
-                        }
-                        // Try any label, any language
-                        if let Some(entity) = self.get_entity(entity_id) {
-                            if let Some(label) = entity.labels().first() {
-                                return label.value().to_string();
-                            }
-                        }
-                        // Fallback to item ID as label
-                        entity_id.to_string()
-                    }
-                }
-            }
-            None => entity_id.to_string(), // Fallback
-        }
+    pub fn get_label_with_fallback(&self, entity_id: &str) -> String {
+        self.ecw
+            .get_entity_label_with_fallback(entity_id, self.language())
+    }
+
+    pub fn get_label_with_fallback_lang(&self, entity_id: &str, language: &str) -> String {
+        self.ecw.get_entity_label_with_fallback(entity_id, language)
     }
 
     pub fn is_wikidatawiki(&self) -> bool {
@@ -1364,7 +1340,7 @@ impl ListeriaList {
 
     pub fn get_item_link_with_fallback(&self, entity_id: &str) -> String {
         let quotes = if self.is_wikidatawiki() { "" } else { "''" };
-        let label = self.get_label_with_fallback(entity_id, None);
+        let label = self.get_label_with_fallback(entity_id);
         let label_part = if self.is_wikidatawiki() && entity_id == label {
             String::new()
         } else {
