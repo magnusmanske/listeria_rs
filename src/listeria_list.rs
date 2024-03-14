@@ -40,7 +40,7 @@ pub struct ListeriaList {
     sparql_main_variable: Option<String>,
     ecw: EntityContainerWrapper,
     results: Vec<ResultRow>,
-    shadow_files: Vec<String>,
+    shadow_files: HashSet<String>,
     local_page_cache: HashMap<String, bool>,
     section_id_to_name: HashMap<usize, String>,
     wb_api: Arc<Api>,
@@ -64,7 +64,7 @@ impl ListeriaList {
             sparql_main_variable: None,
             ecw: EntityContainerWrapper::new(page_params.config()),
             results: vec![],
-            shadow_files: vec![],
+            shadow_files: HashSet::new(),
             local_page_cache: HashMap::new(),
             section_id_to_name: HashMap::new(),
             wb_api,
@@ -90,12 +90,6 @@ impl ListeriaList {
             let time_diff = diff.num_milliseconds();
             let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
             println!("{timestamp} {section}: {msg} [{time_diff}ms]");
-            // let sql = "INSERT INTO `list_log` (wiki,page,timestamp,diff_ms,message) VALUES (?,?,?,?,?)";
-            // self.pool
-            //     .get_conn()
-            //     .await?
-            //     .exec_drop(sql, (self.page_params.wiki(),self.page_params.page(),timestamp,time_diff,msg))
-            //     .await?;
         }
     }
 
@@ -128,7 +122,7 @@ impl ListeriaList {
         &self.columns
     }
 
-    pub fn shadow_files(&self) -> &Vec<String> {
+    pub fn shadow_files(&self) -> &HashSet<String> {
         &self.shadow_files
     }
 
@@ -185,7 +179,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    pub fn language(&self) -> &String {
+    pub fn language(&self) -> &str {
         &self.language
     }
 
@@ -314,8 +308,8 @@ impl ListeriaList {
         result
     }
 
-    async fn run_sparql_query_api(&self, wb_api_sparql: &Api, sparql: &str) -> Result<Value> {
-        let endpoint = match wb_api_sparql.get_site_info_string("general", "wikibase-sparql") {
+    fn get_sparql_endpoint(&self, wb_api_sparql: &Api) -> String {
+        match wb_api_sparql.get_site_info_string("general", "wikibase-sparql") {
             Ok(endpoint) => {
                 // SPARQL service given by site
                 endpoint
@@ -324,14 +318,20 @@ impl ListeriaList {
                 // Override SPARQL service (hardcoded for Commons)
                 "https://wcqs-beta.wmflabs.org/sparql"
             }
-        };
+        }
+        .to_string()
+    }
 
+    async fn run_sparql_query_api(&self, wb_api_sparql: &Api, sparql: &str) -> Result<Value> {
         // SPARQL might need some retries sometimes, bad server or somesuch
         let mut sparql = sparql.to_string();
         let max_sparql_attempts = self.page_params.config().max_sparql_attempts();
         let mut attempts_left = max_sparql_attempts;
+        let endpoint = self.get_sparql_endpoint(wb_api_sparql);
         loop {
-            let ret = wb_api_sparql.sparql_query_endpoint(&sparql, endpoint).await; //.map_err(|e|anyhow!("{e}"))
+            let ret = wb_api_sparql
+                .sparql_query_endpoint(&sparql, &endpoint)
+                .await;
             match ret {
                 Ok(ret) => return Ok(ret),
                 Err(e) => {
@@ -383,7 +383,6 @@ impl ListeriaList {
     }
 
     fn get_template_value(&self, template: &Template, key: &str) -> Option<String> {
-        // template.params.get(key).map(|s|s.to_owned())
         template
             .params
             .iter()
@@ -427,20 +426,7 @@ impl ListeriaList {
         self.sparql_rows.clear();
         self.sparql_main_variable = None;
 
-        if false {
-            // Use first variable
-            let first_var = match j["head"]["vars"].as_array() {
-                Some(a) => match a.first() {
-                    Some(v) => v
-                        .as_str()
-                        .ok_or(anyhow!("Can't parse first variable"))?
-                        .to_string(),
-                    None => return Err(anyhow!("Bad SPARQL head.vars")),
-                },
-                None => return Err(anyhow!("Bad SPARQL head.vars")),
-            };
-            self.sparql_main_variable = Some(first_var);
-        } else if let Some(arr) = j["head"]["vars"].as_array() {
+        if let Some(arr) = j["head"]["vars"].as_array() {
             // Insist on ?item
             let required_variable_name = "item";
             for v in arr {
@@ -613,38 +599,36 @@ impl ListeriaList {
     }
 
     pub fn generate_results(&mut self) -> Result<()> {
-        let mut results: Vec<ResultRow> = vec![];
-        match self.params.one_row_per_item() {
+        self.results = match self.params.one_row_per_item() {
             true => {
                 let sparql_row_ids: Vec<String> =
                     self.get_ids_from_sparql_rows()?.into_iter().collect(); // To preserve the original order
                 let tmp_rows = self.get_tmp_rows()?;
-                self.profile("BEGIN generate_results join_all");
-
-                let mut tmp_results = vec![];
-                for id in &sparql_row_ids {
-                    let sparql_rows = match tmp_rows.get(id) {
-                        Some(rows) => rows,
-                        None => continue, // TODO this should never happen, but maybe throw error if it does?
-                    };
-                    tmp_results.push(self.ecw.get_result_row(id, sparql_rows, self));
-                }
-
-                self.profile("END generate_results join_all");
-                results = tmp_results.iter().flatten().cloned().collect();
+                sparql_row_ids
+                    .iter()
+                    .filter_map(|id| {
+                        tmp_rows
+                            .get(id)
+                            .map(|rows| self.ecw.get_result_row(id, rows, self))
+                    })
+                    .flatten()
+                    .collect()
             }
             false => {
                 let varname = self.get_var_name()?;
-                for row in self.sparql_rows.iter() {
-                    if let Some(SparqlValue::Entity(id)) = row.get(varname) {
-                        if let Some(x) = self.ecw.get_result_row(id, &[&row], self) {
-                            results.push(x);
+                self.sparql_rows
+                    .iter()
+                    .filter_map(|row| {
+                        if let Some(SparqlValue::Entity(id)) = row.get(varname) {
+                            if let Some(x) = self.ecw.get_result_row(id, &[&row], self) {
+                                return Some(x);
+                            }
                         }
-                    }
-                }
+                        None
+                    })
+                    .collect()
             }
         };
-        self.results = results;
         Ok(())
     }
 
@@ -671,30 +655,95 @@ impl ListeriaList {
         });
     }
 
-    async fn process_remove_shadow_files(&mut self) -> Result<()> {
-        if !self
-            .page_params
+    fn check_this_wiki_for_shadow_images(&self) -> bool {
+        self.page_params
             .config()
             .check_for_shadow_images(&self.page_params.wiki().to_string())
-        {
+    }
+
+    async fn process_remove_shadow_files(&mut self) -> Result<()> {
+        if !self.check_this_wiki_for_shadow_images() {
             return Ok(());
         }
+        let files_to_check = self.get_files_to_check();
+        self.shadow_files.clear();
+        let param_list: Vec<HashMap<String, String>> =
+            self.get_param_list_for_files(&files_to_check);
+        let api_read = self.page_params.mw_api().read().await;
+
+        let mut futures = vec![];
+        for params in &param_list {
+            futures.push(api_read.get_query_api_json(params));
+        }
+        self.profile(&format!(
+            "ListeriaList::process_remove_shadow_files running {} futures",
+            futures.len()
+        ));
+
+        let tmp_results: Vec<(String, Value)> = join_all(futures)
+            .await
+            .iter()
+            .zip(files_to_check)
+            .filter_map(|(result, filename)| match result {
+                Ok(j) => Some((filename, j.to_owned())),
+                _ => None,
+            })
+            .collect();
+
+        self.shadow_files = tmp_results
+            .into_iter()
+            .filter_map(|(filename, j)| {
+                let mut could_be_local = false;
+                match j["query"]["pages"].as_object() {
+                    Some(results) => {
+                        results
+                            .iter()
+                            .for_each(|(_k, o)| match o["imagerepository"].as_str() {
+                                Some("shared") => {}
+                                _ => {
+                                    could_be_local = true;
+                                }
+                            })
+                    }
+                    None => {
+                        could_be_local = true;
+                    }
+                };
+
+                if could_be_local {
+                    Some(filename)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Remove shadow files from data table
+        self.results.iter_mut().for_each(|row| {
+            row.remove_shadow_files(&self.shadow_files);
+        });
+
+        Ok(())
+    }
+
+    fn get_files_to_check(&self) -> Vec<String> {
         let mut files_to_check = vec![];
         for row in self.results.iter() {
             for cell in row.cells() {
                 for part in cell.parts() {
                     if let ResultCellPart::File(file) = &part.part {
-                        files_to_check.push(file);
+                        files_to_check.push(file.to_owned());
                     }
                 }
             }
         }
         files_to_check.sort_unstable();
         files_to_check.dedup();
+        files_to_check
+    }
 
-        self.shadow_files.clear();
-
-        let param_list: Vec<HashMap<String, String>> = files_to_check
+    fn get_param_list_for_files(&self, files_to_check: &[String]) -> Vec<HashMap<String, String>> {
+        files_to_check
             .iter()
             .map(|filename| {
                 let prefixed_filename = format!(
@@ -712,63 +761,7 @@ impl ListeriaList {
                 .collect();
                 params
             })
-            .collect();
-
-        let api_read = self.page_params.mw_api().read().await;
-
-        let mut futures = vec![];
-        for params in &param_list {
-            futures.push(api_read.get_query_api_json(params));
-        }
-        self.profile(&format!(
-            "ListeriaList::process_remove_shadow_files running {} futures",
-            futures.len()
-        ));
-
-        let tmp_results = join_all(futures).await;
-
-        let tmp_results: Vec<(&String, Value)> = tmp_results
-            .iter()
-            .zip(files_to_check)
-            .filter_map(|(result, filename)| match result {
-                Ok(j) => Some((filename, j.to_owned())),
-                _ => None,
-            })
-            .collect();
-
-        for (filename, j) in tmp_results {
-            let mut could_be_local = false;
-            match j["query"]["pages"].as_object() {
-                Some(results) => {
-                    results
-                        .iter()
-                        .for_each(|(_k, o)| match o["imagerepository"].as_str() {
-                            Some("shared") => {}
-                            _ => {
-                                could_be_local = true;
-                            }
-                        })
-                }
-                None => {
-                    could_be_local = true;
-                }
-            };
-
-            if could_be_local {
-                self.shadow_files.push(filename.to_string());
-            }
-        }
-
-        self.shadow_files.sort();
-
-        // Remove shadow files from data table
-        // TODO this is less than ideal in terms of pretty code...
-        let shadow_files = self.shadow_files.clone();
-        self.results.iter_mut().for_each(|row| {
-            row.remove_shadow_files(&shadow_files);
-        });
-
-        Ok(())
+            .collect()
     }
 
     fn process_redlinks_only(&mut self) -> Result<()> {

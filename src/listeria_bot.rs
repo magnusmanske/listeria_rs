@@ -84,22 +84,14 @@ impl ListeriaBot {
             return Some(bot.to_owned());
         }
         info!("Creating bot for {wiki}");
-        let mw_api = match self.wiki_apis.get_or_create_wiki_api(wiki).await {
-            Ok(mw_api) => mw_api,
-            Err(e) => {
-                eprintln!("{e}");
-                return None;
-            }
-        };
-
+        let mw_api = self.wiki_apis.get_or_create_wiki_api(wiki).await.ok()?;
         let bot = ListeriaBotWiki::new(wiki, mw_api, self.config.clone());
         lock.insert(wiki.to_string(), bot.clone());
         info!("Created bot for {wiki}");
         Some(bot)
     }
 
-    pub async fn reset_running(&self) -> Result<()> {
-        let sql = "UPDATE pagestatus SET status='OK' WHERE status='RUNNING'";
+    async fn run_sql(&self, sql: &str) -> Result<()> {
         let _ = self
             .config
             .pool()
@@ -110,16 +102,14 @@ impl ListeriaBot {
         Ok(())
     }
 
+    pub async fn reset_running(&self) -> Result<()> {
+        let sql = "UPDATE pagestatus SET status='OK' WHERE status='RUNNING'";
+        self.run_sql(sql).await
+    }
+
     pub async fn clear_deleted(&self) -> Result<()> {
         let sql = "DELETE FROM `pagestatus` WHERE `status`='DELETED'";
-        let _ = self
-            .config
-            .pool()
-            .get_conn()
-            .await?
-            .exec_iter(sql, ())
-            .await;
-        Ok(())
+        self.run_sql(sql).await
     }
 
     async fn get_page_for_sql(&self, sql: &str) -> Option<PageToProcess> {
@@ -234,16 +224,8 @@ impl ListeriaBot {
         wpr.standardize_meassage();
         self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message)
             .await?;
-        // if wpr.message.contains("104_RESET_BY_PEER") {
-        //     self.reset_wiki(page.wiki()).await;
-        // }
         Ok(())
     }
-
-    // async fn reset_wiki(&self, wiki: &str) {
-    //     let _ = self.bot_per_wiki.lock().await.remove(wiki);
-    //     std::process::exit(0); // Seems that os error 104 is a system wide thing with Wikimedia, best to quit the app and restart
-    // }
 
     async fn update_page_status(
         &self,

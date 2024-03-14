@@ -6,7 +6,7 @@ use crate::sparql_value::SparqlValue;
 use regex::Regex;
 use serde_json::Value;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use wikibase::entity::EntityTrait;
 use wikibase::SnakDataType;
 
@@ -76,7 +76,7 @@ impl ResultRow {
         });
     }
 
-    pub fn remove_shadow_files(&mut self, shadow_files: &[String]) {
+    pub fn remove_shadow_files(&mut self, shadow_files: &HashSet<String>) {
         self.cells.iter_mut().for_each(|cell| {
             cell.set_parts(
                 cell.parts()
