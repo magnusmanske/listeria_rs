@@ -284,10 +284,12 @@ impl ResultRow {
 
     /// Get the row as wikitext
     pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
-        let mut cells = vec![];
-        for (colnum, cell) in self.cells.iter().enumerate() {
-            cells.push(cell.as_wikitext(list, rownum, colnum));
-        }
+        let cells: Vec<String> = self
+            .cells
+            .iter()
+            .enumerate()
+            .map(|(colnum, cell)| cell.as_wikitext(list, rownum, colnum))
+            .collect();
         match list.get_row_template() {
             Some(t) => format!(
                 "{{{{{}\n| {}\n}}}}",

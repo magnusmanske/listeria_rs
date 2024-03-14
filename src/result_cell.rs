@@ -47,8 +47,8 @@ impl ResultCell {
             }
             ColumnType::AliasLang(language) => Self::ct_alias_lang(&entity, language, &mut ret),
             ColumnType::Label => Self::ct_label(entity, &mut ret, list, entity_id),
-            ColumnType::Unknown => {} // Ignore
             ColumnType::Number => Self::ct_number(&mut ret),
+            ColumnType::Unknown => {} // Ignore
         }
 
         ret
@@ -192,7 +192,7 @@ impl ResultCell {
         let mut parts: Vec<String> = self
             .parts
             .iter()
-            .map(|part_with_reference| part_with_reference.part.as_wikitext(list, rownum, colnum))
+            .map(|part_with_reference| part_with_reference.as_wikitext(list, rownum, colnum))
             .collect();
         if self.deduplicate_parts {
             // Deduplicate but keep order?

@@ -68,15 +68,13 @@ impl RendererWikitext {
             .collect();
 
         // Rows
-        let mut rows = vec![];
-        for (rownum, row) in list
+        let rows: Vec<String> = list
             .results()
             .iter()
             .filter(|row| row.section() == section_id)
             .enumerate()
-        {
-            rows.push(row.as_wikitext(list, rownum));
-        }
+            .map(|(rownum, row)| row.as_wikitext(list, rownum))
+            .collect();
         if list.skip_table() {
             wt += &rows.join("\n");
         } else if list.template_params().wdedit() {
