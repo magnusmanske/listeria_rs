@@ -733,6 +733,7 @@ impl ListeriaList {
         files_to_check
     }
 
+    /// Get parameters for fileinfo API
     fn get_param_list_for_files(&self, files_to_check: &[String]) -> Vec<HashMap<String, String>> {
         files_to_check
             .iter()
@@ -922,8 +923,7 @@ impl ListeriaList {
         // Count names
         let mut section_count = HashMap::new();
         section_names.iter().for_each(|name| {
-            let counter = section_count.entry(name).or_insert(0);
-            *counter += 1;
+            *section_count.entry(name).or_insert(0) += 1;
         });
         self.profile("AFTER list::process_assign_sections 4");
 
@@ -956,6 +956,18 @@ impl ListeriaList {
             .collect();
         self.profile("AFTER list::process_assign_sections 8");
 
+        self.assign_row_section_ids(section_names, name2id, misc_id);
+        self.profile("AFTER list::process_assign_sections 9");
+
+        Ok(())
+    }
+
+    fn assign_row_section_ids(
+        &mut self,
+        section_names: Vec<String>,
+        name2id: HashMap<String, usize>,
+        misc_id: usize,
+    ) {
         self.results.iter_mut().enumerate().for_each(|(num, row)| {
             let section_name = match section_names.get(num) {
                 Some(name) => name,
@@ -967,9 +979,6 @@ impl ListeriaList {
             };
             row.set_section(section_id);
         });
-        self.profile("AFTER list::process_assign_sections 9");
-
-        Ok(())
     }
 
     async fn get_region_for_entity_id(&self, entity_id: &str) -> Option<String> {
