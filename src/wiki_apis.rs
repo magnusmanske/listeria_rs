@@ -40,6 +40,35 @@ impl WikiApis {
 
     /// Returns a MediaWiki API instance for the given wiki. Creates a new one and caches it, if required.
     pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
+        self.wait_for_max_mw_apis_total().await;
+
+        if let Some(api) = &self.apis.lock().await.get(wiki) {
+            self.wait_for_wiki_apis(api).await;
+            return Ok((*api).clone());
+        }
+
+        let mut lock = self.apis.lock().await;
+        let mw_api = self.create_wiki_api(wiki).await?;
+        lock.insert(wiki.to_owned(), mw_api);
+        info!(target: "lock", "WikiApis::get_or_create_wiki_api: new wiki {wiki} created");
+
+        lock.get(wiki)
+            .ok_or(anyhow!("Wiki not found: {wiki}"))
+            .map(|api| api.clone())
+    }
+
+    async fn wait_for_wiki_apis(&self, api: &&Arc<RwLock<Api>>) {
+        // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
+        // See https://phabricator.wikimedia.org/T356160
+        if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
+            while Arc::strong_count(api) >= *max {
+                sleep(Duration::from_millis(100)).await;
+                warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
+            }
+        }
+    }
+
+    async fn wait_for_max_mw_apis_total(&self) {
         if let Some(max) = self.config.get_max_mw_apis_total() {
             loop {
                 let current_strong_locks: usize = self
@@ -56,27 +85,6 @@ impl WikiApis {
                 warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
             }
         }
-
-        if let Some(api) = &self.apis.lock().await.get(wiki) {
-            // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
-            // See https://phabricator.wikimedia.org/T356160
-            if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
-                while Arc::strong_count(api) >= *max {
-                    sleep(Duration::from_millis(100)).await;
-                    warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
-                }
-            }
-            return Ok((*api).clone());
-        }
-
-        let mut lock = self.apis.lock().await;
-        let mw_api = self.create_wiki_api(wiki).await?;
-        lock.insert(wiki.to_owned(), mw_api);
-        info!(target: "lock", "WikiApis::get_or_create_wiki_api: new wiki {wiki} created");
-
-        lock.get(wiki)
-            .ok_or(anyhow!("Wiki not found: {wiki}"))
-            .map(|api| api.clone())
     }
 
     /// Creates a MediaWiki API instance for the given wiki
@@ -111,6 +119,42 @@ impl WikiApis {
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
         let q = self.config.get_template_start_q(); // Wikidata item for {{Wikidata list}}
         let api = self.config.get_default_wbapi()?;
+        let start_template_entity = self.load_entity_from_id(api, q).await?;
+        let current_wikis: Vec<String> =
+            Self::get_all_wikis_with_start_template(start_template_entity);
+        let existing_wikis: HashSet<String> =
+            self.get_wikis_in_database().await?.into_iter().collect();
+        let new_wikis: Vec<String> = current_wikis
+            .iter()
+            .filter(|wiki| !existing_wikis.contains(*wiki))
+            .cloned()
+            .collect();
+        self.add_new_wikis_to_database(new_wikis).await?;
+        Ok(())
+    }
+
+    /// Adds new wikis to the database
+    async fn add_new_wikis_to_database(&self, new_wikis: Vec<String>) -> Result<(), anyhow::Error> {
+        if new_wikis.is_empty() {
+            return Ok(());
+        }
+        let placeholders = self.placeholders(new_wikis.len(), "(?,'ACTIVE')");
+        let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
+        println!("Adding {new_wikis:?}");
+        self.pool
+            .get_conn()
+            .await?
+            .exec_drop(sql, new_wikis)
+            .await?;
+        Ok(())
+    }
+
+    /// Returns the Wikidata item for a given template
+    async fn load_entity_from_id(
+        &self,
+        api: &Arc<Api>,
+        q: String,
+    ) -> Result<wikibase::Entity, anyhow::Error> {
         let entities = self.config.create_entity_container();
         entities
             .load_entities(api, &vec![q.to_owned()])
@@ -119,30 +163,7 @@ impl WikiApis {
         let entity = entities
             .get_entity(&q)
             .ok_or_else(|| anyhow!("{q} item not found on Wikidata"))?;
-        let current_wikis: Vec<String> = entity
-            .sitelinks()
-            .iter()
-            .flatten()
-            .map(|s| s.site().to_owned())
-            .collect(); // All wikis with a start template
-        let existing_wikis: HashSet<String> =
-            self.get_wikis_in_database().await?.into_iter().collect();
-        let new_wikis: Vec<String> = current_wikis
-            .iter()
-            .filter(|wiki| !existing_wikis.contains(*wiki))
-            .cloned()
-            .collect();
-        if !new_wikis.is_empty() {
-            let placeholders = self.placeholders(new_wikis.len(), "(?,'ACTIVE')");
-            let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
-            println!("Adding {new_wikis:?}");
-            self.pool
-                .get_conn()
-                .await?
-                .exec_drop(sql, new_wikis)
-                .await?;
-        }
-        Ok(())
+        Ok(entity)
     }
 
     /// Updates the database to have all pages on a given wiki with both Listeria start an end template
@@ -209,14 +230,14 @@ impl WikiApis {
         Ok(())
     }
 
-    // Generates a sequence of "ELEMENT," with given number of ELEMENTs
+    /// Returns a string with the given number of placeholders, separated by commas
     fn placeholders(&self, num: usize, element: &str) -> String {
         let mut placeholders = Vec::with_capacity(num);
         placeholders.resize(num, element.to_string());
         placeholders.join(",")
     }
 
-    // Returns all wikis in the database
+    /// Returns all the wikis in the database
     async fn get_wikis_in_database(&self) -> Result<Vec<String>> {
         Ok(self
             .pool
@@ -228,7 +249,7 @@ impl WikiApis {
             .await?)
     }
 
-    // Returns all the pages for a given wiki in the database
+    /// Returns all the pages for a given wiki in the database
     async fn get_pages_for_wiki_in_database(&self, wiki: &str) -> Result<Vec<String>> {
         let sql =
             "SELECT `page` FROM pagestatus,wikis WHERE wikis.id=pagestatus.wiki AND wikis.name=?";
@@ -258,19 +279,27 @@ impl WikiApis {
     }
 
     /// Returns the database connection settings for a given wiki
-    fn get_mysql_opts_for_wiki(&self, wiki: &str) -> Result<Opts> {
-        let user = self
-            .config
+    fn get_mysql_user(&self) -> Result<String> {
+        self.config
             .mysql("user")
             .as_str()
-            .ok_or_else(|| anyhow!("No MySQL user set"))?
-            .to_string();
-        let pass = self
-            .config
+            .ok_or_else(|| anyhow!("No MySQL user set"))
+            .map(|s| s.to_string())
+    }
+
+    /// Returns the MySQL password from the configuration
+    fn get_mysql_password(&self) -> Result<String> {
+        self.config
             .mysql("password")
             .as_str()
-            .ok_or_else(|| anyhow!("No MySQL password set"))?
-            .to_string();
+            .ok_or_else(|| anyhow!("No MySQL password set"))
+            .map(|s| s.to_string())
+    }
+
+    /// Returns the database connection settings for a given wiki
+    fn get_mysql_opts_for_wiki(&self, wiki: &str) -> Result<Opts> {
+        let user = self.get_mysql_user()?;
+        let pass = self.get_mysql_password()?;
         let (host, schema) = self.db_host_and_schema_for_wiki(wiki)?;
         let port: u16 = if host == "127.0.0.1" {
             3307
@@ -312,9 +341,49 @@ impl WikiApis {
         let schema = format!("{}_p", wiki);
         Ok((host, schema))
     }
+
+    /// Returns the a list of all wikis with a start template
+    fn get_all_wikis_with_start_template(entity: wikibase::Entity) -> Vec<String> {
+        entity
+            .sitelinks()
+            .iter()
+            .flatten()
+            .map(|s| s.site().to_owned())
+            .collect()
+    }
 }
 
-/* TESTING
-ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
-ssh magnus@tools-login.wmflabs.org -L 3307:dewiki.web.db.svc.eqiad.wmflabs:3306 -N &
-*/
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /* TESTING
+    ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
+    ssh magnus@tools-login.wmflabs.org -L 3307:dewiki.web.db.svc.eqiad.wmflabs:3306 -N &
+    */
+
+    #[tokio::test]
+    async fn test_fix_wiki_name() {
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let wa = WikiApis::new(Arc::new(config)).await.unwrap();
+        assert_eq!(wa.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
+        assert_eq!(wa.fix_wiki_name("be_taraskwiki"), "be_x_oldwiki");
+        assert_eq!(wa.fix_wiki_name("be-x-oldwiki"), "be_x_oldwiki");
+        assert_eq!(wa.fix_wiki_name("be_x_oldwiki"), "be_x_oldwiki");
+        assert_eq!(wa.fix_wiki_name("dewiki"), "dewiki");
+    }
+
+    #[tokio::test]
+    async fn test_get_db_server_group() {
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let wa = WikiApis::new(Arc::new(config)).await.unwrap();
+        assert_eq!(wa.get_db_server_group(), ".web.db.svc.eqiad.wmflabs");
+    }
+
+    #[tokio::test]
+    async fn test_placeholders() {
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let wa = WikiApis::new(Arc::new(config)).await.unwrap();
+        assert_eq!(wa.placeholders(3, "?"), "?,?,?");
+    }
+}
