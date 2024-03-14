@@ -693,21 +693,12 @@ impl ListeriaList {
         self.shadow_files = tmp_results
             .into_iter()
             .filter_map(|(filename, j)| {
-                let mut could_be_local = false;
-                match j["query"]["pages"].as_object() {
-                    Some(results) => {
-                        results
-                            .iter()
-                            .for_each(|(_k, o)| match o["imagerepository"].as_str() {
-                                Some("shared") => {}
-                                _ => {
-                                    could_be_local = true;
-                                }
-                            })
-                    }
-                    None => {
-                        could_be_local = true;
-                    }
+                let could_be_local = match j["query"]["pages"].as_object() {
+                    Some(results) => results
+                        .iter()
+                        .filter_map(|(_k, o)| o["imagerepository"].as_str())
+                        .any(|s| s != "shared"),
+                    None => true,
                 };
 
                 if could_be_local {
