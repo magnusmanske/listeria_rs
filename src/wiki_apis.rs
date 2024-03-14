@@ -316,6 +316,7 @@ impl WikiApis {
         Ok(opts)
     }
 
+    /// Returns the server group for the database
     fn get_db_server_group(&self) -> &str {
         ".web.db.svc.eqiad.wmflabs"
     }

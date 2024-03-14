@@ -109,6 +109,7 @@ impl ResultRow {
         self.sortkey = sortkey;
     }
 
+    /// Get the sortkey for the label of the entity
     pub fn get_sortkey_label(&self, list: &ListeriaList) -> String {
         match list.get_entity(self.entity_id()) {
             Some(_entity) => list.get_label_with_fallback(self.entity_id()),
