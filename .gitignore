@@ -1,5 +1,6 @@
 # Cargo folder
 target/
+test_data/
 
 # Specific configuration
 config.json
