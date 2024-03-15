@@ -57,7 +57,7 @@ impl WikiApis {
             .map(|api| api.clone())
     }
 
-    async fn wait_for_wiki_apis(&self, api: &&Arc<RwLock<Api>>) {
+    async fn wait_for_wiki_apis(&self, api: &&ApiLock) {
         // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
         // See https://phabricator.wikimedia.org/T356160
         if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
