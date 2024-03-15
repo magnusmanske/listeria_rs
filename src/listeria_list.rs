@@ -47,7 +47,7 @@ pub struct ListeriaList {
     language: String,
     reference_ids: HashSet<String>,
     profiling: bool,
-    last_timestamp: Arc<Mutex<DateTime<Utc>>>,
+    last_timestamp: DateTime<Utc>,
 }
 
 impl ListeriaList {
@@ -71,20 +71,15 @@ impl ListeriaList {
             language: page_params.language().to_string(),
             reference_ids: HashSet::new(),
             profiling: page_params.config().profiling(),
-            last_timestamp: Arc::new(Mutex::new(Utc::now())),
+            last_timestamp: Utc::now(),
         }
     }
 
-    fn profile(&self, msg: &str) {
+    fn profile(&mut self, msg: &str) {
         if self.profiling {
             let now: DateTime<Utc> = Utc::now();
-            let mut lock = self
-                .last_timestamp
-                .lock()
-                .expect("ListeriaList: Mutex is bad");
-            let last = (*lock).to_owned();
-            *lock = now;
-            drop(lock);
+            let last = self.last_timestamp.to_owned();
+            self.last_timestamp = now;
             let diff = now - last;
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
             let time_diff = diff.num_milliseconds();
@@ -669,7 +664,8 @@ impl ListeriaList {
         self.shadow_files.clear();
         let param_list: Vec<HashMap<String, String>> =
             self.get_param_list_for_files(&files_to_check);
-        let api_read = self.page_params.mw_api().read().await;
+        let page_params = self.page_params.clone();
+        let api_read = page_params.mw_api().read().await;
 
         let mut futures = vec![];
         for params in &param_list {
