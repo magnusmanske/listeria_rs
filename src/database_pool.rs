@@ -46,7 +46,8 @@ impl DatabasePool {
             .ok_or(anyhow!("No password in config"))?
             .to_string();
         let max_connections = config.mysql("max_connections").as_u64().unwrap_or(8) as usize;
-        let constraints = PoolConstraints::new(0, max_connections).unwrap();
+        let constraints = PoolConstraints::new(0, max_connections)
+            .ok_or(anyhow!("Could not get pool constraints"))?;
         let pool_opts = PoolOpts::default().with_constraints(constraints);
         // .with_inactive_connection_ttl(Duration::from_secs(60));
 
