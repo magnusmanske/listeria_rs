@@ -29,7 +29,7 @@ pub struct WikiApis {
 impl WikiApis {
     pub async fn new(config: Arc<Configuration>) -> Result<Self> {
         let pool = DatabasePool::new(&config)?;
-        let site_matrix = Arc::new(SiteMatrix::new(&config).await?);
+        let site_matrix = Arc::new(SiteMatrix::new(config.get_default_wbapi()?).await?);
         Ok(Self {
             apis: Arc::new(Mutex::new(HashMap::new())),
             config,
