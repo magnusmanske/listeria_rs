@@ -86,7 +86,7 @@ impl SiteMatrix {
             })
             .next()
             .ok_or(anyhow!(
-                "AppState::get_server_url_for_wiki: Cannot find server for wiki '{wiki}'"
+                "SiteMatrix::get_server_url_for_wiki: Cannot find server for wiki '{wiki}'"
             ))
     }
 }
