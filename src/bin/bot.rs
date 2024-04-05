@@ -3,8 +3,11 @@ extern crate serde_json;
 
 use anyhow::{anyhow, Result};
 use listeria::listeria_bot::ListeriaBot;
-use std::{env, sync::Arc};
+use std::env;
+use std::sync::{Arc, Mutex};
 use tokio::time::{sleep, Duration, Instant};
+
+const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 120;
 
 /*
 TEST DB CONNECT
@@ -29,6 +32,8 @@ async fn run_singles(config_file: &str) -> Result<()> {
     let _ = bot.clear_deleted().await;
     let bot = Arc::new(bot);
     const MAX_SECONDS_WAIT_FOR_NEW_JOB: u64 = 15 * 60;
+    let last_activity = Arc::new(Mutex::new(Instant::now()));
+    seppuku(last_activity.clone());
     loop {
         let wait_start = Instant::now();
         while bot.get_running_count().await >= max_threads {
@@ -47,6 +52,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
         };
         // println!("{page:?}");
         let bot = bot.clone();
+        *last_activity.lock().unwrap() = Instant::now();
         tokio::spawn(async move {
             let pagestatus_id = page.id();
             let start_time = Instant::now();
@@ -59,6 +65,20 @@ async fn run_singles(config_file: &str) -> Result<()> {
             bot.release_running(pagestatus_id).await;
         });
     }
+}
+
+/// Seppuku if no activity for a while
+fn seppuku(last_activity: Arc<Mutex<Instant>>) {
+    tokio::spawn(async move {
+        loop {
+            if last_activity.lock().unwrap().elapsed().as_secs() > MAX_INACTIVITY_BEFORE_SEPPUKU_SEC
+            {
+                println!("Commiting seppuku");
+                std::process::exit(0);
+            }
+            tokio::time::sleep(Duration::from_secs(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC)).await;
+        }
+    });
 }
 
 // #[tokio::main(flavor = "multi_thread", worker_threads = 4)]
