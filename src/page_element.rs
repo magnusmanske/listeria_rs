@@ -161,11 +161,11 @@ impl PageElement {
             .config()
             .get_local_template_title_end(page.wiki())
             .ok()?;
-        let pattern_string_start = r#"\{\{(Wikidata[ _]list[^\|]*|"#.to_string()
+        let pattern_string_start = page.config().pattern_string_start().to_string()
         + &start_template.replace(' ', "[ _]")
         //+ r#")\s*\|"#; // New version
         + r#"[^\|]*)"#;
-        let pattern_string_end = r#"\{\{(Wikidata[ _]list[ _]end|"#.to_string()
+        let pattern_string_end = page.config().pattern_string_end().to_string()
             + &end_template.replace(' ', "[ _]")
             + r#")(\s*\}\})"#;
         let seperator_start: Regex = RegexBuilder::new(&pattern_string_start)

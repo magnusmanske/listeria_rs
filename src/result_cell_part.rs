@@ -191,7 +191,7 @@ impl ResultCellPart {
                 Some(col) => col.obj == ColumnType::Item,
                 None => false,
             };
-            if list.is_wikidatawiki() || is_item_column {
+            if list.is_main_wikibase_wiki() || is_item_column {
                 return format!("[[{}|{}]]", list.get_item_wiki_target(id), id);
             } else {
                 return format!("''[[{}|{}]]''", list.get_item_wiki_target(id), id);
@@ -205,7 +205,7 @@ impl ResultCellPart {
                     None => list.default_language(),
                 };
                 let use_label = list.get_label_with_fallback_lang(id, &use_language);
-                let labeled_entity_link = if list.is_wikidatawiki() {
+                let labeled_entity_link = if list.is_main_wikibase_wiki() {
                     format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
                 } else {
                     format!("''[[{}|{}]]''", list.get_item_wiki_target(id), use_label)

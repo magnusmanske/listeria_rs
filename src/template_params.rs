@@ -1,6 +1,5 @@
+use crate::{configuration::Configuration, template::Template};
 use regex::Regex;
-
-use crate::template::Template;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LinksType {
@@ -178,7 +177,7 @@ impl TemplateParams {
         }
     }
 
-    pub fn new_from_params(template: &Template) -> Self {
+    pub fn new_from_params(template: &Template, config: &Configuration) -> Self {
         Self {
             links: LinksType::All,
             sort: SortMode::new(template.params.get("sort")),
@@ -227,7 +226,7 @@ impl TemplateParams {
                 .params
                 .get("wikibase")
                 .map(|s| s.trim().to_uppercase())
-                .unwrap_or_else(|| "wikidata".to_string()), // TODO config
+                .unwrap_or_else(|| config.get_default_api().to_string()),
         }
     }
 
