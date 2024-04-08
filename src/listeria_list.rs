@@ -152,7 +152,7 @@ impl ListeriaList {
             }
         }
 
-        self.params = TemplateParams::new_from_params(&template);
+        self.params = TemplateParams::new_from_params(&template, &self.page_params.config());
         if let Some(s) = self.get_template_value(&template, "links") {
             self.params
                 .set_links(LinksType::new_from_string(s.to_string()))
@@ -1313,12 +1313,17 @@ impl ListeriaList {
         self.ecw.get_entity_label_with_fallback(entity_id, language)
     }
 
-    pub fn is_wikidatawiki(&self) -> bool {
-        self.page_params.wiki() == "wikidatawiki"
+    pub fn is_main_wikibase_wiki(&self) -> bool {
+        let default_wiki = format!("{}wiki", self.page_params.config().get_default_api());
+        self.page_params.wiki() == default_wiki
     }
 
     pub fn get_item_wiki_target(&self, entity_id: &str) -> String {
-        let prefix = if self.is_wikidatawiki() { "" } else { ":d:" };
+        let prefix = if self.is_main_wikibase_wiki() {
+            ""
+        } else {
+            ":d:"
+        };
         if let Some(first_char) = entity_id.chars().next() {
             if first_char == 'p' || first_char == 'P' {
                 return format!("{}Property:{}", prefix, entity_id);
@@ -1328,9 +1333,13 @@ impl ListeriaList {
     }
 
     pub fn get_item_link_with_fallback(&self, entity_id: &str) -> String {
-        let quotes = if self.is_wikidatawiki() { "" } else { "''" };
+        let quotes = if self.is_main_wikibase_wiki() {
+            ""
+        } else {
+            "''"
+        };
         let label = self.get_label_with_fallback(entity_id);
-        let label_part = if self.is_wikidatawiki() && entity_id == label {
+        let label_part = if self.is_main_wikibase_wiki() && entity_id == label {
             String::new()
         } else {
             format!("|{}", label)

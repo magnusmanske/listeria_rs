@@ -34,6 +34,8 @@
     "max_sparql_attempts": 1,
     "profiling":false,
     "max_threads":64,
+    "pattern_string_start":"\\{\\{(Wikidata[ _]list[^\\|]*|",
+    "pattern_string_end":"\\{\\{(Wikidata[ _]list[ _]end|",
     "max_concurrent_entry_queries": 250,
     "max_local_cached_entities": 1000,
     "api_timeout": 600,

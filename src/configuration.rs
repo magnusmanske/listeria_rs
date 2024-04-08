@@ -37,6 +37,8 @@ pub struct Configuration {
     mysql: Option<Value>,
     oauth2_token: String,
     template_start_q: String,
+    pattern_string_start: String,
+    pattern_string_end: String,
     max_mw_apis_per_wiki: Option<usize>,
     max_mw_apis_total: Option<usize>,
     max_local_cached_entities: usize,
@@ -82,6 +84,14 @@ impl Configuration {
         ret.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
         ret.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
         ret.profiling = j["profiling"].as_bool().unwrap_or_default();
+        ret.pattern_string_start = j["pattern_string_start"]
+            .as_str()
+            .unwrap_or(r#"\{\{(Wikidata[ _]list[^\|]*|"#)
+            .to_string();
+        ret.pattern_string_end = j["pattern_string_start"]
+            .as_str()
+            .unwrap_or(r#"\{\{(Wikidata[ _]list[ _]end|"#)
+            .to_string();
         if let Some(sic) = j["shadow_images_check"].as_array() {
             ret.shadow_images_check = sic
                 .iter()
@@ -348,9 +358,21 @@ impl Configuration {
         self.wb_apis.get(key)
     }
 
+    pub fn get_default_api(&self) -> &str {
+        &self.default_api
+    }
+
     pub fn get_default_wbapi(&self) -> Result<&Arc<Api>> {
         self.wb_apis
             .get(&self.default_api)
             .ok_or_else(|| anyhow!("No default API set in config file"))
+    }
+
+    pub fn pattern_string_start(&self) -> &str {
+        &self.pattern_string_start
+    }
+
+    pub fn pattern_string_end(&self) -> &str {
+        &self.pattern_string_end
     }
 }
