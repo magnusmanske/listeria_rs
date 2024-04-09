@@ -1,7 +1,6 @@
 use crate::configuration::Configuration;
 use anyhow::{anyhow, Result};
-use mysql_async::{Conn, Pool};
-// use mysql_async::{Conn, OptsBuilder, Pool, PoolConstraints, PoolOpts};
+use mysql_async::{Conn, OptsBuilder, Pool, PoolConstraints, PoolOpts};
 
 #[derive(Debug, Clone)]
 pub struct DatabasePool {
@@ -10,11 +9,14 @@ pub struct DatabasePool {
 
 impl DatabasePool {
     pub fn new(config: &Configuration) -> Result<Self> {
-        // let opts = Self::pool_opts_from_config(config)?;
-        let opts = Self::pool_opts_from_toolforge(config)?;
-        Ok(Self {
-            pool: Pool::new(opts.as_str()),
-        })
+        let pool = if true {
+            // Use DB connection as defined in the config
+            Pool::new(Self::pool_opts_from_config(config)?)
+        } else {
+            // Use toolforge crate DOES NOT WORK RIGHT NOW
+            Pool::new(Self::pool_opts_from_toolforge(config)?.as_str())
+        };
+        Ok(Self { pool })
     }
 
     pub async fn get_conn(&self) -> Result<Conn> {
@@ -31,7 +33,6 @@ impl DatabasePool {
         Ok(toolforge::db::toolsdb(schema)?.to_string())
     }
 
-    /*
     fn pool_opts_from_config(config: &Configuration) -> Result<OptsBuilder> {
         let host = config
             .mysql("host")
@@ -72,7 +73,7 @@ impl DatabasePool {
             .pool_opts(pool_opts);
 
         Ok(opts)
-    } */
+    }
 
     pub async fn destruct(&mut self) {
         //self.pool.disconnect().await; // TODO
