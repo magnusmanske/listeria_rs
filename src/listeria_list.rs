@@ -4,7 +4,6 @@ use crate::page_params::PageParams;
 use crate::result_cell::*;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
-use crate::sparql_value::SparqlValue;
 use crate::template::Template;
 use crate::template_params::LinksType;
 use crate::template_params::ReferencesParameter;
@@ -24,6 +23,7 @@ use std::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use wikimisc::mediawiki::api::Api;
 use wikimisc::mediawiki::media_wiki_error::MediaWikiError;
+use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::{SnakDataType, Statement, StatementRank};
 

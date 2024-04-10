@@ -2,9 +2,9 @@ use crate::column::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
-use crate::sparql_value::SparqlValue;
 use crate::template_params::LinksType;
 use regex::Regex;
+use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::{Entity, Snak, SnakDataType, TimeValue, Value};
 
