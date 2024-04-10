@@ -2907,7 +2907,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.0"
-source = "git+https://github.com/magnusmanske/wikimisc#071d002bba0eac951d488891a391d3ba8c46b4f4"
+source = "git+https://github.com/magnusmanske/wikimisc#21d2f2ab91f14f94408d7aa5210d1815703f7290"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2916,6 +2916,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "wikibase",
 ]

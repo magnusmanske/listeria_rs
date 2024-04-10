@@ -1,5 +1,4 @@
 use crate::configuration::Configuration;
-use crate::entity_file_cache::EntityFileCache;
 use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
@@ -9,6 +8,7 @@ use crate::template_params::LinksType;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
+use wikimisc::entity_file_cache::EntityFileCache;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::entity_container::EntityContainer;
