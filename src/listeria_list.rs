@@ -22,9 +22,10 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::time::{sleep, Duration};
-use wikibase::entity::*;
-use wikibase::mediawiki::api::Api;
-use wikibase::snak::SnakDataType;
+use wikimisc::mediawiki::api::Api;
+use wikimisc::mediawiki::media_wiki_error::MediaWikiError;
+use wikimisc::wikibase::entity::*;
+use wikimisc::wikibase::{SnakDataType, Statement, StatementRank};
 
 lazy_static! {
     static ref SPARQL_REQUEST_COUNTER: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
@@ -331,7 +332,7 @@ impl ListeriaList {
                 Ok(ret) => return Ok(ret),
                 Err(e) => {
                     match &e {
-                        wikibase::mediawiki::media_wiki_error::MediaWikiError::String(s) => {
+                        MediaWikiError::String(s) => {
                             if s.contains("expected value at line 1 column 1: SPARQL-QUERY:") {
                                 return Err(anyhow!("SPARQL is broken: {s}\n{sparql}"));
                             }
@@ -1093,7 +1094,7 @@ impl ListeriaList {
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
                     if let ResultCellPart::LocalLink((page, _label, is_category)) = &mut part.part {
-                        let title = wikibase::mediawiki::title::Title::new_from_full(page, &mw_api);
+                        let title = wikimisc::mediawiki::title::Title::new_from_full(page, &mw_api);
                         *is_category = title.namespace_id() == 14;
                     } else if let ResultCellPart::SnakList(v) = &mut part.part {
                         for subpart in v.iter_mut() {
@@ -1101,7 +1102,7 @@ impl ListeriaList {
                                 &mut subpart.part
                             {
                                 let title =
-                                    wikibase::mediawiki::title::Title::new_from_full(page, &mw_api);
+                                    wikimisc::mediawiki::title::Title::new_from_full(page, &mw_api);
                                 *is_category = title.namespace_id() == 14;
                             }
                         }
@@ -1179,7 +1180,7 @@ impl ListeriaList {
         self.params.links()
     }
 
-    pub fn get_entity(&self, entity_id: &str) -> Option<wikibase::Entity> {
+    pub fn get_entity(&self, entity_id: &str) -> Option<wikimisc::wikibase::Entity> {
         self.ecw.get_entity(entity_id)
     }
 
@@ -1203,7 +1204,7 @@ impl ListeriaList {
                     .filter_map(|snak| snak.data_value().to_owned())
                     .map(|datavalue| datavalue.value().to_owned())
                     .filter_map(|value| match value {
-                        wikibase::value::Value::Entity(v) => Some(v.id().to_owned()),
+                        wikimisc::wikibase::value::Value::Entity(v) => Some(v.id().to_owned()),
                         _ => None,
                     })
                     .for_each(|id| entities_to_load.push(id));
@@ -1355,21 +1356,19 @@ impl ListeriaList {
 
     pub fn get_filtered_claims(
         &self,
-        e: &wikibase::entity::Entity,
+        e: &wikimisc::wikibase::entity::Entity,
         property: &str,
-    ) -> Vec<wikibase::statement::Statement> {
-        let mut ret: Vec<wikibase::statement::Statement> = e
+    ) -> Vec<Statement> {
+        let mut ret: Vec<Statement> = e
             .claims_with_property(property)
             .iter()
             .map(|x| (*x).clone())
             .collect();
 
         if self.page_params.config().prefer_preferred() {
-            let has_preferred = ret
-                .iter()
-                .any(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
+            let has_preferred = ret.iter().any(|x| *x.rank() == StatementRank::Preferred);
             if has_preferred {
-                ret.retain(|x| *x.rank() == wikibase::statement::StatementRank::Preferred);
+                ret.retain(|x| *x.rank() == StatementRank::Preferred);
             }
             ret
         } else {

@@ -1,7 +1,7 @@
 use crate::{configuration::Configuration, ApiLock};
 use anyhow::Result;
 use std::sync::Arc;
-use wikibase::mediawiki::api::Api;
+use wikimisc::mediawiki::api::Api;
 
 #[derive(Debug, Clone)]
 pub struct PageParams {

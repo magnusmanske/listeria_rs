@@ -4,7 +4,8 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
-use wikibase::{entity_container::EntityContainer, EntityTrait};
+use wikimisc::mediawiki::api::Api;
+use wikimisc::wikibase::{entity_container::EntityContainer, EntityTrait};
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -125,7 +126,7 @@ impl Configuration {
         if let Some(o) = j["apis"].as_object() {
             for (k, v) in o.iter() {
                 if let (name, Some(url)) = (k.as_str(), v.as_str()) {
-                    let mut api = wikibase::mediawiki::api::Api::new(url).await?;
+                    let mut api = Api::new(url).await?;
                     api.set_oauth2(&oauth2_token);
                     ret.wb_apis.insert(name.to_string(), Arc::new(api));
                 }
@@ -252,7 +253,7 @@ impl Configuration {
 
     fn get_sitelink_mapping(
         &self,
-        entities: &wikibase::entity_container::EntityContainer,
+        entities: &EntityContainer,
         q: &str,
     ) -> Result<HashMap<String, String>> {
         let entity = entities

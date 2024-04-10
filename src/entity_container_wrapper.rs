@@ -9,10 +9,11 @@ use crate::template_params::LinksType;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use wikibase::entity::*;
-use wikibase::entity_container::EntityContainer;
-use wikibase::mediawiki::api::Api;
-use wikibase::snak::SnakDataType;
+use wikimisc::mediawiki::api::Api;
+use wikimisc::wikibase::entity::*;
+use wikimisc::wikibase::entity_container::EntityContainer;
+use wikimisc::wikibase::snak::SnakDataType;
+use wikimisc::wikibase::Value;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
@@ -202,7 +203,7 @@ impl EntityContainerWrapper {
             .filter_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
                 match data_value.value() {
-                    wikibase::Value::StringValue(s) => {
+                    Value::StringValue(s) => {
                         Some(s.to_owned().replace("$1", &urlencoding::decode(id).ok()?))
                     }
                     _ => None,
@@ -253,7 +254,7 @@ mod tests {
     async fn test_entity_caching() {
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let mut ecw = EntityContainerWrapper::new(config);
-        let api = wikibase::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php")
+        let api = Api::new("https://www.wikidata.org/w/api.php")
             .await
             .unwrap();
         let ids: Vec<String> = ["Q1", "Q2", "Q3", "Q4", "Q5"]

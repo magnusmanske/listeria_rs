@@ -1,6 +1,5 @@
 use crate::configuration::Configuration;
 use crate::database_pool::DatabasePool;
-use crate::site_matrix::SiteMatrix;
 use crate::ApiLock;
 use anyhow::{anyhow, Result};
 use log::{info, warn};
@@ -12,9 +11,10 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
-use wikibase::mediawiki::api::Api;
-use wikibase::mediawiki::title::Title;
-use wikibase::EntityTrait;
+use wikimisc::mediawiki::api::Api;
+use wikimisc::mediawiki::title::Title;
+use wikimisc::site_matrix::SiteMatrix;
+use wikimisc::wikibase::entity::*;
 
 const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
 
@@ -102,7 +102,7 @@ impl WikiApis {
         api_url: &str,
         oauth2_token: &str,
     ) -> Result<ApiLock> {
-        let builder = wikibase::mediawiki::reqwest::Client::builder()
+        let builder = wikimisc::mediawiki::reqwest::Client::builder()
             .timeout(self.config.api_timeout())
             .user_agent(LISTERIA_USER_AGENT)
             .gzip(true)
@@ -154,7 +154,7 @@ impl WikiApis {
         &self,
         api: &Arc<Api>,
         q: String,
-    ) -> Result<wikibase::Entity, anyhow::Error> {
+    ) -> Result<Entity, anyhow::Error> {
         let entities = self.config.create_entity_container();
         entities
             .load_entities(api, &vec![q.to_owned()])
@@ -344,7 +344,7 @@ impl WikiApis {
     }
 
     /// Returns the a list of all wikis with a start template
-    fn get_all_wikis_with_start_template(entity: wikibase::Entity) -> Vec<String> {
+    fn get_all_wikis_with_start_template(entity: Entity) -> Vec<String> {
         entity
             .sitelinks()
             .iter()

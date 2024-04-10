@@ -5,8 +5,8 @@ use crate::reference::Reference;
 use crate::sparql_value::SparqlValue;
 use crate::template_params::LinksType;
 use regex::Regex;
-use wikibase::entity::EntityTrait;
-use wikibase::Entity;
+use wikimisc::wikibase::entity::EntityTrait;
+use wikimisc::wikibase::{Entity, Snak, SnakDataType, TimeValue, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartWithReference {
@@ -116,26 +116,26 @@ impl ResultCellPart {
         }
     }
 
-    pub fn from_snak(snak: &wikibase::Snak) -> Self {
+    pub fn from_snak(snak: &Snak) -> Self {
         match &snak.data_value() {
             Some(dv) => match dv.value() {
-                wikibase::Value::Entity(v) => ResultCellPart::Entity((v.id().to_string(), true)),
-                wikibase::Value::StringValue(v) => match snak.datatype() {
-                    wikibase::SnakDataType::CommonsMedia => ResultCellPart::File(v.to_string()),
-                    wikibase::SnakDataType::ExternalId => {
+                Value::Entity(v) => ResultCellPart::Entity((v.id().to_string(), true)),
+                Value::StringValue(v) => match snak.datatype() {
+                    SnakDataType::CommonsMedia => ResultCellPart::File(v.to_string()),
+                    SnakDataType::ExternalId => {
                         ResultCellPart::ExternalId((snak.property().to_string(), v.to_string()))
                     }
                     _ => ResultCellPart::Text(v.to_string()),
                 },
-                wikibase::Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
-                wikibase::Value::Time(v) => match ResultCellPart::reduce_time(v) {
+                Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
+                Value::Time(v) => match ResultCellPart::reduce_time(v) {
                     Some(part) => ResultCellPart::Time(part),
                     None => ResultCellPart::Text("No/unknown value".to_string()),
                 },
-                wikibase::Value::Coordinate(v) => {
+                Value::Coordinate(v) => {
                     ResultCellPart::Location((*v.latitude(), *v.longitude(), None))
                 }
-                wikibase::Value::MonoLingual(v) => {
+                Value::MonoLingual(v) => {
                     ResultCellPart::Text(v.language().to_string() + ":" + v.text())
                 }
             },
@@ -143,7 +143,7 @@ impl ResultCellPart {
         }
     }
 
-    pub fn reduce_time(v: &wikibase::TimeValue) -> Option<String> {
+    pub fn reduce_time(v: &TimeValue) -> Option<String> {
         lazy_static! {
             static ref RE_DATE: Regex = Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#)
                 .expect("RE_DATE does not parse");
