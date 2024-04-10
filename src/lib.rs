@@ -21,7 +21,6 @@ pub mod renderer;
 pub mod result_cell;
 pub mod result_cell_part;
 pub mod result_row;
-pub mod site_matrix;
 pub mod sparql_value;
 pub mod template;
 pub mod template_params;
@@ -34,6 +33,6 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use wikibase::mediawiki::api::Api;
+use wikimisc::mediawiki::api::Api;
 
 type ApiLock = Arc<RwLock<Api>>;

@@ -1,3 +1,6 @@
+use wikimisc::wikibase::Snak;
+use wikimisc::wikibase::Value;
+
 use crate::listeria_list::ListeriaList;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -23,7 +26,7 @@ impl PartialEq for Reference {
 
 impl Reference {
     /// Creates a new reference from a snak array
-    pub fn new_from_snaks(snaks: &[wikibase::snak::Snak], language: &str) -> Option<Self> {
+    pub fn new_from_snaks(snaks: &[Snak], language: &str) -> Option<Self> {
         let mut ret = Self {
             ..Default::default()
         };
@@ -123,20 +126,20 @@ impl Reference {
     }
 
     /// Extracts the stated_in info from a snak
-    fn extract_stated_in(snak: &wikibase::Snak, ret: &mut Reference) {
+    fn extract_stated_in(snak: &Snak, ret: &mut Reference) {
         // Stated in
         if let Some(dv) = snak.data_value() {
-            if let wikibase::Value::Entity(item) = dv.value() {
+            if let Value::Entity(item) = dv.value() {
                 ret.stated_in = Some(item.id().to_owned());
             }
         }
     }
 
     /// Extracts the timestamp from a snak
-    fn extract_timestamp(snak: &wikibase::Snak, ret: &mut Reference) {
+    fn extract_timestamp(snak: &Snak, ret: &mut Reference) {
         // Timestamp/last access
         if let Some(dv) = snak.data_value() {
-            if let wikibase::Value::Time(tv) = dv.value() {
+            if let Value::Time(tv) = dv.value() {
                 if let Some(pos) = tv.time().find('T') {
                     let (date, _) = tv.time().split_at(pos);
                     let mut date = date.replace('+', "").to_string();
@@ -160,10 +163,10 @@ impl Reference {
     }
 
     /// Extracts the title from a snak
-    fn extract_title(snak: &wikibase::Snak, language: &str, ret: &mut Reference) {
+    fn extract_title(snak: &Snak, language: &str, ret: &mut Reference) {
         // Title
         if let Some(dv) = snak.data_value() {
-            if let wikibase::Value::MonoLingual(mlt) = dv.value() {
+            if let Value::MonoLingual(mlt) = dv.value() {
                 if mlt.language() == language {
                     ret.title = Some(mlt.text().to_owned());
                 }
@@ -172,10 +175,10 @@ impl Reference {
     }
 
     /// Extracts the reference URL from a snak
-    fn extract_reference_url(snak: &wikibase::Snak, ret: &mut Reference) {
+    fn extract_reference_url(snak: &Snak, ret: &mut Reference) {
         // Reference URL
         if let Some(dv) = snak.data_value() {
-            if let wikibase::Value::StringValue(url) = dv.value() {
+            if let Value::StringValue(url) = dv.value() {
                 ret.url = Some(url.to_owned());
             }
         }

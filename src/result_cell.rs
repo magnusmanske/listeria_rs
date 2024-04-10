@@ -9,7 +9,8 @@ use crate::sparql_value::SparqlValue;
 use crate::template_params::ReferencesParameter;
 use serde_json::Value;
 use std::collections::HashMap;
-use wikibase::entity::EntityTrait;
+use wikimisc::wikibase::entity::EntityTrait;
+use wikimisc::wikibase::Statement;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResultCell {
@@ -58,11 +59,7 @@ impl ResultCell {
         s.replace('\'', "&#39;").replace('<', "&lt;")
     }
 
-    fn get_parts_p_p(
-        &self,
-        statement: &wikibase::statement::Statement,
-        property: &str,
-    ) -> Vec<ResultCellPart> {
+    fn get_parts_p_p(&self, statement: &Statement, property: &str) -> Vec<ResultCellPart> {
         statement
             .qualifiers()
             .iter()
@@ -77,7 +74,7 @@ impl ResultCell {
     }
 
     fn get_references_for_statement(
-        statement: &wikibase::statement::Statement,
+        statement: &Statement,
         language: &str,
     ) -> Option<Vec<Reference>> {
         let references = statement.references();
@@ -96,13 +93,13 @@ impl ResultCell {
 
     fn get_parts_p_q_p(
         &self,
-        statement: &wikibase::statement::Statement,
+        statement: &Statement,
         target_item: &str,
         property: &str,
     ) -> Vec<ResultCellPart> {
         let links_to_target = match statement.main_snak().data_value() {
             Some(dv) => match dv.value() {
-                wikibase::value::Value::Entity(e) => e.id() == target_item,
+                wikimisc::wikibase::value::Value::Entity(e) => e.id() == target_item,
                 _ => false,
             },
             None => false,
@@ -214,7 +211,7 @@ impl ResultCell {
     }
 
     fn ct_label(
-        entity: Option<wikibase::Entity>,
+        entity: Option<wikimisc::wikibase::Entity>,
         ret: &mut ResultCell,
         list: &ListeriaList,
         entity_id: &str,
@@ -253,7 +250,11 @@ impl ResultCell {
         }
     }
 
-    fn ct_alias_lang(entity: &Option<wikibase::Entity>, language: &String, ret: &mut ResultCell) {
+    fn ct_alias_lang(
+        entity: &Option<wikimisc::wikibase::Entity>,
+        language: &String,
+        ret: &mut ResultCell,
+    ) {
         if let Some(e) = entity {
             let mut aliases: Vec<String> = e
                 .aliases()
@@ -272,7 +273,7 @@ impl ResultCell {
     }
 
     fn ct_label_lang(
-        entity: &Option<wikibase::Entity>,
+        entity: &Option<wikimisc::wikibase::Entity>,
         language: &str,
         ret: &mut ResultCell,
         list: &ListeriaList,
@@ -298,7 +299,7 @@ impl ResultCell {
     }
 
     fn ct_pqv(
-        entity: &Option<wikibase::Entity>,
+        entity: &Option<wikimisc::wikibase::Entity>,
         list: &ListeriaList,
         p1: &str,
         ret: &mut ResultCell,
@@ -320,7 +321,7 @@ impl ResultCell {
     }
 
     fn ct_pq(
-        entity: &Option<wikibase::Entity>,
+        entity: &Option<wikimisc::wikibase::Entity>,
         list: &ListeriaList,
         p1: &str,
         ret: &mut ResultCell,
@@ -339,7 +340,7 @@ impl ResultCell {
     }
 
     fn ct_property(
-        entity: &Option<wikibase::Entity>,
+        entity: &Option<wikimisc::wikibase::Entity>,
         ret: &mut ResultCell,
         list: &ListeriaList,
         property: &str,
@@ -393,7 +394,7 @@ impl ResultCell {
     }
 
     fn ct_description(
-        entity: &Option<wikibase::Entity>,
+        entity: &Option<wikimisc::wikibase::Entity>,
         list: &ListeriaList,
         ret: &mut ResultCell,
     ) {

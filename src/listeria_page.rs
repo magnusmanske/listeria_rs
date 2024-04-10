@@ -71,7 +71,7 @@ impl ListeriaPage {
 
     pub async fn check_namespace(&self) -> Result<()> {
         let api = self.page_params.mw_api().read().await;
-        let title = wikibase::mediawiki::title::Title::new_from_full(self.page_params.page(), &api);
+        let title = wikimisc::mediawiki::title::Title::new_from_full(self.page_params.page(), &api);
         drop(api);
         if self
             .page_params
@@ -322,7 +322,7 @@ mod tests {
 
     async fn check_fixture_file(path: PathBuf) {
         let data = read_fixture_from_file(path.clone());
-        let mw_api = wikibase::mediawiki::api::Api::new(&data["API"])
+        let mw_api = wikimisc::mediawiki::api::Api::new(&data["API"])
             .await
             .unwrap();
         let mw_api = Arc::new(RwLock::new(mw_api));
@@ -572,7 +572,7 @@ mod tests {
     #[tokio::test]
     async fn edit_wikitext() {
         let data = read_fixture_from_file(PathBuf::from("test_data/edit_wikitext.fixture"));
-        let mw_api = wikibase::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php")
+        let mw_api = wikimisc::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php")
             .await
             .unwrap();
         let mw_api = Arc::new(RwLock::new(mw_api));

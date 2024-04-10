@@ -7,8 +7,8 @@ use regex::Regex;
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use wikibase::entity::EntityTrait;
-use wikibase::SnakDataType;
+use wikimisc::wikibase::entity::EntityTrait;
+use wikimisc::wikibase::{Snak, SnakDataType};
 
 #[derive(Debug, Clone, Default)]
 pub struct ResultRow {
@@ -193,23 +193,25 @@ impl ResultRow {
     }
 
     /// Get the sortkey from a snak
-    fn get_sortkey_from_snak(&self, snak: &wikibase::snak::Snak, list: &ListeriaList) -> String {
+    fn get_sortkey_from_snak(&self, snak: &Snak, list: &ListeriaList) -> String {
         match snak.data_value() {
             Some(data_value) => match data_value.value() {
-                wikibase::value::Value::Coordinate(c) => format!(
+                wikimisc::wikibase::value::Value::Coordinate(c) => format!(
                     "{}/{}/{}",
                     c.latitude(),
                     c.longitude(),
                     c.precision().unwrap_or(0.0)
                 ),
-                wikibase::value::Value::MonoLingual(m) => format!("{}:{}", m.language(), m.text()),
-                wikibase::value::Value::Entity(entity) => {
+                wikimisc::wikibase::value::Value::MonoLingual(m) => {
+                    format!("{}:{}", m.language(), m.text())
+                }
+                wikimisc::wikibase::value::Value::Entity(entity) => {
                     // TODO language?
                     list.get_label_with_fallback(entity.id())
                 }
-                wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
-                wikibase::value::Value::StringValue(s) => s.to_owned(),
-                wikibase::value::Value::Time(t) => t.time().to_owned(),
+                wikimisc::wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
+                wikimisc::wikibase::value::Value::StringValue(s) => s.to_owned(),
+                wikimisc::wikibase::value::Value::Time(t) => t.time().to_owned(),
             },
             None => "".to_string(),
         }

@@ -15,7 +15,7 @@ async fn update_page(
     page_title: &str,
     api_url: &str,
 ) -> Result<String> {
-    let mut mw_api = wikibase::mediawiki::api::Api::new(api_url).await?;
+    let mut mw_api = wikimisc::mediawiki::api::Api::new(api_url).await?;
     mw_api.set_oauth2(config.oauth2_token());
 
     let mw_api = Arc::new(RwLock::new(mw_api));
