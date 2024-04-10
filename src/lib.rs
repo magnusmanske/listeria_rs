@@ -7,7 +7,6 @@ pub mod column;
 pub mod configuration;
 pub mod database_pool;
 pub mod entity_container_wrapper;
-pub mod entity_file_cache;
 pub mod listeria_bot;
 pub mod listeria_list;
 pub mod listeria_page;
