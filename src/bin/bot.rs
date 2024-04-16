@@ -72,7 +72,11 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| "config.json".to_string());
     // run_singles(&config_file).await
 
-    let threads = 3; //num_cpus::get(); // TODO read from config file?
+    let file = std::fs::File::open(&config_file)?;
+    let reader = std::io::BufReader::new(file);
+    let j: serde_json::Value = serde_json::from_reader(reader)?;
+    let threads = j["max_threads"].as_u64().unwrap_or(3) as usize;
+
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(threads)
