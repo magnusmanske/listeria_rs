@@ -193,12 +193,12 @@ impl ListeriaBot {
     }
 
     pub async fn set_runtime(&self, pagestatus_id: u64, seconds: u64) -> Result<()> {
-        let sql = "UPDATE `pagestatus` SET `last_runtime_sec`=? WHERE `id`=?";
+        let sql = "UPDATE `pagestatus` SET `last_runtime_sec`=:seconds WHERE `id`=:pagestatus_id";
         self.config
             .pool()
             .get_conn()
             .await?
-            .exec_drop(sql, (seconds, pagestatus_id))
+            .exec_drop(sql, params! {seconds, pagestatus_id})
             .await?;
         Ok(())
     }
