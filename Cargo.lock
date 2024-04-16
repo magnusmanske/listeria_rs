@@ -1331,6 +1331,7 @@ dependencies = [
  "log",
  "md5",
  "mysql_async",
+ "num_cpus",
  "rayon",
  "regex",
  "reqwest",
@@ -2928,7 +2929,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.0"
-source = "git+https://github.com/magnusmanske/wikimisc#91e4606581f071197f2afdf2933f5d4e4bfd97c5"
+source = "git+https://github.com/magnusmanske/wikimisc#cb3f038fe584328159a72f695b9ecea09c6f828c"
 dependencies = [
  "anyhow",
  "chrono",

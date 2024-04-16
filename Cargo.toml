@@ -24,3 +24,4 @@ async-recursion = "*"
 log = "*"
 rayon = "*"
 toolforge = { version = "*", features = ["mysql"] }
+num_cpus = "*"
