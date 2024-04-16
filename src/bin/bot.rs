@@ -6,7 +6,7 @@ use listeria::listeria_bot::ListeriaBot;
 use std::env;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{OnceCell, Semaphore};
+use tokio::sync::Semaphore;
 use wikimisc::toolforge_app::ToolforgeApp;
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 120;
@@ -16,13 +16,10 @@ TEST DB CONNECT
 ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
 
 REFRESH FROM GIT
-cd /data/project/listeria/listeria_rs ; git pull ; \rm ./target/release/bot ; jsub -mem 4g -sync y -cwd cargo build --release
+cd /data/project/listeria/listeria_rs ; ./build.sh
 
 # RUN BOT ON TOOLFORGE
-toolforge-jobs delete rustbot && toolforge-jobs delete rustbot2 && \
-rm ~/rustbot* && \
-toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 4' rustbot && \
-toolforge-jobs run --image tf-php74 --mem 2500Mi --continuous --command '/data/project/listeria/listeria_rs/run.sh 4' rustbot2
+cd /data/project/listeria/listeria_rs ; ./restart.sh
 
 */
 
@@ -33,7 +30,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
     let _ = bot.reset_running().await;
     let _ = bot.clear_deleted().await;
     let bot = Arc::new(bot);
-    static SEMAPHORE: OnceCell<Semaphore> = OnceCell::const_new();
+    let semaphore = Arc::new(Semaphore::new(max_threads));
     let last_activity = ToolforgeApp::seppuku(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
     loop {
         let page = match bot.prepare_next_single_page().await {
@@ -43,10 +40,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
                 continue;
             }
         };
-        let semaphore = SEMAPHORE
-            .get_or_init(|| async { Semaphore::new(max_threads) })
-            .await;
-        let _semaphore_handle = semaphore.acquire().await.unwrap();
+        let semaphore = semaphore.clone();
         println!(
             "Starting new bot, {} available",
             semaphore.available_permits()
@@ -54,7 +48,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
         let bot = bot.clone();
         *last_activity.lock().unwrap() = Instant::now();
         tokio::spawn(async move {
-            let _semaphore_handle2 = _semaphore_handle;
+            let _permit = semaphore.acquire().await.unwrap();
             let pagestatus_id = page.id();
             let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
