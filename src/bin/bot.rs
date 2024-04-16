@@ -72,7 +72,7 @@ fn main() -> Result<()> {
         .unwrap_or_else(|| "config.json".to_string());
     // run_singles(&config_file).await
 
-    let threads = 3; // TODO read from config file
+    let threads = num_cpus::get(); // TODO read from config file?
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .worker_threads(threads)
