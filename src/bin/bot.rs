@@ -1,11 +1,13 @@
 extern crate config;
 extern crate serde_json;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use listeria::listeria_bot::ListeriaBot;
 use std::env;
-use std::sync::{Arc, Mutex};
-use tokio::time::{sleep, Duration, Instant};
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::{OnceCell, Semaphore};
+use wikimisc::toolforge_app::ToolforgeApp;
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 120;
 
@@ -31,18 +33,9 @@ async fn run_singles(config_file: &str) -> Result<()> {
     let _ = bot.reset_running().await;
     let _ = bot.clear_deleted().await;
     let bot = Arc::new(bot);
-    const MAX_SECONDS_WAIT_FOR_NEW_JOB: u64 = 15 * 60;
-    let last_activity = Arc::new(Mutex::new(Instant::now()));
-    seppuku(last_activity.clone());
+    static SEMAPHORE: OnceCell<Semaphore> = OnceCell::const_new();
+    let last_activity = ToolforgeApp::seppuku(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
     loop {
-        let wait_start = Instant::now();
-        while bot.get_running_count().await >= max_threads {
-            sleep(Duration::from_millis(100)).await;
-            let diff = (Instant::now() - wait_start).as_secs();
-            if diff > MAX_SECONDS_WAIT_FOR_NEW_JOB {
-                return Err(anyhow!("Waited over {MAX_SECONDS_WAIT_FOR_NEW_JOB} seconds for new job to start, probably stuck, restarting"));
-            }
-        }
         let page = match bot.prepare_next_single_page().await {
             Ok(page) => page,
             Err(e) => {
@@ -50,10 +43,18 @@ async fn run_singles(config_file: &str) -> Result<()> {
                 continue;
             }
         };
-        // println!("{page:?}");
+        let semaphore = SEMAPHORE
+            .get_or_init(|| async { Semaphore::new(max_threads) })
+            .await;
+        let _semaphore_handle = semaphore.acquire().await.unwrap();
+        println!(
+            "Starting new bot, {} available",
+            semaphore.available_permits()
+        );
         let bot = bot.clone();
         *last_activity.lock().unwrap() = Instant::now();
         tokio::spawn(async move {
+            let _semaphore_handle2 = _semaphore_handle;
             let pagestatus_id = page.id();
             let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
@@ -65,20 +66,6 @@ async fn run_singles(config_file: &str) -> Result<()> {
             bot.release_running(pagestatus_id).await;
         });
     }
-}
-
-/// Seppuku if no activity for a while
-fn seppuku(last_activity: Arc<Mutex<Instant>>) {
-    tokio::spawn(async move {
-        loop {
-            if last_activity.lock().unwrap().elapsed().as_secs() > MAX_INACTIVITY_BEFORE_SEPPUKU_SEC
-            {
-                println!("Commiting seppuku");
-                std::process::exit(0);
-            }
-            tokio::time::sleep(Duration::from_secs(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC)).await;
-        }
-    });
 }
 
 // #[tokio::main(flavor = "multi_thread", worker_threads = 4)]

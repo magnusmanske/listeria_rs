@@ -2,7 +2,6 @@ extern crate config;
 extern crate serde_json;
 
 use anyhow::{anyhow, Result};
-// use config::{Config, File};
 use listeria::configuration::Configuration;
 use listeria::listeria_page::ListeriaPage;
 use listeria::wiki_apis::WikiApis;
