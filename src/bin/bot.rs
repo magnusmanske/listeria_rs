@@ -36,7 +36,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
         let page = match bot.prepare_next_single_page().await {
             Ok(page) => page,
             Err(e) => {
-                eprintln!("{e}");
+                eprintln!("Trying to get next page to process: {e}");
                 continue;
             }
         };
@@ -55,7 +55,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
             let pagestatus_id = page.id();
             let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
-                println!("{}", &e)
+                eprintln!("Bot run failed: {e}")
             }
             let end_time = Instant::now();
             let diff = (end_time - start_time).as_secs();

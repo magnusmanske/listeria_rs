@@ -155,6 +155,7 @@ impl WikiApis {
         api: &Arc<Api>,
         q: String,
     ) -> Result<Entity, anyhow::Error> {
+        // NOTE: EntityContainerWrapper is not needed, this only a single item
         let entities = self.config.create_entity_container();
         entities
             .load_entities(api, &vec![q.to_owned()])
