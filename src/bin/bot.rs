@@ -9,6 +9,7 @@ use std::time::Instant;
 use wikimisc::toolforge_app::ToolforgeApp;
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 120;
+const DEFAULT_CONFIG_FILE: &str = "/data/project/listeria/listeria_rs/config.json";
 
 /*
 TEST DB CONNECT
@@ -72,7 +73,7 @@ fn main() -> Result<()> {
     let config_file = args
         .get(1)
         .map(|s| s.to_owned())
-        .unwrap_or_else(|| "config.json".to_string());
+        .unwrap_or_else(|| DEFAULT_CONFIG_FILE.to_string());
     // run_singles(&config_file).await
 
     let file = std::fs::File::open(&config_file)?;
