@@ -4,9 +4,8 @@ extern crate serde_json;
 use anyhow::Result;
 use listeria::listeria_bot::ListeriaBot;
 use std::env;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
-use tokio::sync::Semaphore;
 use wikimisc::toolforge_app::ToolforgeApp;
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 120;
@@ -30,7 +29,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
     let _ = bot.reset_running().await;
     let _ = bot.clear_deleted().await;
     let bot = Arc::new(bot);
-    let semaphore = Arc::new(Semaphore::new(max_threads));
+    let bots_running = Arc::new(Mutex::new(0));
     let last_activity = ToolforgeApp::seppuku(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
     loop {
         let page = match bot.prepare_next_single_page().await {
@@ -40,15 +39,18 @@ async fn run_singles(config_file: &str) -> Result<()> {
                 continue;
             }
         };
-        let semaphore = semaphore.clone();
+        while *bots_running.lock().unwrap() >= max_threads {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+        *bots_running.lock().unwrap() += 1;
         println!(
-            "Starting new bot, {} available",
-            semaphore.available_permits()
+            "Starting new bot, {} running",
+            *bots_running.lock().unwrap()
         );
+        let bots_running = bots_running.clone();
         let bot = bot.clone();
         *last_activity.lock().unwrap() = Instant::now();
         tokio::spawn(async move {
-            let _permit = semaphore.acquire().await.unwrap();
             let pagestatus_id = page.id();
             let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
@@ -58,6 +60,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
             let diff = (end_time - start_time).as_secs();
             let _ = bot.set_runtime(pagestatus_id, diff).await;
             bot.release_running(pagestatus_id).await;
+            *bots_running.lock().unwrap() -= 1;
         });
     }
 }
