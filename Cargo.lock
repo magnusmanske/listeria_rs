@@ -1343,6 +1343,7 @@ dependencies = [
  "regex",
  "reqwest",
  "roxmltree",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -2931,7 +2932,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.0"
-source = "git+https://github.com/magnusmanske/wikimisc#cb3f038fe584328159a72f695b9ecea09c6f828c"
+source = "git+https://github.com/magnusmanske/wikimisc#534574d1efc8ab4da88c58ddae020700226504a0"
 dependencies = [
  "anyhow",
  "chrono",
