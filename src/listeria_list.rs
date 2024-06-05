@@ -4,6 +4,7 @@ use crate::page_params::PageParams;
 use crate::result_cell::*;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
+use crate::sparql_results::SparqlResults;
 use crate::template::Template;
 use crate::template_params::LinksType;
 use crate::template_params::ReferencesParameter;
@@ -19,17 +20,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::Mutex;
-use tokio::time::{sleep, Duration};
 use wikimisc::mediawiki::api::Api;
-use wikimisc::mediawiki::media_wiki_error::MediaWikiError;
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::{SnakDataType, Statement, StatementRank};
-
-lazy_static! {
-    static ref SPARQL_REQUEST_COUNTER: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
-}
 
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
@@ -278,107 +272,6 @@ impl ListeriaList {
         }
     }
 
-    pub async fn run_sparql_query(&self, sparql: &str) -> Result<Value> {
-        let wikibase_key = self.params.wikibase().to_lowercase();
-        let api = match self.page_params.config().get_wbapi(&wikibase_key) {
-            Some(api) => api.clone(),
-            None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
-        };
-        loop {
-            if *SPARQL_REQUEST_COUNTER
-                .lock()
-                .expect("ListeriaList: Mutex is bad")
-                < self.page_params.config().max_sparql_simultaneous()
-            {
-                break;
-            }
-            // sleep(Duration::from_millis(100)).await;
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        }
-        *SPARQL_REQUEST_COUNTER
-            .lock()
-            .expect("ListeriaList: Mutex is bad") += 1;
-        let result = self.run_sparql_query_api(&api, sparql).await;
-        *SPARQL_REQUEST_COUNTER
-            .lock()
-            .expect("ListeriaList: Mutex is bad") -= 1;
-        result
-    }
-
-    fn get_sparql_endpoint(&self, wb_api_sparql: &Api) -> String {
-        match wb_api_sparql.get_site_info_string("general", "wikibase-sparql") {
-            Ok(endpoint) => {
-                // SPARQL service given by site
-                endpoint
-            }
-            _ => {
-                // Override SPARQL service (hardcoded for Commons)
-                "https://wcqs-beta.wmflabs.org/sparql"
-            }
-        }
-        .to_string()
-    }
-
-    async fn run_sparql_query_api(&self, wb_api_sparql: &Api, sparql: &str) -> Result<Value> {
-        // SPARQL might need some retries sometimes, bad server or somesuch
-        let mut sparql = sparql.to_string();
-        let max_sparql_attempts = self.page_params.config().max_sparql_attempts();
-        let mut attempts_left = max_sparql_attempts;
-        let endpoint = self.get_sparql_endpoint(wb_api_sparql);
-        loop {
-            let ret = wb_api_sparql
-                .sparql_query_endpoint(&sparql, &endpoint)
-                .await;
-            match ret {
-                Ok(ret) => return Ok(ret),
-                Err(e) => {
-                    match &e {
-                        MediaWikiError::String(s) => {
-                            if s.contains("expected value at line 1 column 1: SPARQL-QUERY:") {
-                                return Err(anyhow!("SPARQL is broken: {s}\n{sparql}"));
-                            }
-                            if attempts_left>0 && s.contains("error decoding response body: expected value at line 1 column 1") {
-                                sleep(Duration::from_millis(500*(max_sparql_attempts-attempts_left+1))).await;
-                                sparql += &format!(" /* {attempts_left} */");
-                                attempts_left -= 1;
-                                continue;
-                            }
-                            if s.contains(
-                                "error decoding response body: expected value at line 1 column 1",
-                            ) {
-                                return Err(anyhow!("SPARQL is probably broken: {s}\n{sparql}"));
-                            }
-                            return Err(anyhow!("{e}"));
-                        }
-                        e => return Err(anyhow!("{e}")),
-                    }
-                }
-            }
-        }
-    }
-
-    async fn expand_sparql_templates(&self, sparql: &mut String) -> Result<()> {
-        if !sparql.contains("{{") {
-            // No template
-            return Ok(());
-        }
-        let api = self.page_params.mw_api().read().await;
-        let params: HashMap<String, String> = vec![
-            ("action", "expandtemplates"),
-            ("title", self.page_params.page()),
-            ("prop", "wikitext"),
-            ("text", sparql),
-        ]
-        .into_iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
-        let j = api.get_query_api_json(&params).await?;
-        if let Some(s) = j["expandtemplates"]["wikitext"].as_str() {
-            *sparql = s.to_string();
-        }
-        Ok(())
-    }
-
     fn get_template_value(&self, template: &Template, key: &str) -> Option<String> {
         template
             .params
@@ -389,71 +282,14 @@ impl ListeriaList {
     }
 
     pub async fn run_query(&mut self) -> Result<()> {
-        let mut sparql = match self.get_template_value(&self.template, "sparql") {
+        let wikibase_key = self.params.wikibase().to_lowercase();
+        let sparql = match self.get_template_value(&self.template, "sparql") {
             Some(s) => s,
             None => return Err(anyhow!("No 'sparql' parameter in {:?}", &self.template)),
-        }
-        .to_string();
-
-        self.expand_sparql_templates(&mut sparql)
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
-
-        // Return simulated results
-        if self.page_params.simulate() {
-            match self.page_params.simulated_sparql_results() {
-                Some(json_text) => {
-                    let j = serde_json::from_str(json_text)?;
-                    return self.parse_sparql(j);
-                }
-                None => {}
-            }
-        }
-
-        self.profile("BEGIN run_query: run_sparql_query");
-        let j = self.run_sparql_query(&sparql).await?;
-        self.profile("END run_query: run_sparql_query");
-        if self.page_params.simulate() {
-            println!("{}\n{}\n", &sparql, &j);
-        }
-        self.parse_sparql(j)
-    }
-
-    fn parse_sparql(&mut self, j: Value) -> Result<()> {
-        self.sparql_rows.clear();
-        self.sparql_main_variable = None;
-
-        if let Some(arr) = j["head"]["vars"].as_array() {
-            // Insist on ?item
-            let required_variable_name = "item";
-            for v in arr {
-                if Some(required_variable_name) == v.as_str() {
-                    self.sparql_main_variable = Some(required_variable_name.to_string());
-                    break;
-                }
-            }
-        }
-
-        let bindings = j["results"]["bindings"]
-            .as_array()
-            .ok_or(anyhow!("Broken SPARQL results.bindings"))?;
-        for b in bindings.iter() {
-            let mut row: HashMap<String, SparqlValue> = HashMap::new();
-            if let Some(bo) = b.as_object() {
-                for (k, v) in bo.iter() {
-                    match SparqlValue::new_from_json(v) {
-                        Some(v2) => row.insert(k.to_owned(), v2),
-                        None => {
-                            return Err(anyhow!("Can't parse SPARQL value: {} => {:?}", &k, &v))
-                        }
-                    };
-                }
-            }
-            if row.is_empty() {
-                continue;
-            }
-            self.sparql_rows.push(row);
-        }
+        };
+        let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
+        self.sparql_rows = sparql_results.run_query(sparql).await?;
+        self.sparql_main_variable = sparql_results.sparql_main_variable();
         Ok(())
     }
 
@@ -980,32 +816,29 @@ impl ListeriaList {
     }
 
     async fn get_region_for_entity_id(&self, entity_id: &str) -> Option<String> {
+        let wikibase_key = self.params.wikibase().to_lowercase();
         let sparql = format!(
             "SELECT ?q ?x {{ wd:{} wdt:P131* ?q . ?q wdt:P300 ?x }}",
             entity_id
         );
-        let j = self.run_sparql_query(&sparql).await.ok()?;
-        match j["results"]["bindings"].as_array() {
-            Some(a) => {
-                let mut region = String::new();
-                a.iter().for_each(|b| {
-                    match b["x"]["type"].as_str() {
-                        Some("literal") => {}
-                        _ => return,
+        let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
+        sparql_results.simulate = false;
+        let mut region = String::new();
+        let rows = sparql_results.run_query(sparql).await.ok()?;
+        for row in rows {
+            match row.get("x") {
+                Some(SparqlValue::Literal(r)) => {
+                    if r.len() > region.len() {
+                        region = r.to_string();
                     }
-                    if let Some(r) = b["x"]["value"].as_str() {
-                        if r.len() > region.len() {
-                            region = r.to_string();
-                        }
-                    }
-                });
-                if region.is_empty() {
-                    None
-                } else {
-                    Some(region)
                 }
+                _ => return None,
             }
-            None => None,
+        }
+        if region.is_empty() {
+            None
+        } else {
+            Some(region)
         }
     }
 
