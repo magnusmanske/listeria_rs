@@ -1385,11 +1385,12 @@ checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "mediawiki"
-version = "0.2.15"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b41a2d023414add3e2b8fc49729d217bebee27205b1543f9e1562460d5c34e4c"
+checksum = "ef31119aa39feba72eb913080ac735eb79a25159a2c4aad252f566eb948b5772"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "config",
  "futures",
  "hmac",
@@ -1398,6 +1399,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "tokio",
+ "unicode-case-mapping",
  "url",
  "urlencoding",
 ]
@@ -2767,6 +2769,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08f95100a766bf4f8f28f90d77e0a5461bbdb219042e7679bebe79004fed8d75"
 
 [[package]]
+name = "unicode-case-mapping"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b92e07ac57786e12073609c8a91417884306b753d974108ca48c8434ed9b99cb"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2915,8 +2923,9 @@ dependencies = [
 
 [[package]]
 name = "wikibase"
-version = "0.6.1"
-source = "git+https://gitlab.com/tobias47n9e/wikibase_rs?branch=concurrent_limiter#435f4ba68f92fbedbfbb74af2a03a79abda8554a"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63eb2aeb5f61cf94e9c15307da874223211e960b5b4eab4b9359fa3cda76f6a2"
 dependencies = [
  "curl",
  "futures",
@@ -2932,7 +2941,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.0"
-source = "git+https://github.com/magnusmanske/wikimisc#42c04c1d063eb3b417f1dcb42da268af08ec1888"
+source = "git+https://github.com/magnusmanske/wikimisc#12d63b9e385f7d7c8da156a9351b908202d1abc7"
 dependencies = [
  "anyhow",
  "chrono",
