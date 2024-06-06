@@ -59,22 +59,24 @@ impl RendererWikitext {
             wt += "|-\n";
         }
 
-        let row_entity_ids: Vec<String> = list
-            .results()
-            .iter()
-            .filter(|row| row.section() == section_id)
-            .map(|row| row.entity_id())
-            .cloned()
-            .collect();
+        let mut row_entity_ids = vec![];
+        for rownum in 0..list.results().len() {
+            let row = list.results().get(rownum).unwrap();
+            if row.section() == section_id {
+                row_entity_ids.push(row.entity_id().to_string());
+            }
+        }
 
         // Rows
-        let rows: Vec<String> = list
-            .results()
-            .iter()
-            .filter(|row| row.section() == section_id)
-            .enumerate()
-            .map(|(rownum, row)| row.as_wikitext(list, rownum))
-            .collect();
+        let mut rows = vec![];
+        for rownum in 0..list.results().len() {
+            let row = list.results().get(rownum).unwrap();
+            if row.section() == section_id {
+                let wt = row.as_wikitext(list, rownum);
+                rows.push(wt);
+            }
+        }
+
         if list.skip_table() {
             wt += &rows.join("\n");
         } else if list.template_params().wdedit() {
