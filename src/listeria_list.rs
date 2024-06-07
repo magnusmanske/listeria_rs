@@ -3,7 +3,7 @@ use crate::entity_container_wrapper::*;
 use crate::page_params::PageParams;
 use crate::result_cell::*;
 use crate::result_cell_part::ResultCellPart;
-use crate::results::Results;
+use crate::result_row::ResultRow;
 use crate::sparql_results::SparqlResults;
 use crate::template::Template;
 use crate::template_params::LinksType;
@@ -20,6 +20,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use wikimisc::file_vec::FileVec;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::*;
@@ -34,7 +35,7 @@ pub struct ListeriaList {
     sparql_rows: Vec<HashMap<String, SparqlValue>>,
     sparql_main_variable: Option<String>,
     ecw: EntityContainerWrapper,
-    results: Results,
+    results: FileVec<ResultRow>,
     shadow_files: HashSet<String>,
     local_page_cache: HashMap<String, bool>,
     section_id_to_name: HashMap<usize, String>,
@@ -55,10 +56,10 @@ impl ListeriaList {
             template,
             columns: vec![],
             params: TemplateParams::new(),
-            sparql_rows: vec![],
+            sparql_rows: Vec::new(),
             sparql_main_variable: None,
             ecw: EntityContainerWrapper::new(page_params.config()),
-            results: Results::default(),
+            results: FileVec::new(),
             shadow_files: HashSet::new(),
             local_page_cache: HashMap::new(),
             section_id_to_name: HashMap::new(),
@@ -104,7 +105,7 @@ impl ListeriaList {
         self.ecw.external_id_url(prop, id)
     }
 
-    pub fn results(&self) -> &Results {
+    pub fn results(&self) -> &FileVec<ResultRow> {
         &self.results
     }
 
@@ -432,7 +433,7 @@ impl ListeriaList {
     }
 
     pub fn generate_results(&mut self) -> Result<()> {
-        let mut tmp_results = Results::default();
+        let mut tmp_results: FileVec<ResultRow> = FileVec::new();
         match self.params.one_row_per_item() {
             true => {
                 let sparql_row_ids: Vec<String> =
@@ -619,7 +620,7 @@ impl ListeriaList {
             });
             self.results.set(row_id, row);
         }
-        self.results.keep_marked();
+        self.results.retain(|r| r.keep());
         Ok(())
     }
 
@@ -707,15 +708,15 @@ impl ListeriaList {
             // Paranoia
             return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
         }
-        for row_id in 0..self.results.len() {
+        (0..self.results.len()).for_each(|row_id| {
             let mut row = self.results.get(row_id).unwrap();
             row.set_sortkey(sortkeys[row_id].to_owned());
             self.results.set(row_id, row);
-        }
+        });
 
-        self.results.sort_by(|a, b| a.compare_to(b, &datatype));
+        self.results.sort_by(|a, b| a.compare_to(b, &datatype))?;
         if *self.params.sort_order() == SortOrder::Descending {
-            self.results.reverse()
+            self.results.reverse()?;
         }
 
         Ok(())
@@ -1012,8 +1013,14 @@ impl ListeriaList {
             for cell in row.cells() {
                 for part_with_reference in cell.parts() {
                     if let ResultCellPart::AutoDesc(ad) = &part_with_reference.part {
-                        if let Ok(desc) = self.get_autodesc_description(ad.entity()).await {
-                            autodescs.insert(ad.entity().id().to_owned(), desc);
+                        self.ecw
+                            .load_entities(&self.wb_api, &[ad.entity_id().to_owned()])
+                            .await
+                            .map_err(|e| anyhow!("{e}"))?;
+                        if let Some(entity) = self.ecw.get_entity(ad.entity_id()) {
+                            if let Ok(desc) = self.get_autodesc_description(&entity).await {
+                                autodescs.insert(ad.entity_id().to_owned(), desc);
+                            }
                         }
                     }
                 }
@@ -1026,7 +1033,7 @@ impl ListeriaList {
             for cell in row.cells_mut() {
                 for part_with_reference in cell.parts_mut() {
                     if let ResultCellPart::AutoDesc(ad) = &mut part_with_reference.part {
-                        if let Some(desc) = autodescs.get(ad.entity().id()) {
+                        if let Some(desc) = autodescs.get(ad.entity_id()) {
                             ad.set_description(desc)
                         }
                     }

@@ -1,17 +1,42 @@
+use crate::listeria_list::ListeriaList;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::sync::RwLock;
 use wikimisc::wikibase::Snak;
 use wikimisc::wikibase::Value;
 
-use crate::listeria_list::ListeriaList;
-use std::sync::Arc;
-use std::sync::RwLock;
+mod arc_rwlock_serde {
+    use serde::de::Deserializer;
+    use serde::ser::Serializer;
+    use serde::{Deserialize, Serialize};
+    use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Clone, Default)]
+    pub fn serialize<S, T>(val: &Arc<RwLock<T>>, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Serialize,
+    {
+        T::serialize(&*val.read().unwrap(), s)
+    }
+
+    pub fn deserialize<'de, D, T>(d: D) -> Result<Arc<RwLock<T>>, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: Deserialize<'de>,
+    {
+        Ok(Arc::new(RwLock::new(T::deserialize(d)?)))
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Reference {
     pub url: Option<String>,
     pub title: Option<String>,
     pub date: Option<String>,
     pub stated_in: Option<String>, // Item
+    #[serde(with = "arc_rwlock_serde")]
     md5: Arc<RwLock<String>>,
+    #[serde(with = "arc_rwlock_serde")]
     wikitext_cache: Arc<RwLock<Option<String>>>,
 }
 

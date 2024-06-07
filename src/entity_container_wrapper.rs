@@ -7,7 +7,7 @@ use crate::template_params::LinksType;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use wikimisc::entity_file_cache::EntityFileCache;
+use wikimisc::file_hash::FileHash;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::*;
@@ -20,7 +20,7 @@ pub struct EntityContainerWrapper {
     config: Arc<Configuration>,
     entities: EntityContainer,
     max_local_cached_entities: usize,
-    entity_file_cache: EntityFileCache,
+    entity_file_cache: FileHash<String, String>,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
@@ -37,7 +37,7 @@ impl EntityContainerWrapper {
             config: config.clone(),
             entities: config.create_entity_container(),
             max_local_cached_entities: config.max_local_cached_entities(),
-            entity_file_cache: EntityFileCache::new(),
+            entity_file_cache: FileHash::new(),
         }
     }
 
@@ -52,7 +52,7 @@ impl EntityContainerWrapper {
                 if let Some(entity) = entities.get_entity(entity_id) {
                     let json = entity.to_json();
                     self.entity_file_cache
-                        .add_entity(entity_id, &json.to_string())?;
+                        .insert(entity_id, &json.to_string())?;
                 }
             }
         }
@@ -64,7 +64,7 @@ impl EntityContainerWrapper {
         let ids: Vec<String> = ids
             .iter()
             .filter(|id| !self.entities.has_entity(id.as_str()))
-            .filter(|id| !self.entity_file_cache.has_entity(id))
+            .filter(|id| !self.entity_file_cache.contains(id.to_owned()))
             .map(|id| id.to_owned())
             .collect();
         let ids = self
@@ -101,7 +101,7 @@ impl EntityContainerWrapper {
 
     pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
         self.entities.get_entity(entity_id).or_else(|| {
-            let json_string = self.entity_file_cache.get_entity(entity_id)?;
+            let json_string = self.entity_file_cache.get(entity_id)?;
             let json_value = serde_json::from_str(&json_string).ok()?;
             Entity::new_from_json(&json_value).ok()
         })

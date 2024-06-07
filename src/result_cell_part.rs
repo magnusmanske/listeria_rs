@@ -4,11 +4,12 @@ use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
 use crate::template_params::LinksType;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::{Entity, Snak, SnakDataType, TimeValue, Value};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PartWithReference {
     pub part: ResultCellPart,
     pub references: Option<Vec<Reference>>,
@@ -36,36 +37,41 @@ impl PartWithReference {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoDesc {
-    entity: Entity,
+    // entity: Entity,
+    entity_id: String,
     desc: Option<String>,
 }
 
 impl PartialEq for AutoDesc {
     fn eq(&self, other: &Self) -> bool {
-        self.entity.id() == other.entity.id() && self.desc == other.desc
+        self.entity_id == other.entity_id && self.desc == other.desc
     }
 }
 
 impl AutoDesc {
     pub fn new(entity: &Entity) -> Self {
         Self {
-            entity: entity.to_owned(),
+            entity_id: entity.id().to_owned(),
             desc: None,
         }
     }
 
-    pub fn entity(&self) -> &Entity {
-        &self.entity
-    }
+    // pub fn entity(&self) -> &Entity {
+    //     &self.entity
+    // }
 
     pub fn set_description(&mut self, description: &str) {
         self.desc = Some(description.to_string());
     }
+
+    pub fn entity_id(&self) -> &str {
+        &self.entity_id
+    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /* trunk-ignore(clippy/large_enum_variant) */
 pub enum ResultCellPart {
     Number,

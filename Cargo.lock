@@ -2673,7 +2673,7 @@ dependencies = [
  "serde",
  "serde_spanned",
  "toml_datetime",
- "winnow 0.6.12",
+ "winnow 0.6.13",
 ]
 
 [[package]]
@@ -2941,7 +2941,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.0"
-source = "git+https://github.com/magnusmanske/wikimisc#6dbe8517b40bf87bbf65be3bd9a7385c3b1993fb"
+source = "git+https://github.com/magnusmanske/wikimisc#2e86641fab7352b1b7f7a63b7d3188cec35262a4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -3149,9 +3149,9 @@ dependencies = [
 
 [[package]]
 name = "winnow"
-version = "0.6.12"
+version = "0.6.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41ff33f391015ecab21cd092389215eb265ef9496a9a07b6bee7d3529831deda"
+checksum = "59b5e5f6c299a3c7890b876a2a587f3115162487e704907d9b6cd29473052ba1"
 dependencies = [
  "memchr",
 ]
