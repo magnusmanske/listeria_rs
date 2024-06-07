@@ -6,13 +6,14 @@ use crate::result_cell_part::AutoDesc;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::template_params::ReferencesParameter;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::Statement;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResultCell {
     parts: Vec<PartWithReference>,
     wdedit_class: Option<String>,

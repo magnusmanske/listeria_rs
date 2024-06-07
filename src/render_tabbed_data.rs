@@ -17,12 +17,15 @@ impl Renderer for RendererTabbedData {
                 x.push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{list.language().to_owned():col.label}}));
             }
         });
-        let ret_data: Vec<Value> = list
-            .results()
-            .iter()
-            .enumerate()
-            .map(|(rownum, row)| row.as_tabbed_data(list, rownum))
-            .collect();
+        let mut ret_data = vec![];
+        for rownum in 0..list.results().len() {
+            let row = list
+                .results()
+                .get(rownum)
+                .unwrap()
+                .as_tabbed_data(list, rownum);
+            ret_data.push(row);
+        }
         ret["data"] = json!(ret_data);
         Ok(format!("{}", ret))
     }

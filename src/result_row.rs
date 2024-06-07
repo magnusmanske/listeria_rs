@@ -3,6 +3,7 @@ use crate::listeria_list::*;
 use crate::result_cell::ResultCell;
 use crate::result_cell_part::ResultCellPart;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
@@ -10,7 +11,7 @@ use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::{Snak, SnakDataType};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResultRow {
     entity_id: String,
     cells: Vec<ResultCell>,
