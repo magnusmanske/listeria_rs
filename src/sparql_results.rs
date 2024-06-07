@@ -3,10 +3,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-use wikimisc::{
-    mediawiki::api::Api,
-    sparql_results::{SparqlApiResult, SparqlResultRows},
-};
+use wikimisc::{mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable};
 
 use crate::page_params::PageParams;
 
@@ -33,7 +30,7 @@ impl SparqlResults {
         }
     }
 
-    pub async fn run_query(&mut self, mut sparql: String) -> Result<SparqlResultRows> {
+    pub async fn run_query(&mut self, mut sparql: String) -> Result<SparqlTable> {
         self.expand_sparql_templates(&mut sparql)
             .await
             .map_err(|e| anyhow!("{e}"))?;
@@ -44,7 +41,9 @@ impl SparqlResults {
                 Some(json_text) => {
                     let results: SparqlApiResult = serde_json::from_str(json_text)?;
                     self.set_main_variable(&results);
-                    return Ok(results.bindings().to_owned());
+                    let mut ret: SparqlTable = results.bindings().to_owned().into();
+                    ret.set_main_variable(self.sparql_main_variable());
+                    return Ok(ret);
                 }
                 None => {}
             }
@@ -52,7 +51,7 @@ impl SparqlResults {
         self.run_sparql_query(&sparql).await
     }
 
-    async fn run_sparql_query(&mut self, sparql: &str) -> Result<SparqlResultRows> {
+    async fn run_sparql_query(&mut self, sparql: &str) -> Result<SparqlTable> {
         let wikibase_key = &self.wikibase_key;
         let api = match self.page_params.config().get_wbapi(wikibase_key) {
             Some(api) => api.clone(),
@@ -83,7 +82,7 @@ impl SparqlResults {
         &mut self,
         wb_api_sparql: &Api,
         sparql: &str,
-    ) -> Result<SparqlResultRows> {
+    ) -> Result<SparqlTable> {
         // TODO:
         //     let max_sparql_attempts = self.page_params.config().max_sparql_attempts();
         let query_api_url = self.get_sparql_endpoint(wb_api_sparql);
@@ -100,7 +99,10 @@ impl SparqlResults {
             return Err(anyhow!("No results from SPARQL query"));
         }
         self.set_main_variable(&result);
-        Ok(result.bindings().to_owned())
+
+        let mut ret: SparqlTable = result.bindings().to_owned().into();
+        ret.set_main_variable(self.sparql_main_variable());
+        Ok(ret)
     }
 
     fn set_main_variable(&mut self, result: &SparqlApiResult) {
