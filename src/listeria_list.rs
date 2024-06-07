@@ -889,15 +889,16 @@ impl ListeriaList {
         let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
         sparql_results.simulate = false;
         let mut region = String::new();
-        let rows = sparql_results.run_query(sparql).await.ok()?;
-        for row in rows {
-            match row.get("x") {
+        let sparql_table = sparql_results.run_query(sparql).await.ok()?;
+        let x_idx = sparql_table.get_var_index("x")?;
+        for row_id in 0..sparql_table.len() {
+            match sparql_table.get_row_col(row_id, x_idx) {
                 Some(SparqlValue::Literal(r)) => {
                     if r.len() > region.len() {
                         region = r.to_string();
                     }
                 }
-                _ => return None,
+                _ => continue,
             }
         }
         if region.is_empty() {
