@@ -440,9 +440,10 @@ impl ListeriaList {
                     .iter()
                     .filter_map(|id| {
                         let mut tmp_rows = SparqlTable::from_table(&self.sparql_table);
-                        let rows = self.sparql_table.rows();
-                        for i in id2rows.get(id)? {
-                            tmp_rows.push(rows[*i].to_owned());
+                        for row_id in id2rows.get(id)? {
+                            if let Some(row) = self.sparql_table.get(*row_id) {
+                                tmp_rows.push(row)
+                            }
                         }
                         self.ecw.get_result_row(id, &tmp_rows, self)
                     })

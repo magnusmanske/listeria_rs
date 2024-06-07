@@ -58,6 +58,10 @@ impl SparqlTable {
         &self.rows
     }
 
+    pub fn get(&self, row_id: usize) -> Option<Vec<SparqlValue>> {
+        self.rows.get(row_id).map(|r| r.to_owned())
+    }
+
     pub fn headers(&self) -> &HashMap<String, usize> {
         &self.headers
     }
