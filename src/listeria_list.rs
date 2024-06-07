@@ -338,26 +338,32 @@ impl ListeriaList {
 
     fn get_ids_from_sparql_rows(&self) -> Result<Vec<String>> {
         let var_index = self.get_var_index()?;
+        let mut ids_tmp = vec![];
+        for row_id in 0..self.sparql_table.len() {
+            if let Some(SparqlValue::Entity(id)) = self.sparql_table.get_row_col(row_id, var_index)
+            {
+                ids_tmp.push(id.to_string());
+            }
+        }
 
-        // Rows
-        let ids_tmp: Vec<String> = self
-            .sparql_table
-            .rows()
-            .iter()
-            .filter_map(|row| match row.get(var_index) {
-                Some(SparqlValue::Entity(id)) => Some(id.to_string()),
-                _ => None,
-            })
-            .collect();
+        // // Rows
+        // let ids_tmp: Vec<String> = self
+        //     .sparql_table
+        //     .rows()
+        //     .iter()
+        //     .filter_map(|row| match row.get(var_index) {
+        //         Some(SparqlValue::Entity(id)) => Some(id.to_string()),
+        //         _ => None,
+        //     })
+        //     .collect();
 
+        // Can't sort/dedup, need to preserve original order!
         let mut ids: Vec<String> = vec![];
         ids_tmp.iter().for_each(|id| {
             if !ids.contains(id) {
                 ids.push(id.to_string());
             }
         });
-
-        // Can't sort/dedup, need to preserve original order
 
         // Column headers
         self.columns.iter().for_each(|c| match &c.obj {
@@ -422,17 +428,14 @@ impl ListeriaList {
                 let sparql_row_ids: Vec<String> =
                     self.get_ids_from_sparql_rows()?.into_iter().collect(); // To preserve the original order
                 let mut id2rows: HashMap<String, Vec<usize>> = HashMap::new();
-                self.sparql_table
-                    .rows()
-                    .iter()
-                    .enumerate()
-                    .for_each(|(i, row)| {
-                        let id = match row.get(var_index) {
-                            Some(SparqlValue::Entity(id)) => id.to_string(),
-                            _ => return,
-                        };
-                        id2rows.entry(id).or_default().push(i);
-                    });
+
+                for row_id in 0..self.sparql_table.len() {
+                    if let Some(SparqlValue::Entity(id)) =
+                        self.sparql_table.get_row_col(row_id, var_index)
+                    {
+                        id2rows.entry(id.to_string()).or_default().push(row_id);
+                    };
+                }
                 sparql_row_ids
                     .iter()
                     .filter_map(|id| {

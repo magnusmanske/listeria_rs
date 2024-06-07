@@ -372,8 +372,8 @@ impl ResultCell {
             Some(i) => i,
             None => return, // Nothing to do
         };
-        for row in sparql_table.rows().iter() {
-            if let Some(x) = row.get(var_index) {
+        for row_id in 0..sparql_table.len() {
+            if let Some(x) = sparql_table.get_row_col(row_id, var_index) {
                 ret.parts.push(PartWithReference::new(
                     ResultCellPart::from_sparql_value(x),
                     None,

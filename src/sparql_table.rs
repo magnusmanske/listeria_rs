@@ -21,8 +21,16 @@ impl SparqlTable {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.rows.len()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.rows.is_empty()
+    }
+
+    pub fn get_row_col(&self, row: usize, col: usize) -> Option<&SparqlValue> {
+        self.rows.get(row).and_then(|r| r.get(col))
     }
 
     /// Get the index of a variable in the table. Case-insensitive.
