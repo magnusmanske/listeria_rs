@@ -16,7 +16,11 @@ mod arc_rwlock_serde {
         S: Serializer,
         T: Serialize,
     {
-        T::serialize(&*val.read().unwrap(), s)
+        if let Ok(val) = val.read() {
+            T::serialize(&*val, s)
+        } else {
+            Err(serde::ser::Error::custom("Could not read from RwLock"))
+        }
     }
 
     pub fn deserialize<'de, D, T>(d: D) -> Result<Arc<RwLock<T>>, D::Error>

@@ -40,17 +40,17 @@ async fn run_singles(config_file: &str) -> Result<()> {
                 continue;
             }
         };
-        while *bots_running.lock().unwrap() >= max_threads {
+        while *bots_running.lock().expect("bots_rinning lock poisoned") >= max_threads {
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
-        *bots_running.lock().unwrap() += 1;
+        *bots_running.lock().expect("bots_rinning lock poisoned") += 1;
         println!(
             "Starting new bot, {} running",
-            *bots_running.lock().unwrap()
+            *bots_running.lock().expect("bots_rinning lock poisoned")
         );
         let bots_running = bots_running.clone();
         let bot = bot.clone();
-        *last_activity.lock().unwrap() = Instant::now();
+        *last_activity.lock().expect("last_activity lock poisoned") = Instant::now();
         tokio::spawn(async move {
             let pagestatus_id = page.id();
             let start_time = Instant::now();
@@ -61,7 +61,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
             let diff = (end_time - start_time).as_secs();
             let _ = bot.set_runtime(pagestatus_id, diff).await;
             bot.release_running(pagestatus_id).await;
-            *bots_running.lock().unwrap() -= 1;
+            *bots_running.lock().expect("bots_rinning lock poisoned") -= 1;
         });
     }
 }

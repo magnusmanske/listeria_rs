@@ -19,12 +19,9 @@ impl Renderer for RendererTabbedData {
         });
         let mut ret_data = vec![];
         for rownum in 0..list.results().len() {
-            let row = list
-                .results()
-                .get(rownum)
-                .unwrap()
-                .as_tabbed_data(list, rownum);
-            ret_data.push(row);
+            if let Some(row) = list.results().get(rownum) {
+                ret_data.push(row.as_tabbed_data(list, rownum));
+            }
         }
         ret["data"] = json!(ret_data);
         Ok(format!("{}", ret))
