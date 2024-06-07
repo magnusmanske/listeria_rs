@@ -463,22 +463,6 @@ impl ListeriaList {
                         }
                     }
                 }
-
-                // self.sparql_table
-                //     .rows()
-                //     .iter()
-                //     .filter_map(|row| {
-                //         if let Some(SparqlValue::Entity(id)) = row.get(var_index) {
-                //             // let row = self.sparql_rows.annotate_row(row);
-                //             let mut tmp_table = SparqlTable::from_table(&self.sparql_table);
-                //             tmp_table.push(row.to_owned());
-                //             if let Some(x) = self.ecw.get_result_row(id, &tmp_table, self) {
-                //                 return Some(x);
-                //             }
-                //         }
-                //         None
-                //     })
-                //     .for_each(|row| tmp_results.push(row));
             }
         };
         self.results = tmp_results;
