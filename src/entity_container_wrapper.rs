@@ -3,13 +3,12 @@ use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
+use crate::sparql_table::SparqlTable;
 use crate::template_params::LinksType;
 use anyhow::{anyhow, Result};
-use std::collections::HashMap;
 use std::sync::Arc;
 use wikimisc::file_hash::FileHash;
 use wikimisc::mediawiki::api::Api;
-use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::entity_container::EntityContainer;
 use wikimisc::wikibase::snak::SnakDataType;
@@ -169,17 +168,22 @@ impl EntityContainerWrapper {
     pub fn get_result_row(
         &self,
         entity_id: &str,
-        sparql_rows: &[&HashMap<String, SparqlValue>],
+        sparql_table: &SparqlTable,
         list: &ListeriaList,
     ) -> Option<ResultRow> {
-        if sparql_rows.is_empty() {
+        if sparql_table.is_empty() {
             return None;
         }
+        self.use_local_links(list, entity_id)?;
+
+        let mut row = ResultRow::new(entity_id);
+        row.from_columns(list, sparql_table);
+        Some(row)
+    }
+
+    fn use_local_links(&self, list: &ListeriaList, entity_id: &str) -> Option<()> {
         if LinksType::Local == *list.template_params().links() {
-            let entity = match self.get_entity(entity_id) {
-                Some(e) => e,
-                None => return None,
-            };
+            let entity = self.get_entity(entity_id)?;
             let page = match entity.sitelinks() {
                 Some(sl) => sl
                     .iter()
@@ -189,11 +193,8 @@ impl EntityContainerWrapper {
                 None => None,
             };
             page.as_ref()?; // return None if no page on this wiki
-        }
-
-        let mut row = ResultRow::new(entity_id);
-        row.from_columns(list, sparql_rows);
-        Some(row)
+        };
+        Some(())
     }
 
     pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
