@@ -34,7 +34,6 @@ pub struct ListeriaList {
     columns: Vec<Column>,
     params: TemplateParams,
     sparql_table: SparqlTable, //Vec<HashMap<String, SparqlValue>>,
-    sparql_main_variable: Option<String>,
     ecw: EntityContainerWrapper,
     results: FileVec<ResultRow>,
     shadow_files: HashSet<String>,
@@ -58,7 +57,6 @@ impl ListeriaList {
             columns: vec![],
             params: TemplateParams::new(),
             sparql_table: SparqlTable::new(),
-            sparql_main_variable: None,
             ecw: EntityContainerWrapper::new(page_params.config()),
             results: FileVec::new(),
             shadow_files: HashSet::new(),
@@ -291,7 +289,8 @@ impl ListeriaList {
         };
         let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
         self.sparql_table = sparql_results.run_query(sparql).await?.into();
-        self.sparql_main_variable = sparql_results.sparql_main_variable();
+        self.sparql_table
+            .set_main_variable(sparql_results.sparql_main_variable());
         Ok(())
     }
 
@@ -338,11 +337,7 @@ impl ListeriaList {
     }
 
     fn get_ids_from_sparql_rows(&self) -> Result<Vec<String>> {
-        let varname = self.get_var_name()?;
-        let var_index = self
-            .sparql_table
-            .get_var_index(varname)
-            .ok_or_else(|| anyhow!("Could not find SPARQL variable '{}' in results", varname))?;
+        let var_index = self.get_var_index()?;
 
         // Rows
         let ids_tmp: Vec<String> = self
@@ -384,13 +379,6 @@ impl ListeriaList {
         Ok(ids)
     }
 
-    fn get_var_name(&self) -> Result<&String> {
-        match &self.sparql_main_variable {
-            Some(v) => Ok(v),
-            None => Err(anyhow!("Could not determine SPARQL variable for item")),
-        }
-    }
-
     pub async fn get_autodesc_description(&self, e: &Entity) -> Result<String> {
         if self.params.autodesc() != Some("FALLBACK".to_string()) {
             return Err(anyhow!("Not used"));
@@ -421,12 +409,9 @@ impl ListeriaList {
     }
 
     fn get_var_index(&self) -> Result<usize> {
-        let varname = self.get_var_name()?;
-        let var_index = self
-            .sparql_table
-            .get_var_index(varname)
-            .ok_or_else(|| anyhow!("Could not find SPARQL variable '{}' in results", varname))?;
-        Ok(var_index)
+        self.sparql_table
+            .main_column()
+            .ok_or_else(|| anyhow!("Could not find SPARQL variable in results"))
     }
 
     pub fn generate_results(&mut self) -> Result<()> {
@@ -462,10 +447,7 @@ impl ListeriaList {
                     .for_each(|row| tmp_results.push(row));
             }
             false => {
-                let varname = self.get_var_name()?;
-                let var_index = self.sparql_table.get_var_index(varname).ok_or_else(|| {
-                    anyhow!("Could not find SPARQL variable '{}' in results", varname)
-                })?;
+                let var_index = self.get_var_index()?;
                 self.sparql_table
                     .rows()
                     .iter()

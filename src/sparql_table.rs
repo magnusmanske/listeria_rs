@@ -6,6 +6,7 @@ use wikimisc::{sparql_results::SparqlResultRows, sparql_value::SparqlValue};
 pub struct SparqlTable {
     headers: HashMap<String, usize>,
     rows: Vec<Vec<SparqlValue>>,
+    main_variable: Option<String>,
 }
 
 impl SparqlTable {
@@ -63,6 +64,20 @@ impl SparqlTable {
         }
         let new_row: Vec<SparqlValue> = row.iter().map(|(_, v)| v.clone()).collect();
         self.rows.push(new_row);
+    }
+
+    pub fn main_variable(&self) -> Option<&String> {
+        self.main_variable.as_ref()
+    }
+
+    pub fn set_main_variable(&mut self, main_variable: Option<String>) {
+        self.main_variable = main_variable;
+    }
+
+    pub fn main_column(&self) -> Option<usize> {
+        self.main_variable
+            .as_ref()
+            .and_then(|var| self.headers.get(var).copied())
     }
 }
 
