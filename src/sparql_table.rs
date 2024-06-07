@@ -54,10 +54,6 @@ impl SparqlTable {
             .collect()
     }
 
-    pub fn rows(&self) -> &[Vec<SparqlValue>] {
-        &self.rows
-    }
-
     pub fn get(&self, row_id: usize) -> Option<Vec<SparqlValue>> {
         self.rows.get(row_id).map(|r| r.to_owned())
     }
