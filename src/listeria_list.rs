@@ -5,6 +5,7 @@ use crate::result_cell::*;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
 use crate::sparql_results::SparqlResults;
+use crate::sparql_table::SparqlTable;
 use crate::template::Template;
 use crate::template_params::LinksType;
 use crate::template_params::ReferencesParameter;
@@ -32,7 +33,7 @@ pub struct ListeriaList {
     template: Template,
     columns: Vec<Column>,
     params: TemplateParams,
-    sparql_rows: Vec<HashMap<String, SparqlValue>>,
+    sparql_table: SparqlTable, //Vec<HashMap<String, SparqlValue>>,
     sparql_main_variable: Option<String>,
     ecw: EntityContainerWrapper,
     results: FileVec<ResultRow>,
@@ -56,7 +57,7 @@ impl ListeriaList {
             template,
             columns: vec![],
             params: TemplateParams::new(),
-            sparql_rows: Vec::new(),
+            sparql_table: SparqlTable::new(),
             sparql_main_variable: None,
             ecw: EntityContainerWrapper::new(page_params.config()),
             results: FileVec::new(),
@@ -121,8 +122,8 @@ impl ListeriaList {
         &self.reference_ids
     }
 
-    pub fn sparql_rows(&self) -> &Vec<HashMap<String, SparqlValue>> {
-        &self.sparql_rows
+    pub fn sparql_table(&self) -> &SparqlTable {
+        &self.sparql_table
     }
 
     pub fn local_file_namespace_prefix(&self) -> &String {
@@ -289,7 +290,7 @@ impl ListeriaList {
             None => return Err(anyhow!("No 'sparql' parameter in {:?}", &self.template)),
         };
         let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
-        self.sparql_rows = sparql_results.run_query(sparql).await?;
+        self.sparql_table = sparql_results.run_query(sparql).await?.into();
         self.sparql_main_variable = sparql_results.sparql_main_variable();
         Ok(())
     }
@@ -338,12 +339,17 @@ impl ListeriaList {
 
     fn get_ids_from_sparql_rows(&self) -> Result<Vec<String>> {
         let varname = self.get_var_name()?;
+        let var_index = self
+            .sparql_table
+            .get_var_index(varname)
+            .ok_or_else(|| anyhow!("Could not find SPARQL variable '{}' in results", varname))?;
 
         // Rows
         let ids_tmp: Vec<String> = self
-            .sparql_rows
+            .sparql_table
+            .rows()
             .iter()
-            .filter_map(|row| match row.get(varname) {
+            .filter_map(|row| match row.get(var_index) {
                 Some(SparqlValue::Entity(id)) => Some(id.to_string()),
                 _ => None,
             })
@@ -414,48 +420,61 @@ impl ListeriaList {
         }
     }
 
-    fn get_tmp_rows(&self) -> Result<HashMap<String, Vec<&HashMap<String, SparqlValue>>>> {
+    fn get_var_index(&self) -> Result<usize> {
         let varname = self.get_var_name()?;
-        let sparql_row_ids: HashSet<String> =
-            self.get_ids_from_sparql_rows()?.into_iter().collect();
-        let mut tmp_rows: HashMap<String, Vec<&HashMap<String, SparqlValue>>> = HashMap::new();
-        for sparql_row in &self.sparql_rows {
-            let id = match sparql_row.get(varname) {
-                Some(SparqlValue::Entity(id)) => id,
-                _ => continue,
-            };
-            if !sparql_row_ids.contains(id) {
-                continue;
-            }
-            tmp_rows.entry(id.to_owned()).or_default().push(sparql_row);
-        }
-        Ok(tmp_rows)
+        let var_index = self
+            .sparql_table
+            .get_var_index(varname)
+            .ok_or_else(|| anyhow!("Could not find SPARQL variable '{}' in results", varname))?;
+        Ok(var_index)
     }
 
     pub fn generate_results(&mut self) -> Result<()> {
         let mut tmp_results: FileVec<ResultRow> = FileVec::new();
         match self.params.one_row_per_item() {
             true => {
+                let var_index = self.get_var_index()?;
                 let sparql_row_ids: Vec<String> =
                     self.get_ids_from_sparql_rows()?.into_iter().collect(); // To preserve the original order
-                let tmp_rows = self.get_tmp_rows()?;
+                let mut id2rows: HashMap<String, Vec<usize>> = HashMap::new();
+                self.sparql_table
+                    .rows()
+                    .iter()
+                    .enumerate()
+                    .for_each(|(i, row)| {
+                        let id = match row.get(var_index) {
+                            Some(SparqlValue::Entity(id)) => id.to_string(),
+                            _ => return,
+                        };
+                        id2rows.entry(id).or_default().push(i);
+                    });
                 sparql_row_ids
                     .iter()
                     .filter_map(|id| {
-                        tmp_rows
-                            .get(id)
-                            .map(|rows| self.ecw.get_result_row(id, rows, self))
+                        let mut tmp_rows = SparqlTable::from_table(&self.sparql_table);
+                        let rows = self.sparql_table.rows();
+                        for i in id2rows.get(id)? {
+                            tmp_rows.push(rows[*i].to_owned());
+                        }
+                        self.ecw.get_result_row(id, &tmp_rows, self)
                     })
-                    .flatten()
+                    // .flatten()
                     .for_each(|row| tmp_results.push(row));
             }
             false => {
                 let varname = self.get_var_name()?;
-                self.sparql_rows
+                let var_index = self.sparql_table.get_var_index(varname).ok_or_else(|| {
+                    anyhow!("Could not find SPARQL variable '{}' in results", varname)
+                })?;
+                self.sparql_table
+                    .rows()
                     .iter()
                     .filter_map(|row| {
-                        if let Some(SparqlValue::Entity(id)) = row.get(varname) {
-                            if let Some(x) = self.ecw.get_result_row(id, &[&row], self) {
+                        if let Some(SparqlValue::Entity(id)) = row.get(var_index) {
+                            // let row = self.sparql_rows.annotate_row(row);
+                            let mut tmp_table = SparqlTable::from_table(&self.sparql_table);
+                            tmp_table.push(row.to_owned());
+                            if let Some(x) = self.ecw.get_result_row(id, &tmp_table, self) {
                                 return Some(x);
                             }
                         }

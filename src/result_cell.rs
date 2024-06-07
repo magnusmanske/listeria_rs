@@ -5,11 +5,10 @@ use crate::reference::Reference;
 use crate::result_cell_part::AutoDesc;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
+use crate::sparql_table::SparqlTable;
 use crate::template_params::ReferencesParameter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
-use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::Statement;
 
@@ -24,7 +23,7 @@ impl ResultCell {
     pub fn new(
         list: &ListeriaList,
         entity_id: &str,
-        sparql_rows: &[&HashMap<String, SparqlValue>],
+        sparql_table: &SparqlTable,
         col: &Column,
     ) -> Self {
         let mut ret = Self {
@@ -38,7 +37,7 @@ impl ResultCell {
             ColumnType::Qid => Self::ct_qid(&mut ret, entity_id),
             ColumnType::Item => Self::ct_item(&mut ret, entity_id),
             ColumnType::Description => Self::ct_description(&entity, list, &mut ret),
-            ColumnType::Field(varname) => Self::ct_field(varname, sparql_rows, &mut ret),
+            ColumnType::Field(varname) => Self::ct_field(varname, sparql_table, &mut ret),
             ColumnType::Property(property) => Self::ct_property(&entity, &mut ret, list, property),
             ColumnType::PropertyQualifier((p1, p2)) => Self::ct_pq(&entity, list, p1, &mut ret, p2),
             ColumnType::PropertyQualifierValue((p1, q1, p2)) => {
@@ -368,28 +367,17 @@ impl ResultCell {
         }
     }
 
-    fn ct_field(
-        varname: &str,
-        sparql_rows: &[&HashMap<String, SparqlValue>],
-        ret: &mut ResultCell,
-    ) {
-        let varname = varname.to_lowercase();
-        let mut found_varname: Option<String> = None;
-        for row in sparql_rows.iter() {
-            if found_varname.is_none() {
-                for x in row.keys() {
-                    if x.to_lowercase() == varname {
-                        found_varname = Some(x.to_string());
-                    }
-                }
-            }
-            if let Some(ref the_varname) = found_varname {
-                if let Some(x) = row.get(the_varname) {
-                    ret.parts.push(PartWithReference::new(
-                        ResultCellPart::from_sparql_value(x),
-                        None,
-                    ));
-                }
+    fn ct_field(varname: &str, sparql_table: &SparqlTable, ret: &mut ResultCell) {
+        let var_index = match sparql_table.get_var_index(varname) {
+            Some(i) => i,
+            None => return, // Nothing to do
+        };
+        for row in sparql_table.rows().iter() {
+            if let Some(x) = row.get(var_index) {
+                ret.parts.push(PartWithReference::new(
+                    ResultCellPart::from_sparql_value(x),
+                    None,
+                ));
             }
         }
     }

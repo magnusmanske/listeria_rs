@@ -21,6 +21,7 @@ pub mod result_cell;
 pub mod result_cell_part;
 pub mod result_row;
 pub mod sparql_results;
+pub mod sparql_table;
 pub mod template;
 pub mod template_params;
 pub mod wiki_apis;

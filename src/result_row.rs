@@ -2,12 +2,12 @@ use crate::column::ColumnType;
 use crate::listeria_list::*;
 use crate::result_cell::ResultCell;
 use crate::result_cell_part::ResultCellPart;
+use crate::sparql_table::SparqlTable;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-use wikimisc::sparql_value::SparqlValue;
+use std::collections::HashSet;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::{Snak, SnakDataType};
 
@@ -94,14 +94,10 @@ impl ResultRow {
         });
     }
 
-    pub fn from_columns(
-        &mut self,
-        list: &ListeriaList,
-        sparql_rows: &[&HashMap<String, SparqlValue>],
-    ) {
+    pub fn from_columns(&mut self, list: &ListeriaList, sparql_table: &SparqlTable) {
         self.cells.clear();
         for column in list.columns().iter() {
-            let x = ResultCell::new(list, &self.entity_id, sparql_rows, column);
+            let x = ResultCell::new(list, &self.entity_id, sparql_table, column);
             self.cells.push(x);
         }
     }
