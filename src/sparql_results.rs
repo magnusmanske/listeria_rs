@@ -94,6 +94,7 @@ impl SparqlResults {
             .form(&params)
             .send()
             .await?;
+
         let result = response.json::<SparqlApiResult>().await?;
         if result.bindings().is_empty() {
             return Err(anyhow!("No results from SPARQL query"));
