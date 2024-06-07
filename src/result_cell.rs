@@ -5,10 +5,10 @@ use crate::reference::Reference;
 use crate::result_cell_part::AutoDesc;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
-use crate::sparql_table::SparqlTable;
 use crate::template_params::ReferencesParameter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use wikimisc::sparql_table::SparqlTable;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::Statement;
 
