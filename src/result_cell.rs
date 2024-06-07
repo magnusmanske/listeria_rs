@@ -375,7 +375,7 @@ impl ResultCell {
         for row_id in 0..sparql_table.len() {
             if let Some(x) = sparql_table.get_row_col(row_id, var_index) {
                 ret.parts.push(PartWithReference::new(
-                    ResultCellPart::from_sparql_value(x),
+                    ResultCellPart::from_sparql_value(&x),
                     None,
                 ));
             }
