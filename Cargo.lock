@@ -1090,9 +1090,9 @@ dependencies = [
 
 [[package]]
 name = "httparse"
-version = "1.8.0"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d897f394bad6a705d5f4104762e116a75639e470d80901eed05a860a95cb1904"
+checksum = "8720bf4c5bfb5b6c350840c4cd14b787bf00ed51c148c857fbf7a6ddb7062764"
 
 [[package]]
 name = "hyper"
@@ -3117,7 +3117,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.0"
-source = "git+https://github.com/magnusmanske/wikimisc#b7998a04af52f39246382ca6722cee547e861177"
+source = "git+https://github.com/magnusmanske/wikimisc#ff6c9d5e4941217bf377ca5a96bfde2bc52cb9ef"
 dependencies = [
  "anyhow",
  "chrono",
