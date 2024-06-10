@@ -69,12 +69,14 @@ impl RendererWikitext {
         }
 
         // Rows
+        let mut current_sub_row = 0;
         let mut rows = vec![];
         for rownum in 0..list.results().len() {
             if let Some(row) = list.results().get(rownum) {
                 if row.section() == section_id {
-                    let wt = row.as_wikitext(list, rownum);
+                    let wt = row.as_wikitext(list, current_sub_row);
                     rows.push(wt);
+                    current_sub_row += 1;
                 }
             }
         }

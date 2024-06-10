@@ -21,18 +21,22 @@ async fn update_page(
     let mut page = ListeriaPage::new(config, mw_api, page_title.into()).await?;
     page.run().await.map_err(|e| anyhow!("{e:?}"))?;
 
-    println!("{:?}", page.as_wikitext());
-
-    Ok(
-        match page
-            .update_source_page()
-            .await
-            .map_err(|e| anyhow!("{e:?}"))?
-        {
-            true => format!("{page_title} edited"),
-            false => format!("{page_title} not edited"),
-        },
-    )
+    if false {
+        // FOR TESTING
+        println!("{}", page.as_wikitext()?[0]);
+        Ok("OK".to_string())
+    } else {
+        Ok(
+            match page
+                .update_source_page()
+                .await
+                .map_err(|e| anyhow!("{e:?}"))?
+            {
+                true => format!("{page_title} edited"),
+                false => format!("{page_title} not edited"),
+            },
+        )
+    }
 }
 
 #[tokio::main]
