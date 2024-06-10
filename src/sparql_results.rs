@@ -42,7 +42,7 @@ impl SparqlResults {
                     let result: SparqlApiResult = serde_json::from_str(json_text)?;
                     self.set_main_variable(&result);
 
-                    let mut ret = SparqlTable::from_api_result(result);
+                    let mut ret = SparqlTable::from_api_result(result)?;
                     ret.set_main_variable(self.sparql_main_variable());
                     return Ok(ret);
                 }
@@ -99,7 +99,7 @@ impl SparqlResults {
         let result = response.json::<SparqlApiResult>().await?;
         self.set_main_variable(&result);
 
-        let mut ret = SparqlTable::from_api_result(result);
+        let mut ret = SparqlTable::from_api_result(result)?;
         ret.set_main_variable(self.sparql_main_variable());
         Ok(ret)
     }

@@ -480,18 +480,19 @@ impl ListeriaList {
                     &language,
                 );
             }
-            self.results.set(row_id, row);
+            self.results.set(row_id, row)?;
         }
         Ok(())
     }
 
-    fn process_excess_files(&mut self) {
+    fn process_excess_files(&mut self) -> Result<()> {
         for row_id in 0..self.results.len() {
             if let Some(mut row) = self.results.get(row_id) {
                 row.remove_excess_files();
-                self.results.set(row_id, row);
+                self.results.set(row_id, row)?;
             }
         }
+        Ok(())
     }
 
     fn check_this_wiki_for_shadow_images(&self) -> bool {
@@ -556,7 +557,7 @@ impl ListeriaList {
                 None => continue,
             };
             row.remove_shadow_files(&self.shadow_files);
-            self.results.set(row_id, row);
+            self.results.set(row_id, row)?;
         }
 
         Ok(())
@@ -626,7 +627,7 @@ impl ListeriaList {
                 }
                 _ => false,
             });
-            self.results.set(row_id, row);
+            self.results.set(row_id, row)?;
         }
         self.results.retain(|r| r.keep());
         Ok(())
@@ -733,14 +734,15 @@ impl ListeriaList {
             // Paranoia
             return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
         }
-        (0..self.results.len()).for_each(|row_id| {
+        /* trunk-ignore(clippy/needless_range_loop) */
+        for row_id in 0..self.results.len() {
             let mut row = match self.results.get(row_id) {
                 Some(row) => row,
-                None => return,
+                None => continue,
             };
             row.set_sortkey(sortkeys[row_id].to_owned());
-            self.results.set(row_id, row);
-        });
+            self.results.set(row_id, row)?;
+        }
 
         self.results.sort_by(|a, b| a.compare_to(b, &datatype))?;
         if *self.params.sort_order() == SortOrder::Descending {
@@ -841,7 +843,7 @@ impl ListeriaList {
             .collect();
         self.profile("AFTER list::process_assign_sections 8");
 
-        self.assign_row_section_ids(section_names, name2id, misc_id);
+        self.assign_row_section_ids(section_names, name2id, misc_id)?;
         self.profile("AFTER list::process_assign_sections 9");
 
         Ok(())
@@ -852,7 +854,7 @@ impl ListeriaList {
         section_names: Vec<String>,
         name2id: HashMap<String, usize>,
         misc_id: usize,
-    ) {
+    ) -> Result<()> {
         for row_id in 0..self.results.len() {
             let mut row = match self.results.get(row_id) {
                 Some(row) => row,
@@ -860,15 +862,16 @@ impl ListeriaList {
             };
             let section_name = match section_names.get(row_id) {
                 Some(name) => name,
-                None => return,
+                None => continue,
             };
             let section_id = match name2id.get(section_name) {
                 Some(id) => *id,
                 None => misc_id,
             };
             row.set_section(section_id);
-            self.results.set(row_id, row);
+            self.results.set(row_id, row)?;
         }
+        Ok(())
     }
 
     async fn get_region_for_entity_id(&self, entity_id: &str) -> Option<String> {
@@ -950,7 +953,7 @@ impl ListeriaList {
                     }
                 }
             }
-            self.results.set(row_id, row);
+            self.results.set(row_id, row)?;
         }
 
         Ok(())
@@ -978,7 +981,7 @@ impl ListeriaList {
                     }
                 }
             }
-            self.results.set(row_id, row);
+            self.results.set(row_id, row)?;
         }
         if !items_to_load.is_empty() {
             items_to_load.sort_unstable();
@@ -1018,7 +1021,7 @@ impl ListeriaList {
                     }
                 }
             }
-            self.results.set(row_id, row);
+            self.results.set(row_id, row)?;
         }
         Ok(())
     }
@@ -1037,7 +1040,7 @@ impl ListeriaList {
         self.profile("AFTER list::process_results process_redlinks");
         self.process_remove_shadow_files().await?;
         self.profile("AFTER list::process_results process_remove_shadow_files");
-        self.process_excess_files();
+        self.process_excess_files()?;
         self.profile("AFTER list::process_results process_excess_files");
         self.process_reference_items().await?;
         self.profile("AFTER list::process_results process_reference_items");
@@ -1096,7 +1099,7 @@ impl ListeriaList {
                     }
                 }
             }
-            self.results.set(row_id, row);
+            self.results.set(row_id, row)?;
         }
         Ok(())
     }
