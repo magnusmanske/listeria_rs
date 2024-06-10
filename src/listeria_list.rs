@@ -91,7 +91,6 @@ impl ListeriaList {
         self.profile("AFTER list::process run_query");
         self.load_entities().await?;
         self.profile("AFTER list::process load_entities");
-        // TODO task::block_in_place(move || { or task::spawn_blocking(move || {
         self.generate_results()?;
         self.profile("AFTER list::process generate_results");
         self.process_results().await?;
@@ -346,17 +345,6 @@ impl ListeriaList {
             }
         }
 
-        // // Rows
-        // let ids_tmp: Vec<String> = self
-        //     .sparql_table
-        //     .rows()
-        //     .iter()
-        //     .filter_map(|row| match row.get(var_index) {
-        //         Some(SparqlValue::Entity(id)) => Some(id.to_string()),
-        //         _ => None,
-        //     })
-        //     .collect();
-
         // Can't sort/dedup, need to preserve original order!
         let mut ids: Vec<String> = vec![];
         ids_tmp.iter().for_each(|id| {
@@ -456,12 +444,15 @@ impl ListeriaList {
                 for row_id in 0..self.sparql_table.len() {
                     let row = match self.sparql_table.get(row_id) {
                         Some(row) => row,
-                        None => continue,
+                        None => {
+                            continue;
+                        }
                     };
-                    if let Some(SparqlValue::Entity(id)) = row.get(var_index) {
+                    let v = row.get(var_index).map(|v| v.to_owned());
+                    if let Some(Some(SparqlValue::Entity(id))) = v {
                         let mut tmp_table = SparqlTable::from_table(&self.sparql_table);
                         tmp_table.push(row.to_owned());
-                        if let Some(x) = self.ecw.get_result_row(id, &tmp_table, self) {
+                        if let Some(x) = self.ecw.get_result_row(&id, &tmp_table, self) {
                             tmp_results.push(x)
                         }
                     }

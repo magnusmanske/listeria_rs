@@ -337,7 +337,7 @@ mod tests {
         }
         let mut config = Configuration::new_from_json(j).await.unwrap();
         if path.to_str().unwrap() == "test_data/commons_sparql.fixture" {
-            // HACKISH
+            // HACKISH TODO FIXME
             let _ = config.wbapi_login("commons").await;
             // println!("LOGIN TO COMMONS: {}", result);
         }
