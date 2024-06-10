@@ -92,9 +92,9 @@ impl Reference {
         let has_md5 = list.reference_ids().get(&md5).is_some();
 
         if has_md5 {
-            format!("<ref name='ref_{}' />", &md5)
+            format!("<ref name=\"ref_{}\" />", &md5)
         } else {
-            format!("<ref name='ref_{}'>{}</ref>", &md5, &wikitext)
+            format!("<ref name=\"ref_{}\">{}</ref>", &md5, &wikitext)
         }
     }
 
