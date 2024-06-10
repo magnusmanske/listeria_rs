@@ -21,6 +21,8 @@ async fn update_page(
     let mut page = ListeriaPage::new(config, mw_api, page_title.into()).await?;
     page.run().await.map_err(|e| anyhow!("{e:?}"))?;
 
+    println!("{:?}", page.as_wikitext());
+
     Ok(
         match page
             .update_source_page()

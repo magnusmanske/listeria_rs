@@ -58,10 +58,6 @@ impl AutoDesc {
         }
     }
 
-    // pub fn entity(&self) -> &Entity {
-    //     &self.entity
-    // }
-
     pub fn set_description(&mut self, description: &str) {
         self.desc = Some(description.to_string());
     }
@@ -85,6 +81,7 @@ pub enum ResultCellPart {
     Text(String),
     SnakList(Vec<PartWithReference>), // PP and PQP
     AutoDesc(AutoDesc),
+    None,
 }
 
 impl ResultCellPart {
@@ -96,6 +93,7 @@ impl ResultCellPart {
             SparqlValue::Time(x) => ResultCellPart::Text(x.to_owned()),
             SparqlValue::Location(x) => ResultCellPart::Location((x.lat, x.lon, None)),
             SparqlValue::Literal(x) => ResultCellPart::Text(x.to_owned()),
+            SparqlValue::None => ResultCellPart::None,
         }
     }
 
@@ -289,6 +287,7 @@ impl ResultCellPart {
                     None => String::new(), // TODO check - manual description should have already been tried?
                 }
             }
+            ResultCellPart::None => String::new(),
         }
     }
 

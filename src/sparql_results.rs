@@ -39,9 +39,10 @@ impl SparqlResults {
         if self.simulate {
             match self.page_params.simulated_sparql_results() {
                 Some(json_text) => {
-                    let results: SparqlApiResult = serde_json::from_str(json_text)?;
-                    self.set_main_variable(&results);
-                    let mut ret: SparqlTable = results.bindings().to_owned().into();
+                    let result: SparqlApiResult = serde_json::from_str(json_text)?;
+                    self.set_main_variable(&result);
+
+                    let mut ret = SparqlTable::from_api_result(result);
                     ret.set_main_variable(self.sparql_main_variable());
                     return Ok(ret);
                 }
@@ -96,12 +97,9 @@ impl SparqlResults {
             .await?;
 
         let result = response.json::<SparqlApiResult>().await?;
-        if result.bindings().is_empty() {
-            return Err(anyhow!("No results from SPARQL query"));
-        }
         self.set_main_variable(&result);
 
-        let mut ret: SparqlTable = result.bindings().to_owned().into();
+        let mut ret = SparqlTable::from_api_result(result);
         ret.set_main_variable(self.sparql_main_variable());
         Ok(ret)
     }
