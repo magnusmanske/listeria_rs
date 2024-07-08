@@ -209,6 +209,7 @@ impl ResultRow {
                 wikimisc::wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikimisc::wikibase::value::Value::StringValue(s) => s.to_owned(),
                 wikimisc::wikibase::value::Value::Time(t) => t.time().to_owned(),
+                wikimisc::wikibase::value::Value::EntitySchema(v) => v.id().to_owned(),
             },
             None => "".to_string(),
         }
