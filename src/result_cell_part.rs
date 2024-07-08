@@ -72,6 +72,7 @@ impl AutoDesc {
 pub enum ResultCellPart {
     Number,
     Entity((String, bool)),            // ID, try_localize
+    EntitySchema(String),              // ID
     LocalLink((String, String, bool)), // Page, label, is_category
     Time(String),
     Location((f64, f64, Option<String>)),
@@ -140,6 +141,7 @@ impl ResultCellPart {
                 Value::MonoLingual(v) => {
                     ResultCellPart::Text(v.language().to_string() + ":" + v.text())
                 }
+                Value::EntitySchema(v) => ResultCellPart::EntitySchema(v.id().to_string()),
             },
             _ => ResultCellPart::Text("No/unknown value".to_string()),
         }
@@ -223,6 +225,9 @@ impl ResultCellPart {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
                 self.as_wikitext_entity(list, id, *try_localize, colnum)
+            }
+            ResultCellPart::EntitySchema(id) => {
+                format!("[[EntitySchema:{id}|{id}]]") // TODO use self.as_wikitext_entity ?
             }
             ResultCellPart::LocalLink((title, label, is_category)) => {
                 let start = if *is_category { "[[:" } else { "[[" };
