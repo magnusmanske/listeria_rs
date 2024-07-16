@@ -114,7 +114,7 @@ impl Reference {
 
             if self.title.is_some() && self.url.is_some() {
                 s += &format!(
-                    "{{{{cite web|url={}|title={}",
+                    "{{{{#invoke:cite web|url={}|title={}",
                     self.url.as_ref().unwrap_or(&String::new()),
                     self.title.as_ref().unwrap_or(&String::new())
                 );
