@@ -3,11 +3,14 @@ extern crate serde_json;
 
 use anyhow::{anyhow, Result};
 use listeria::configuration::Configuration;
+use listeria::entity_container_wrapper::EntityContainerWrapper;
 use listeria::listeria_page::ListeriaPage;
 use listeria::wiki_apis::WikiApis;
 use std::env;
+use std::fs::read_to_string;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use wikimisc::wikibase::EntityTrait;
 
 async fn update_page(
     config: Arc<Configuration>,
@@ -62,6 +65,43 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    if first_arg == "load_test_entities" {
+        let mut items = vec![];
+        for line in read_to_string("test_data/entities.tab").unwrap().lines() {
+            items.push(line.to_string())
+        }
+        // These two can be missing for some reason?
+        items.push("Q3".to_string());
+        items.push("Q4".to_string());
+
+        let mut config = Configuration::new_from_file("config.json").await.unwrap();
+        config.max_local_cached_entities = 1000000; // A lot
+        let config = Arc::new(config);
+        let mut ecw = EntityContainerWrapper::new(config.clone());
+        let api = wikimisc::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await?;
+        ecw.load_entities(&api, &items).await?;
+
+        let mut first = true;
+        for item in items {
+            let entity = match ecw.get_entity(&item) {
+                Some(e) => e,
+                None => continue,
+            };
+            if first {
+                println!("{{");
+                first = false;
+            } else {
+                println!(",");
+            }
+            print!(
+                "\"{item}\":{}",
+                serde_json::to_string(&entity.to_json()).unwrap()
+            );
+        }
+        println!("\n}}");
+        return Ok(());
+    }
+
     let wiki_server = first_arg;
     let page = args.get(2).ok_or_else(|| anyhow!("No page argument"))?;
 
@@ -76,4 +116,9 @@ async fn main() -> Result<()> {
 
 /*
 ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
+
+To update the test_entities.json file:
+cargo test -- --nocapture | grep entity_loaded | cut -f 1 | sort -u > test_data/entities.tab ; \
+cargo run --bin main -- load_test_entities > test_data/test_entities.json
+
 */

@@ -42,7 +42,7 @@ pub struct Configuration {
     pattern_string_end: String,
     max_mw_apis_per_wiki: Option<usize>,
     max_mw_apis_total: Option<usize>,
-    max_local_cached_entities: usize,
+    pub max_local_cached_entities: usize, // TODO FIXME
     max_concurrent_entry_queries: usize,
     api_timeout: u64,
     ms_delay_after_edit: Option<u64>,
