@@ -5,6 +5,8 @@ use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{anyhow, Result};
+use std::fs::File;
+use std::io::BufReader;
 use std::sync::Arc;
 use wikimisc::file_hash::FileHash;
 use wikimisc::mediawiki::api::Api;
@@ -32,12 +34,27 @@ impl std::fmt::Debug for EntityContainerWrapper {
 
 impl EntityContainerWrapper {
     pub fn new(config: Arc<Configuration>) -> Self {
-        Self {
+        let ret = Self {
             config: config.clone(),
             entities: config.create_entity_container(),
             max_local_cached_entities: config.max_local_cached_entities(),
             entity_file_cache: FileHash::new(),
+        };
+        // Pre-cache test entities if testing
+        if cfg!(test) {
+            // println!("Loading test entities from test_data/test_entities.json");
+            let file = File::open("test_data/test_entities.json")
+                .expect("Could not open file test_data/test_entities.json");
+            let reader = BufReader::new(file);
+            let test_items: serde_json::Value = serde_json::from_reader(reader)
+                .expect("Failed to parse JSON from test_data/test_entities.json");
+            for (_item, j) in test_items.as_object().unwrap() {
+                // let entity = Entity::new_from_json(j).unwrap();
+                ret.entities.set_entity_from_json(j).unwrap();
+            }
+            // println!("Loaded");
         }
+        ret
     }
 
     async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &[String]) -> Result<()> {
@@ -87,6 +104,9 @@ impl EntityContainerWrapper {
         if ids.is_empty() {
             return Ok(());
         }
+        if cfg!(test) {
+            println!("ATTENTION: Trying to load items {ids:?}");
+        }
 
         if ids.len() + self.len() > self.max_local_cached_entities {
             self.load_entities_into_entity_cache(api, &ids).await
@@ -99,6 +119,9 @@ impl EntityContainerWrapper {
     }
 
     pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
+        if cfg!(test) {
+            println!("{entity_id}\tentity_loaded");
+        }
         self.entities.get_entity(entity_id).or_else(|| {
             let json_string = self.entity_file_cache.get(entity_id)?;
             let json_value = serde_json::from_str(&json_string).ok()?;
@@ -256,6 +279,7 @@ mod tests {
     async fn test_entity_caching() {
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let mut ecw = EntityContainerWrapper::new(config);
+        ecw.entities.clear(); // Clear test cache
         let api = Api::new("https://www.wikidata.org/w/api.php")
             .await
             .unwrap();
