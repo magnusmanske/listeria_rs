@@ -92,7 +92,7 @@ impl RendererWikitext {
                     None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row),
                 })
                 .collect();
-            wt += &x.join("").trim();
+            wt += x.join("").trim();
         } else {
             wt += &rows.join("\n|-\n");
         }
@@ -110,7 +110,7 @@ impl RendererWikitext {
         match &list.header_template() {
             Some(t) => {
                 wt += "{{";
-                wt += &t;
+                wt += t;
                 wt += "}}\n";
             }
             None => {
@@ -120,14 +120,11 @@ impl RendererWikitext {
                         wt += " wd_can_edit";
                     }
                     wt += "'\n";
-                    list.columns()
-                        .iter()
-                        .enumerate()
-                        .for_each(|(_colnum, col)| {
-                            wt += "! ";
-                            wt += &col.label;
-                            wt += "\n";
-                        });
+                    list.columns().iter().for_each(|col| {
+                        wt += "! ";
+                        wt += &col.label;
+                        wt += "\n";
+                    });
                 }
             }
         }

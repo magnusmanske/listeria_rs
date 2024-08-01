@@ -350,7 +350,7 @@ mod tests {
             data.get("WIKITEXT").map(|s| s.to_string()),
             data.get("SPARQL_RESULTS").map(|s| s.to_string()),
             data.get("AUTODESC")
-                .map(|s| s.to_string().split('\n').map(|s| s.to_string()).collect()),
+                .map(|s| s.split('\n').map(|s| s.to_string()).collect()),
         );
         page.run().await.unwrap();
         let wt = page.as_wikitext().unwrap();

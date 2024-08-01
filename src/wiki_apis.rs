@@ -54,7 +54,7 @@ impl WikiApis {
 
         lock.get(wiki)
             .ok_or(anyhow!("Wiki not found: {wiki}"))
-            .map(|api| api.clone())
+            .cloned()
     }
 
     async fn wait_for_wiki_apis(&self, api: &&ApiLock) {

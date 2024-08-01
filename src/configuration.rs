@@ -66,82 +66,16 @@ impl Configuration {
             max_mw_apis_per_wiki: j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize),
             ..Default::default()
         };
+        ret.new_from_json_misc(&j);
+        ret.new_from_json_locations(&j);
+        ret.new_from_json_wikibase_apis(&j).await?;
+        ret.new_from_json_namespace_blocks(&j)?;
+        ret.new_from_json_start_end_tempate_mappings(&j).await?;
+        ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
+        Ok(ret)
+    }
 
-        ret.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);
-        ret.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
-        ret.default_language = j["default_language"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
-        ret.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
-        ret.max_sparql_simultaneous = j["max_sparql_simultaneous"].as_u64().unwrap_or(10);
-        ret.max_sparql_attempts = j["max_sparql_attempts"].as_u64().unwrap_or(5);
-        ret.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
-        ret.max_local_cached_entities =
-            j["max_local_cached_entities"].as_u64().unwrap_or(5000) as usize;
-        ret.max_concurrent_entry_queries =
-            j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
-        ret.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
-        ret.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
-        ret.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
-        ret.profiling = j["profiling"].as_bool().unwrap_or_default();
-        ret.pattern_string_start = j["pattern_string_start"]
-            .as_str()
-            .unwrap_or(r#"\{\{(Wikidata[ _]list[^\|]*|"#)
-            .to_string();
-        ret.pattern_string_end = j["pattern_string_start"]
-            .as_str()
-            .unwrap_or(r#"\{\{(Wikidata[ _]list[ _]end|"#)
-            .to_string();
-        if let Some(sic) = j["shadow_images_check"].as_array() {
-            ret.shadow_images_check = sic
-                .iter()
-                .map(|s| {
-                    s.as_str()
-                        .expect("shadow_images_check needs to be a string")
-                        .to_string()
-                })
-                .collect()
-        }
-        if let Some(lr) = j["location_regions"].as_array() {
-            ret.location_regions = lr
-                .iter()
-                .map(|s| {
-                    s.as_str()
-                        .expect("location_regions needs to be a string")
-                        .to_string()
-                })
-                .collect()
-        }
-        ret.oauth2_token = j["wiki_login"]["token"]
-            .as_str()
-            .unwrap_or_default()
-            .to_string();
-        if j["mysql"].is_object() {
-            ret.mysql = Some(j["mysql"].to_owned());
-        }
-
-        // valid WikiBase APIs
-        let oauth2_token = ret.oauth2_token.to_owned();
-        if let Some(o) = j["apis"].as_object() {
-            for (k, v) in o.iter() {
-                if let (name, Some(url)) = (k.as_str(), v.as_str()) {
-                    let mut api = Api::new(url).await?;
-                    api.set_oauth2(&oauth2_token);
-                    ret.wb_apis.insert(name.to_string(), Arc::new(api));
-                }
-            }
-        }
-
-        // Location template patterns
-        if let Some(o) = j["location_templates"].as_object() {
-            for (k, v) in o.iter() {
-                if let (k, Some(v)) = (k.as_str(), v.as_str()) {
-                    ret.location_templates.insert(k.to_string(), v.to_string());
-                }
-            }
-        }
-
+    fn new_from_json_namespace_blocks(&mut self, j: &Value) -> Result<()> {
         // Namespace blocks on wikis
         if let Some(o) = j["namespace_blocks"].as_object() {
             for (k, v) in o.iter() {
@@ -149,7 +83,7 @@ impl Configuration {
                 if let Some(s) = v.as_str() {
                     if s == "*" {
                         // All namespaces
-                        ret.namespace_blocks
+                        self.namespace_blocks
                             .insert(k.to_string(), NamespaceGroup::All);
                     } else {
                         return Err(anyhow!(
@@ -165,34 +99,12 @@ impl Configuration {
                         .filter_map(|v| v.as_u64())
                         .map(|x| x as i64)
                         .collect();
-                    ret.namespace_blocks
+                    self.namespace_blocks
                         .insert(k.to_string(), NamespaceGroup::List(nsids));
                 }
             }
         }
-
-        // Start/end template site/page mappings
-        let api = ret.get_default_wbapi()?;
-        let q_start = match j["template_start_q"].as_str() {
-            Some(q) => q.to_string(),
-            None => return Err(anyhow!("No template_start_q in config")),
-        };
-        let q_end = match j["template_end_q"].as_str() {
-            Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
-            None => return Err(anyhow!("No template_end_q in config")),
-        };
-        let entities = ret.create_entity_container();
-        entities
-            .load_entities(api, &vec![q_start.clone(), q_end.clone()])
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
-        ret.template_start_sites = ret.get_sitelink_mapping(&entities, &q_start)?;
-        ret.template_end_sites = ret.get_sitelink_mapping(&entities, &q_end)?;
-        ret.template_start_q = q_start;
-
-        ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
-
-        Ok(ret)
+        Ok(())
     }
 
     pub fn max_sparql_attempts(&self) -> u64 {
@@ -316,7 +228,7 @@ impl Configuration {
             Some(s) => s.to_owned(),
             None => self
                 .location_templates
-                .get(&"default".to_string())
+                .get("default")
                 .map(|s| s.to_owned())
                 .unwrap_or_default(),
         }
@@ -375,5 +287,110 @@ impl Configuration {
 
     pub fn pattern_string_end(&self) -> &str {
         &self.pattern_string_end
+    }
+
+    async fn new_from_json_start_end_tempate_mappings(&mut self, j: &Value) -> Result<()> {
+        let api = self.get_default_wbapi()?;
+        let q_start = match j["template_start_q"].as_str() {
+            Some(q) => q.to_string(),
+            None => return Err(anyhow!("No template_start_q in config")),
+        };
+        let q_end = match j["template_end_q"].as_str() {
+            Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
+            None => return Err(anyhow!("No template_end_q in config")),
+        };
+        let entities = self.create_entity_container();
+        entities
+            .load_entities(api, &vec![q_start.clone(), q_end.clone()])
+            .await
+            .map_err(|e| anyhow!("{e}"))?;
+        self.template_start_sites = self.get_sitelink_mapping(&entities, &q_start)?;
+        self.template_end_sites = self.get_sitelink_mapping(&entities, &q_end)?;
+        self.template_start_q = q_start;
+        Ok(())
+    }
+
+    async fn new_from_json_wikibase_apis(&mut self, j: &Value) -> Result<()> {
+        self.oauth2_token = j["wiki_login"]["token"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        if j["mysql"].is_object() {
+            self.mysql = Some(j["mysql"].to_owned());
+        }
+
+        let oauth2_token = self.oauth2_token.to_owned();
+        if let Some(o) = j["apis"].as_object() {
+            for (k, v) in o.iter() {
+                if let (name, Some(url)) = (k.as_str(), v.as_str()) {
+                    let mut api = Api::new(url).await?;
+                    api.set_oauth2(&oauth2_token);
+                    self.wb_apis.insert(name.to_string(), Arc::new(api));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn new_from_json_locations(&mut self, j: &Value) {
+        // Location regions
+        if let Some(lr) = j["location_regions"].as_array() {
+            self.location_regions = lr
+                .iter()
+                .map(|s| {
+                    s.as_str()
+                        .expect("location_regions needs to be a string")
+                        .to_string()
+                })
+                .collect()
+        }
+
+        // Location template patterns
+        if let Some(o) = j["location_templates"].as_object() {
+            for (k, v) in o.iter() {
+                if let (k, Some(v)) = (k.as_str(), v.as_str()) {
+                    self.location_templates.insert(k.to_string(), v.to_string());
+                }
+            }
+        }
+    }
+
+    fn new_from_json_misc(&mut self, j: &Value) {
+        self.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);
+        self.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
+        self.default_language = j["default_language"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        self.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
+        self.max_sparql_simultaneous = j["max_sparql_simultaneous"].as_u64().unwrap_or(10);
+        self.max_sparql_attempts = j["max_sparql_attempts"].as_u64().unwrap_or(5);
+        self.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
+        self.max_local_cached_entities =
+            j["max_local_cached_entities"].as_u64().unwrap_or(5000) as usize;
+        self.max_concurrent_entry_queries =
+            j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
+        self.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
+        self.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
+        self.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
+        self.profiling = j["profiling"].as_bool().unwrap_or_default();
+        self.pattern_string_start = j["pattern_string_start"]
+            .as_str()
+            .unwrap_or(r#"\{\{(Wikidata[ _]list[^\|]*|"#)
+            .to_string();
+        self.pattern_string_end = j["pattern_string_start"]
+            .as_str()
+            .unwrap_or(r#"\{\{(Wikidata[ _]list[ _]end|"#)
+            .to_string();
+        if let Some(sic) = j["shadow_images_check"].as_array() {
+            self.shadow_images_check = sic
+                .iter()
+                .map(|s| {
+                    s.as_str()
+                        .expect("shadow_images_check needs to be a string")
+                        .to_string()
+                })
+                .collect()
+        }
     }
 }
