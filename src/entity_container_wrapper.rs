@@ -214,6 +214,7 @@ impl EntityContainerWrapper {
     }
 
     pub fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
+        #[allow(clippy::collapsible_match)]
         match self.get_entity(prop) {
             /* trunk-ignore(clippy/collapsible_match) */
             Some(entity) => match entity {

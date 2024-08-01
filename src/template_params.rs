@@ -209,7 +209,7 @@ impl TemplateParams {
                 .params
                 .get("summary")
                 .map(|s| s.trim().to_uppercase()),
-            skip_table: template.params.get("skip_table").is_some(),
+            skip_table: template.params.contains_key("skip_table"),
             one_row_per_item: template
                 .params
                 .get("one_row_per_item")

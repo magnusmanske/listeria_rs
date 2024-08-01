@@ -225,10 +225,7 @@ impl ListeriaList {
     }
 
     pub fn local_page_exists(&self, page: &str) -> bool {
-        *self
-            .local_page_cache
-            .get(&page.to_string())
-            .unwrap_or(&false)
+        *self.local_page_cache.get(page).unwrap_or(&false)
     }
 
     fn first_letter_to_upper_case(&self, s1: &str) -> String {
@@ -735,6 +732,7 @@ impl ListeriaList {
             return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
         }
         /* trunk-ignore(clippy/needless_range_loop) */
+        #[allow(clippy::needless_range_loop)]
         for row_id in 0..self.results.len() {
             let mut row = match self.results.get(row_id) {
                 Some(row) => row,
