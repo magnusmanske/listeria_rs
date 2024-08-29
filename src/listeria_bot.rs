@@ -12,6 +12,7 @@ use mysql_async::prelude::*;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use sysinfo::System;
 use tokio::sync::Mutex;
 
 #[derive(Debug, Clone)]
@@ -78,6 +79,36 @@ impl ListeriaBot {
         &self.config
     }
 
+    fn print_sysinfo() {
+        if !sysinfo::IS_SUPPORTED_SYSTEM {
+            return;
+        }
+        let sys = System::new_all();
+        // println!("Uptime: {:?}", System::uptime());
+        println!(
+            "Memory: total {}, free {}, used {} MB",
+            sys.total_memory() / 1024,
+            sys.free_memory() / 1024,
+            sys.used_memory() / 1024
+        );
+        println!(
+            "Swap: total: {}, free {}, used:{} MB",
+            sys.total_swap() / 1024,
+            sys.free_swap() / 1024,
+            sys.used_swap() / 1024
+        );
+        println!(
+            "Processes: {}, CPUs: {}",
+            sys.processes().len(),
+            sys.cpus().len()
+        );
+        println!(
+            "CPU usage: {}%, Load average: {:?}",
+            sys.global_cpu_usage(),
+            System::load_average()
+        );
+    }
+
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
         let mut lock = self.bot_per_wiki.lock().await;
         if let Some(bot) = lock.get(wiki) {
@@ -130,6 +161,7 @@ impl ListeriaBot {
     /// Removed a pagestatus ID from the running list
     pub async fn release_running(&self, pagestatus_id: u64) {
         println!("Releasing {pagestatus_id}");
+        Self::print_sysinfo();
         self.running.lock().await.remove(&pagestatus_id);
     }
 
@@ -153,10 +185,10 @@ impl ListeriaBot {
         // Tries to find a "priority" page
         let sql = format!(
             "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
-            FROM pagestatus,wikis 
+            FROM pagestatus,wikis
             WHERE priority=1
             AND wikis.id=pagestatus.wiki
-            AND wikis.status='ACTIVE' 
+            AND wikis.status='ACTIVE'
             AND pagestatus.status NOT IN ({IGNORE_STATUS})
             AND pagestatus.id NOT IN ({ids})
             ORDER BY pagestatus.timestamp
@@ -173,9 +205,9 @@ impl ListeriaBot {
         // Get the oldest page
         let sql = format!(
             "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
-            FROM pagestatus,wikis 
+            FROM pagestatus,wikis
             WHERE pagestatus.wiki=wikis.id
-            AND wikis.status='ACTIVE' 
+            AND wikis.status='ACTIVE'
             AND pagestatus.status NOT IN ({IGNORE_STATUS})
             AND pagestatus.id NOT IN ({ids})
             ORDER BY pagestatus.timestamp
