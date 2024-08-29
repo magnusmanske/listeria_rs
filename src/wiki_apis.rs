@@ -16,7 +16,7 @@ use wikimisc::mediawiki::title::Title;
 use wikimisc::site_matrix::SiteMatrix;
 use wikimisc::wikibase::entity::*;
 
-const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
+pub const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
 
 #[derive(Debug, Clone)]
 pub struct WikiApis {
@@ -360,7 +360,7 @@ mod tests {
     use super::*;
 
     /* TESTING
-    ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
+    ssh magnus@tools-login.wmflabs.org -L 3308:tools.db.svc.wikimedia.cloud:3306 -N &
     ssh magnus@tools-login.wmflabs.org -L 3307:dewiki.web.db.svc.eqiad.wmflabs:3306 -N &
     */
 

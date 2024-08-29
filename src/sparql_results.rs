@@ -1,14 +1,13 @@
 use anyhow::{anyhow, Result};
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::Semaphore;
 use wikimisc::{mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable};
 
-use crate::page_params::PageParams;
+use crate::{page_params::PageParams, wiki_apis::LISTERIA_USER_AGENT};
 
 lazy_static! {
-    static ref SPARQL_REQUEST_COUNTER: Arc<Mutex<u64>> = Arc::new(Mutex::new(0));
+    static ref sparql_request_semaphore: Semaphore = Semaphore::new(3);
+    // TODO set from self.page_params.config().max_sparql_simultaneous()
 }
 
 #[derive(Debug, Clone)]
@@ -58,25 +57,8 @@ impl SparqlResults {
             Some(api) => api.clone(),
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
         };
-        loop {
-            if *SPARQL_REQUEST_COUNTER
-                .lock()
-                .expect("ListeriaList: Mutex is bad")
-                < self.page_params.config().max_sparql_simultaneous()
-            {
-                break;
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        }
-        *SPARQL_REQUEST_COUNTER
-            .lock()
-            .expect("ListeriaList: Mutex is bad") += 1;
-
-        let result = self.run_sparql_query_stream(&api, sparql).await;
-        *SPARQL_REQUEST_COUNTER
-            .lock()
-            .expect("ListeriaList: Mutex is bad") -= 1;
-        result
+        let _permit = sparql_request_semaphore.acquire().await?;
+        self.run_sparql_query_stream(&api, sparql).await
     }
 
     async fn run_sparql_query_stream(
@@ -84,17 +66,16 @@ impl SparqlResults {
         wb_api_sparql: &Api,
         sparql: &str,
     ) -> Result<SparqlTable> {
-        // TODO:
-        //     let max_sparql_attempts = self.page_params.config().max_sparql_attempts();
         let query_api_url = self.get_sparql_endpoint(wb_api_sparql);
         let params = [("query", sparql), ("format", "json")];
         let response = wb_api_sparql
             .client()
             .post(&query_api_url)
-            .header(reqwest::header::USER_AGENT, "ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23")
+            .header(reqwest::header::USER_AGENT, LISTERIA_USER_AGENT)
             .form(&params)
             .send()
             .await?;
+        // TODO .timeout(self.config.api_timeout())
 
         let result = response.json::<SparqlApiResult>().await?;
         self.set_main_variable(&result);
