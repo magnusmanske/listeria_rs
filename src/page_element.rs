@@ -29,19 +29,9 @@ impl PageElement {
                 Err(value) => return value,
             };
 
-        let remaining = if single_template {
-            String::from_utf8(text.as_bytes()[match_start.end()..].to_vec()).ok()?
-        } else {
-            if match_end.start() < match_start.end() {
-                return None;
-            }
-            String::from_utf8(text.as_bytes()[match_start.end()..match_end.start()].to_vec())
-                .ok()?
-        };
-        let template_start_end_bytes = match Self::get_template_end(remaining) {
-            Some(pos) => pos + match_start.end(),
-            None => return None,
-        };
+        let remaining =
+            Self::new_from_text_remaining(single_template, text, match_start, match_end)?;
+        let template_start_end_bytes = Self::get_template_end(remaining)? + match_start.end();
         let inside = if single_template {
             String::new()
         } else {
@@ -197,5 +187,23 @@ impl PageElement {
             None => (match_start, true), // No end template, could be tabbed data
         };
         Ok((match_start, match_end, single_template))
+    }
+
+    fn new_from_text_remaining(
+        single_template: bool,
+        text: &str,
+        match_start: regex::Match<'_>,
+        match_end: regex::Match<'_>,
+    ) -> Option<String> {
+        let remaining = if single_template {
+            String::from_utf8(text.as_bytes()[match_start.end()..].to_vec()).ok()?
+        } else {
+            if match_end.start() < match_start.end() {
+                return None;
+            }
+            String::from_utf8(text.as_bytes()[match_start.end()..match_end.start()].to_vec())
+                .ok()?
+        };
+        Some(remaining)
     }
 }

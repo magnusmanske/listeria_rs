@@ -726,6 +726,14 @@ impl ListeriaList {
             SortMode::None => return Ok(()),
         }
 
+        self.process_sort_results_finish(sortkeys, datatype)
+    }
+
+    fn process_sort_results_finish(
+        &mut self,
+        sortkeys: Vec<String>,
+        datatype: SnakDataType,
+    ) -> Result<()> {
         // Apply sortkeys
         if self.results.len() != sortkeys.len() {
             // Paranoia
@@ -1057,8 +1065,32 @@ impl ListeriaList {
     async fn fill_autodesc(&mut self) -> Result<()> {
         // Done in two different steps, otherwise get_autodesc_description() would borrow self when &mut self is already borrowed
         // TODO Maybe gather futures and run get_autodesc_description() in async/parallel?
+        let autodescs = self.fill_autodesc_gather_descriptions().await?;
+        self.fill_autodesc_set_descriptions(autodescs)?;
+        Ok(())
+    }
 
-        // Gather descriptions
+    fn fill_autodesc_set_descriptions(&mut self, autodescs: HashMap<String, String>) -> Result<()> {
+        for row_id in 0..self.results.len() {
+            let mut row = match self.results.get(row_id) {
+                Some(row) => row,
+                None => continue,
+            };
+            for cell in row.cells_mut() {
+                for part_with_reference in cell.parts_mut() {
+                    if let ResultCellPart::AutoDesc(ad) = &mut part_with_reference.part {
+                        if let Some(desc) = autodescs.get(ad.entity_id()) {
+                            ad.set_description(desc)
+                        }
+                    }
+                }
+            }
+            self.results.set(row_id, row)?;
+        }
+        Ok(())
+    }
+
+    async fn fill_autodesc_gather_descriptions(&mut self) -> Result<HashMap<String, String>> {
         let mut autodescs = HashMap::new();
         for row_id in 0..self.results.len() {
             let row = match self.results.get(row_id) {
@@ -1081,25 +1113,7 @@ impl ListeriaList {
                 }
             }
         }
-
-        // Set descriptions
-        for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
-            for cell in row.cells_mut() {
-                for part_with_reference in cell.parts_mut() {
-                    if let ResultCellPart::AutoDesc(ad) = &mut part_with_reference.part {
-                        if let Some(desc) = autodescs.get(ad.entity_id()) {
-                            ad.set_description(desc)
-                        }
-                    }
-                }
-            }
-            self.results.set(row_id, row)?;
-        }
-        Ok(())
+        Ok(autodescs)
     }
 
     pub fn get_links_type(&self) -> &LinksType {

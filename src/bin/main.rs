@@ -115,7 +115,7 @@ async fn main() -> Result<()> {
 }
 
 /*
-ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
+ssh magnus@login.toolforge.org -L 3308:tools-db:3306 -N &
 
 To update the test_entities.json file:
 cargo test -- --nocapture | grep entity_loaded | cut -f 1 | sort -u > test_data/entities.tab ; \
