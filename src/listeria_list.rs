@@ -16,16 +16,18 @@ use anyhow::{anyhow, Result};
 use chrono::DateTime;
 use chrono::Utc;
 use futures::future::join_all;
+use futures::StreamExt;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
-use wikimisc::file_vec::FileVec;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::{SnakDataType, Statement, StatementRank};
+
+const MAX_CONCURRENT_REDLINKS_REQUESTS: usize = 5;
 
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
@@ -35,7 +37,7 @@ pub struct ListeriaList {
     params: TemplateParams,
     sparql_table: SparqlTable, //Vec<HashMap<String, SparqlValue>>,
     ecw: EntityContainerWrapper,
-    results: FileVec<ResultRow>,
+    results: Vec<ResultRow>,
     shadow_files: HashSet<String>,
     local_page_cache: HashMap<String, bool>,
     section_id_to_name: HashMap<usize, String>,
@@ -58,7 +60,7 @@ impl ListeriaList {
             params: TemplateParams::new(),
             sparql_table: SparqlTable::new(),
             ecw: EntityContainerWrapper::new(page_params.config()),
-            results: FileVec::new(),
+            results: Vec::new(),
             shadow_files: HashSet::new(),
             local_page_cache: HashMap::new(),
             section_id_to_name: HashMap::new(),
@@ -103,7 +105,7 @@ impl ListeriaList {
         self.ecw.external_id_url(prop, id)
     }
 
-    pub fn results(&self) -> &FileVec<ResultRow> {
+    pub fn results(&self) -> &Vec<ResultRow> {
         &self.results
     }
 
@@ -172,7 +174,7 @@ impl ListeriaList {
         &self.language
     }
 
-    async fn cache_local_pages_exist(&mut self, pages: &[String]) {
+    async fn cache_local_pages_exist(&self, pages: &[String]) -> Vec<(String, bool)> {
         let params: HashMap<String, String> = [
             ("action", "query"),
             ("prop", ""),
@@ -184,7 +186,7 @@ impl ListeriaList {
 
         let result = match self.page_params.mw_api().get_query_api_json(&params).await {
             Ok(r) => r,
-            Err(_e) => return,
+            Err(_e) => return vec![],
         };
 
         let mut normalized = HashMap::new();
@@ -205,16 +207,19 @@ impl ListeriaList {
             }
         }
 
+        let mut ret = vec![];
         if let Some(obj) = result["query"]["pages"].as_object() {
             for (_k, v) in obj.iter() {
                 if let Some(title) = v["title"].as_str() {
                     if normalized.contains_key(title) {
                         let page_exists = v["missing"].as_str().is_none();
-                        self.local_page_cache.insert(title.to_string(), page_exists);
+                        ret.push((title.to_string(), page_exists));
+                        // self.local_page_cache.insert(title.to_string(), page_exists);
                     }
                 }
             }
         };
+        ret
     }
 
     pub fn local_page_exists(&self, page: &str) -> bool {
@@ -399,7 +404,7 @@ impl ListeriaList {
     }
 
     pub fn generate_results(&mut self) -> Result<()> {
-        let mut tmp_results: FileVec<ResultRow> = FileVec::new();
+        let mut tmp_results: Vec<ResultRow> = Vec::new();
         match self.params.one_row_per_item() {
             true => {
                 let var_index = self.get_var_index()?;
@@ -458,28 +463,28 @@ impl ListeriaList {
         let wiki = self.wiki().to_owned();
         let language = self.language().to_owned();
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
+            // let ecw = EntityContainerWrapper::new(self.page_params.config()); // TODO FIXME use "own" ecw or new one?
             for cell in row.cells_mut().iter_mut() {
                 ResultCell::localize_item_links_in_parts(
                     cell.parts_mut(),
-                    &self.ecw,
+                    &self.ecw, // &ecw,
                     &wiki,
                     &language,
                 );
             }
-            self.results.set(row_id, row)?;
+            // self.results.set(row_id, row)?;
         }
         Ok(())
     }
 
     fn process_excess_files(&mut self) -> Result<()> {
         for row_id in 0..self.results.len() {
-            if let Some(mut row) = self.results.get(row_id) {
+            if let Some(row) = self.results.get_mut(row_id) {
                 row.remove_excess_files();
-                self.results.set(row_id, row)?;
             }
         }
         Ok(())
@@ -542,12 +547,11 @@ impl ListeriaList {
 
         // Remove shadow files from data table
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
             row.remove_shadow_files(&self.shadow_files);
-            self.results.set(row_id, row)?;
         }
 
         Ok(())
@@ -604,7 +608,7 @@ impl ListeriaList {
         // Remove all rows with existing local page
         let wiki = self.page_params.wiki().to_string();
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
@@ -617,7 +621,6 @@ impl ListeriaList {
                 }
                 _ => false,
             });
-            self.results.set(row_id, row)?;
         }
         self.results.retain(|r| r.keep());
         Ok(())
@@ -665,8 +668,21 @@ impl ListeriaList {
         } else {
             50
         };
+
+        // for chunk in labels.chunks(labels_per_chunk) {
+        //     self.cache_local_pages_exist(chunk).await;
+        // }
+
+        let mut futures = vec![];
         for chunk in labels.chunks(labels_per_chunk) {
-            self.cache_local_pages_exist(chunk).await;
+            let future = self.cache_local_pages_exist(chunk);
+            futures.push(future);
+        }
+        let stream =
+            futures::stream::iter(futures).buffer_unordered(MAX_CONCURRENT_REDLINKS_REQUESTS);
+        let results = stream.collect::<Vec<_>>().await;
+        for (title, page_exists) in results.into_iter().flatten() {
+            self.local_page_cache.insert(title, page_exists);
         }
 
         Ok(())
@@ -674,7 +690,10 @@ impl ListeriaList {
 
     async fn process_sort_results(&mut self) -> Result<()> {
         let mut sortkeys: Vec<String> = vec![];
-        let mut datatype = SnakDataType::String; // Default
+        // Default
+        let mut datatype = SnakDataType::String;
+        // println!("Sorting by {:?}", self.params.sort());
+        self.profile("BEFORE process_sort_results SORTKEYS");
         match &self.params.sort() {
             SortMode::Label => {
                 self.load_row_entities().await?;
@@ -718,8 +737,11 @@ impl ListeriaList {
             }
             SortMode::None => return Ok(()),
         }
+        self.profile("AFTER process_sort_results SORTKEYS");
 
-        self.process_sort_results_finish(sortkeys, datatype)
+        let ret = self.process_sort_results_finish(sortkeys, datatype);
+        self.profile("AFTER process_sort_results_finish");
+        ret
     }
 
     fn process_sort_results_finish(
@@ -735,18 +757,23 @@ impl ListeriaList {
         /* trunk-ignore(clippy/needless_range_loop) */
         #[allow(clippy::needless_range_loop)]
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
             row.set_sortkey(sortkeys[row_id].to_owned());
-            self.results.set(row_id, row)?;
         }
 
-        self.results.sort_by(|a, b| a.compare_to(b, &datatype))?;
+        self.profile(&format!(
+            "BEFORE process_sort_results_finish sort of {} items",
+            self.results.len()
+        ));
+        self.results.sort_by(|a, b| a.compare_to(b, &datatype));
+        self.profile("AFTER process_sort_results_finish sort");
         if *self.params.sort_order() == SortOrder::Descending {
-            self.results.reverse()?;
+            self.results.reverse();
         }
+        self.profile("AFTER process_sort_results_finish reverse");
 
         Ok(())
     }
@@ -855,7 +882,7 @@ impl ListeriaList {
         misc_id: usize,
     ) -> Result<()> {
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
@@ -868,7 +895,6 @@ impl ListeriaList {
                 None => misc_id,
             };
             row.set_section(section_id);
-            self.results.set(row_id, row)?;
         }
         Ok(())
     }
@@ -937,7 +963,7 @@ impl ListeriaList {
         }
 
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
@@ -952,7 +978,6 @@ impl ListeriaList {
                     }
                 }
             }
-            self.results.set(row_id, row)?;
         }
 
         Ok(())
@@ -961,7 +986,7 @@ impl ListeriaList {
     async fn process_reference_items(&mut self) -> Result<()> {
         let mut items_to_load: Vec<String> = vec![];
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
@@ -980,7 +1005,6 @@ impl ListeriaList {
                     }
                 }
             }
-            self.results.set(row_id, row)?;
         }
         if !items_to_load.is_empty() {
             items_to_load.sort_unstable();
@@ -997,7 +1021,7 @@ impl ListeriaList {
         // Set the is_category flag
         let mw_api = self.mw_api();
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
@@ -1019,7 +1043,6 @@ impl ListeriaList {
                     }
                 }
             }
-            self.results.set(row_id, row)?;
         }
         Ok(())
     }
@@ -1064,7 +1087,7 @@ impl ListeriaList {
 
     fn fill_autodesc_set_descriptions(&mut self, autodescs: HashMap<String, String>) -> Result<()> {
         for row_id in 0..self.results.len() {
-            let mut row = match self.results.get(row_id) {
+            let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
@@ -1077,7 +1100,6 @@ impl ListeriaList {
                     }
                 }
             }
-            self.results.set(row_id, row)?;
         }
         Ok(())
     }

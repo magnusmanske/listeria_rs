@@ -215,7 +215,7 @@ impl ResultRow {
         }
     }
 
-    fn compare_entiry_ids(&self, other: &ResultRow) -> Ordering {
+    fn compare_entity_ids(&self, other: &ResultRow) -> Ordering {
         let id1 = self.entity_id[1..]
             .parse::<usize>()
             .ok()
@@ -235,14 +235,14 @@ impl ResultRow {
                 let va = self.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
                 let vb = other.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
                 if va == 0 && vb == 0 {
-                    self.compare_entiry_ids(other)
+                    self.compare_entity_ids(other)
                 } else {
                     va.partial_cmp(&vb).unwrap_or(Ordering::Equal)
                 }
             }
             _ => {
                 if self.sortkey == other.sortkey {
-                    self.compare_entiry_ids(other)
+                    self.compare_entity_ids(other)
                 } else {
                     self.sortkey
                         .partial_cmp(&other.sortkey)

@@ -9,7 +9,7 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use wikimisc::toolforge_app::ToolforgeApp;
 
-const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 120;
+const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 240;
 const DEFAULT_CONFIG_FILE: &str = "/data/project/listeria/listeria_rs/config.json";
 
 /*
