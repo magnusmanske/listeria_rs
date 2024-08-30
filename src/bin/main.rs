@@ -9,7 +9,6 @@ use listeria::wiki_apis::WikiApis;
 use std::env;
 use std::fs::read_to_string;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use wikimisc::wikibase::EntityTrait;
 
 async fn update_page(
@@ -20,7 +19,7 @@ async fn update_page(
     let mut mw_api = wikimisc::mediawiki::api::Api::new(api_url).await?;
     mw_api.set_oauth2(config.oauth2_token());
 
-    let mw_api = Arc::new(RwLock::new(mw_api));
+    let mw_api = Arc::new(mw_api);
     let mut page = ListeriaPage::new(config, mw_api, page_title.into()).await?;
     page.run().await.map_err(|e| anyhow!("{e:?}"))?;
 

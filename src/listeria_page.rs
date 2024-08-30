@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::{
     configuration::Configuration, page_element::PageElement, page_params::PageParams,
     render_wikitext::RendererWikitext, renderer::Renderer, wiki_page_result::WikiPageResult,
-    ApiLock,
+    ApiArc,
 };
 
 /* TODO
@@ -27,7 +27,7 @@ pub struct ListeriaPage {
 }
 
 impl ListeriaPage {
-    pub async fn new(config: Arc<Configuration>, mw_api: ApiLock, page: String) -> Result<Self> {
+    pub async fn new(config: Arc<Configuration>, mw_api: ApiArc, page: String) -> Result<Self> {
         let page_params = PageParams::new(config, mw_api, page).await?;
         let page_params = Arc::new(page_params);
         Ok(Self {
@@ -70,9 +70,8 @@ impl ListeriaPage {
     }
 
     pub async fn check_namespace(&self) -> Result<()> {
-        let api = self.page_params.mw_api().read().await;
-        let title = wikimisc::mediawiki::title::Title::new_from_full(self.page_params.page(), &api);
-        drop(api);
+        let api = self.page_params.mw_api();
+        let title = wikimisc::mediawiki::title::Title::new_from_full(self.page_params.page(), api);
         if self
             .page_params
             .config()
@@ -146,8 +145,6 @@ impl ListeriaPage {
         let result = self
             .page_params
             .mw_api()
-            .read()
-            .await
             .post_query_api_json(&params)
             .await
             .map_err(|e| self.fail(&e.to_string()))?;
@@ -200,7 +197,8 @@ impl ListeriaPage {
     }
 
     async fn save_wikitext_to_page(&self, title: &str, wikitext: &str) -> Result<()> {
-        let mut api = self.page_params.mw_api().write().await;
+        let api = self.page_params.mw_api();
+        let mut api = (**api).clone();
         let token = api.get_edit_token().await?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
@@ -269,8 +267,6 @@ impl ListeriaPage {
         let _ = self
             .page_params
             .mw_api()
-            .write()
-            .await
             .get_query_api_json(&params)
             .await?;
         Ok(())
@@ -325,7 +321,7 @@ mod tests {
         let mw_api = wikimisc::mediawiki::api::Api::new(&data["API"])
             .await
             .unwrap();
-        let mw_api = Arc::new(RwLock::new(mw_api));
+        let mw_api = Arc::new(mw_api);
 
         let file = std::fs::File::open("config.json").unwrap();
         let reader = BufReader::new(file);
@@ -575,7 +571,7 @@ mod tests {
         let mw_api = wikimisc::mediawiki::api::Api::new("https://en.wikipedia.org/w/api.php")
             .await
             .unwrap();
-        let mw_api = Arc::new(RwLock::new(mw_api));
+        let mw_api = Arc::new(mw_api);
         let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
         let mut page = ListeriaPage::new(
             config,

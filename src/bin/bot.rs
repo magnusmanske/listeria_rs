@@ -4,8 +4,9 @@ extern crate serde_json;
 use anyhow::Result;
 use listeria::listeria_bot::ListeriaBot;
 use std::env;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::Semaphore;
 use wikimisc::toolforge_app::ToolforgeApp;
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 120;
@@ -30,7 +31,8 @@ async fn run_singles(config_file: &str) -> Result<()> {
     let _ = bot.reset_running().await;
     let _ = bot.clear_deleted().await;
     let bot = Arc::new(bot);
-    let bots_running = Arc::new(Mutex::new(0));
+    static THREADS_SEMAPHORE: Semaphore = Semaphore::const_new(0);
+    THREADS_SEMAPHORE.add_permits(max_threads);
     let last_activity = ToolforgeApp::seppuku(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
     loop {
         let page = match bot.prepare_next_single_page().await {
@@ -40,15 +42,13 @@ async fn run_singles(config_file: &str) -> Result<()> {
                 continue;
             }
         };
-        while *bots_running.lock().expect("bots_rinning lock poisoned") >= max_threads {
-            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        }
-        *bots_running.lock().expect("bots_rinning lock poisoned") += 1;
+
+        let permit = THREADS_SEMAPHORE.acquire().await?;
         println!(
-            "Starting new bot, {} running",
-            *bots_running.lock().expect("bots_rinning lock poisoned")
+            "Starting new bot, {} running, {} available",
+            max_threads - THREADS_SEMAPHORE.available_permits(),
+            THREADS_SEMAPHORE.available_permits()
         );
-        let bots_running = bots_running.clone();
         let bot = bot.clone();
         *last_activity.lock().expect("last_activity lock poisoned") = Instant::now();
         tokio::spawn(async move {
@@ -61,7 +61,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
             let diff = (end_time - start_time).as_secs();
             let _ = bot.set_runtime(pagestatus_id, diff).await;
             bot.release_running(pagestatus_id).await;
-            *bots_running.lock().expect("bots_rinning lock poisoned") -= 1;
+            drop(permit);
         });
     }
 }

@@ -1,4 +1,4 @@
-use crate::{configuration::Configuration, ApiLock};
+use crate::{configuration::Configuration, ApiArc};
 use anyhow::Result;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
@@ -8,7 +8,7 @@ pub struct PageParams {
     language: String,
     wiki: String,
     page: String,
-    mw_api: ApiLock,
+    mw_api: ApiArc,
     wb_api: Arc<Api>,
     simulate: bool,
     simulated_text: Option<String>,
@@ -19,8 +19,8 @@ pub struct PageParams {
 }
 
 impl PageParams {
-    pub async fn new(config: Arc<Configuration>, mw_api: ApiLock, page: String) -> Result<Self> {
-        let api = mw_api.read().await;
+    pub async fn new(config: Arc<Configuration>, mw_api: ApiArc, page: String) -> Result<Self> {
+        let api = mw_api.clone();
         let ret = Self {
             wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
             page,
@@ -64,7 +64,7 @@ impl PageParams {
         self.config.clone()
     }
 
-    pub fn mw_api(&self) -> &ApiLock {
+    pub fn mw_api(&self) -> &ApiArc {
         &self.mw_api
     }
 

@@ -182,14 +182,7 @@ impl ListeriaList {
         .map(|x| (x.0.to_string(), x.1.to_string()))
         .collect();
 
-        let result = match self
-            .page_params
-            .mw_api()
-            .read()
-            .await
-            .get_query_api_json(&params)
-            .await
-        {
+        let result = match self.page_params.mw_api().get_query_api_json(&params).await {
             Ok(r) => r,
             Err(_e) => return,
         };
@@ -390,7 +383,7 @@ impl ListeriaList {
             e.id(),
             self.language
         );
-        let api = self.page_params.mw_api().read().await;
+        let api = self.page_params.mw_api();
         let body = api.query_raw(&url, &api.no_params(), "GET").await?;
         let json: Value = serde_json::from_str(&body)?;
         match json["result"].as_str() {
@@ -507,7 +500,7 @@ impl ListeriaList {
         let param_list: Vec<HashMap<String, String>> =
             self.get_param_list_for_files(&files_to_check);
         let page_params = self.page_params.clone();
-        let api_read = page_params.mw_api().read().await;
+        let api_read = page_params.mw_api();
 
         let mut futures = vec![];
         for params in &param_list {
@@ -667,7 +660,7 @@ impl ListeriaList {
         labels.sort();
         labels.dedup();
         // TODO in parallel
-        let labels_per_chunk = if self.page_params.mw_api().read().await.user().is_bot() {
+        let labels_per_chunk = if self.page_params.mw_api().user().is_bot() {
             500
         } else {
             50
@@ -1003,7 +996,6 @@ impl ListeriaList {
     async fn fix_local_links(&mut self) -> Result<()> {
         // Set the is_category flag
         let mw_api = self.mw_api();
-        let mw_api = mw_api.read().await;
         for row_id in 0..self.results.len() {
             let mut row = match self.results.get(row_id) {
                 Some(row) => row,
@@ -1344,7 +1336,7 @@ impl ListeriaList {
         &self.params
     }
 
-    pub fn mw_api(&self) -> crate::ApiLock {
+    pub fn mw_api(&self) -> crate::ApiArc {
         self.page_params.mw_api().clone()
     }
 }
