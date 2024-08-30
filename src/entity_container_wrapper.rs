@@ -8,7 +8,7 @@ use anyhow::{anyhow, Result};
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
-use wikimisc::file_hash::FileHash;
+// use wikimisc::file_hash::FileHash;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
 use wikimisc::wikibase::entity::*;
@@ -21,7 +21,7 @@ pub struct EntityContainerWrapper {
     config: Arc<Configuration>,
     entities: EntityContainer,
     max_local_cached_entities: usize,
-    entity_file_cache: FileHash<String, String>,
+    // entity_file_cache: FileHash<String, String>,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
@@ -38,7 +38,7 @@ impl EntityContainerWrapper {
             config: config.clone(),
             entities: config.create_entity_container(),
             max_local_cached_entities: config.max_local_cached_entities(),
-            entity_file_cache: FileHash::new(),
+            // entity_file_cache: FileHash::new(),
         };
         // Pre-cache test entities if testing
         if cfg!(test) {
@@ -57,30 +57,30 @@ impl EntityContainerWrapper {
         ret
     }
 
-    async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &[String]) -> Result<()> {
-        let chunks = ids.chunks(self.max_local_cached_entities);
-        for chunk in chunks {
-            let entities = self.config.create_entity_container();
-            if let Err(e) = entities.load_entities(api, &chunk.into()).await {
-                return Err(anyhow!("Error loading entities: {e}"));
-            }
-            for entity_id in chunk {
-                if let Some(entity) = entities.get_entity(entity_id) {
-                    let json = entity.to_json();
-                    self.entity_file_cache
-                        .insert(entity_id, &json.to_string())?;
-                }
-            }
-        }
-        Ok(())
-    }
+    // async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &[String]) -> Result<()> {
+    //     let chunks = ids.chunks(self.max_local_cached_entities);
+    //     for chunk in chunks {
+    //         let entities = self.config.create_entity_container();
+    //         if let Err(e) = entities.load_entities(api, &chunk.into()).await {
+    //             return Err(anyhow!("Error loading entities: {e}"));
+    //         }
+    //         for entity_id in chunk {
+    //             if let Some(entity) = entities.get_entity(entity_id) {
+    //                 let json = entity.to_json();
+    //                 self.entity_file_cache
+    //                     .insert(entity_id, &json.to_string())?;
+    //             }
+    //         }
+    //     }
+    //     Ok(())
+    // }
 
     /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times
     fn filter_ids(&self, ids: &[String]) -> Result<Vec<String>> {
         let ids: Vec<String> = ids
             .iter()
             .filter(|id| !self.entities.has_entity(id.as_str()))
-            .filter(|id| !self.entity_file_cache.contains(id.to_owned()))
+            // .filter(|id| !self.entity_file_cache.contains(id.to_owned()))
             .map(|id| id.to_owned())
             .collect();
         let ids = self
@@ -91,11 +91,11 @@ impl EntityContainerWrapper {
     }
 
     pub fn len(&self) -> usize {
-        self.entities.len() + self.entity_file_cache.len()
+        self.entities.len() //+ self.entity_file_cache.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entities.len() == 0 && self.entity_file_cache.is_empty()
+        self.entities.len() == 0 //&& self.entity_file_cache.is_empty()
     }
 
     /// Loads the entities for the given IDs
@@ -108,25 +108,26 @@ impl EntityContainerWrapper {
             println!("ATTENTION: Trying to load items {ids:?}");
         }
 
-        if ids.len() + self.len() > self.max_local_cached_entities {
-            self.load_entities_into_entity_cache(api, &ids).await
-        } else {
-            match self.entities.load_entities(api, &ids).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(anyhow!("Error loading entities: {e}")),
-            }
+        // if ids.len() + self.len() > self.max_local_cached_entities {
+        //     self.load_entities_into_entity_cache(api, &ids).await
+        // } else {
+        match self.entities.load_entities(api, &ids).await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(anyhow!("Error loading entities: {e}")),
         }
+        // }
     }
 
     pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
         if cfg!(test) {
             println!("{entity_id}\tentity_loaded");
         }
-        self.entities.get_entity(entity_id).or_else(|| {
-            let json_string = self.entity_file_cache.get(entity_id)?;
-            let json_value = serde_json::from_str(&json_string).ok()?;
-            Entity::new_from_json(&json_value).ok()
-        })
+        self.entities.get_entity(entity_id)
+        // .or_else(|| {
+        //     let json_string = self.entity_file_cache.get(entity_id)?;
+        //     let json_value = serde_json::from_str(&json_string).ok()?;
+        //     Entity::new_from_json(&json_value).ok()
+        // })
     }
 
     pub fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
