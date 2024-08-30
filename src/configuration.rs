@@ -42,7 +42,7 @@ pub struct Configuration {
     pattern_string_end: String,
     max_mw_apis_per_wiki: Option<usize>,
     max_mw_apis_total: Option<usize>,
-    pub max_local_cached_entities: usize, // TODO FIXME
+    max_local_cached_entities: usize,
     max_concurrent_entry_queries: usize,
     api_timeout: u64,
     ms_delay_after_edit: Option<u64>,
@@ -59,6 +59,10 @@ impl Configuration {
         let reader = BufReader::new(file);
         let j = serde_json::from_reader(reader)?;
         Self::new_from_json(j).await
+    }
+
+    pub fn set_max_local_cached_entities(&mut self, max_local_cached_entities: usize) {
+        self.max_local_cached_entities = max_local_cached_entities;
     }
 
     pub async fn new_from_json(j: Value) -> Result<Self> {
