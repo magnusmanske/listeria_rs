@@ -3,7 +3,7 @@ use crate::listeria_page::ListeriaPage;
 use crate::page_to_process::PageToProcess;
 use crate::wiki_apis::WikiApis;
 use crate::wiki_page_result::WikiPageResult;
-use crate::ApiLock;
+use crate::ApiArc;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use log::info;
@@ -18,12 +18,12 @@ use tokio::sync::Mutex;
 #[derive(Debug, Clone)]
 struct ListeriaBotWiki {
     wiki: String,
-    api: ApiLock,
+    api: ApiArc,
     config: Arc<Configuration>,
 }
 
 impl ListeriaBotWiki {
-    pub fn new(wiki: &str, api: ApiLock, config: Arc<Configuration>) -> Self {
+    pub fn new(wiki: &str, api: ApiArc, config: Arc<Configuration>) -> Self {
         println!("Creating bot for {}", wiki);
         Self {
             wiki: wiki.to_string(),
@@ -112,12 +112,15 @@ impl ListeriaBot {
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
         let mut lock = self.bot_per_wiki.lock().await;
         if let Some(bot) = lock.get(wiki) {
-            return Some(bot.to_owned());
+            let new_bot = bot.to_owned();
+            drop(lock);
+            return Some(new_bot);
         }
         info!("Creating bot for {wiki}");
         let mw_api = self.wiki_apis.get_or_create_wiki_api(wiki).await.ok()?;
         let bot = ListeriaBotWiki::new(wiki, mw_api, self.config.clone());
         lock.insert(wiki.to_string(), bot.clone());
+        drop(lock);
         info!("Created bot for {wiki}");
         Some(bot)
     }

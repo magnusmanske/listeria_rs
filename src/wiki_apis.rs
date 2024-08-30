@@ -1,28 +1,25 @@
 use crate::configuration::Configuration;
 use crate::database_pool::DatabasePool;
-use crate::ApiLock;
+use crate::ApiArc;
 use anyhow::{anyhow, Result};
-use log::{info, warn};
+use log::info;
 use mysql_async::{from_row, prelude::*, Conn};
 use mysql_async::{Opts, OptsBuilder};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use tokio::sync::RwLock;
 use tokio::time::sleep;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::mediawiki::title::Title;
 use wikimisc::site_matrix::SiteMatrix;
 use wikimisc::wikibase::entity::*;
 
-pub const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
-
 #[derive(Debug, Clone)]
 pub struct WikiApis {
     config: Arc<Configuration>,
     site_matrix: Arc<SiteMatrix>,
-    apis: Arc<Mutex<HashMap<String, ApiLock>>>,
+    apis: Arc<Mutex<HashMap<String, ApiArc>>>,
     pool: DatabasePool,
 }
 
@@ -39,15 +36,21 @@ impl WikiApis {
     }
 
     /// Returns a MediaWiki API instance for the given wiki. Creates a new one and caches it, if required.
-    pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
+    pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiArc> {
         self.wait_for_max_mw_apis_total().await;
 
-        if let Some(api) = &self.apis.lock().await.get(wiki) {
-            self.wait_for_wiki_apis(api).await;
-            return Ok((*api).clone());
+        // TODO this should use lock.entry()..or_insert_with() but the creation method is async
+
+        // Check for existing API and return that if it exists
+        let mut lock = self.apis.lock().await;
+        if let Some(api) = lock.get(wiki) {
+            let api = api.clone();
+            drop(lock);
+            self.wait_for_wiki_apis(&api).await;
+            return Ok(api.clone());
         }
 
-        let mut lock = self.apis.lock().await;
+        // Create a new API
         let mw_api = self.create_wiki_api(wiki).await?;
         lock.insert(wiki.to_owned(), mw_api);
         info!(target: "lock", "WikiApis::get_or_create_wiki_api: new wiki {wiki} created");
@@ -57,13 +60,14 @@ impl WikiApis {
             .cloned()
     }
 
-    async fn wait_for_wiki_apis(&self, api: &&ApiLock) {
+    async fn wait_for_wiki_apis(&self, api: &ApiArc) {
         // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
         // See https://phabricator.wikimedia.org/T356160
         if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
             while Arc::strong_count(api) >= *max {
                 sleep(Duration::from_millis(100)).await;
-                warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
+                // warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
+                println!("WikiApis::wait_for_wiki_apis: sleeping because per-wiki limit {max} was reached");
             }
         }
     }
@@ -82,13 +86,14 @@ impl WikiApis {
                     break;
                 }
                 sleep(Duration::from_millis(100)).await;
-                warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
+                // warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
+                println!("WikiApis::wait_for_max_mw_apis_total: sleeping because total limit {max} was reached");
             }
         }
     }
 
     /// Creates a MediaWiki API instance for the given wiki
-    async fn create_wiki_api(&self, wiki: &str) -> Result<ApiLock> {
+    async fn create_wiki_api(&self, wiki: &str) -> Result<ApiArc> {
         let api_url = format!(
             "{}/w/api.php",
             self.site_matrix.get_server_url_for_wiki(wiki)?
@@ -101,17 +106,17 @@ impl WikiApis {
         &self,
         api_url: &str,
         oauth2_token: &str,
-    ) -> Result<ApiLock> {
+    ) -> Result<ApiArc> {
         let builder = wikimisc::mediawiki::reqwest::Client::builder()
             .timeout(self.config.api_timeout())
-            .user_agent(LISTERIA_USER_AGENT)
+            .user_agent(crate::LISTERIA_USER_AGENT)
             .gzip(true)
             .deflate(true)
             .brotli(true);
         let mut mw_api = Api::new_from_builder(api_url, builder).await?;
         mw_api.set_oauth2(oauth2_token);
         mw_api.set_edit_delay(self.config.ms_delay_after_edit()); // Slow down editing a bit
-        let mw_api = Arc::new(RwLock::new(mw_api));
+        let mw_api = Arc::new(mw_api);
         Ok(mw_api)
     }
 

@@ -31,7 +31,8 @@ use crate::listeria_page::ListeriaPage;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use wikimisc::mediawiki::api::Api;
 
-type ApiLock = Arc<RwLock<Api>>;
+type ApiArc = Arc<Api>;
+
+pub const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";

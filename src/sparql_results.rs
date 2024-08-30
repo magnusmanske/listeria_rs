@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Semaphore;
 use wikimisc::{mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable};
 
-use crate::{page_params::PageParams, wiki_apis::LISTERIA_USER_AGENT};
+use crate::page_params::PageParams;
 
 lazy_static! {
     static ref sparql_request_semaphore: Semaphore = Semaphore::new(3);
@@ -71,7 +71,7 @@ impl SparqlResults {
         let response = wb_api_sparql
             .client()
             .post(&query_api_url)
-            .header(reqwest::header::USER_AGENT, LISTERIA_USER_AGENT)
+            .header(reqwest::header::USER_AGENT, crate::LISTERIA_USER_AGENT)
             .form(&params)
             .send()
             .await?;
@@ -104,7 +104,7 @@ impl SparqlResults {
             // No template
             return Ok(());
         }
-        let api = self.page_params.mw_api().read().await;
+        let api = self.page_params.mw_api();
         let params: HashMap<String, String> = vec![
             ("action", "expandtemplates"),
             ("title", self.page_params.page()),
