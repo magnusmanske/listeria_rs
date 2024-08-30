@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         items.push("Q4".to_string());
 
         let mut config = Configuration::new_from_file("config.json").await.unwrap();
-        config.max_local_cached_entities = 1000000; // A lot
+        config.set_max_local_cached_entities(1000000); // A lot
         let config = Arc::new(config);
         let mut ecw = EntityContainerWrapper::new(config.clone());
         let api = wikimisc::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await?;
