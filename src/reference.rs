@@ -100,8 +100,10 @@ impl Reference {
 
     /// Returns the wikitext representation of the reference
     fn as_wikitext(&self, list: &ListeriaList) -> String {
-        loop {
+        let mut iterations_left: usize = 100;
+        while iterations_left > 0 {
             // TODO FIXME check that this loop does not run forever
+            iterations_left -= 1;
             match self.wikitext_cache.read() {
                 Ok(cache) => {
                     if let Some(s) = &*cache {
@@ -152,6 +154,7 @@ impl Reference {
                 _ => return String::new(), // No error
             }
         }
+        "Error: Could not generate reference wikitext, too many iterations".to_string()
     }
 
     /// Extracts the stated_in info from a snak
