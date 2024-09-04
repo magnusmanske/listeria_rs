@@ -272,7 +272,7 @@ impl ListeriaList {
 
     fn get_template_value(&self, template: &Template, key: &str) -> Option<String> {
         template
-            .params
+            .params()
             .iter()
             .filter(|(k, _v)| k.to_lowercase() == key.to_lowercase())
             .map(|(_k, v)| v.to_owned())
@@ -300,7 +300,7 @@ impl ListeriaList {
             .iter()
             .filter(|c| {
                 !matches!(
-                    c.obj,
+                    c.obj(),
                     ColumnType::Number | ColumnType::Item | ColumnType::Field(_)
                 )
             })
@@ -353,7 +353,7 @@ impl ListeriaList {
         });
 
         // Column headers
-        self.columns.iter().for_each(|c| match &c.obj {
+        self.columns.iter().for_each(|c| match c.obj() {
             ColumnType::Property(prop) => {
                 ids.push(prop.to_owned());
             }
@@ -570,7 +570,7 @@ impl ListeriaList {
             };
             for cell in row.cells() {
                 for part in cell.parts() {
-                    if let ResultCellPart::File(file) = &part.part {
+                    if let ResultCellPart::File(file) = part.part() {
                         files_to_check.push(file.to_owned());
                     }
                 }
@@ -645,7 +645,7 @@ impl ListeriaList {
             };
             row.cells().iter().for_each(|cell| {
                 cell.parts().iter().for_each(|part| {
-                    if let ResultCellPart::Entity((id, true)) = &part.part {
+                    if let ResultCellPart::Entity((id, true)) = part.part() {
                         // _try_localize ?
                         ids.push(id.to_owned());
                     }
@@ -910,7 +910,7 @@ impl ListeriaList {
             entity_id
         );
         let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
-        sparql_results.simulate = false;
+        sparql_results.set_simulate(false);
         let mut region = String::new();
         let sparql_table = sparql_results.run_query(sparql).await.ok()?;
         let x_idx = sparql_table.get_var_index("x")?;
@@ -951,7 +951,7 @@ impl ListeriaList {
             };
             row.cells().iter().for_each(|cell| {
                 cell.parts().iter().for_each(|part| {
-                    if let ResultCellPart::Location((_lat, _lon, _region)) = &part.part {
+                    if let ResultCellPart::Location((_lat, _lon, _region)) = part.part() {
                         entity_ids.insert(row.entity_id().to_string());
                         //*region = self.get_region_for_entity_id(row.entity_id()).await ;
                     }
@@ -977,7 +977,7 @@ impl ListeriaList {
             };
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
-                    if let ResultCellPart::Location((_lat, _lon, region)) = &mut part.part {
+                    if let ResultCellPart::Location((_lat, _lon, region)) = part.part_mut() {
                         *region = Some(the_region.clone());
                     }
                 }
@@ -996,10 +996,10 @@ impl ListeriaList {
             };
             for cell in row.cells_mut().iter_mut() {
                 for part_with_reference in cell.parts_mut().iter_mut() {
-                    match &part_with_reference.references {
+                    match part_with_reference.references() {
                         Some(references) => {
                             for reference in references.iter() {
-                                match &reference.stated_in {
+                                match &reference.stated_in() {
                                     Some(stated_in) => items_to_load.push(stated_in.to_string()),
                                     None => {}
                                 }
@@ -1031,13 +1031,14 @@ impl ListeriaList {
             };
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
-                    if let ResultCellPart::LocalLink((page, _label, is_category)) = &mut part.part {
+                    if let ResultCellPart::LocalLink((page, _label, is_category)) = part.part_mut()
+                    {
                         let title = wikimisc::mediawiki::title::Title::new_from_full(page, &mw_api);
                         *is_category = title.namespace_id() == 14;
-                    } else if let ResultCellPart::SnakList(v) = &mut part.part {
+                    } else if let ResultCellPart::SnakList(v) = part.part_mut() {
                         for subpart in v.iter_mut() {
                             if let ResultCellPart::LocalLink((page, _label, is_category)) =
-                                &mut subpart.part
+                                subpart.part_mut()
                             {
                                 let title =
                                     wikimisc::mediawiki::title::Title::new_from_full(page, &mw_api);
@@ -1097,7 +1098,7 @@ impl ListeriaList {
             };
             for cell in row.cells_mut() {
                 for part_with_reference in cell.parts_mut() {
-                    if let ResultCellPart::AutoDesc(ad) = &mut part_with_reference.part {
+                    if let ResultCellPart::AutoDesc(ad) = part_with_reference.part_mut() {
                         if let Some(desc) = autodescs.get(ad.entity_id()) {
                             ad.set_description(desc)
                         }
@@ -1117,7 +1118,7 @@ impl ListeriaList {
             };
             for cell in row.cells() {
                 for part_with_reference in cell.parts() {
-                    if let ResultCellPart::AutoDesc(ad) = &part_with_reference.part {
+                    if let ResultCellPart::AutoDesc(ad) = part_with_reference.part() {
                         self.ecw
                             .load_entities(&self.wb_api, &[ad.entity_id().to_owned()])
                             .await

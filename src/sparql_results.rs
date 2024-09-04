@@ -15,7 +15,7 @@ pub struct SparqlResults {
     page_params: Arc<PageParams>,
     sparql_main_variable: Option<String>,
     wikibase_key: String,
-    pub simulate: bool,
+    simulate: bool,
 }
 
 impl SparqlResults {
@@ -27,6 +27,10 @@ impl SparqlResults {
             sparql_main_variable: None,
             simulate,
         }
+    }
+
+    pub fn set_simulate(&mut self, simulate: bool) {
+        self.simulate = simulate;
     }
 
     pub async fn run_query(&mut self, mut sparql: String) -> Result<SparqlTable> {

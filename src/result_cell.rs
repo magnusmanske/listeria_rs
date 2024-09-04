@@ -33,7 +33,7 @@ impl ResultCell {
         };
 
         let entity = list.get_entity(entity_id);
-        match &col.obj {
+        match col.obj() {
             ColumnType::Qid => Self::ct_qid(&mut ret, entity_id),
             ColumnType::Item => Self::ct_item(&mut ret, entity_id),
             ColumnType::Description => Self::ct_description(&entity, list, &mut ret),
@@ -123,7 +123,7 @@ impl ResultCell {
 
     pub fn get_sortkey(&self) -> String {
         match self.parts.first() {
-            Some(part_with_reference) => match &part_with_reference.part {
+            Some(part_with_reference) => match part_with_reference.part() {
                 ResultCellPart::Entity((id, _)) => id.to_owned(),
                 ResultCellPart::LocalLink((page, _label, _)) => page.to_owned(),
                 ResultCellPart::Time(time) => time.to_owned(),
@@ -157,7 +157,7 @@ impl ResultCell {
     ) {
         for part_with_reference in parts.iter_mut() {
             part_with_reference
-                .part
+                .part_mut()
                 .localize_item_links(ecw, wiki, language);
         }
     }
@@ -168,7 +168,7 @@ impl ResultCell {
             .iter()
             .map(|part_with_reference| {
                 part_with_reference
-                    .part
+                    .part()
                     .as_tabbed_data(list, rownum, colnum)
             })
             .collect();

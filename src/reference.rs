@@ -5,10 +5,10 @@ use wikimisc::wikibase::Value;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Reference {
-    pub url: Option<String>,
-    pub title: Option<String>,
-    pub date: Option<String>,
-    pub stated_in: Option<String>, // Item
+    url: Option<String>,
+    title: Option<String>,
+    date: Option<String>,
+    stated_in: Option<String>, // Item
     md5: String,
     wikitext_cache: Option<String>,
 }
@@ -44,6 +44,10 @@ impl Reference {
         } else {
             Some(ret)
         }
+    }
+
+    pub fn stated_in(&self) -> &Option<String> {
+        &self.stated_in
     }
 
     /// Returns true if the reference is empty

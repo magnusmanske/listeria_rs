@@ -123,8 +123,8 @@ impl ColumnType {
 
 #[derive(Debug, Clone)]
 pub struct Column {
-    pub obj: ColumnType,
-    pub label: String,
+    obj: ColumnType,
+    label: String,
     has_label: bool,
 }
 
@@ -146,6 +146,14 @@ impl Column {
                 has_label: false,
             }),
         }
+    }
+
+    pub fn label(&self) -> &str {
+        &self.label
+    }
+
+    pub fn obj(&self) -> &ColumnType {
+        &self.obj
     }
 
     pub fn generate_label(&mut self, list: &ListeriaList) {

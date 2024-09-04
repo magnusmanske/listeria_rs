@@ -253,7 +253,7 @@ impl ListeriaBot {
         };
         let mut wpr = bot.process_page(page.title()).await;
         wpr.standardize_meassage();
-        self.update_page_status(&wpr.page, &wpr.wiki, &wpr.result, &wpr.message)
+        self.update_page_status(wpr.page(), wpr.wiki(), wpr.result(), wpr.message())
             .await?;
         Ok(())
     }

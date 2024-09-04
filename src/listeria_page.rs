@@ -151,28 +151,28 @@ impl ListeriaPage {
         if let Some(error) = result["error"]["code"].as_str() {
             match error {
                 "missingtitle" => {
-                    return Err(WikiPageResult {
-                        wiki: self.page_params.wiki().to_string(),
-                        page: self.page_params.page().to_string(),
-                        result: "DELETED".to_string(),
-                        message: "Wiki says this page is missing".to_string(),
-                    });
+                    return Err(WikiPageResult::new(
+                        self.page_params.wiki(),
+                        self.page_params.page(),
+                        "DELETED",
+                        "Wiki says this page is missing".to_string(),
+                    ));
                 }
                 "invalid" => {
-                    return Err(WikiPageResult {
-                        wiki: self.page_params.wiki().to_string(),
-                        page: self.page_params.page().to_string(),
-                        result: "INVALID".to_string(),
-                        message: "Wiki says this page has an invalid title".to_string(),
-                    });
+                    return Err(WikiPageResult::new(
+                        self.page_params.wiki(),
+                        self.page_params.page(),
+                        "INVALID",
+                        "Wiki says this page has an invalid title".to_string(),
+                    ));
                 }
                 other => {
-                    return Err(WikiPageResult {
-                        wiki: self.page_params.wiki().to_string(),
-                        page: self.page_params.page().to_string(),
-                        result: "FAIL".to_string(),
-                        message: other.to_string(),
-                    });
+                    return Err(WikiPageResult::new(
+                        self.page_params.wiki(),
+                        self.page_params.page(),
+                        "FAIL",
+                        other.to_string(),
+                    ));
                 }
             }
         };
