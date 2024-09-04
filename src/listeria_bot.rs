@@ -6,14 +6,13 @@ use crate::wiki_page_result::WikiPageResult;
 use crate::ApiArc;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
+use dashmap::DashMap;
+use dashmap::DashSet;
 use log::info;
 use mysql_async::from_row;
 use mysql_async::prelude::*;
-use std::collections::HashMap;
-use std::collections::HashSet;
 use std::sync::Arc;
 use sysinfo::System;
-use tokio::sync::Mutex;
 
 #[derive(Debug, Clone)]
 struct ListeriaBotWiki {
@@ -60,8 +59,8 @@ impl ListeriaBotWiki {
 pub struct ListeriaBot {
     config: Arc<Configuration>,
     wiki_apis: Arc<WikiApis>,
-    bot_per_wiki: Arc<Mutex<HashMap<String, ListeriaBotWiki>>>,
-    running: Arc<Mutex<HashSet<u64>>>,
+    bot_per_wiki: DashMap<String, ListeriaBotWiki>,
+    running: DashSet<u64>,
 }
 
 impl ListeriaBot {
@@ -70,8 +69,8 @@ impl ListeriaBot {
         Ok(Self {
             config: config.clone(),
             wiki_apis: Arc::new(WikiApis::new(config.clone()).await?),
-            bot_per_wiki: Arc::new(Mutex::new(HashMap::new())),
-            running: Arc::new(Mutex::new(HashSet::default())),
+            bot_per_wiki: DashMap::new(),
+            running: DashSet::new(),
         })
     }
 
@@ -110,17 +109,14 @@ impl ListeriaBot {
     }
 
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
-        let mut lock = self.bot_per_wiki.lock().await;
-        if let Some(bot) = lock.get(wiki) {
+        if let Some(bot) = self.bot_per_wiki.get(wiki) {
             let new_bot = bot.to_owned();
-            drop(lock);
             return Some(new_bot);
         }
         info!("Creating bot for {wiki}");
         let mw_api = self.wiki_apis.get_or_create_wiki_api(wiki).await.ok()?;
         let bot = ListeriaBotWiki::new(wiki, mw_api, self.config.clone());
-        lock.insert(wiki.to_string(), bot.clone());
-        drop(lock);
+        self.bot_per_wiki.insert(wiki.to_string(), bot.clone());
         info!("Created bot for {wiki}");
         Some(bot)
     }
@@ -165,20 +161,20 @@ impl ListeriaBot {
     pub async fn release_running(&self, pagestatus_id: u64) {
         println!("Releasing {pagestatus_id}");
         Self::print_sysinfo();
-        self.running.lock().await.remove(&pagestatus_id);
+        self.running.remove(&pagestatus_id);
     }
 
     /// Returns how many pages are running
     pub async fn get_running_count(&self) -> usize {
-        self.running.lock().await.len()
+        self.running.len()
     }
 
     /// Returns a page to be processed.
     pub async fn prepare_next_single_page(&self) -> Result<PageToProcess> {
-        let mut running = self.running.lock().await;
-        let ids: String = running
+        let ids: String = self
+            .running
             .iter()
-            .map(|id| format!("{id}"))
+            .map(|id| format!("{}", *id))
             .collect::<Vec<String>>()
             .join(",");
         let ids = if ids.is_empty() { "0".to_string() } else { ids };
@@ -201,7 +197,7 @@ impl ListeriaBot {
             self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
                 .await?;
             info!(target: "lock","Found a priority page: {:?}",&page);
-            running.insert(page.id());
+            self.running.insert(page.id());
             return Ok(page);
         }
 
@@ -223,7 +219,7 @@ impl ListeriaBot {
         info!(target: "lock","Found a page: {:?}",&page);
         self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
             .await?;
-        running.insert(page.id());
+        self.running.insert(page.id());
         Ok(page)
     }
 
