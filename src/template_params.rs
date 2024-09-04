@@ -180,50 +180,50 @@ impl TemplateParams {
     pub fn new_from_params(template: &Template, config: &Configuration) -> Self {
         Self {
             links: LinksType::All,
-            sort: SortMode::new(template.params.get("sort")),
-            section: SectionType::new_from_string_option(template.params.get("section")),
+            sort: SortMode::new(template.params().get("sort")),
+            section: SectionType::new_from_string_option(template.params().get("section")),
             min_section: template
-                .params
+                .params()
                 .get("min_section")
                 .map(|s| s.parse::<u64>().ok().or(Some(2)).unwrap_or(2))
                 .unwrap_or(2),
             row_template: template
-                .params
+                .params()
                 .get("row_template")
                 .map(|s| s.trim().to_string()),
             header_template: template
-                .params
+                .params()
                 .get("header_template")
                 .map(|s| s.trim().to_string()),
             autodesc: template
-                .params
+                .params()
                 .get("autolist")
                 .map(|s| s.trim().to_uppercase())
                 .or_else(|| {
                     template
-                        .params
+                        .params()
                         .get("autodesc")
                         .map(|s| s.trim().to_uppercase())
                 }),
             summary: template
-                .params
+                .params()
                 .get("summary")
                 .map(|s| s.trim().to_uppercase()),
-            skip_table: template.params.contains_key("skip_table"),
+            skip_table: template.params().contains_key("skip_table"),
             one_row_per_item: template
-                .params
+                .params()
                 .get("one_row_per_item")
                 .map(|s| s.trim().to_uppercase())
                 != Some("NO".to_string()),
             wdedit: template
-                .params
+                .params()
                 .get("wdedit")
                 .map(|s| s.trim().to_uppercase())
                 == Some("YES".to_string()),
-            references: ReferencesParameter::new(template.params.get("references")),
-            sort_order: SortOrder::new(template.params.get("sort_order")),
+            references: ReferencesParameter::new(template.params().get("references")),
+            sort_order: SortOrder::new(template.params().get("sort_order")),
             wikibase: template
-                .params
+                .params()
                 .get("wikibase")
                 .map(|s| s.trim().to_uppercase())
                 .unwrap_or_else(|| config.get_default_api().to_string()),

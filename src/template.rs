@@ -3,12 +3,11 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct Template {
-    pub title: String,
-    pub params: HashMap<String, String>,
+    params: HashMap<String, String>,
 }
 
 impl Template {
-    pub fn new_from_params(title: String, text: String) -> Result<Self> {
+    pub fn new_from_params(_title: String, text: String) -> Result<Self> {
         let mut curly_braces = 0;
         let mut parts: Vec<String> = vec![];
         let mut part: Vec<char> = vec![];
@@ -60,7 +59,11 @@ impl Template {
                 Some((k, v))
             })
             .collect();
-        Ok(Self { title, params })
+        Ok(Self { params })
+    }
+
+    pub fn params(&self) -> &HashMap<String, String> {
+        &self.params
     }
 
     pub fn fix_values(&mut self) {
@@ -80,7 +83,6 @@ mod tests {
     #[test]
     fn test_fix_values() {
         let mut t = Template {
-            title: String::new(),
             params: HashMap::from([("foo".to_string(), "bar{{!}}baz".to_string())]),
         };
         t.fix_values();

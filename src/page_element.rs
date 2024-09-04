@@ -6,7 +6,6 @@ use crate::template::Template;
 use anyhow::Result;
 use regex::Regex;
 use regex::RegexBuilder;
-use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct PageElement {
@@ -68,10 +67,7 @@ impl PageElement {
     }
 
     pub fn new_just_text(text: &str, page: &ListeriaPage) -> Self {
-        let template = Template {
-            title: String::new(),
-            params: HashMap::new(),
-        };
+        let template = Template::default();
         Self {
             before: text.to_string(),
             template_start: String::new(),

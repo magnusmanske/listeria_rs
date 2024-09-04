@@ -11,13 +11,25 @@ use wikimisc::wikibase::{Entity, Snak, SnakDataType, TimeValue, Value};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PartWithReference {
-    pub part: ResultCellPart,
-    pub references: Option<Vec<Reference>>,
+    part: ResultCellPart,
+    references: Option<Vec<Reference>>,
 }
 
 impl PartWithReference {
     pub fn new(part: ResultCellPart, references: Option<Vec<Reference>>) -> Self {
         Self { part, references }
+    }
+
+    pub fn references(&self) -> &Option<Vec<Reference>> {
+        &self.references
+    }
+
+    pub fn part(&self) -> &ResultCellPart {
+        &self.part
+    }
+
+    pub fn part_mut(&mut self) -> &mut ResultCellPart {
+        &mut self.part
     }
 
     pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
@@ -192,7 +204,7 @@ impl ResultCellPart {
     ) -> String {
         if !try_localize {
             let is_item_column = match list.column(colnum) {
-                Some(col) => col.obj == ColumnType::Item,
+                Some(col) => *col.obj() == ColumnType::Item,
                 None => false,
             };
             if list.is_main_wikibase_wiki() || is_item_column {
@@ -264,7 +276,7 @@ impl ResultCellPart {
             ResultCellPart::Text(text) => {
                 match list.column(colnum) {
                     Some(col) => {
-                        match &col.obj {
+                        match col.obj() {
                             ColumnType::Property(p) => {
                                 // Commons category
                                 if p == "P373" {

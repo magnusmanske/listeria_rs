@@ -68,7 +68,7 @@ impl ResultRow {
     pub fn remove_excess_files(&mut self) {
         self.cells.iter_mut().for_each(|cell| {
             if let Some(part) = cell.parts().first() {
-                let has_files = matches!(part.part, ResultCellPart::File(_));
+                let has_files = matches!(*part.part(), ResultCellPart::File(_));
                 if has_files {
                     let mut parts = cell.parts().clone();
                     parts.truncate(1);
@@ -84,7 +84,7 @@ impl ResultRow {
             cell.set_parts(
                 cell.parts()
                     .iter()
-                    .filter(|part_with_reference| match &part_with_reference.part {
+                    .filter(|part_with_reference| match part_with_reference.part() {
                         ResultCellPart::File(file) => !shadow_files.contains(file),
                         _ => true,
                     })
@@ -179,7 +179,7 @@ impl ResultRow {
             .columns()
             .iter()
             .enumerate()
-            .find(|(_colnum, col)| col.obj == obj)
+            .find(|(_colnum, col)| *col.obj() == obj)
         {
             Some((colnum, _col)) => match self.cells.get(colnum) {
                 Some(cell) => cell.get_sortkey(),
@@ -273,7 +273,7 @@ impl ResultRow {
                     if value.is_empty() {
                         None
                     } else {
-                        Some(format!("{} = {}", column.obj.as_key(), value))
+                        Some(format!("{} = {}", column.obj().as_key(), value))
                     }
                 }
                 _ => None,

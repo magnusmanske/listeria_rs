@@ -1,9 +1,9 @@
 #[derive(Debug, Clone)]
 pub struct WikiPageResult {
-    pub wiki: String,
-    pub page: String,
-    pub result: String,
-    pub message: String,
+    wiki: String,
+    page: String,
+    result: String,
+    message: String,
 }
 
 unsafe impl Send for WikiPageResult {}
@@ -16,6 +16,22 @@ impl WikiPageResult {
             result: result.to_string(),
             message,
         }
+    }
+
+    pub fn wiki(&self) -> &str {
+        &self.wiki
+    }
+
+    pub fn page(&self) -> &str {
+        &self.page
+    }
+
+    pub fn result(&self) -> &str {
+        &self.result
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
     }
 
     pub fn fail(wiki: &str, page: &str, message: &str) -> Self {

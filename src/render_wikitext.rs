@@ -124,7 +124,7 @@ impl RendererWikitext {
                     wt += "'\n";
                     list.columns().iter().for_each(|col| {
                         wt += "! ";
-                        wt += &col.label;
+                        wt += col.label();
                         wt += "\n";
                     });
                 }
