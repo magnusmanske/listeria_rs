@@ -18,7 +18,7 @@ use wikimisc::wikibase::entity::*;
 #[derive(Debug, Clone)]
 pub struct WikiApis {
     config: Arc<Configuration>,
-    site_matrix: Arc<SiteMatrix>,
+    site_matrix: SiteMatrix,
     apis: DashMap<String, ApiArc>,
     pool: DatabasePool,
 }
@@ -26,7 +26,7 @@ pub struct WikiApis {
 impl WikiApis {
     pub async fn new(config: Arc<Configuration>) -> Result<Self> {
         let pool = DatabasePool::new(&config)?;
-        let site_matrix = Arc::new(SiteMatrix::new(config.get_default_wbapi()?).await?);
+        let site_matrix = SiteMatrix::new(config.get_default_wbapi()?).await?;
         Ok(Self {
             apis: DashMap::new(),
             config,
@@ -39,11 +39,8 @@ impl WikiApis {
     pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiArc> {
         self.wait_for_max_mw_apis_total().await;
 
-        // TODO this should use lock.entry()..or_insert_with() but the creation method is async
-
         // Check for existing API and return that if it exists
         if let Some(api) = self.apis.get(wiki) {
-            let api = api.clone();
             self.wait_for_wiki_apis(&api).await;
             return Ok(api.clone());
         }
