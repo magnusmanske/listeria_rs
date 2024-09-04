@@ -6,7 +6,6 @@ use listeria::listeria_bot::ListeriaBot;
 use std::env;
 use std::sync::Arc;
 use std::time::Instant;
-use sysinfo::System;
 use tokio::sync::Semaphore;
 use wikimisc::toolforge_app::ToolforgeApp;
 
@@ -45,10 +44,10 @@ async fn run_singles(config_file: &str) -> Result<()> {
         };
 
         // 1GB min free memory
-        while System::new_all().free_memory() / 1024 / 1024 < 1 {
-            println!("Memory low, waiting 2s");
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-        }
+        // while System::new_all().free_memory() / 1024 / 1024 < 1 {
+        //     println!("Memory low, waiting 2s");
+        //     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        // }
 
         let permit = THREADS_SEMAPHORE.acquire().await?;
         println!(

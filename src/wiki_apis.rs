@@ -2,13 +2,13 @@ use crate::configuration::Configuration;
 use crate::database_pool::DatabasePool;
 use crate::ApiArc;
 use anyhow::{anyhow, Result};
+use dashmap::DashMap;
 use log::info;
 use mysql_async::{from_row, prelude::*, Conn};
 use mysql_async::{Opts, OptsBuilder};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
 use tokio::time::sleep;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::mediawiki::title::Title;
@@ -19,7 +19,7 @@ use wikimisc::wikibase::entity::*;
 pub struct WikiApis {
     config: Arc<Configuration>,
     site_matrix: Arc<SiteMatrix>,
-    apis: Arc<Mutex<HashMap<String, ApiArc>>>,
+    apis: DashMap<String, ApiArc>,
     pool: DatabasePool,
 }
 
@@ -28,7 +28,7 @@ impl WikiApis {
         let pool = DatabasePool::new(&config)?;
         let site_matrix = Arc::new(SiteMatrix::new(config.get_default_wbapi()?).await?);
         Ok(Self {
-            apis: Arc::new(Mutex::new(HashMap::new())),
+            apis: DashMap::new(),
             config,
             site_matrix,
             pool,
@@ -42,22 +42,21 @@ impl WikiApis {
         // TODO this should use lock.entry()..or_insert_with() but the creation method is async
 
         // Check for existing API and return that if it exists
-        let mut lock = self.apis.lock().await;
-        if let Some(api) = lock.get(wiki) {
+        if let Some(api) = self.apis.get(wiki) {
             let api = api.clone();
-            drop(lock);
             self.wait_for_wiki_apis(&api).await;
             return Ok(api.clone());
         }
 
         // Create a new API
         let mw_api = self.create_wiki_api(wiki).await?;
-        lock.insert(wiki.to_owned(), mw_api);
+        self.apis.insert(wiki.to_owned(), mw_api);
         info!(target: "lock", "WikiApis::get_or_create_wiki_api: new wiki {wiki} created");
 
-        lock.get(wiki)
+        self.apis
+            .get(wiki)
             .ok_or(anyhow!("Wiki not found: {wiki}"))
-            .cloned()
+            .map(|ret| (*ret).clone())
     }
 
     async fn wait_for_wiki_apis(&self, api: &ApiArc) {
@@ -77,10 +76,8 @@ impl WikiApis {
             loop {
                 let current_strong_locks: usize = self
                     .apis
-                    .lock()
-                    .await
                     .iter()
-                    .map(|(_wiki, api)| Arc::strong_count(api))
+                    .map(|entry| Arc::strong_count(entry.value()))
                     .sum();
                 if current_strong_locks < *max {
                     break;
