@@ -109,6 +109,10 @@ impl ListeriaList {
         &self.results
     }
 
+    pub fn results_mut(&mut self) -> &mut Vec<ResultRow> {
+        &mut self.results
+    }
+
     pub fn columns(&self) -> &Vec<Column> {
         &self.columns
     }

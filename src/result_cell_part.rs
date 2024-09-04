@@ -20,12 +20,12 @@ impl PartWithReference {
         Self { part, references }
     }
 
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let wikitext_part = self.part.as_wikitext(list, rownum, colnum);
-        let wikitext_reference = match &self.references {
+        let wikitext_reference = match &mut self.references {
             Some(references) => {
                 let mut wikitext: Vec<String> = vec![];
-                for reference in references.iter() {
+                for reference in references.iter_mut() {
                     let r = reference.as_reference(list);
                     wikitext.push(r);
                 }

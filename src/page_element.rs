@@ -89,17 +89,17 @@ impl PageElement {
         ret
     }
 
-    pub fn new_inside(&self) -> Result<String> {
+    pub fn new_inside(&mut self) -> Result<String> {
         match self.is_just_text {
             true => Ok(String::new()),
             false => {
                 let mut renderer = RendererWikitext::new();
-                renderer.render(&self.list)
+                renderer.render(&mut self.list)
             }
         }
     }
 
-    pub fn as_wikitext(&self) -> Result<String> {
+    pub fn as_wikitext(&mut self) -> Result<String> {
         match self.is_just_text {
             true => Ok(self.before.clone()),
             false => Ok(self.before.clone()

@@ -8,7 +8,7 @@ impl Renderer for RendererWikitext {
         Self {}
     }
 
-    fn render(&mut self, list: &ListeriaList) -> Result<String> {
+    fn render(&mut self, list: &mut ListeriaList) -> Result<String> {
         let mut wt = String::new();
         for section_id in list.get_section_ids() {
             wt += &self.as_wikitext_section(list, section_id);
@@ -32,6 +32,7 @@ impl Renderer for RendererWikitext {
     fn get_new_wikitext(&self, _wikitext: &str, page: &ListeriaPage) -> Result<Option<String>> {
         let mut new_wikitext = String::new();
         for element in page.elements() {
+            let mut element = element.clone();
             if let Ok(s) = element.as_wikitext() {
                 new_wikitext += &s
             }
@@ -41,7 +42,7 @@ impl Renderer for RendererWikitext {
 }
 
 impl RendererWikitext {
-    fn as_wikitext_section(&self, list: &ListeriaList, section_id: usize) -> String {
+    fn as_wikitext_section(&self, list: &mut ListeriaList, section_id: usize) -> String {
         let mut wt = String::new();
 
         if let Some(name) = list.section_name(section_id) {
@@ -73,6 +74,7 @@ impl RendererWikitext {
         let mut rows = vec![];
         for rownum in 0..list.results().len() {
             if let Some(row) = list.results().get(rownum) {
+                let mut row = row.clone();
                 if row.section() == section_id {
                     let wt = row.as_wikitext(list, current_sub_row);
                     rows.push(wt);

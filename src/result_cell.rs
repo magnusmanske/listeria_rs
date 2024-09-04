@@ -175,7 +175,7 @@ impl ResultCell {
         json!(ret.join("<br/>"))
     }
 
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let mut ret;
         if list.template_params().wdedit() && list.header_template().is_none() {
             ret = match &self.wdedit_class {
@@ -188,7 +188,7 @@ impl ResultCell {
 
         let mut parts: Vec<String> = self
             .parts
-            .iter()
+            .iter_mut()
             .map(|part_with_reference| part_with_reference.as_wikitext(list, rownum, colnum))
             .collect();
         if self.deduplicate_parts {

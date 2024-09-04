@@ -283,10 +283,10 @@ impl ResultRow {
     }
 
     /// Get the row as wikitext
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
+    pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize) -> String {
         let cells: Vec<String> = self
             .cells
-            .iter()
+            .iter_mut()
             .enumerate()
             .map(|(colnum, cell)| cell.as_wikitext(list, rownum, colnum))
             .collect();

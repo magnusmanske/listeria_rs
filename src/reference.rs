@@ -1,36 +1,7 @@
 use crate::listeria_list::ListeriaList;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use std::sync::RwLock;
 use wikimisc::wikibase::Snak;
 use wikimisc::wikibase::Value;
-
-mod arc_rwlock_serde {
-    use serde::de::Deserializer;
-    use serde::ser::Serializer;
-    use serde::{Deserialize, Serialize};
-    use std::sync::{Arc, RwLock};
-
-    pub fn serialize<S, T>(val: &Arc<RwLock<T>>, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-        T: Serialize,
-    {
-        if let Ok(val) = val.read() {
-            T::serialize(&*val, s)
-        } else {
-            Err(serde::ser::Error::custom("Could not read from RwLock"))
-        }
-    }
-
-    pub fn deserialize<'de, D, T>(d: D) -> Result<Arc<RwLock<T>>, D::Error>
-    where
-        D: Deserializer<'de>,
-        T: Deserialize<'de>,
-    {
-        Ok(Arc::new(RwLock::new(T::deserialize(d)?)))
-    }
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Reference {
@@ -38,10 +9,8 @@ pub struct Reference {
     pub title: Option<String>,
     pub date: Option<String>,
     pub stated_in: Option<String>, // Item
-    #[serde(with = "arc_rwlock_serde")]
-    md5: Arc<RwLock<String>>,
-    #[serde(with = "arc_rwlock_serde")]
-    wikitext_cache: Arc<RwLock<Option<String>>>,
+    md5: String,
+    wikitext_cache: Option<String>,
 }
 
 impl PartialEq for Reference {
@@ -83,33 +52,24 @@ impl Reference {
     }
 
     /// Returns the reference as a wikitext string
-    pub fn as_reference(&self, list: &ListeriaList) -> String {
+    pub fn as_reference(&mut self, list: &ListeriaList) -> String {
         let wikitext = self.as_wikitext(list);
-        let md5 = match self.md5.read() {
-            Ok(s) => s.to_string(),
-            _ => return String::new(),
-        };
-        let has_md5 = list.reference_ids().get(&md5).is_some();
+        let has_md5 = list.reference_ids().get(&self.md5).is_some();
 
         if has_md5 {
-            format!("<ref name=\"ref_{}\" />", &md5)
+            format!("<ref name=\"ref_{}\" />", &self.md5)
         } else {
-            format!("<ref name=\"ref_{}\">{}</ref>", &md5, &wikitext)
+            format!("<ref name=\"ref_{}\">{}</ref>", &self.md5, &wikitext)
         }
     }
 
     /// Returns the wikitext representation of the reference
-    fn as_wikitext(&self, list: &ListeriaList) -> String {
+    fn as_wikitext(&mut self, list: &ListeriaList) -> String {
         let mut iterations_left: usize = 100; // Paranoia
         while iterations_left > 0 {
             iterations_left -= 1;
-            match self.wikitext_cache.read() {
-                Ok(cache) => {
-                    if let Some(s) = &*cache {
-                        return s.to_string();
-                    }
-                }
-                _ => return String::new(), // No error
+            if let Some(s) = &self.wikitext_cache {
+                return s.to_string();
             }
             let mut s = String::new();
 
@@ -139,19 +99,8 @@ impl Reference {
                 }
             }
 
-            match self.md5.write() {
-                Ok(mut md5) => {
-                    *md5 = format!("{:x}", md5::compute(s.clone()));
-                }
-                _ => return String::new(), // No error
-            }
-
-            match self.wikitext_cache.write() {
-                Ok(mut cache) => {
-                    *cache = Some(s);
-                }
-                _ => return String::new(), // No error
-            }
+            self.md5 = format!("{:x}", md5::compute(s.clone()));
+            self.wikitext_cache = Some(s);
         }
         "Error: Could not generate reference wikitext, too many iterations".to_string()
     }

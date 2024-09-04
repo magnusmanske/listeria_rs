@@ -182,9 +182,9 @@ impl ListeriaPage {
         }
     }
 
-    pub fn as_wikitext(&self) -> Result<Vec<String>> {
+    pub fn as_wikitext(&mut self) -> Result<Vec<String>> {
         let mut ret: Vec<String> = vec![];
-        for element in &self.elements {
+        for element in &mut self.elements {
             if !element.is_just_text() {
                 ret.push(element.new_inside()?);
             }

@@ -10,7 +10,7 @@ impl Renderer for RendererTabbedData {
         Self {}
     }
 
-    fn render(&mut self, list: &ListeriaList) -> Result<String> {
+    fn render(&mut self, list: &mut ListeriaList) -> Result<String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
             if let Some(x) = ret["schema"]["fields"].as_array_mut() {
