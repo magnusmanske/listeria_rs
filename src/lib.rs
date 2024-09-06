@@ -23,6 +23,7 @@ pub mod result_row;
 pub mod sparql_results;
 pub mod template;
 pub mod template_params;
+pub mod wiki;
 pub mod wiki_apis;
 pub mod wiki_page_result;
 
