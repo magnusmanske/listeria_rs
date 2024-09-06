@@ -77,19 +77,13 @@ impl Reference {
             }
             let mut s = String::new();
 
-            if self.title.is_some() && self.url.is_some() {
-                s += &format!(
-                    "{{{{#invoke:cite web|url={}|title={}",
-                    self.url.as_ref().unwrap_or(&String::new()),
-                    self.title.as_ref().unwrap_or(&String::new())
-                );
-                if let Some(stated_in) = &self.stated_in {
-                    s += &format!("|website={}", list.get_item_link_with_fallback(stated_in));
-                }
-                if let Some(date) = &self.date {
-                    s += &format!("|access-date={}", &date);
-                }
-                s += "}}";
+            let (use_invoke, use_cite_web) = match list.get_wiki() {
+                Some(wiki) => (wiki.use_invoke(), wiki.use_cite_web()),
+                None => (true, true), // Fallback for unknown wiki, should be fixed manually in DB
+            };
+
+            if use_cite_web && self.title.is_some() && self.url.is_some() {
+                s = self.render_cite_web(use_invoke, list);
             } else if self.url.is_some() {
                 if let Some(x) = self.url.as_ref() {
                     s += x;
@@ -107,6 +101,23 @@ impl Reference {
             self.wikitext_cache = Some(s);
         }
         "Error: Could not generate reference wikitext, too many iterations".to_string()
+    }
+
+    fn render_cite_web(&self, use_invoke: bool, list: &ListeriaList) -> String {
+        let template = if use_invoke { "{{#invoke:" } else { "{{" };
+        let mut ret = format!(
+            "{template}cite web|url={}|title={}",
+            self.url.as_ref().unwrap_or(&String::new()),
+            self.title.as_ref().unwrap_or(&String::new())
+        );
+        if let Some(stated_in) = &self.stated_in {
+            ret += &format!("|website={}", list.get_item_link_with_fallback(stated_in));
+        }
+        if let Some(date) = &self.date {
+            ret += &format!("|access-date={}", &date);
+        }
+        ret += "}}";
+        ret
     }
 
     /// Extracts the stated_in info from a snak

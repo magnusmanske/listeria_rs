@@ -65,10 +65,20 @@ pub struct ListeriaBot {
 
 impl ListeriaBot {
     pub async fn new(config_file: &str) -> Result<Self> {
-        let config = Arc::new(Configuration::new_from_file(config_file).await?);
+        let mut config = Arc::new(Configuration::new_from_file(config_file).await?);
+        let wiki_apis = WikiApis::new(config.clone()).await?;
+        let wikis = wiki_apis.get_all_wikis_in_database().await?;
+        match Arc::get_mut(&mut config) {
+            Some(c) => {
+                c.set_wikis(wikis);
+            }
+            None => {
+                return Err(anyhow!("Could not get mutable reference to config"));
+            }
+        }
         Ok(Self {
             config: config.clone(),
-            wiki_apis: Arc::new(WikiApis::new(config.clone()).await?),
+            wiki_apis: Arc::new(wiki_apis),
             bot_per_wiki: DashMap::new(),
             running: DashSet::new(),
         })

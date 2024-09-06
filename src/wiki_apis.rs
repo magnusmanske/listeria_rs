@@ -119,7 +119,7 @@ impl WikiApis {
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
         let current_wikis = self.get_all_wikis_with_start_template().await?;
         let existing_wikis: HashSet<String> = self
-            .get_wikis_in_database()
+            .get_all_wikis_in_database()
             .await?
             .keys()
             .cloned()
@@ -237,7 +237,7 @@ impl WikiApis {
 
     /// Updates the pages on all wikis in the database
     pub async fn update_all_wikis(&self) -> Result<()> {
-        let wikis = self.get_wikis_in_database().await?;
+        let wikis = self.get_all_wikis_in_database().await?;
         for (name, _wiki) in wikis {
             if let Err(e) = self.update_pages_on_wiki(&name).await {
                 println!("Problem with {name}: {e}")
@@ -254,7 +254,7 @@ impl WikiApis {
     }
 
     /// Returns all the wikis in the database
-    async fn get_wikis_in_database(&self) -> Result<HashMap<String, Wiki>> {
+    pub async fn get_all_wikis_in_database(&self) -> Result<HashMap<String, Wiki>> {
         let ret = self
             .pool
             .get_conn()
