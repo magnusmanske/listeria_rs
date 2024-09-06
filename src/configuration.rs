@@ -4,6 +4,7 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
+use wiki::Wiki;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::wikibase::{entity_container::EntityContainer, EntityTrait};
 
@@ -51,6 +52,7 @@ pub struct Configuration {
     max_sparql_simultaneous: u64,
     max_sparql_attempts: u64,
     profiling: bool,
+    wikis: HashMap<String, Wiki>,
 }
 
 impl Configuration {
@@ -63,6 +65,14 @@ impl Configuration {
 
     pub fn set_max_local_cached_entities(&mut self, max_local_cached_entities: usize) {
         self.max_local_cached_entities = max_local_cached_entities;
+    }
+
+    pub fn set_wikis(&mut self, wikis: HashMap<String, Wiki>) {
+        self.wikis = wikis;
+    }
+
+    pub fn get_wiki(&self, wiki: &str) -> Option<&Wiki> {
+        self.wikis.get(wiki)
     }
 
     pub async fn new_from_json(j: Value) -> Result<Self> {

@@ -53,9 +53,8 @@ impl Wiki {
         let result = match result.first() {
             Some(r) => r,
             None => return Err(anyhow!("Wiki not found: {}", wiki)),
-        }
-        .to_owned();
-        Self::from_row(result)
+        };
+        Self::from_row(result.to_owned())
     }
 
     pub fn id(&self) -> usize {
@@ -89,6 +88,10 @@ impl Wiki {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use crate::{configuration::Configuration, wiki_apis::WikiApis};
+
     use super::*;
 
     #[test]
@@ -164,5 +167,18 @@ mod tests {
             use_cite_web: false,
         };
         assert!(!w.is_active());
+    }
+
+    #[tokio::test]
+    async fn test_wiki_use_flags() {
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let wiki_apis = WikiApis::new(Arc::new(config)).await.unwrap();
+        let wikis = wiki_apis.get_all_wikis_in_database().await.unwrap();
+        assert!(wikis.get("enwiki").unwrap().use_invoke());
+        assert!(wikis.get("enwiki").unwrap().use_cite_web());
+        assert!(!wikis.get("frwiki").unwrap().use_invoke());
+        assert!(wikis.get("frwiki").unwrap().use_cite_web());
+        assert!(!wikis.get("huwiki").unwrap().use_invoke());
+        assert!(!wikis.get("huwiki").unwrap().use_cite_web());
     }
 }

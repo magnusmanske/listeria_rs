@@ -12,6 +12,7 @@ use crate::template_params::SectionType;
 use crate::template_params::SortMode;
 use crate::template_params::SortOrder;
 use crate::template_params::TemplateParams;
+use crate::wiki::Wiki;
 use anyhow::{anyhow, Result};
 use chrono::DateTime;
 use chrono::Utc;
@@ -131,6 +132,14 @@ impl ListeriaList {
 
     pub fn local_file_namespace_prefix(&self) -> &String {
         self.page_params.local_file_namespace_prefix()
+    }
+
+    pub fn get_wiki(&self) -> Option<Wiki> {
+        let wiki = self.page_params.wiki();
+        self.page_params
+            .config()
+            .get_wiki(wiki)
+            .map(|wiki| wiki.to_owned())
     }
 
     pub fn section_name(&self, id: usize) -> Option<&String> {

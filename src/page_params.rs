@@ -21,8 +21,9 @@ pub struct PageParams {
 impl PageParams {
     pub async fn new(config: Arc<Configuration>, mw_api: ApiArc, page: String) -> Result<Self> {
         let api = mw_api.clone();
+        let wiki_name = api.get_site_info_string("general", "wikiid")?.to_string();
         let ret = Self {
-            wiki: api.get_site_info_string("general", "wikiid")?.to_string(),
+            wiki: wiki_name,
             page,
             language: api.get_site_info_string("general", "lang")?.to_string(),
             mw_api: mw_api.clone(),
