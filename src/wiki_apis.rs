@@ -1,12 +1,13 @@
 use crate::configuration::Configuration;
 use crate::database_pool::DatabasePool;
+use crate::wiki::Wiki;
 use crate::ApiArc;
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
 use log::info;
 use mysql_async::{from_row, prelude::*, Conn};
 use mysql_async::{Opts, OptsBuilder};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -116,9 +117,13 @@ impl WikiApis {
 
     /// Updates the database to contain all wikis that have a Listeria start template
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
-        let current_wikis = self.get_current_wikis().await?;
-        let existing_wikis: HashSet<String> =
-            self.get_wikis_in_database().await?.into_iter().collect();
+        let current_wikis = self.get_all_wikis_with_start_template().await?;
+        let existing_wikis: HashSet<String> = self
+            .get_wikis_in_database()
+            .await?
+            .keys()
+            .cloned()
+            .collect();
         let new_wikis: Vec<String> = current_wikis
             .iter()
             .filter(|wiki| !existing_wikis.contains(*wiki))
@@ -128,12 +133,12 @@ impl WikiApis {
         Ok(())
     }
 
-    async fn get_current_wikis(&self) -> Result<Vec<String>> {
+    /// Returns a list of all wikis with a start template from Wikidata
+    async fn get_all_wikis_with_start_template(&self) -> Result<Vec<String>> {
         let q = self.config.get_template_start_q();
         let api = self.config.get_default_wbapi()?;
         let start_template_entity = self.load_entity_from_id(api, q).await?;
-        let current_wikis: Vec<String> =
-            Self::get_all_wikis_with_start_template(start_template_entity);
+        let current_wikis: Vec<String> = Self::get_all_wikis_with_template(start_template_entity);
         Ok(current_wikis)
     }
 
@@ -169,6 +174,38 @@ impl WikiApis {
 
     /// Updates the database to have all pages on a given wiki with both Listeria start an end template
     pub async fn update_pages_on_wiki(&self, wiki: &str) -> Result<()> {
+        let current_pages = self.get_current_pages_on_wiki(wiki).await?;
+        let existing_pages: HashSet<String> = self
+            .get_pages_for_wiki_in_database(wiki)
+            .await?
+            .into_iter()
+            .collect();
+        let new_pages: Vec<String> = current_pages
+            .iter()
+            .filter(|page| !existing_pages.contains(*page))
+            .cloned()
+            .collect();
+        self.add_pages_to_wiki(new_pages, wiki).await?;
+        Ok(())
+    }
+
+    async fn add_pages_to_wiki(&self, new_pages: Vec<String>, wiki: &str) -> Result<()> {
+        if new_pages.is_empty() {
+            return Ok(());
+        }
+        let wiki_id = self.get_wiki_id(wiki).await?;
+        println!("Adding {} pages for {wiki}", new_pages.len());
+        for chunk in new_pages.chunks(10000) {
+            let chunk: Vec<String> = chunk.into();
+            let placeholders =
+                self.placeholders(chunk.len(), &format!("({wiki_id},?,'WAITING','')"));
+            let sql = format!("INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}");
+            self.pool.get_conn().await?.exec_drop(sql, chunk).await?;
+        }
+        Ok(())
+    }
+
+    async fn get_current_pages_on_wiki(&self, wiki: &str) -> Result<Vec<String>> {
         let api_url = self.site_matrix.get_server_url_for_wiki(wiki)? + "/w/api.php";
         let mw_api = Api::new(&api_url).await?;
         let template_start = self
@@ -195,37 +232,15 @@ impl WikiApis {
             .map(|(nsid, title)| Title::new(title, *nsid))
             .filter_map(|title| title.full_with_underscores(&mw_api))
             .collect();
-        let existing_pages: HashSet<String> = self
-            .get_pages_for_wiki_in_database(wiki)
-            .await?
-            .into_iter()
-            .collect();
-        let new_pages: Vec<String> = current_pages
-            .iter()
-            .filter(|page| !existing_pages.contains(*page))
-            .cloned()
-            .collect();
-        if !new_pages.is_empty() {
-            let wiki_id = self.get_wiki_id(wiki).await?;
-            println!("Adding {} pages for {wiki}", new_pages.len());
-            for chunk in new_pages.chunks(10000) {
-                let chunk: Vec<String> = chunk.into();
-                let placeholders =
-                    self.placeholders(chunk.len(), &format!("({wiki_id},?,'WAITING','')"));
-                let sql = format!("INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}");
-                self.pool.get_conn().await?.exec_drop(sql, chunk).await?;
-            }
-        }
-
-        Ok(())
+        Ok(current_pages)
     }
 
     /// Updates the pages on all wikis in the database
     pub async fn update_all_wikis(&self) -> Result<()> {
         let wikis = self.get_wikis_in_database().await?;
-        for wiki in &wikis {
-            if let Err(e) = self.update_pages_on_wiki(wiki).await {
-                println!("Problem with {wiki}: {e}")
+        for (name, _wiki) in wikis {
+            if let Err(e) = self.update_pages_on_wiki(&name).await {
+                println!("Problem with {name}: {e}")
             }
         }
         Ok(())
@@ -239,15 +254,25 @@ impl WikiApis {
     }
 
     /// Returns all the wikis in the database
-    async fn get_wikis_in_database(&self) -> Result<Vec<String>> {
-        Ok(self
+    async fn get_wikis_in_database(&self) -> Result<HashMap<String, Wiki>> {
+        let ret = self
             .pool
             .get_conn()
             .await?
-            .exec_iter("SELECT `name` FROM `wikis`", ())
+            .exec_iter(
+                "SELECT `id`,`name`,`status`,`timestamp`,`use_invoke`,`use_cite_web` FROM `wikis`",
+                (),
+            )
             .await?
-            .map_and_drop(from_row::<String>)
-            .await?)
+            .map_and_drop(from_row::<(usize, String, String, String, bool, bool)>)
+            .await?;
+        let ret = ret
+            .into_iter()
+            .map(Wiki::from_row)
+            .filter_map(|wiki| wiki.ok())
+            .map(|wiki| (wiki.name().to_string(), wiki))
+            .collect();
+        Ok(ret)
     }
 
     /// Returns all the pages for a given wiki in the database
@@ -345,7 +370,7 @@ impl WikiApis {
     }
 
     /// Returns the a list of all wikis with a start template
-    fn get_all_wikis_with_start_template(entity: Entity) -> Vec<String> {
+    fn get_all_wikis_with_template(entity: Entity) -> Vec<String> {
         entity
             .sitelinks()
             .iter()
