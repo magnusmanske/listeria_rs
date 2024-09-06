@@ -116,11 +116,7 @@ impl WikiApis {
 
     /// Updates the database to contain all wikis that have a Listeria start template
     pub async fn update_wiki_list_in_database(&self) -> Result<()> {
-        let q = self.config.get_template_start_q(); // Wikidata item for {{Wikidata list}}
-        let api = self.config.get_default_wbapi()?;
-        let start_template_entity = self.load_entity_from_id(api, q).await?;
-        let current_wikis: Vec<String> =
-            Self::get_all_wikis_with_start_template(start_template_entity);
+        let current_wikis = self.get_current_wikis().await?;
         let existing_wikis: HashSet<String> =
             self.get_wikis_in_database().await?.into_iter().collect();
         let new_wikis: Vec<String> = current_wikis
@@ -132,8 +128,17 @@ impl WikiApis {
         Ok(())
     }
 
+    async fn get_current_wikis(&self) -> Result<Vec<String>> {
+        let q = self.config.get_template_start_q();
+        let api = self.config.get_default_wbapi()?;
+        let start_template_entity = self.load_entity_from_id(api, q).await?;
+        let current_wikis: Vec<String> =
+            Self::get_all_wikis_with_start_template(start_template_entity);
+        Ok(current_wikis)
+    }
+
     /// Adds new wikis to the database
-    async fn add_new_wikis_to_database(&self, new_wikis: Vec<String>) -> Result<(), anyhow::Error> {
+    async fn add_new_wikis_to_database(&self, new_wikis: Vec<String>) -> Result<()> {
         if new_wikis.is_empty() {
             return Ok(());
         }
@@ -149,11 +154,7 @@ impl WikiApis {
     }
 
     /// Returns the Wikidata item for a given template
-    async fn load_entity_from_id(
-        &self,
-        api: &Arc<Api>,
-        q: String,
-    ) -> Result<Entity, anyhow::Error> {
+    async fn load_entity_from_id(&self, api: &Arc<Api>, q: String) -> Result<Entity> {
         // NOTE: EntityContainerWrapper is not needed, this only a single item
         let entities = self.config.create_entity_container();
         entities
