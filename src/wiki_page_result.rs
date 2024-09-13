@@ -6,8 +6,6 @@ pub struct WikiPageResult {
     message: String,
 }
 
-unsafe impl Send for WikiPageResult {}
-
 impl WikiPageResult {
     pub fn new(wiki: &str, page: &str, result: &str, message: String) -> Self {
         Self {
