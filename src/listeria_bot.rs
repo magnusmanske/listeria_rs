@@ -142,7 +142,7 @@ impl ListeriaBot {
     }
 
     pub async fn reset_running(&self) -> Result<()> {
-        let sql = "UPDATE pagestatus SET status='OK' WHERE status='RUNNING'";
+        let sql = "UPDATE pagestatus SET status='PAUSED' WHERE status='RUNNING'";
         self.run_sql(sql).await
     }
 
