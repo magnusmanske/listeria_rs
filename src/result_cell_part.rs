@@ -161,27 +161,29 @@ impl ResultCellPart {
 
     pub fn reduce_time(v: &TimeValue) -> Option<String> {
         lazy_static! {
-            static ref RE_DATE: Regex = Regex::new(r#"^\+{0,1}(-{0,1}\d+)-(\d{1,2})-(\d{1,2})T"#)
-                .expect("RE_DATE does not parse");
+            static ref RE_DATE: Regex =
+                Regex::new(r#"^\+?(-?\d+)-(\d{1,2})-(\d{1,2})T"#).expect("RE_DATE does not parse");
         }
         let s = v.time().to_string();
         let (year, month, day) = match RE_DATE.captures(&s) {
             Some(caps) => (
-                caps.get(1)?.as_str().to_string(),
-                caps.get(2)?.as_str().to_string(),
-                caps.get(3)?.as_str().to_string(),
+                caps.get(1)?.as_str().parse::<i32>().ok()?,
+                caps.get(2)?.as_str().parse::<u8>().ok()?,
+                caps.get(3)?.as_str().parse::<u8>().ok()?,
             ),
             None => {
                 return Some(s);
             }
         };
+        let era = if year < 0 { " BCE" } else { "" };
+        let year = year.abs();
         Some(match v.precision() {
-            6 => format!("{}th millenium", &year[0..year.len() - 2]),
-            7 => format!("{}th century", &year[0..year.len() - 2]),
-            8 => format!("{}0s", &year[0..year.len() - 2]),
-            9 => year,
-            10 => format!("{}-{}", year, month),
-            11 => format!("{}-{}-{}", year, month, day),
+            6 => format!("{}th millennium{era}", year / 1000),
+            7 => format!("{}th century{era}", year / 100),
+            8 => format!("{}0s{era}", year / 10),
+            9 => format!("{}", year),
+            10 => format!("{:0>2}-{:0>2}{era}", year, month),
+            11 => format!("{:0>2}-{:0>2}-{:0>2}{era}", year, month, day),
             _ => s,
         })
     }
@@ -333,5 +335,46 @@ impl ResultCellPart {
             }
             _ => labeled_entity_link,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reduce_time() {
+        let tv = TimeValue::new(0, 0, "", 11, "+2024-10-02T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024-10-02");
+
+        let tv = TimeValue::new(0, 0, "", 10, "+2024-10-02T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024-10");
+
+        let tv = TimeValue::new(0, 0, "", 9, "+2024-10-02T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024");
+
+        let tv = TimeValue::new(0, 0, "", 8, "+90-01-01T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "90s");
+
+        let tv = TimeValue::new(0, 0, "", 7, "+987-01-01T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "9th century");
+
+        let tv = TimeValue::new(0, 0, "", 6, "+9876-01-01T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "9th millennium");
+
+        let tv = TimeValue::new(0, 0, "", 11, "-2024-10-02T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024-10-02 BCE");
+
+        let tv = TimeValue::new(0, 0, "", 8, "-90-01-01T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "90s BCE");
+
+        let tv = TimeValue::new(0, 0, "", 7, "-987-01-01T00:00:00Z", 0);
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "9th century BCE");
+
+        let tv = TimeValue::new(0, 0, "", 6, "-9876-01-01T00:00:00Z", 0);
+        assert_eq!(
+            ResultCellPart::reduce_time(&tv).unwrap(),
+            "9th millennium BCE"
+        );
     }
 }
