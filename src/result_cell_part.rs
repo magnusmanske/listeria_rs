@@ -175,12 +175,13 @@ impl ResultCellPart {
                 return Some(s);
             }
         };
+        let era_fix = if year < 0 { -1 } else { 1 };
         let era = if year < 0 { " BCE" } else { "" };
         let year = year.abs();
         Some(match v.precision() {
-            6 => format!("{}th millennium{era}", year / 1000),
-            7 => format!("{}th century{era}", year / 100),
-            8 => format!("{}0s{era}", year / 10),
+            6 => format!("{}th millennium{era}", year / 1000 + era_fix),
+            7 => format!("{}th century{era}", year / 100 + era_fix),
+            8 => format!("{}0s{era}", year / 10 + era_fix),
             9 => format!("{}", year),
             10 => format!("{:0>2}-{:0>2}{era}", year, month),
             11 => format!("{:0>2}-{:0>2}-{:0>2}{era}", year, month, day),
@@ -354,27 +355,27 @@ mod tests {
         assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024");
 
         let tv = TimeValue::new(0, 0, "", 8, "+90-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "90s");
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "100s");
 
         let tv = TimeValue::new(0, 0, "", 7, "+987-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "9th century");
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "10th century");
 
         let tv = TimeValue::new(0, 0, "", 6, "+9876-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "9th millennium");
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "10th millennium");
 
         let tv = TimeValue::new(0, 0, "", 11, "-2024-10-02T00:00:00Z", 0);
         assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024-10-02 BCE");
 
         let tv = TimeValue::new(0, 0, "", 8, "-90-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "90s BCE");
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "80s BCE");
 
         let tv = TimeValue::new(0, 0, "", 7, "-987-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "9th century BCE");
+        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "8th century BCE");
 
         let tv = TimeValue::new(0, 0, "", 6, "-9876-01-01T00:00:00Z", 0);
         assert_eq!(
             ResultCellPart::reduce_time(&tv).unwrap(),
-            "9th millennium BCE"
+            "8th millennium BCE"
         );
     }
 }
