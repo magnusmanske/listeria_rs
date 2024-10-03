@@ -3,6 +3,7 @@ use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
 use crate::template_params::LinksType;
+use era_date::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use wikimisc::sparql_value::SparqlValue;
@@ -175,18 +176,8 @@ impl ResultCellPart {
                 return Some(s);
             }
         };
-        let era_fix = if year < 0 { -1 } else { 1 };
-        let era = if year < 0 { " BCE" } else { "" };
-        let year = year.abs();
-        Some(match v.precision() {
-            6 => format!("{}th millennium{era}", year / 1000 + era_fix),
-            7 => format!("{}th century{era}", year / 100 + era_fix),
-            8 => format!("{}0s{era}", year / 10 + era_fix),
-            9 => format!("{}", year),
-            10 => format!("{:0>2}-{:0>2}{era}", year, month),
-            11 => format!("{:0>2}-{:0>2}-{:0>2}{era}", year, month, day),
-            _ => s,
-        })
+        let precision = Precision::try_from(*v.precision() as u8).ok()?;
+        Some(Era::new(year, month, day, precision).to_string())
     }
 
     fn tabbed_string_safe(&self, s: String) -> String {
@@ -336,46 +327,5 @@ impl ResultCellPart {
             }
             _ => labeled_entity_link,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_reduce_time() {
-        let tv = TimeValue::new(0, 0, "", 11, "+2024-10-02T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024-10-02");
-
-        let tv = TimeValue::new(0, 0, "", 10, "+2024-10-02T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024-10");
-
-        let tv = TimeValue::new(0, 0, "", 9, "+2024-10-02T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024");
-
-        let tv = TimeValue::new(0, 0, "", 8, "+90-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "100s");
-
-        let tv = TimeValue::new(0, 0, "", 7, "+987-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "10th century");
-
-        let tv = TimeValue::new(0, 0, "", 6, "+9876-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "10th millennium");
-
-        let tv = TimeValue::new(0, 0, "", 11, "-2024-10-02T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "2024-10-02 BCE");
-
-        let tv = TimeValue::new(0, 0, "", 8, "-90-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "80s BCE");
-
-        let tv = TimeValue::new(0, 0, "", 7, "-987-01-01T00:00:00Z", 0);
-        assert_eq!(ResultCellPart::reduce_time(&tv).unwrap(), "8th century BCE");
-
-        let tv = TimeValue::new(0, 0, "", 6, "-9876-01-01T00:00:00Z", 0);
-        assert_eq!(
-            ResultCellPart::reduce_time(&tv).unwrap(),
-            "8th millennium BCE"
-        );
     }
 }
