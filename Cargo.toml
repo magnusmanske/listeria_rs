@@ -10,6 +10,7 @@ lazy_static = "^1"
 chrono = "*"
 config = "*"
 dashmap = "*"
+era_date = "*"
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 urlencoding = "^2"
