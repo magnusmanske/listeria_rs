@@ -3,6 +3,7 @@ use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
 use crate::result_cell_part::AutoDesc;
+use crate::result_cell_part::LinkTarget;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::template_params::ReferencesParameter;
@@ -236,7 +237,7 @@ impl ResultCell {
             match local_page {
                 Some(page) => {
                     ret.parts.push(PartWithReference::new(
-                        ResultCellPart::LocalLink((page, label, false)),
+                        ResultCellPart::LocalLink((page, label, LinkTarget::Page)),
                         None,
                     ));
                 }

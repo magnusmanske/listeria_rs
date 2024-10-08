@@ -1,5 +1,6 @@
 use crate::configuration::Configuration;
 use crate::listeria_list::ListeriaList;
+use crate::result_cell_part::LinkTarget;
 use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
@@ -185,7 +186,7 @@ impl EntityContainerWrapper {
         let label = self
             .get_local_entity_label(item, language)
             .unwrap_or_else(|| page.clone());
-        Some(ResultCellPart::LocalLink((page, label, false)))
+        Some(ResultCellPart::LocalLink((page, label, LinkTarget::Page)))
     }
 
     pub fn get_result_row(

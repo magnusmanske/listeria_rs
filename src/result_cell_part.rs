@@ -81,12 +81,18 @@ impl AutoDesc {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum LinkTarget {
+    Page,
+    Category,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /* trunk-ignore(clippy/large_enum_variant) */
 pub enum ResultCellPart {
     Number,
-    Entity((String, bool)),            // ID, try_localize
-    EntitySchema(String),              // ID
-    LocalLink((String, String, bool)), // Page, label, is_category
+    Entity((String, bool)),                  // ID, try_localize
+    EntitySchema(String),                    // ID
+    LocalLink((String, String, LinkTarget)), // Page, label, LinkTarget
     Time(String),
     Location((f64, f64, Option<String>)),
     File(String),
@@ -235,12 +241,18 @@ impl ResultCellPart {
             ResultCellPart::EntitySchema(id) => {
                 format!("[[EntitySchema:{id}|{id}]]") // TODO use self.as_wikitext_entity ?
             }
-            ResultCellPart::LocalLink((title, label, is_category)) => {
-                let start = if *is_category { "[[:" } else { "[[" };
-                if list.normalize_page_title(title) == list.normalize_page_title(label) {
-                    format!("{}{}]]", &start, &label)
+            ResultCellPart::LocalLink((title, label, link_target)) => {
+                let start = match link_target {
+                    LinkTarget::Page => "[[",
+                    LinkTarget::Category => "[[:",
+                };
+                if list.normalize_page_title(list.page_title()) == list.normalize_page_title(title)
+                {
+                    label.to_string()
+                } else if list.normalize_page_title(title) == list.normalize_page_title(label) {
+                    format!("{start}{label}]]")
                 } else {
-                    format!("{}{}|{}]]", &start, &title, &label)
+                    format!("{start}{title}|{label}]]")
                 }
             }
             ResultCellPart::Time(time) => time.to_owned(),
