@@ -2,7 +2,7 @@ use crate::column::{Column, ColumnType};
 use crate::entity_container_wrapper::*;
 use crate::page_params::PageParams;
 use crate::result_cell::*;
-use crate::result_cell_part::ResultCellPart;
+use crate::result_cell_part::{LinkTarget, ResultCellPart};
 use crate::result_row::ResultRow;
 use crate::sparql_results::SparqlResults;
 use crate::template::Template;
@@ -247,7 +247,7 @@ impl ListeriaList {
         }
     }
 
-    pub fn normalize_page_title(&self, s: &String) -> String {
+    pub fn normalize_page_title(&self, s: &str) -> String {
         // TODO use page to find out about first character capitalization on the current wiki
         if s.len() < 2 {
             return s.to_owned();
@@ -1040,18 +1040,24 @@ impl ListeriaList {
             };
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
-                    if let ResultCellPart::LocalLink((page, _label, is_category)) = part.part_mut()
+                    if let ResultCellPart::LocalLink((page, _label, link_target)) = part.part_mut()
                     {
                         let title = wikimisc::mediawiki::title::Title::new_from_full(page, &mw_api);
-                        *is_category = title.namespace_id() == 14;
+                        *link_target = match title.namespace_id() {
+                            14 => LinkTarget::Category,
+                            _ => LinkTarget::Page,
+                        }
                     } else if let ResultCellPart::SnakList(v) = part.part_mut() {
                         for subpart in v.iter_mut() {
-                            if let ResultCellPart::LocalLink((page, _label, is_category)) =
+                            if let ResultCellPart::LocalLink((page, _label, link_target)) =
                                 subpart.part_mut()
                             {
                                 let title =
                                     wikimisc::mediawiki::title::Title::new_from_full(page, &mw_api);
-                                *is_category = title.namespace_id() == 14;
+                                *link_target = match title.namespace_id() {
+                                    14 => LinkTarget::Category,
+                                    _ => LinkTarget::Page,
+                                }
                             }
                         }
                     }
