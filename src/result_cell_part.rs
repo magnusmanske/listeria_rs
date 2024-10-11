@@ -246,7 +246,10 @@ impl ResultCellPart {
                     LinkTarget::Page => "[[",
                     LinkTarget::Category => "[[:",
                 };
-                if list.normalize_page_title(list.page_title()) == list.normalize_page_title(title)
+                if list
+                    .normalize_page_title(list.page_title())
+                    .replace(' ', "_")
+                    == list.normalize_page_title(title).replace(' ', "_")
                 {
                     label.to_string()
                 } else if list.normalize_page_title(title) == list.normalize_page_title(label) {
