@@ -275,18 +275,16 @@ impl ListeriaPage {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::Value;
-
+    use self::configuration::Configuration;
     use crate::listeria_page::ListeriaPage;
     use crate::render_wikitext::RendererWikitext;
     use crate::renderer::Renderer;
     use crate::*;
+    use serde_json::Value;
     use std::collections::HashMap;
     use std::fs;
     use std::io::BufReader;
     use std::path::PathBuf;
-
-    use self::configuration::Configuration;
 
     fn read_fixture_from_file(path: PathBuf) -> HashMap<String, String> {
         let text = fs::read_to_string(path).unwrap();

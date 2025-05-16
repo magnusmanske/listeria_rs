@@ -40,16 +40,13 @@ impl SparqlResults {
 
         // Return simulated results
         if self.simulate {
-            match self.page_params.simulated_sparql_results() {
-                Some(json_text) => {
-                    let result: SparqlApiResult = serde_json::from_str(json_text)?;
-                    self.set_main_variable(&result);
+            if let Some(json_text) = self.page_params.simulated_sparql_results() {
+                let result: SparqlApiResult = serde_json::from_str(json_text)?;
+                self.set_main_variable(&result);
 
-                    let mut ret = SparqlTable::from_api_result(result)?;
-                    ret.set_main_variable(self.sparql_main_variable());
-                    return Ok(ret);
-                }
-                None => {}
+                let mut ret = SparqlTable::from_api_result(result)?;
+                ret.set_main_variable(self.sparql_main_variable());
+                return Ok(ret);
             }
         }
         self.run_sparql_query(&sparql).await

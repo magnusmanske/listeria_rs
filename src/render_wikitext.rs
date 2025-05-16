@@ -46,8 +46,7 @@ impl RendererWikitext {
         let mut wt = String::new();
 
         if let Some(name) = list.section_name(section_id) {
-            let header = format!("\n\n\n== {} ==\n", name);
-            wt += &header;
+            wt += &Self::render_header(name);
         }
 
         wt += &self.as_wikitext_table_header(list);
@@ -131,5 +130,25 @@ impl RendererWikitext {
             }
         }
         wt
+    }
+
+    fn render_header(name: &str) -> String {
+        if name.trim().is_empty() {
+            "\n\n\n".to_string()
+        } else {
+            format!("\n\n\n== {} ==\n", name)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_render_header() {
+        assert_eq!(RendererWikitext::render_header("foo"), "\n\n\n== foo ==\n");
+        assert_eq!(RendererWikitext::render_header(""), "\n\n\n");
+        assert_eq!(RendererWikitext::render_header("  "), "\n\n\n");
     }
 }

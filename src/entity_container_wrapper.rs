@@ -68,8 +68,7 @@ impl EntityContainerWrapper {
             for entity_id in chunk {
                 if let Some(entity) = entities.get_entity(entity_id) {
                     let json = entity.to_json();
-                    self.entity_file_cache
-                        .insert(entity_id, &json.to_string())?;
+                    self.entity_file_cache.insert(entity_id, json.to_string())?;
                 }
             }
         }
@@ -171,10 +170,7 @@ impl EntityContainerWrapper {
         wiki: &str,
         language: &str,
     ) -> Option<ResultCellPart> {
-        let entity = match self.get_entity(item) {
-            Some(e) => e,
-            None => return None,
-        };
+        let entity = self.get_entity(item)?;
         let page = match entity.sitelinks() {
             Some(sl) => sl
                 .iter()

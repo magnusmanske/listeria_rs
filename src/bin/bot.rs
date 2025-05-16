@@ -14,7 +14,7 @@ const DEFAULT_CONFIG_FILE: &str = "/data/project/listeria/listeria_rs/config.jso
 
 /*
 TEST DB CONNECT
-ssh magnus@tools-login.wmflabs.org -L 3308:tools-db:3306 -N &
+ssh magnus@login.toolforge.org -L 3308:tools-db:3306 -N &
 
 REFRESH FROM GIT
 cd /data/project/listeria/listeria_rs ; ./build.sh
