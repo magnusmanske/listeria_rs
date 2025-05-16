@@ -385,16 +385,13 @@ impl ListeriaList {
         if self.params.autodesc() != Some("FALLBACK".to_string()) {
             return Err(anyhow!("Not used"));
         }
-        match &self.page_params.simulated_autodesc() {
-            Some(autodesc) => {
-                for ad in autodesc {
-                    let parts: Vec<&str> = ad.splitn(3, '|').collect();
-                    if parts.len() == 3 && parts[0] == e.id() && parts[1] == self.language {
-                        return Ok(parts[2].trim().to_string());
-                    }
+        if let Some(autodesc) = &self.page_params.simulated_autodesc() {
+            for ad in autodesc {
+                let parts: Vec<&str> = ad.splitn(3, '|').collect();
+                if parts.len() == 3 && parts[0] == e.id() && parts[1] == self.language {
+                    return Ok(parts[2].trim().to_string());
                 }
             }
-            None => {}
         }
         let url = format!(
             "https://autodesc.toolforge.org/?q={}&lang={}&mode=short&links=wiki&format=json",
@@ -1005,16 +1002,12 @@ impl ListeriaList {
             };
             for cell in row.cells_mut().iter_mut() {
                 for part_with_reference in cell.parts_mut().iter_mut() {
-                    match part_with_reference.references() {
-                        Some(references) => {
-                            for reference in references.iter() {
-                                match &reference.stated_in() {
-                                    Some(stated_in) => items_to_load.push(stated_in.to_string()),
-                                    None => {}
-                                }
+                    if let Some(references) = part_with_reference.references() {
+                        for reference in references.iter() {
+                            if let Some(stated_in) = &reference.stated_in() {
+                                items_to_load.push(stated_in.to_string())
                             }
                         }
-                        None => {}
                     }
                 }
             }

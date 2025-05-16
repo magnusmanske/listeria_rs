@@ -204,7 +204,7 @@ impl Configuration {
             .get(wiki)
             .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("Cannot find local start template"))?;
-        match ret.split(':').last() {
+        match ret.split(':').next_back() {
             Some(x) => Ok(x.to_string()),
             None => Err(anyhow!("get_local_template_title_start: no match")),
         }
@@ -224,7 +224,7 @@ impl Configuration {
             .get(wiki)
             .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("Cannot find local end template"))?;
-        match ret.split(':').last() {
+        match ret.split(':').next_back() {
             Some(x) => Ok(x.to_string()),
             None => Err(anyhow!("get_local_template_title_end: no match")),
         }

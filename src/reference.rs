@@ -89,11 +89,8 @@ impl Reference {
                     s += x;
                 }
             } else if self.stated_in.is_some() {
-                match &self.stated_in {
-                    Some(q) => {
-                        s += &list.get_item_link_with_fallback(q);
-                    }
-                    None => {}
+                if let Some(q) = &self.stated_in {
+                    s += &list.get_item_link_with_fallback(q);
                 }
             }
 

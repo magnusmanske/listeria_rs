@@ -5,3 +5,4 @@ test_data/
 # Specific configuration
 config.json
 listeria.ini
+.DS_Store
