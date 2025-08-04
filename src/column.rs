@@ -108,8 +108,8 @@ impl ColumnType {
             Self::Description => "desc".to_string(),
             Self::Item => "item".to_string(),
             Self::Qid => "qid".to_string(),
-            Self::LabelLang(l) => format!("language:{}", l),
-            Self::AliasLang(l) => format!("alias:{}", l),
+            Self::LabelLang(l) => format!("language:{l}"),
+            Self::AliasLang(l) => format!("alias:{l}"),
             Self::Property(p) => p.to_lowercase(),
             Self::PropertyQualifier((p, q)) => p.to_lowercase() + "_" + &q.to_lowercase(),
             Self::PropertyQualifierValue((p, q, v)) => {

@@ -23,7 +23,7 @@ struct ListeriaBotWiki {
 
 impl ListeriaBotWiki {
     pub fn new(wiki: &str, api: ApiArc, config: Arc<Configuration>) -> Self {
-        println!("Creating bot for {}", wiki);
+        println!("Creating bot for {wiki}");
         Self {
             wiki: wiki.to_string(),
             api,
@@ -40,7 +40,7 @@ impl ListeriaBotWiki {
                         &self.wiki,
                         page,
                         "FAIL",
-                        format!("Could not open/parse page '{}': {}", page, e),
+                        format!("Could not open/parse page '{page}': {e}"),
                     )
                 }
             };

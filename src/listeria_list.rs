@@ -265,8 +265,8 @@ impl ListeriaList {
         self.page_params
             .config()
             .get_location_template(self.page_params.wiki())
-            .replace("$LAT$", &format!("{}", lat))
-            .replace("$LON$", &format!("{}", lon))
+            .replace("$LAT$", &format!("{lat}"))
+            .replace("$LON$", &format!("{lon}"))
             .replace("$ITEM$", &entity_id.unwrap_or_default())
             .replace("$REGION$", &region.unwrap_or_default())
     }
@@ -911,10 +911,7 @@ impl ListeriaList {
 
     async fn get_region_for_entity_id(&self, entity_id: &str) -> Option<String> {
         let wikibase_key = self.params.wikibase().to_lowercase();
-        let sparql = format!(
-            "SELECT ?q ?x {{ wd:{} wdt:P131* ?q . ?q wdt:P300 ?x }}",
-            entity_id
-        );
+        let sparql = format!("SELECT ?q ?x {{ wd:{entity_id} wdt:P131* ?q . ?q wdt:P300 ?x }}");
         let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
         sparql_results.set_simulate(false);
         let mut region = String::new();
@@ -1309,10 +1306,10 @@ impl ListeriaList {
         };
         if let Some(first_char) = entity_id.chars().next() {
             if first_char == 'p' || first_char == 'P' {
-                return format!("{}Property:{}", prefix, entity_id);
+                return format!("{prefix}Property:{entity_id}");
             }
         }
-        format!("{}{}", prefix, entity_id)
+        format!("{prefix}{entity_id}")
     }
 
     pub fn get_item_link_with_fallback(&self, entity_id: &str) -> String {
@@ -1325,7 +1322,7 @@ impl ListeriaList {
         let label_part = if self.is_main_wikibase_wiki() && entity_id == label {
             String::new()
         } else {
-            format!("|{}", label)
+            format!("|{label}")
         };
         format!(
             "{}[[{}{}]]{}",

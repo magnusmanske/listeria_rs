@@ -123,17 +123,10 @@ impl SparqlResults {
     }
 
     fn get_sparql_endpoint(&self, wb_api_sparql: &Api) -> String {
-        match wb_api_sparql.get_site_info_string("general", "wikibase-sparql") {
-            Ok(endpoint) => {
-                // SPARQL service given by site
-                endpoint
-            }
-            _ => {
-                // Override SPARQL service (hardcoded for Commons)
-                "https://wcqs-beta.wmflabs.org/sparql"
-            }
-        }
-        .to_string()
+        wb_api_sparql
+            .get_site_info_string("general", "wikibase-sparql")
+            .unwrap_or("https://wcqs-beta.wmflabs.org/sparql")
+            .to_string()
     }
 
     pub fn sparql_main_variable(&self) -> Option<String> {

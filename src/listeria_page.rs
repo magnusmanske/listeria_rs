@@ -305,7 +305,7 @@ mod tests {
                     .to_string()
                     .to_uppercase();
             } else {
-                value += &format!("\n{}", row);
+                value += &format!("\n{row}");
             }
         }
         if !key.is_empty() {

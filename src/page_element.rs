@@ -169,6 +169,7 @@ impl PageElement {
         Some((seperator_start, seperator_end))
     }
 
+    #[allow(clippy::result_large_err)]
     fn matches_from_separators(
         seperator_start: Regex,
         text: &str,
