@@ -142,7 +142,7 @@ impl EntityContainerWrapper {
                     Some(s) => s,
                     None => {
                         // Try the usual suspects
-                        for language in ["en", "de", "fr", "es", "it", "el", "nl"].iter() {
+                        for language in ["mul", "en", "de", "fr", "es", "it", "el", "nl"].iter() {
                             if let Some(label) =
                                 entity.label_in_locale(language).map(|s| s.to_string())
                             {
