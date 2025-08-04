@@ -24,7 +24,7 @@ impl Renderer for RendererTabbedData {
             }
         }
         ret["data"] = json!(ret_data);
-        Ok(format!("{}", ret))
+        Ok(format!("{ret}"))
     }
 
     fn get_new_wikitext(&self, wikitext: &str, _page: &ListeriaPage) -> Result<Option<String>> {

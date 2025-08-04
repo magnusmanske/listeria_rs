@@ -289,7 +289,7 @@ impl ResultCellPart {
                             ColumnType::Property(p) => {
                                 // Commons category
                                 if p == "P373" {
-                                    format!("[[:commons:Category:{}|{}]]", text, text)
+                                    format!("[[:commons:Category:{text}|{text}]]")
                                 } else {
                                     text.to_owned()
                                 }
@@ -338,7 +338,7 @@ impl ResultCellPart {
                 }
             }
             LinksType::Reasonator => {
-                format!("[https://reasonator.toolforge.org/?q={} {}]", id, use_label)
+                format!("[https://reasonator.toolforge.org/?q={id} {use_label}]")
             }
             _ => labeled_entity_link,
         }

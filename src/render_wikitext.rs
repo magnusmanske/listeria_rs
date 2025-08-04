@@ -136,7 +136,7 @@ impl RendererWikitext {
         if name.trim().is_empty() {
             "\n\n\n".to_string()
         } else {
-            format!("\n\n\n== {} ==\n", name)
+            format!("\n\n\n== {name} ==\n")
         }
     }
 }

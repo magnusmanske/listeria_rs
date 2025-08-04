@@ -106,10 +106,10 @@ async fn main() -> Result<()> {
 
     let wiki_api = format!("https://{}/w/api.php", &wiki_server);
     let message = match update_page(Arc::new(config), page, &wiki_api).await {
-        Ok(m) => format!("OK: {}", m),
-        Err(e) => format!("ERROR: {}", e),
+        Ok(m) => format!("OK: {m}"),
+        Err(e) => format!("ERROR: {e}"),
     };
-    println!("{}", message);
+    println!("{message}");
     Ok(())
 }
 

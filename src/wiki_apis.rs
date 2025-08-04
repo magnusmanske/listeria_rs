@@ -365,7 +365,7 @@ impl WikiApis {
             Some(_host) => wiki.to_owned() + self.get_db_server_group(),
             None => return Err(anyhow!("No host for MySQL")),
         };
-        let schema = format!("{}_p", wiki);
+        let schema = format!("{wiki}_p");
         Ok((host, schema))
     }
 
