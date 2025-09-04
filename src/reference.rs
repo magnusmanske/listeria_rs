@@ -101,7 +101,7 @@ impl Reference {
     }
 
     fn render_cite_web(&self, use_invoke: bool, list: &ListeriaList) -> String {
-        let template = if use_invoke { "{{#invoke:cite web|" } else { "{{cite web" };
+        let template = if use_invoke { "{{#invoke:cite|web" } else { "{{cite web" };
         let mut ret = format!(
             "{template}|url={}|title={}",
             self.url.as_ref().unwrap_or(&String::new()),
