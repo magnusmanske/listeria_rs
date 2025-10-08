@@ -1,16 +1,18 @@
 use crate::renderer::Renderer;
 use crate::*;
+use async_trait::async_trait;
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 
 pub struct RendererTabbedData {}
 
+#[async_trait]
 impl Renderer for RendererTabbedData {
     fn new() -> Self {
         Self {}
     }
 
-    fn render(&mut self, list: &mut ListeriaList) -> Result<String> {
+    async fn render(&mut self, list: &mut ListeriaList) -> Result<String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
             if let Some(x) = ret["schema"]["fields"].as_array_mut() {
@@ -20,14 +22,18 @@ impl Renderer for RendererTabbedData {
         let mut ret_data = vec![];
         for rownum in 0..list.results().len() {
             if let Some(row) = list.results().get(rownum) {
-                ret_data.push(row.as_tabbed_data(list, rownum));
+                ret_data.push(row.as_tabbed_data(list, rownum).await);
             }
         }
         ret["data"] = json!(ret_data);
         Ok(format!("{ret}"))
     }
 
-    fn get_new_wikitext(&self, wikitext: &str, _page: &ListeriaPage) -> Result<Option<String>> {
+    async fn get_new_wikitext(
+        &self,
+        wikitext: &str,
+        _page: &ListeriaPage,
+    ) -> Result<Option<String>> {
         // TODO use local template name
 
         // Start/end template

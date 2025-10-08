@@ -108,11 +108,13 @@ impl ListeriaPage {
         let mut ret = vec![];
         let mut again: bool = true;
         while again {
-            let mut element = match PageElement::new_from_text(&text, self) {
+            let mut element = match PageElement::new_from_text(&text, self).await {
                 Some(pe) => pe,
                 None => {
                     again = false;
                     PageElement::new_just_text(&text, self)
+                        .await
+                        .map_err(|e| self.fail(&e.to_string()))?
                 }
             };
             if again {
@@ -182,11 +184,11 @@ impl ListeriaPage {
         }
     }
 
-    pub fn as_wikitext(&mut self) -> Result<Vec<String>> {
+    pub async fn as_wikitext(&mut self) -> Result<Vec<String>> {
         let mut ret: Vec<String> = vec![];
         for element in &mut self.elements {
             if !element.is_just_text() {
-                ret.push(element.new_inside()?);
+                ret.push(element.new_inside().await?);
             }
         }
         Ok(ret)
@@ -227,6 +229,7 @@ impl ListeriaPage {
         let old_wikitext = self.load_page_as("wikitext").await?;
         let new_wikitext = renderer
             .get_new_wikitext(&old_wikitext, self)
+            .await
             .map_err(|e| self.fail(&e.to_string()))?; // Safe
         match new_wikitext {
             Some(new_wikitext) => {
@@ -346,7 +349,7 @@ mod tests {
                 .map(|s| s.split('\n').map(|s| s.to_string()).collect()),
         );
         page.run().await.unwrap();
-        let wt = page.as_wikitext().unwrap();
+        let wt = page.as_wikitext().await.unwrap();
         let wt = wt.join("\n\n----\n\n");
         let wt = wt.trim().to_string();
         if data.contains_key("EXPECTED") {
@@ -591,6 +594,7 @@ mod tests {
         let renderer = RendererWikitext::new();
         let wt = renderer
             .get_new_wikitext(&wikitext, &page)
+            .await
             .expect("FAILED get_new_wikitext")
             .expect("new_wikitext not Some()");
         let wt = wt.trim().to_string();

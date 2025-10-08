@@ -15,6 +15,7 @@ use wikimisc::mediawiki::api::Api;
 use wikimisc::mediawiki::title::Title;
 use wikimisc::site_matrix::SiteMatrix;
 use wikimisc::wikibase::entity::*;
+use wikimisc::wikibase::entity_container::EntityContainer;
 
 #[derive(Debug, Clone)]
 pub struct WikiApis {
@@ -160,13 +161,12 @@ impl WikiApis {
 
     /// Returns the Wikidata item for a given template
     async fn load_entity_from_id(&self, api: &Arc<Api>, q: String) -> Result<Entity> {
-        // NOTE: EntityContainerWrapper is not needed, this only a single item
-        let entities = self.config.create_entity_container();
-        entities
-            .load_entities(api, &vec![q.to_owned()])
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
-        let entity = entities
+        let entity_container = EntityContainer::new();
+        let to_load = vec![q.to_owned()];
+        if let Err(e) = entity_container.load_entities(api, &to_load).await {
+            return Err(anyhow!("{q} item not found on Wikidata: {e}"));
+        }
+        let entity = entity_container
             .get_entity(&q)
             .ok_or_else(|| anyhow!("{q} item not found on Wikidata"))?;
         Ok(entity)

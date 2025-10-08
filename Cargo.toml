@@ -5,12 +5,16 @@ authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
 edition = "2021"
 
 [dependencies]
+async-trait = "*"
+async-recursion = "*"
 regex = "^1"
 lazy_static = "^1"
 chrono = "*"
 config = "*"
 dashmap = "*"
 era_date = "*"
+foyer = { version = "*", features = ["serde"] }
+rand = "*"
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 urlencoding = "^2"

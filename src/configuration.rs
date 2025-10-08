@@ -6,7 +6,8 @@ use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
 use wiki::Wiki;
 use wikimisc::mediawiki::api::Api;
-use wikimisc::wikibase::{entity_container::EntityContainer, EntityTrait};
+use wikimisc::wikibase::entity_container::EntityContainer;
+use wikimisc::wikibase::EntityTrait;
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -144,12 +145,6 @@ impl Configuration {
         }
     }
 
-    pub fn create_entity_container(&self) -> EntityContainer {
-        let mut entities = EntityContainer::new();
-        entities.set_max_concurrent(self.max_concurrent_entry_queries);
-        entities
-    }
-
     pub fn max_threads(&self) -> usize {
         self.max_threads
     }
@@ -183,7 +178,7 @@ impl Configuration {
         q: &str,
     ) -> Result<HashMap<String, String>> {
         let entity = entities
-            .get_entity(q.to_owned())
+            .get_entity(q)
             .ok_or(anyhow!("Entity {q} not found"))?;
         match entity.sitelinks() {
             Some(sl) => Ok(sl
@@ -313,13 +308,14 @@ impl Configuration {
             Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
             None => return Err(anyhow!("No template_end_q in config")),
         };
-        let entities = self.create_entity_container();
-        entities
-            .load_entities(api, &vec![q_start.clone(), q_end.clone()])
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
-        self.template_start_sites = self.get_sitelink_mapping(&entities, &q_start)?;
-        self.template_end_sites = self.get_sitelink_mapping(&entities, &q_end)?;
+        let to_load = vec![q_start.clone(), q_end.clone()];
+        let entity_container = EntityContainer::new();
+        if let Err(e) = entity_container.load_entities(api, &to_load).await {
+            return Err(anyhow!("Error loading entities: {e}"));
+        }
+
+        self.template_start_sites = self.get_sitelink_mapping(&entity_container, &q_start)?;
+        self.template_end_sites = self.get_sitelink_mapping(&entity_container, &q_end)?;
         self.template_start_q = q_start;
         Ok(())
     }

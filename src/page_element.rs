@@ -19,7 +19,7 @@ pub struct PageElement {
 }
 
 impl PageElement {
-    pub fn new_from_text(text: &str, page: &ListeriaPage) -> Option<Self> {
+    pub async fn new_from_text(text: &str, page: &ListeriaPage) -> Option<Self> {
         let (seperator_start, seperator_end) = Self::get_start_stop_separators(page)?;
 
         let (match_start, match_end, single_template) =
@@ -61,22 +61,22 @@ impl PageElement {
                     .ok()?
             },
             after: String::from_utf8(text.as_bytes()[match_end.end()..].to_vec()).ok()?,
-            list: ListeriaList::new(template, page.page_params()),
+            list: ListeriaList::new(template, page.page_params()).await.ok()?,
             is_just_text: false,
         })
     }
 
-    pub fn new_just_text(text: &str, page: &ListeriaPage) -> Self {
+    pub async fn new_just_text(text: &str, page: &ListeriaPage) -> Result<Self> {
         let template = Template::default();
-        Self {
+        Ok(Self {
             before: text.to_string(),
             template_start: String::new(),
             _inside: String::new(),
             template_end: String::new(),
             after: String::new(),
-            list: ListeriaList::new(template, page.page_params()),
+            list: ListeriaList::new(template, page.page_params()).await?,
             is_just_text: true,
-        }
+        })
     }
 
     pub fn get_and_clean_after(&mut self) -> String {
@@ -85,23 +85,23 @@ impl PageElement {
         ret
     }
 
-    pub fn new_inside(&mut self) -> Result<String> {
+    pub async fn new_inside(&mut self) -> Result<String> {
         match self.is_just_text {
             true => Ok(String::new()),
             false => {
                 let mut renderer = RendererWikitext::new();
-                renderer.render(&mut self.list)
+                renderer.render(&mut self.list).await
             }
         }
     }
 
-    pub fn as_wikitext(&mut self) -> Result<String> {
+    pub async fn as_wikitext(&mut self) -> Result<String> {
         match self.is_just_text {
             true => Ok(self.before.clone()),
             false => Ok(self.before.clone()
                 + &self.template_start
                 + "\n"
-                + &self.new_inside()?
+                + &self.new_inside().await?
                 + "\n"
                 + &self.template_end
                 + &self.after),
