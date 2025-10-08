@@ -476,7 +476,6 @@ impl ListeriaList {
                 Some(row) => row,
                 None => continue,
             };
-            // let ecw = EntityContainerWrapper::new(self.page_params.config()); // TODO FIXME use "own" ecw or new one?
             for cell in row.cells_mut().iter_mut() {
                 ResultCell::localize_item_links_in_parts(
                     cell.parts_mut(),

@@ -1,6 +1,5 @@
 use crate::configuration::Configuration;
 use crate::database_pool::DatabasePool;
-use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::wiki::Wiki;
 use crate::ApiArc;
 use anyhow::{anyhow, Result};
@@ -16,6 +15,7 @@ use wikimisc::mediawiki::api::Api;
 use wikimisc::mediawiki::title::Title;
 use wikimisc::site_matrix::SiteMatrix;
 use wikimisc::wikibase::entity::*;
+use wikimisc::wikibase::entity_container::EntityContainer;
 
 #[derive(Debug, Clone)]
 pub struct WikiApis {
@@ -161,11 +161,13 @@ impl WikiApis {
 
     /// Returns the Wikidata item for a given template
     async fn load_entity_from_id(&self, api: &Arc<Api>, q: String) -> Result<Entity> {
-        let ec = EntityContainerWrapper::new().await?;
-        ec.load_entities(api, &[q.to_owned()]).await?;
-        let entity = ec
+        let entity_container = EntityContainer::new();
+        let to_load = vec![q.to_owned()];
+        if let Err(e) = entity_container.load_entities(api, &to_load).await {
+            return Err(anyhow!("{q} item not found on Wikidata: {e}"));
+        }
+        let entity = entity_container
             .get_entity(&q)
-            .await
             .ok_or_else(|| anyhow!("{q} item not found on Wikidata"))?;
         Ok(entity)
     }
