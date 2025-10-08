@@ -1,17 +1,19 @@
 use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
 use anyhow::Result;
+use async_trait::async_trait;
 
 pub struct RendererWikitext {}
 
+#[async_trait]
 impl Renderer for RendererWikitext {
     fn new() -> Self {
         Self {}
     }
 
-    fn render(&mut self, list: &mut ListeriaList) -> Result<String> {
+    async fn render(&mut self, list: &mut ListeriaList) -> Result<String> {
         let mut wt = String::new();
         for section_id in list.get_section_ids() {
-            wt += &self.as_wikitext_section(list, section_id);
+            wt += &self.as_wikitext_section(list, section_id).await;
         }
         if !list.shadow_files().is_empty() {
             wt += "\n----\nThe following local image(s) are not shown in the above list, because they shadow a Commons image of the same name, and might be non-free:";
@@ -29,11 +31,15 @@ impl Renderer for RendererWikitext {
         Ok(wt)
     }
 
-    fn get_new_wikitext(&self, _wikitext: &str, page: &ListeriaPage) -> Result<Option<String>> {
+    async fn get_new_wikitext(
+        &self,
+        _wikitext: &str,
+        page: &ListeriaPage,
+    ) -> Result<Option<String>> {
         let mut new_wikitext = String::new();
         for element in page.elements() {
             let mut element = element.clone();
-            if let Ok(s) = element.as_wikitext() {
+            if let Ok(s) = element.as_wikitext().await {
                 new_wikitext += &s
             }
         }
@@ -42,7 +48,7 @@ impl Renderer for RendererWikitext {
 }
 
 impl RendererWikitext {
-    fn as_wikitext_section(&self, list: &mut ListeriaList, section_id: usize) -> String {
+    async fn as_wikitext_section(&self, list: &mut ListeriaList, section_id: usize) -> String {
         let mut wt = String::new();
 
         if let Some(name) = list.section_name(section_id) {
@@ -75,7 +81,7 @@ impl RendererWikitext {
             if let Some(row) = list.results().get(rownum) {
                 let mut row = row.clone();
                 if row.section() == section_id {
-                    let wt = row.as_wikitext(list, current_sub_row);
+                    let wt = row.as_wikitext(list, current_sub_row).await;
                     rows.push(wt);
                     current_sub_row += 1;
                 }

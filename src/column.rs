@@ -156,17 +156,21 @@ impl Column {
         &self.obj
     }
 
-    pub fn generate_label(&mut self, list: &ListeriaList) {
+    pub async fn generate_label(&mut self, list: &ListeriaList) {
         if self.has_label {
             return;
         }
         self.label = match &self.obj {
-            ColumnType::Property(prop) => list.get_label_with_fallback(prop),
+            ColumnType::Property(prop) => list.get_label_with_fallback(prop).await,
             ColumnType::PropertyQualifier((prop, qual)) => {
-                list.get_label_with_fallback(prop) + "/" + &list.get_label_with_fallback(qual)
+                list.get_label_with_fallback(prop).await
+                    + "/"
+                    + &list.get_label_with_fallback(qual).await
             }
             ColumnType::PropertyQualifierValue((prop1, _qual, prop2)) => {
-                list.get_label_with_fallback(prop1) + "/" + &list.get_label_with_fallback(prop2)
+                list.get_label_with_fallback(prop1).await
+                    + "/"
+                    + &list.get_label_with_fallback(prop2).await
             }
             _ => self.label.to_owned(), // Fallback
         };

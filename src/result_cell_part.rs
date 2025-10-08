@@ -3,6 +3,7 @@ use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
 use crate::template_params::LinksType;
+use async_recursion::async_recursion;
 use era_date::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -33,13 +34,18 @@ impl PartWithReference {
         &mut self.part
     }
 
-    pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
-        let wikitext_part = self.part.as_wikitext(list, rownum, colnum);
+    pub async fn as_wikitext(
+        &mut self,
+        list: &ListeriaList,
+        rownum: usize,
+        colnum: usize,
+    ) -> String {
+        let wikitext_part = self.part.as_wikitext(list, rownum, colnum).await;
         let wikitext_reference = match &mut self.references {
             Some(references) => {
                 let mut wikitext: Vec<String> = vec![];
                 for reference in references.iter_mut() {
-                    let r = reference.as_reference(list);
+                    let r = reference.as_reference(list).await;
                     wikitext.push(r);
                 }
                 wikitext.join("")
@@ -115,7 +121,8 @@ impl ResultCellPart {
         }
     }
 
-    pub fn localize_item_links(
+    #[async_recursion]
+    pub async fn localize_item_links(
         &mut self,
         ecw: &EntityContainerWrapper,
         wiki: &str,
@@ -123,7 +130,7 @@ impl ResultCellPart {
     ) {
         match self {
             ResultCellPart::Entity((item, true)) => {
-                if let Some(ll) = ecw.entity_to_local_link(item, wiki, language) {
+                if let Some(ll) = ecw.entity_to_local_link(item, wiki, language).await {
                     *self = ll
                 };
             }
@@ -131,7 +138,8 @@ impl ResultCellPart {
                 for part_with_reference in v.iter_mut() {
                     part_with_reference
                         .part
-                        .localize_item_links(ecw, wiki, language);
+                        .localize_item_links(ecw, wiki, language)
+                        .await;
                 }
             }
             _ => {}
@@ -195,7 +203,7 @@ impl ResultCellPart {
         ret
     }
 
-    fn as_wikitext_entity(
+    async fn as_wikitext_entity(
         &self,
         list: &ListeriaList,
         id: &str,
@@ -213,14 +221,14 @@ impl ResultCellPart {
                 return format!("''[[{}|{}]]''", list.get_item_wiki_target(id), id);
             }
         }
-        let entity_id_link = list.get_item_link_with_fallback(id);
-        match list.get_entity(id) {
+        let entity_id_link = list.get_item_link_with_fallback(id).await;
+        match list.get_entity(id).await {
             Some(e) => {
                 let use_language = match e.label_in_locale(list.language()) {
                     Some(_) => list.language().to_owned(),
                     None => list.default_language(),
                 };
-                let use_label = list.get_label_with_fallback_lang(id, &use_language);
+                let use_label = list.get_label_with_fallback_lang(id, &use_language).await;
                 let labeled_entity_link = if list.is_main_wikibase_wiki() {
                     format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
                 } else {
@@ -232,11 +240,13 @@ impl ResultCellPart {
         }
     }
 
-    pub fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    #[async_recursion]
+    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         match self {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity((id, try_localize)) => {
                 self.as_wikitext_entity(list, id, *try_localize, colnum)
+                    .await
             }
             ResultCellPart::EntitySchema(id) => {
                 format!("[[EntitySchema:{id}|{id}]]") // TODO use self.as_wikitext_entity ?
@@ -277,7 +287,7 @@ impl ResultCellPart {
             }
             ResultCellPart::Uri(url) => url.to_owned(),
             ResultCellPart::ExternalId((property, id)) => {
-                match list.external_id_url(property, id) {
+                match list.external_id_url(property, id).await {
                     Some(url) => "[".to_string() + &url + " " + id + "]",
                     None => id.to_owned(),
                 }
@@ -300,11 +310,13 @@ impl ResultCellPart {
                     None => text.to_owned(),
                 }
             }
-            ResultCellPart::SnakList(v) => v
-                .iter()
-                .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum))
-                .collect::<Vec<String>>()
-                .join(" — "),
+            ResultCellPart::SnakList(v) => {
+                let mut ret = vec![];
+                for rcp in v {
+                    ret.push(rcp.part.as_wikitext(list, rownum, colnum).await);
+                }
+                ret.join(" — ")
+            }
             ResultCellPart::AutoDesc(ad) => {
                 match &ad.desc {
                     Some(desc) => desc.to_owned(),
@@ -314,8 +326,13 @@ impl ResultCellPart {
         }
     }
 
-    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
-        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum))
+    pub async fn as_tabbed_data(
+        &self,
+        list: &ListeriaList,
+        rownum: usize,
+        colnum: usize,
+    ) -> String {
+        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum).await)
     }
 
     fn render_entity_link(
