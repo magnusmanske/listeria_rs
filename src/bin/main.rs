@@ -25,7 +25,7 @@ async fn update_page(
 
     if false {
         // FOR TESTING
-        println!("{}", page.as_wikitext()?[0]);
+        println!("{}", page.as_wikitext().await?[0]);
         Ok("OK".to_string())
     } else {
         Ok(
@@ -75,14 +75,13 @@ async fn main() -> Result<()> {
 
         let mut config = Configuration::new_from_file("config.json").await.unwrap();
         config.set_max_local_cached_entities(1000000); // A lot
-        let config = Arc::new(config);
-        let mut ecw = EntityContainerWrapper::new(config.clone());
+        let ecw = EntityContainerWrapper::new().await?;
         let api = wikimisc::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await?;
         ecw.load_entities(&api, &items).await?;
 
         let mut first = true;
         for item in items {
-            let entity = match ecw.get_entity(&item) {
+            let entity = match ecw.get_entity(&item).await {
                 Some(e) => e,
                 None => continue,
             };

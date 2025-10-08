@@ -1,4 +1,3 @@
-use crate::configuration::Configuration;
 use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::LinkTarget;
 use crate::result_cell_part::PartWithReference;
@@ -6,23 +5,26 @@ use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{anyhow, Result};
+use foyer::IoEngineBuilder;
+use foyer::PsyncIoEngineBuilder;
+use foyer::{BlockEngineBuilder, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
+use rand::rng;
+use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use wikimisc::file_hash::FileHash;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
 use wikimisc::wikibase::entity::*;
-use wikimisc::wikibase::entity_container::EntityContainer;
 use wikimisc::wikibase::snak::SnakDataType;
 use wikimisc::wikibase::Value;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
-    config: Arc<Configuration>,
-    entities: EntityContainer,
-    max_local_cached_entities: usize,
-    entity_file_cache: FileHash<String, String>,
+    entities: HybridCache<String, String>,
+    entity_count: Arc<AtomicUsize>,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
@@ -34,12 +36,10 @@ impl std::fmt::Debug for EntityContainerWrapper {
 }
 
 impl EntityContainerWrapper {
-    pub fn new(config: Arc<Configuration>) -> Self {
+    pub async fn new() -> Result<Self> {
         let ret = Self {
-            config: config.clone(),
-            entities: config.create_entity_container(),
-            max_local_cached_entities: config.max_local_cached_entities(),
-            entity_file_cache: FileHash::new(),
+            entities: Self::create_entity_container().await?,
+            entity_count: Arc::new(AtomicUsize::new(0)),
         };
         // Pre-cache test entities if testing
         if cfg!(test) {
@@ -50,25 +50,61 @@ impl EntityContainerWrapper {
             let test_items: serde_json::Value = serde_json::from_reader(reader)
                 .expect("Failed to parse JSON from test_data/test_entities.json");
             for (_item, j) in test_items.as_object().unwrap() {
-                // let entity = Entity::new_from_json(j).unwrap();
-                ret.entities.set_entity_from_json(j).unwrap();
+                ret.set_entity_from_json(j).unwrap();
             }
             // println!("Loaded");
         }
-        ret
+        Ok(ret)
     }
 
-    async fn load_entities_into_entity_cache(&mut self, api: &Api, ids: &[String]) -> Result<()> {
-        let chunks = ids.chunks(self.max_local_cached_entities);
+    pub async fn create_entity_container() -> Result<HybridCache<String, String>> {
+        let dir = tempfile::tempdir()?;
+
+        let device = FsDeviceBuilder::new(dir.path())
+            .with_capacity(256 * 1024 * 1024)
+            .build()?;
+
+        let io_engine = PsyncIoEngineBuilder::new().build().await?;
+
+        let hybrid: HybridCache<String, String> = HybridCacheBuilder::new()
+            .memory(64 * 1024 * 1024)
+            .with_shards(1)
+            .storage()
+            .with_io_engine(io_engine)
+            // use block-based disk cache engine with default configuration
+            .with_engine_config(BlockEngineBuilder::new(device))
+            .with_compression(foyer::Compression::Lz4)
+            .build()
+            .await?;
+        Ok(hybrid)
+        // let mut entities = EntityContainer::new();
+        // entities.set_max_concurrent(self.max_concurrent_entry_queries);
+        // entities
+    }
+
+    pub fn set_entity_from_json(&self, json: &serde_json::Value) -> Result<()> {
+        let q = json["id"]
+            .as_str()
+            .ok_or_else(|| anyhow!("Missing 'id' field"))?;
+        let json_string = json.to_string();
+        if !self.entities.contains(q) {
+            self.entity_count.fetch_add(1, Ordering::Relaxed);
+        }
+        self.entities.insert(q.to_string(), json_string);
+        Ok(())
+    }
+
+    async fn load_entities_into_entity_cache(&self, api: &Api, ids: &[String]) -> Result<()> {
+        let chunks = ids.chunks(500); // 500 is just some guess
         for chunk in chunks {
-            let entities = self.config.create_entity_container();
+            let entities = wikimisc::wikibase::entity_container::EntityContainer::new();
             if let Err(e) = entities.load_entities(api, &chunk.into()).await {
                 return Err(anyhow!("Error loading entities: {e}"));
             }
             for entity_id in chunk {
                 if let Some(entity) = entities.get_entity(entity_id) {
                     let json = entity.to_json();
-                    self.entity_file_cache.insert(entity_id, json.to_string())?;
+                    self.set_entity_from_json(&json)?;
                 }
             }
         }
@@ -77,29 +113,35 @@ impl EntityContainerWrapper {
 
     /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times
     fn filter_ids(&self, ids: &[String]) -> Result<Vec<String>> {
-        let ids: Vec<String> = ids
+        let new_ids: Vec<String> = ids
             .iter()
-            .filter(|id| !self.entities.has_entity(id.as_str()))
-            // .filter(|id| !self.entity_file_cache.contains(id.to_owned()))
+            .filter(|id| !self.entities.contains(*id))
             .map(|id| id.to_owned())
             .collect();
         let ids = self
-            .entities
-            .unique_shuffle_entity_ids(&ids)
+            .unique_shuffle_entity_ids(&new_ids)
             .map_err(|e| anyhow!("{e}"))?;
         Ok(ids)
     }
 
+    fn unique_shuffle_entity_ids(&self, ids: &[String]) -> Result<Vec<String>> {
+        let mut ids = ids.to_vec();
+        ids.sort_unstable();
+        ids.dedup();
+        ids.shuffle(&mut rng());
+        Ok(ids)
+    }
+
     pub fn len(&self) -> usize {
-        self.entities.len() + self.entity_file_cache.len()
+        self.entity_count.load(Ordering::Relaxed)
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entities.len() == 0 && self.entity_file_cache.is_empty()
+        self.len() == 0
     }
 
     /// Loads the entities for the given IDs
-    pub async fn load_entities(&mut self, api: &Api, ids: &[String]) -> Result<()> {
+    pub async fn load_entities(&self, api: &Api, ids: &[String]) -> Result<()> {
         let ids = self.filter_ids(ids)?;
         if ids.is_empty() {
             return Ok(());
@@ -108,35 +150,33 @@ impl EntityContainerWrapper {
             println!("ATTENTION: Trying to load items {ids:?}");
         }
 
-        if ids.len() + self.len() > self.max_local_cached_entities {
-            self.load_entities_into_entity_cache(api, &ids).await
-        } else {
-            match self.entities.load_entities(api, &ids).await {
-                Ok(_) => Ok(()),
-                Err(e) => Err(anyhow!("Error loading entities: {e}")),
-            }
-        }
+        self.load_entities_into_entity_cache(api, &ids).await
     }
 
-    pub fn get_entity(&self, entity_id: &str) -> Option<Entity> {
+    pub async fn get_entity(&self, entity_id: &str) -> Option<Entity> {
         if cfg!(test) {
             println!("{entity_id}\tentity_loaded");
         }
-        self.entities.get_entity(entity_id).or_else(|| {
-            let json_string = self.entity_file_cache.get(entity_id)?;
-            let json_value = serde_json::from_str(&json_string).ok()?;
-            Entity::new_from_json(&json_value).ok()
-        })
+        let json_string = self
+            .entities
+            .get(&entity_id.to_string())
+            .await
+            .ok()??
+            .to_string();
+        let v: serde_json::Value = serde_json::from_str(&json_string).ok()?;
+        let entity = Entity::new_from_json(&v).ok()?;
+        Some(entity)
     }
 
-    pub fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
-        self.get_entity(entity_id)?
+    pub async fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
+        self.get_entity(entity_id)
+            .await?
             .label_in_locale(language)
             .map(|s| s.to_string())
     }
 
-    pub fn get_entity_label_with_fallback(&self, entity_id: &str, language: &str) -> String {
-        match self.get_entity(entity_id) {
+    pub async fn get_entity_label_with_fallback(&self, entity_id: &str, language: &str) -> String {
+        match self.get_entity(entity_id).await {
             Some(entity) => {
                 match entity.label_in_locale(language).map(|s| s.to_string()) {
                     Some(s) => s,
@@ -150,7 +190,7 @@ impl EntityContainerWrapper {
                             }
                         }
                         // Try any label, any language
-                        if let Some(entity) = self.get_entity(entity_id) {
+                        if let Some(entity) = self.get_entity(entity_id).await {
                             if let Some(label) = entity.labels().first() {
                                 return label.value().to_string();
                             }
@@ -164,13 +204,13 @@ impl EntityContainerWrapper {
         }
     }
 
-    pub fn entity_to_local_link(
+    pub async fn entity_to_local_link(
         &self,
         item: &str,
         wiki: &str,
         language: &str,
     ) -> Option<ResultCellPart> {
-        let entity = self.get_entity(item)?;
+        let entity = self.get_entity(item).await?;
         let page = match entity.sitelinks() {
             Some(sl) => sl
                 .iter()
@@ -181,11 +221,12 @@ impl EntityContainerWrapper {
         }?;
         let label = self
             .get_local_entity_label(item, language)
+            .await
             .unwrap_or_else(|| page.clone());
         Some(ResultCellPart::LocalLink((page, label, LinkTarget::Page)))
     }
 
-    pub fn get_result_row(
+    pub async fn get_result_row(
         &self,
         entity_id: &str,
         sparql_table: &SparqlTable,
@@ -194,16 +235,16 @@ impl EntityContainerWrapper {
         if sparql_table.is_empty() {
             return None;
         }
-        self.use_local_links(list, entity_id)?;
+        self.use_local_links(list, entity_id).await?;
 
         let mut row = ResultRow::new(entity_id);
-        row.from_columns(list, sparql_table);
+        row.from_columns(list, sparql_table).await;
         Some(row)
     }
 
-    fn use_local_links(&self, list: &ListeriaList, entity_id: &str) -> Option<()> {
+    async fn use_local_links(&self, list: &ListeriaList, entity_id: &str) -> Option<()> {
         if LinksType::Local == *list.template_params().links() {
-            let entity = self.get_entity(entity_id)?;
+            let entity = self.get_entity(entity_id).await?;
             let page = match entity.sitelinks() {
                 Some(sl) => sl
                     .iter()
@@ -217,8 +258,8 @@ impl EntityContainerWrapper {
         Some(())
     }
 
-    pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
-        let pi = self.get_entity(prop)?;
+    pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
+        let pi = self.get_entity(prop).await?;
         pi.claims_with_property("P1630")
             .iter()
             .filter_map(|s| {
@@ -233,9 +274,9 @@ impl EntityContainerWrapper {
             .next()
     }
 
-    pub fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
+    pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         #[allow(clippy::collapsible_match)]
-        match self.get_entity(prop) {
+        match self.get_entity(prop).await {
             /* trunk-ignore(clippy/collapsible_match) */
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {
@@ -274,9 +315,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_entity_caching() {
-        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
-        let mut ecw = EntityContainerWrapper::new(config);
-        ecw.entities.clear(); // Clear test cache
+        let ecw = EntityContainerWrapper::new().await.unwrap();
+        ecw.entities.clear().await.unwrap(); // Clear test cache
         let api = Api::new("https://www.wikidata.org/w/api.php")
             .await
             .unwrap();
@@ -284,11 +324,10 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        ecw.max_local_cached_entities = 2;
         ecw.load_entities(&api, &ids).await.unwrap();
-        assert_eq!(ecw.entities.len(), 0);
+        assert_eq!(ecw.len(), 0);
 
-        let e2 = ecw.get_entity("Q2").unwrap();
+        let e2 = ecw.get_entity("Q2").await.unwrap();
         assert_eq!(e2.id(), "Q2");
     }
 }

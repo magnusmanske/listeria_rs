@@ -56,8 +56,8 @@ impl Reference {
     }
 
     /// Returns the reference as a wikitext string
-    pub fn as_reference(&mut self, list: &ListeriaList) -> String {
-        let wikitext = self.as_wikitext(list);
+    pub async fn as_reference(&mut self, list: &ListeriaList) -> String {
+        let wikitext = self.as_wikitext(list).await;
         let has_md5 = list.reference_ids().get(&self.md5).is_some();
 
         if has_md5 {
@@ -68,7 +68,7 @@ impl Reference {
     }
 
     /// Returns the wikitext representation of the reference
-    fn as_wikitext(&mut self, list: &ListeriaList) -> String {
+    async fn as_wikitext(&mut self, list: &ListeriaList) -> String {
         let mut iterations_left: usize = 100; // Paranoia
         while iterations_left > 0 {
             iterations_left -= 1;
@@ -83,14 +83,14 @@ impl Reference {
             };
 
             if use_cite_web && self.title.is_some() && self.url.is_some() {
-                s = self.render_cite_web(use_invoke, list);
+                s = self.render_cite_web(use_invoke, list).await;
             } else if self.url.is_some() {
                 if let Some(x) = self.url.as_ref() {
                     s += x;
                 }
             } else if self.stated_in.is_some() {
                 if let Some(q) = &self.stated_in {
-                    s += &list.get_item_link_with_fallback(q);
+                    s += &list.get_item_link_with_fallback(q).await;
                 }
             }
 
@@ -100,15 +100,22 @@ impl Reference {
         "Error: Could not generate reference wikitext, too many iterations".to_string()
     }
 
-    fn render_cite_web(&self, use_invoke: bool, list: &ListeriaList) -> String {
-        let template = if use_invoke { "{{#invoke:cite|web" } else { "{{cite web" };
+    async fn render_cite_web(&self, use_invoke: bool, list: &ListeriaList) -> String {
+        let template = if use_invoke {
+            "{{#invoke:cite|web"
+        } else {
+            "{{cite web"
+        };
         let mut ret = format!(
             "{template}|url={}|title={}",
             self.url.as_ref().unwrap_or(&String::new()),
             self.title.as_ref().unwrap_or(&String::new())
         );
         if let Some(stated_in) = &self.stated_in {
-            ret += &format!("|website={}", list.get_item_link_with_fallback(stated_in));
+            ret += &format!(
+                "|website={}",
+                list.get_item_link_with_fallback(stated_in).await
+            );
         }
         if let Some(date) = &self.date {
             ret += &format!("|access-date={}", &date);

@@ -1,5 +1,6 @@
 use crate::configuration::Configuration;
 use crate::database_pool::DatabasePool;
+use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::wiki::Wiki;
 use crate::ApiArc;
 use anyhow::{anyhow, Result};
@@ -160,14 +161,11 @@ impl WikiApis {
 
     /// Returns the Wikidata item for a given template
     async fn load_entity_from_id(&self, api: &Arc<Api>, q: String) -> Result<Entity> {
-        // NOTE: EntityContainerWrapper is not needed, this only a single item
-        let entities = self.config.create_entity_container();
-        entities
-            .load_entities(api, &vec![q.to_owned()])
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
-        let entity = entities
+        let ec = EntityContainerWrapper::new().await?;
+        ec.load_entities(api, &[q.to_owned()]).await?;
+        let entity = ec
             .get_entity(&q)
+            .await
             .ok_or_else(|| anyhow!("{q} item not found on Wikidata"))?;
         Ok(entity)
     }

@@ -1,4 +1,5 @@
 use crate::database_pool::DatabasePool;
+use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::*;
 use anyhow::{anyhow, Result};
 use serde_json::Value;
@@ -6,7 +7,7 @@ use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
 use wiki::Wiki;
 use wikimisc::mediawiki::api::Api;
-use wikimisc::wikibase::{entity_container::EntityContainer, EntityTrait};
+use wikimisc::wikibase::EntityTrait;
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -144,12 +145,6 @@ impl Configuration {
         }
     }
 
-    pub fn create_entity_container(&self) -> EntityContainer {
-        let mut entities = EntityContainer::new();
-        entities.set_max_concurrent(self.max_concurrent_entry_queries);
-        entities
-    }
-
     pub fn max_threads(&self) -> usize {
         self.max_threads
     }
@@ -177,13 +172,14 @@ impl Configuration {
         self.max_local_cached_entities
     }
 
-    fn get_sitelink_mapping(
+    async fn get_sitelink_mapping(
         &self,
-        entities: &EntityContainer,
+        entities: &EntityContainerWrapper,
         q: &str,
     ) -> Result<HashMap<String, String>> {
         let entity = entities
-            .get_entity(q.to_owned())
+            .get_entity(q)
+            .await
             .ok_or(anyhow!("Entity {q} not found"))?;
         match entity.sitelinks() {
             Some(sl) => Ok(sl
@@ -313,13 +309,13 @@ impl Configuration {
             Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
             None => return Err(anyhow!("No template_end_q in config")),
         };
-        let entities = self.create_entity_container();
+        let entities = EntityContainerWrapper::new().await?;
         entities
-            .load_entities(api, &vec![q_start.clone(), q_end.clone()])
+            .load_entities(api, &[q_start.clone(), q_end.clone()])
             .await
             .map_err(|e| anyhow!("{e}"))?;
-        self.template_start_sites = self.get_sitelink_mapping(&entities, &q_start)?;
-        self.template_end_sites = self.get_sitelink_mapping(&entities, &q_end)?;
+        self.template_start_sites = self.get_sitelink_mapping(&entities, &q_start).await?;
+        self.template_end_sites = self.get_sitelink_mapping(&entities, &q_end).await?;
         self.template_start_q = q_start;
         Ok(())
     }
