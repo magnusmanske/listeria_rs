@@ -924,6 +924,7 @@ version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "181bfdf387bd81442dd529e46b4cf632fd75076349d962b8a96aea24eddf5848"
 dependencies = [
+ "bincode",
  "bytes",
  "cfg-if",
  "itertools",
@@ -931,6 +932,7 @@ dependencies = [
  "mixtrics",
  "parking_lot",
  "pin-project",
+ "serde",
  "thiserror 2.0.17",
  "tokio",
  "twox-hash",
@@ -996,6 +998,7 @@ dependencies = [
  "parking_lot",
  "pin-project",
  "rand 0.9.2",
+ "serde",
  "thiserror 2.0.17",
  "tokio",
  "tracing",

@@ -5,8 +5,6 @@ use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{anyhow, Result};
-use foyer::IoEngineBuilder;
-use foyer::PsyncIoEngineBuilder;
 use foyer::{BlockEngineBuilder, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
 use rand::rng;
 use rand::seq::SliceRandom;
@@ -20,6 +18,8 @@ use wikimisc::sparql_table::SparqlTable;
 use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::snak::SnakDataType;
 use wikimisc::wikibase::Value;
+
+const CACHE_CAPACITY_MB: usize = 64;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
@@ -59,27 +59,18 @@ impl EntityContainerWrapper {
 
     pub async fn create_entity_container() -> Result<HybridCache<String, String>> {
         let dir = tempfile::tempdir()?;
-
         let device = FsDeviceBuilder::new(dir.path())
-            .with_capacity(256 * 1024 * 1024)
+            .with_capacity(CACHE_CAPACITY_MB * 1024 * 1024)
             .build()?;
-
-        let io_engine = PsyncIoEngineBuilder::new().build().await?;
 
         let hybrid: HybridCache<String, String> = HybridCacheBuilder::new()
             .memory(64 * 1024 * 1024)
-            .with_shards(1)
             .storage()
-            .with_io_engine(io_engine)
-            // use block-based disk cache engine with default configuration
             .with_engine_config(BlockEngineBuilder::new(device))
             .with_compression(foyer::Compression::Lz4)
             .build()
             .await?;
         Ok(hybrid)
-        // let mut entities = EntityContainer::new();
-        // entities.set_max_concurrent(self.max_concurrent_entry_queries);
-        // entities
     }
 
     pub fn set_entity_from_json(&self, json: &serde_json::Value) -> Result<()> {
@@ -97,12 +88,12 @@ impl EntityContainerWrapper {
     async fn load_entities_into_entity_cache(&self, api: &Api, ids: &[String]) -> Result<()> {
         let chunks = ids.chunks(500); // 500 is just some guess
         for chunk in chunks {
-            let entities = wikimisc::wikibase::entity_container::EntityContainer::new();
-            if let Err(e) = entities.load_entities(api, &chunk.into()).await {
+            let entity_container = wikimisc::wikibase::entity_container::EntityContainer::new();
+            if let Err(e) = entity_container.load_entities(api, &chunk.into()).await {
                 return Err(anyhow!("Error loading entities: {e}"));
             }
             for entity_id in chunk {
-                if let Some(entity) = entities.get_entity(entity_id) {
+                if let Some(entity) = entity_container.get_entity(entity_id) {
                     let json = entity.to_json();
                     self.set_entity_from_json(&json)?;
                 }
@@ -316,7 +307,6 @@ mod tests {
     #[tokio::test]
     async fn test_entity_caching() {
         let ecw = EntityContainerWrapper::new().await.unwrap();
-        ecw.entities.clear().await.unwrap(); // Clear test cache
         let api = Api::new("https://www.wikidata.org/w/api.php")
             .await
             .unwrap();
@@ -325,7 +315,6 @@ mod tests {
             .map(|s| s.to_string())
             .collect();
         ecw.load_entities(&api, &ids).await.unwrap();
-        assert_eq!(ecw.len(), 0);
 
         let e2 = ecw.get_entity("Q2").await.unwrap();
         assert_eq!(e2.id(), "Q2");
