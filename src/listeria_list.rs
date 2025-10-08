@@ -50,17 +50,17 @@ pub struct ListeriaList {
 }
 
 impl ListeriaList {
-    pub fn new(template: Template, page_params: Arc<PageParams>) -> Self {
+    pub async fn new(template: Template, page_params: Arc<PageParams>) -> Result<Self> {
         let wb_api = page_params.wb_api();
         let mut template = template;
         template.fix_values();
-        Self {
+        Ok(Self {
             page_params: page_params.clone(),
             template,
             columns: vec![],
             params: TemplateParams::new(),
             sparql_table: SparqlTable::new(),
-            ecw: EntityContainerWrapper::new(page_params.config()),
+            ecw: EntityContainerWrapper::new().await?,
             results: Vec::new(),
             shadow_files: HashSet::new(),
             local_page_cache: HashMap::new(),
@@ -70,7 +70,7 @@ impl ListeriaList {
             reference_ids: HashSet::new(),
             profiling: page_params.config().profiling(),
             last_timestamp: Utc::now(),
-        }
+        })
     }
 
     fn profile(&mut self, msg: &str) {
@@ -94,7 +94,7 @@ impl ListeriaList {
         self.profile("AFTER list::process run_query");
         self.load_entities().await?;
         self.profile("AFTER list::process load_entities");
-        self.generate_results()?;
+        self.generate_results().await?;
         self.profile("AFTER list::process generate_results");
         self.process_results().await?;
         self.profile("AFTER list::process process_results");
@@ -102,8 +102,8 @@ impl ListeriaList {
         Ok(())
     }
 
-    pub fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
-        self.ecw.external_id_url(prop, id)
+    pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
+        self.ecw.external_id_url(prop, id).await
     }
 
     pub fn results(&self) -> &Vec<ResultRow> {
@@ -328,16 +328,16 @@ impl ListeriaList {
             .await
             .map_err(|e| anyhow!("{e}"))?;
 
-        self.label_columns();
+        self.label_columns().await;
 
         Ok(())
     }
 
-    fn label_columns(&mut self) {
+    async fn label_columns(&mut self) {
         let mut columns = vec![];
         for c in &self.columns {
             let mut c = c.clone();
-            c.generate_label(self);
+            c.generate_label(self).await;
             columns.push(c);
         }
         self.columns = columns;
@@ -413,7 +413,7 @@ impl ListeriaList {
             .ok_or_else(|| anyhow!("Could not find SPARQL variable in results"))
     }
 
-    pub fn generate_results(&mut self) -> Result<()> {
+    pub async fn generate_results(&mut self) -> Result<()> {
         let mut tmp_results: Vec<ResultRow> = Vec::new();
         match self.params.one_row_per_item() {
             true => {
@@ -429,19 +429,18 @@ impl ListeriaList {
                         id2rows.entry(id.to_string()).or_default().push(row_id);
                     };
                 }
-                sparql_row_ids
-                    .iter()
-                    .filter_map(|id| {
-                        let mut tmp_rows = SparqlTable::from_table(&self.sparql_table);
-                        for row_id in id2rows.get(id)? {
-                            if let Some(row) = self.sparql_table.get(*row_id) {
-                                tmp_rows.push(row)
-                            }
+                for id in &sparql_row_ids {
+                    let mut tmp_rows = SparqlTable::from_table(&self.sparql_table);
+                    let row_ids = id2rows.get(id).map(|v| v.to_owned()).unwrap_or_default();
+                    for row_id in row_ids {
+                        if let Some(row) = self.sparql_table.get(row_id) {
+                            tmp_rows.push(row)
                         }
-                        self.ecw.get_result_row(id, &tmp_rows, self)
-                    })
-                    // .flatten()
-                    .for_each(|row| tmp_results.push(row));
+                    }
+                    if let Some(row) = self.ecw.get_result_row(id, &tmp_rows, self).await {
+                        tmp_results.push(row)
+                    }
+                }
             }
             false => {
                 let var_index = self.get_var_index()?;
@@ -457,7 +456,7 @@ impl ListeriaList {
                     if let Some(Some(SparqlValue::Entity(id))) = v {
                         let mut tmp_table = SparqlTable::from_table(&self.sparql_table);
                         tmp_table.push(row.to_owned());
-                        if let Some(x) = self.ecw.get_result_row(&id, &tmp_table, self) {
+                        if let Some(x) = self.ecw.get_result_row(&id, &tmp_table, self).await {
                             tmp_results.push(x)
                         }
                     }
@@ -468,7 +467,7 @@ impl ListeriaList {
         Ok(())
     }
 
-    fn process_items_to_local_links(&mut self) -> Result<()> {
+    async fn process_items_to_local_links(&mut self) -> Result<()> {
         // Try to change items to local link
         let wiki = self.wiki().to_owned();
         let language = self.language().to_owned();
@@ -477,14 +476,14 @@ impl ListeriaList {
                 Some(row) => row,
                 None => continue,
             };
-            // let ecw = EntityContainerWrapper::new(self.page_params.config()); // TODO FIXME use "own" ecw or new one?
             for cell in row.cells_mut().iter_mut() {
                 ResultCell::localize_item_links_in_parts(
                     cell.parts_mut(),
                     &self.ecw, // &ecw,
                     &wiki,
                     &language,
-                );
+                )
+                .await;
             }
             // self.results.set(row_id, row)?;
         }
@@ -610,7 +609,7 @@ impl ListeriaList {
             .collect()
     }
 
-    fn process_redlinks_only(&mut self) -> Result<()> {
+    async fn process_redlinks_only(&mut self) -> Result<()> {
         if *self.get_links_type() != LinksType::RedOnly {
             return Ok(());
         }
@@ -622,7 +621,7 @@ impl ListeriaList {
                 Some(row) => row,
                 None => continue,
             };
-            row.set_keep(match self.ecw.get_entity(row.entity_id()) {
+            row.set_keep(match self.ecw.get_entity(row.entity_id()).await {
                 Some(entity) => {
                     match entity.sitelinks() {
                         Some(sl) => sl.iter().filter(|s| *s.site() == wiki).count() == 0,
@@ -663,7 +662,7 @@ impl ListeriaList {
         ids.dedup();
         let mut labels = vec![];
         for id in ids {
-            if let Some(e) = self.get_entity(&id) {
+            if let Some(e) = self.get_entity(&id).await {
                 if let Some(l) = e.label_in_locale(self.language()) {
                     labels.push(l.to_string());
                 }
@@ -712,7 +711,7 @@ impl ListeriaList {
                         Some(row) => row,
                         None => continue,
                     };
-                    sortkeys.push(row.get_sortkey_label(self));
+                    sortkeys.push(row.get_sortkey_label(self).await);
                 }
             }
             SortMode::FamilyName => {
@@ -722,18 +721,18 @@ impl ListeriaList {
                         None => continue,
                     };
 
-                    sortkeys.push(row.get_sortkey_family_name(self));
+                    sortkeys.push(row.get_sortkey_family_name(self).await);
                 }
             }
             SortMode::Property(prop) => {
-                datatype = self.ecw.get_datatype_for_property(prop);
+                datatype = self.ecw.get_datatype_for_property(prop).await;
                 for row_id in 0..self.results.len() {
                     let row = match self.results.get(row_id) {
                         Some(row) => row,
                         None => continue,
                     };
 
-                    sortkeys.push(row.get_sortkey_prop(prop, self, &datatype));
+                    sortkeys.push(row.get_sortkey_prop(prop, self, &datatype).await);
                 }
             }
             SortMode::SparqlVariable(variable) => {
@@ -817,7 +816,7 @@ impl ListeriaList {
         }
         .to_owned();
         self.load_row_entities().await?;
-        let datatype = self.ecw.get_datatype_for_property(&section_property);
+        let datatype = self.ecw.get_datatype_for_property(&section_property).await;
         self.profile("AFTER list::process_assign_sections 1");
 
         let mut section_names_q = vec![];
@@ -827,7 +826,10 @@ impl ListeriaList {
                 None => continue,
             };
 
-            section_names_q.push(row.get_sortkey_prop(&section_property, self, &datatype));
+            section_names_q.push(
+                row.get_sortkey_prop(&section_property, self, &datatype)
+                    .await,
+            );
         }
         self.profile("AFTER list::process_assign_sections 2");
 
@@ -839,15 +841,15 @@ impl ListeriaList {
         self.profile("AFTER list::process_assign_sections 3a");
         let mut section_names = vec![];
         for q in section_names_q {
-            let label = self.get_label_with_fallback(&q);
+            let label = self.get_label_with_fallback(&q).await;
             section_names.push(label);
         }
 
         // Count names
         let mut section_count = HashMap::new();
-        section_names.iter().for_each(|name| {
+        for name in &section_names {
             *section_count.entry(name).or_insert(0) += 1;
-        });
+        }
         self.profile("AFTER list::process_assign_sections 4");
 
         // Remove low counts
@@ -1063,9 +1065,9 @@ impl ListeriaList {
         self.profile("AFTER list::process_results gather_and_load_items");
         self.fill_autodesc().await?;
         self.profile("AFTER list::process_results fill_autodesc");
-        self.process_redlinks_only()?;
+        self.process_redlinks_only().await?;
         self.profile("AFTER list::process_results process_redlinks_only");
-        self.process_items_to_local_links()?;
+        self.process_items_to_local_links().await?;
         self.profile("AFTER list::process_results process_items_to_local_links");
         self.process_redlinks().await?;
         self.profile("AFTER list::process_results process_redlinks");
@@ -1128,7 +1130,7 @@ impl ListeriaList {
                             .load_entities(&self.wb_api, &[ad.entity_id().to_owned()])
                             .await
                             .map_err(|e| anyhow!("{e}"))?;
-                        if let Some(entity) = self.ecw.get_entity(ad.entity_id()) {
+                        if let Some(entity) = self.ecw.get_entity(ad.entity_id()).await {
                             if let Ok(desc) = self.get_autodesc_description(&entity).await {
                                 autodescs.insert(ad.entity_id().to_owned(), desc);
                             }
@@ -1144,8 +1146,8 @@ impl ListeriaList {
         self.params.links()
     }
 
-    pub fn get_entity(&self, entity_id: &str) -> Option<wikimisc::wikibase::Entity> {
-        self.ecw.get_entity(entity_id)
+    pub async fn get_entity(&self, entity_id: &str) -> Option<wikimisc::wikibase::Entity> {
+        self.ecw.get_entity(entity_id).await
     }
 
     pub fn get_row_template(&self) -> &Option<String> {
@@ -1163,7 +1165,7 @@ impl ListeriaList {
                 Some(row) => row,
                 None => continue,
             };
-            if let Some(entity) = self.ecw.get_entity(row.entity_id()) {
+            if let Some(entity) = self.ecw.get_entity(row.entity_id()).await {
                 self.get_filtered_claims(&entity, prop)
                     .iter()
                     .filter(|statement| statement.property() == prop)
@@ -1284,13 +1286,16 @@ impl ListeriaList {
         self.params.header_template()
     }
 
-    pub fn get_label_with_fallback(&self, entity_id: &str) -> String {
+    pub async fn get_label_with_fallback(&self, entity_id: &str) -> String {
         self.ecw
             .get_entity_label_with_fallback(entity_id, self.language())
+            .await
     }
 
-    pub fn get_label_with_fallback_lang(&self, entity_id: &str, language: &str) -> String {
-        self.ecw.get_entity_label_with_fallback(entity_id, language)
+    pub async fn get_label_with_fallback_lang(&self, entity_id: &str, language: &str) -> String {
+        self.ecw
+            .get_entity_label_with_fallback(entity_id, language)
+            .await
     }
 
     pub fn is_main_wikibase_wiki(&self) -> bool {
@@ -1312,13 +1317,13 @@ impl ListeriaList {
         format!("{prefix}{entity_id}")
     }
 
-    pub fn get_item_link_with_fallback(&self, entity_id: &str) -> String {
+    pub async fn get_item_link_with_fallback(&self, entity_id: &str) -> String {
         let quotes = if self.is_main_wikibase_wiki() {
             ""
         } else {
             "''"
         };
-        let label = self.get_label_with_fallback(entity_id);
+        let label = self.get_label_with_fallback(entity_id).await;
         let label_part = if self.is_main_wikibase_wiki() && entity_id == label {
             String::new()
         } else {
@@ -1355,9 +1360,10 @@ impl ListeriaList {
         }
     }
 
-    pub fn entity_to_local_link(&self, item: &str) -> Option<ResultCellPart> {
+    pub async fn entity_to_local_link(&self, item: &str) -> Option<ResultCellPart> {
         self.ecw
             .entity_to_local_link(item, self.wiki(), &self.language)
+            .await
     }
 
     pub fn default_language(&self) -> String {

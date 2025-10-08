@@ -94,10 +94,10 @@ impl ResultRow {
         });
     }
 
-    pub fn from_columns(&mut self, list: &ListeriaList, sparql_table: &SparqlTable) {
+    pub async fn from_columns(&mut self, list: &ListeriaList, sparql_table: &SparqlTable) {
         self.cells.clear();
         for column in list.columns().iter() {
-            let x = ResultCell::new(list, &self.entity_id, sparql_table, column);
+            let x = ResultCell::new(list, &self.entity_id, sparql_table, column).await;
             self.cells.push(x);
         }
     }
@@ -107,15 +107,15 @@ impl ResultRow {
     }
 
     /// Get the sortkey for the label of the entity
-    pub fn get_sortkey_label(&self, list: &ListeriaList) -> String {
-        match list.get_entity(self.entity_id()) {
-            Some(_entity) => list.get_label_with_fallback(self.entity_id()),
+    pub async fn get_sortkey_label(&self, list: &ListeriaList) -> String {
+        match list.get_entity(self.entity_id()).await {
+            Some(_entity) => list.get_label_with_fallback(self.entity_id()).await,
             None => "".to_string(),
         }
     }
 
     /// Get the sortkey for the family name of the entity
-    pub fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
+    pub async fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
         lazy_static! {
             static ref RE_SR_JR: Regex =
                 Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse");
@@ -124,7 +124,7 @@ impl ResultRow {
             static ref RE_LAST_FIRST: Regex =
                 Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
         }
-        match page.get_entity(&self.entity_id) {
+        match page.get_entity(&self.entity_id).await {
             Some(entity) => match entity.label_in_locale(page.language()) {
                 Some(label) => {
                     let ret = RE_SR_JR.replace_all(label, "");
@@ -148,13 +148,13 @@ impl ResultRow {
     }
 
     /// Get the sortkey for a property
-    pub fn get_sortkey_prop(
+    pub async fn get_sortkey_prop(
         &self,
         prop: &str,
         list: &ListeriaList,
         datatype: &SnakDataType,
     ) -> String {
-        match list.get_entity(&self.entity_id) {
+        match list.get_entity(&self.entity_id).await {
             Some(entity) => {
                 match list
                     .get_filtered_claims(&entity, prop)
@@ -163,7 +163,7 @@ impl ResultRow {
                     .map(|statement| statement.main_snak())
                     .next()
                 {
-                    Some(snak) => self.get_sortkey_from_snak(snak, list),
+                    Some(snak) => self.get_sortkey_from_snak(snak, list).await,
                     None => self.no_value(datatype),
                 }
             }
@@ -190,7 +190,7 @@ impl ResultRow {
     }
 
     /// Get the sortkey from a snak
-    fn get_sortkey_from_snak(&self, snak: &Snak, list: &ListeriaList) -> String {
+    async fn get_sortkey_from_snak(&self, snak: &Snak, list: &ListeriaList) -> String {
         match snak.data_value() {
             Some(data_value) => match data_value.value() {
                 wikimisc::wikibase::value::Value::Coordinate(c) => format!(
@@ -204,7 +204,7 @@ impl ResultRow {
                 }
                 wikimisc::wikibase::value::Value::Entity(entity) => {
                     // TODO language?
-                    list.get_label_with_fallback(entity.id())
+                    list.get_label_with_fallback(entity.id()).await
                 }
                 wikimisc::wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikimisc::wikibase::value::Value::StringValue(s) => s.to_owned(),
@@ -253,10 +253,10 @@ impl ResultRow {
     }
 
     /// Get the cells as tabbed data
-    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
+    pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
         let mut ret = vec![];
         for (colnum, cell) in self.cells.iter().enumerate() {
-            ret.push(cell.as_tabbed_data(list, rownum, colnum));
+            ret.push(cell.as_tabbed_data(list, rownum, colnum).await);
         }
         ret.insert(0, json!(self.section));
         json!(ret)
@@ -283,13 +283,11 @@ impl ResultRow {
     }
 
     /// Get the row as wikitext
-    pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize) -> String {
-        let cells: Vec<String> = self
-            .cells
-            .iter_mut()
-            .enumerate()
-            .map(|(colnum, cell)| cell.as_wikitext(list, rownum, colnum))
-            .collect();
+    pub async fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize) -> String {
+        let mut cells: Vec<String> = vec![];
+        for (colnum, cell) in self.cells.iter_mut().enumerate() {
+            cells.push(cell.as_wikitext(list, rownum, colnum).await);
+        }
         match list.get_row_template() {
             Some(t) => format!(
                 "{{{{{}\n| {}\n}}}}",

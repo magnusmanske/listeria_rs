@@ -21,7 +21,7 @@ pub struct ResultCell {
 }
 
 impl ResultCell {
-    pub fn new(
+    pub async fn new(
         list: &ListeriaList,
         entity_id: &str,
         sparql_table: &SparqlTable,
@@ -33,7 +33,7 @@ impl ResultCell {
             deduplicate_parts: true,
         };
 
-        let entity = list.get_entity(entity_id);
+        let entity = list.get_entity(entity_id).await;
         match col.obj() {
             ColumnType::Qid => Self::ct_qid(&mut ret, entity_id),
             ColumnType::Item => Self::ct_item(&mut ret, entity_id),
@@ -150,7 +150,7 @@ impl ResultCell {
         self.parts = parts;
     }
 
-    pub fn localize_item_links_in_parts(
+    pub async fn localize_item_links_in_parts(
         parts: &mut [PartWithReference],
         ecw: &EntityContainerWrapper,
         wiki: &str,
@@ -159,24 +159,30 @@ impl ResultCell {
         for part_with_reference in parts.iter_mut() {
             part_with_reference
                 .part_mut()
-                .localize_item_links(ecw, wiki, language);
+                .localize_item_links(ecw, wiki, language)
+                .await;
         }
     }
 
-    pub fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
-        let ret: Vec<String> = self
-            .parts
-            .iter()
-            .map(|part_with_reference| {
+    pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
+        let mut ret = vec![];
+        for part_with_reference in self.parts.iter() {
+            ret.push(
                 part_with_reference
                     .part()
                     .as_tabbed_data(list, rownum, colnum)
-            })
-            .collect();
+                    .await,
+            );
+        }
         json!(ret.join("<br/>"))
     }
 
-    pub fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub async fn as_wikitext(
+        &mut self,
+        list: &ListeriaList,
+        rownum: usize,
+        colnum: usize,
+    ) -> String {
         let mut ret;
         if list.template_params().wdedit() && list.header_template().is_none() {
             ret = match &self.wdedit_class {
@@ -187,11 +193,10 @@ impl ResultCell {
             ret = " ".to_string();
         }
 
-        let mut parts: Vec<String> = self
-            .parts
-            .iter_mut()
-            .map(|part_with_reference| part_with_reference.as_wikitext(list, rownum, colnum))
-            .collect();
+        let mut parts: Vec<String> = vec![];
+        for part_with_reference in &mut self.parts {
+            parts.push(part_with_reference.as_wikitext(list, rownum, colnum).await);
+        }
         if self.deduplicate_parts {
             // Deduplicate but keep order?
             let mut parts2 = Vec::new();
