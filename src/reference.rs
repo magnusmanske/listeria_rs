@@ -39,11 +39,7 @@ impl Reference {
             }
         }
 
-        if ret.is_empty() {
-            None
-        } else {
-            Some(ret)
-        }
+        if ret.is_empty() { None } else { Some(ret) }
     }
 
     pub fn stated_in(&self) -> &Option<String> {
@@ -88,10 +84,8 @@ impl Reference {
                 if let Some(x) = self.url.as_ref() {
                     s += x;
                 }
-            } else if self.stated_in.is_some() {
-                if let Some(q) = &self.stated_in {
-                    s += &list.get_item_link_with_fallback(q).await;
-                }
+            } else if let Some(q) = &self.stated_in {
+                s += &list.get_item_link_with_fallback(q).await;
             }
 
             self.md5 = format!("{:x}", md5::compute(s.clone()));
@@ -127,59 +121,57 @@ impl Reference {
     /// Extracts the stated_in info from a snak
     fn extract_stated_in(snak: &Snak, ret: &mut Reference) {
         // Stated in
-        if let Some(dv) = snak.data_value() {
-            if let Value::Entity(item) = dv.value() {
-                ret.stated_in = Some(item.id().to_owned());
-            }
+        if let Some(dv) = snak.data_value()
+            && let Value::Entity(item) = dv.value()
+        {
+            ret.stated_in = Some(item.id().to_owned());
         }
     }
 
     /// Extracts the timestamp from a snak
     fn extract_timestamp(snak: &Snak, ret: &mut Reference) {
         // Timestamp/last access
-        if let Some(dv) = snak.data_value() {
-            if let Value::Time(tv) = dv.value() {
-                if let Some(pos) = tv.time().find('T') {
-                    let (date, _) = tv.time().split_at(pos);
-                    let mut date = date.replace('+', "").to_string();
-                    if *tv.precision() >= 11 { // Day
-                         // Keep
-                    } else if *tv.precision() == 10 {
-                        // Month
-                        if let Some(pos) = date.rfind('-') {
-                            date = date.split_at(pos).0.to_string();
-                        }
-                    } else if *tv.precision() <= 9 {
-                        // Year etc TODO century etc
-                        if let Some(pos) = date.find('-') {
-                            date = date.split_at(pos).0.to_string();
-                        }
-                    }
-                    ret.date = Some(date);
+        if let Some(dv) = snak.data_value()
+            && let Value::Time(tv) = dv.value()
+            && let Some(pos) = tv.time().find('T')
+        {
+            let (date, _) = tv.time().split_at(pos);
+            let mut date = date.replace('+', "").to_string();
+            if *tv.precision() >= 11 { // Day
+                // Keep
+            } else if *tv.precision() == 10 {
+                // Month
+                if let Some(pos) = date.rfind('-') {
+                    date = date.split_at(pos).0.to_string();
+                }
+            } else if *tv.precision() <= 9 {
+                // Year etc TODO century etc
+                if let Some(pos) = date.find('-') {
+                    date = date.split_at(pos).0.to_string();
                 }
             }
+            ret.date = Some(date);
         }
     }
 
     /// Extracts the title from a snak
     fn extract_title(snak: &Snak, language: &str, ret: &mut Reference) {
         // Title
-        if let Some(dv) = snak.data_value() {
-            if let Value::MonoLingual(mlt) = dv.value() {
-                if mlt.language() == language {
-                    ret.title = Some(mlt.text().to_owned());
-                }
-            }
+        if let Some(dv) = snak.data_value()
+            && let Value::MonoLingual(mlt) = dv.value()
+            && mlt.language() == language
+        {
+            ret.title = Some(mlt.text().to_owned());
         }
     }
 
     /// Extracts the reference URL from a snak
     fn extract_reference_url(snak: &Snak, ret: &mut Reference) {
         // Reference URL
-        if let Some(dv) = snak.data_value() {
-            if let Value::StringValue(url) = dv.value() {
-                ret.url = Some(url.to_owned());
-            }
+        if let Some(dv) = snak.data_value()
+            && let Value::StringValue(url) = dv.value()
+        {
+            ret.url = Some(url.to_owned());
         }
     }
 }
