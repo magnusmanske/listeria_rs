@@ -2,7 +2,7 @@
 name = "listeria"
 version = "0.1.2"
 authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 async-trait = "*"

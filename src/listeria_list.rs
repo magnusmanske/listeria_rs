@@ -36,7 +36,7 @@ pub struct ListeriaList {
     template: Template,
     columns: Vec<Column>,
     params: TemplateParams,
-    sparql_table: SparqlTable, //Vec<HashMap<String, SparqlValue>>,
+    sparql_table: SparqlTable,
     ecw: EntityContainerWrapper,
     results: Vec<ResultRow>,
     shadow_files: HashSet<String>,
