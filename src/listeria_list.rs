@@ -13,11 +13,11 @@ use crate::template_params::SortMode;
 use crate::template_params::SortOrder;
 use crate::template_params::TemplateParams;
 use crate::wiki::Wiki;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::DateTime;
 use chrono::Utc;
-use futures::future::join_all;
 use futures::StreamExt;
+use futures::future::join_all;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -223,12 +223,12 @@ impl ListeriaList {
         let mut ret = vec![];
         if let Some(obj) = result["query"]["pages"].as_object() {
             for (_k, v) in obj.iter() {
-                if let Some(title) = v["title"].as_str() {
-                    if normalized.contains_key(title) {
-                        let page_exists = v["missing"].as_str().is_none();
-                        ret.push((title.to_string(), page_exists));
-                        // self.local_page_cache.insert(title.to_string(), page_exists);
-                    }
+                if let Some(title) = v["title"].as_str()
+                    && normalized.contains_key(title)
+                {
+                    let page_exists = v["missing"].as_str().is_none();
+                    ret.push((title.to_string(), page_exists));
+                    // self.local_page_cache.insert(title.to_string(), page_exists);
                 }
             }
         };
@@ -546,11 +546,7 @@ impl ListeriaList {
                     None => true,
                 };
 
-                if could_be_local {
-                    Some(filename)
-                } else {
-                    None
-                }
+                if could_be_local { Some(filename) } else { None }
             })
             .collect();
 
@@ -662,10 +658,10 @@ impl ListeriaList {
         ids.dedup();
         let mut labels = vec![];
         for id in ids {
-            if let Some(e) = self.get_entity(&id).await {
-                if let Some(l) = e.label_in_locale(self.language()) {
-                    labels.push(l.to_string());
-                }
+            if let Some(e) = self.get_entity(&id).await
+                && let Some(l) = e.label_in_locale(self.language())
+            {
+                labels.push(l.to_string());
             }
         }
 
@@ -810,7 +806,7 @@ impl ListeriaList {
         let section_property = match self.params.section() {
             SectionType::Property(p) => p,
             SectionType::SparqlVariable(_v) => {
-                return Err(anyhow!("SPARQL variable section type not supported yet"))
+                return Err(anyhow!("SPARQL variable section type not supported yet"));
             }
             SectionType::None => return Ok(()), // Nothing to do
         }
@@ -1105,10 +1101,10 @@ impl ListeriaList {
             };
             for cell in row.cells_mut() {
                 for part_with_reference in cell.parts_mut() {
-                    if let ResultCellPart::AutoDesc(ad) = part_with_reference.part_mut() {
-                        if let Some(desc) = autodescs.get(ad.entity_id()) {
-                            ad.set_description(desc)
-                        }
+                    if let ResultCellPart::AutoDesc(ad) = part_with_reference.part_mut()
+                        && let Some(desc) = autodescs.get(ad.entity_id())
+                    {
+                        ad.set_description(desc)
                     }
                 }
             }
@@ -1130,10 +1126,10 @@ impl ListeriaList {
                             .load_entities(&self.wb_api, &[ad.entity_id().to_owned()])
                             .await
                             .map_err(|e| anyhow!("{e}"))?;
-                        if let Some(entity) = self.ecw.get_entity(ad.entity_id()).await {
-                            if let Ok(desc) = self.get_autodesc_description(&entity).await {
-                                autodescs.insert(ad.entity_id().to_owned(), desc);
-                            }
+                        if let Some(entity) = self.ecw.get_entity(ad.entity_id()).await
+                            && let Ok(desc) = self.get_autodesc_description(&entity).await
+                        {
+                            autodescs.insert(ad.entity_id().to_owned(), desc);
                         }
                     }
                 }
@@ -1188,7 +1184,7 @@ impl ListeriaList {
         let prop = match self.params.section() {
             SectionType::Property(p) => p.clone(),
             SectionType::SparqlVariable(_v) => {
-                return Err(anyhow!("SPARQL variable section type not supported yet"))
+                return Err(anyhow!("SPARQL variable section type not supported yet"));
             }
             SectionType::None => return Ok(vec![]), // Nothing to do
         };
@@ -1226,7 +1222,7 @@ impl ListeriaList {
                 entities_to_load.push(prop.to_owned());
             }
             SectionType::SparqlVariable(_v) => {
-                return Err(anyhow!("SPARQL variable section type not supported yet"))
+                return Err(anyhow!("SPARQL variable section type not supported yet"));
             }
             SectionType::None => {}
         }
@@ -1309,10 +1305,10 @@ impl ListeriaList {
         } else {
             ":d:"
         };
-        if let Some(first_char) = entity_id.chars().next() {
-            if first_char == 'p' || first_char == 'P' {
-                return format!("{prefix}Property:{entity_id}");
-            }
+        if let Some(first_char) = entity_id.chars().next()
+            && (first_char == 'p' || first_char == 'P')
+        {
+            return format!("{prefix}Property:{entity_id}");
         }
         format!("{prefix}{entity_id}")
     }

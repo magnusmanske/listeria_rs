@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Semaphore;
 use wikimisc::{mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable};
@@ -40,16 +40,20 @@ impl SparqlResults {
 
         // Return simulated results
         if self.simulate {
-            if let Some(json_text) = self.page_params.simulated_sparql_results() {
-                let result: SparqlApiResult = serde_json::from_str(json_text)?;
-                self.set_main_variable(&result);
-
-                let mut ret = SparqlTable::from_api_result(result)?;
-                ret.set_main_variable(self.sparql_main_variable());
-                return Ok(ret);
-            }
+            self.precache_simulated_query()?;
         }
         self.run_sparql_query(&sparql).await
+    }
+
+    fn precache_simulated_query(&mut self) -> Result<()> {
+        if let Some(json_text) = self.page_params.simulated_sparql_results() {
+            let result: SparqlApiResult = serde_json::from_str(json_text)?;
+            self.set_main_variable(&result);
+
+            let mut ret = SparqlTable::from_api_result(result)?;
+            ret.set_main_variable(self.sparql_main_variable());
+        };
+        Ok(())
     }
 
     async fn run_sparql_query(&mut self, sparql: &str) -> Result<SparqlTable> {

@@ -67,10 +67,10 @@ impl RendererWikitext {
 
         let mut row_entity_ids = vec![];
         for rownum in 0..list.results().len() {
-            if let Some(row) = list.results().get(rownum) {
-                if row.section() == section_id {
-                    row_entity_ids.push(row.entity_id().to_string());
-                }
+            if let Some(row) = list.results().get(rownum)
+                && row.section() == section_id
+            {
+                row_entity_ids.push(row.entity_id().to_string());
             }
         }
 

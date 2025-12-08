@@ -4,20 +4,20 @@ use crate::result_cell_part::PartWithReference;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use foyer::{BlockEngineBuilder, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
 use rand::rng;
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
+use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
+use wikimisc::wikibase::Value;
 use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::snak::SnakDataType;
-use wikimisc::wikibase::Value;
 
 const CACHE_CAPACITY_MB: usize = 64;
 
@@ -181,10 +181,10 @@ impl EntityContainerWrapper {
                             }
                         }
                         // Try any label, any language
-                        if let Some(entity) = self.get_entity(entity_id).await {
-                            if let Some(label) = entity.labels().first() {
-                                return label.value().to_string();
-                            }
+                        if let Some(entity) = self.get_entity(entity_id).await
+                            && let Some(label) = entity.labels().first()
+                        {
+                            return label.value().to_string();
                         }
                         // Fallback to item ID as label
                         entity_id.to_string()
