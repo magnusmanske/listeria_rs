@@ -1,13 +1,13 @@
 use crate::database_pool::DatabasePool;
 use crate::*;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde_json::Value;
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
 use wiki::Wiki;
 use wikimisc::mediawiki::api::Api;
-use wikimisc::wikibase::entity_container::EntityContainer;
 use wikimisc::wikibase::EntityTrait;
+use wikimisc::wikibase::entity_container::EntityContainer;
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -86,7 +86,9 @@ impl Configuration {
         ret.new_from_json_wikibase_apis(&j).await?;
         ret.new_from_json_namespace_blocks(&j)?;
         ret.new_from_json_start_end_tempate_mappings(&j).await?;
-        ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
+        if j["mysql"].as_object().is_some() {
+            ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
+        }
         Ok(ret)
     }
 
@@ -299,6 +301,18 @@ impl Configuration {
     }
 
     async fn new_from_json_start_end_tempate_mappings(&mut self, j: &Value) -> Result<()> {
+        // Try hardcoded first
+        if let Some(template_start) = j["template_start"].as_str()
+            && let Some(template_end) = j["template_end"].as_str()
+        {
+            self.template_start_sites
+                .insert("wiki".to_string(), template_start.replace('_', " "));
+            self.template_end_sites
+                .insert("wiki".to_string(), template_end.replace('_', " "));
+            return Ok(());
+        }
+
+        // Get list from central wikibase
         let api = self.get_default_wbapi()?;
         let q_start = match j["template_start_q"].as_str() {
             Some(q) => q.to_string(),

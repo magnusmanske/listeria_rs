@@ -1,12 +1,11 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use futures::future::try_join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
-    configuration::Configuration, page_element::PageElement, page_params::PageParams,
+    ApiArc, configuration::Configuration, page_element::PageElement, page_params::PageParams,
     render_wikitext::RendererWikitext, renderer::Renderer, wiki_page_result::WikiPageResult,
-    ApiArc,
 };
 
 /* TODO

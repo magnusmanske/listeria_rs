@@ -1,5 +1,6 @@
 use anyhow::Result;
-use listeria::listeria_bot_wikidata::ListeriaBotWikidata;
+use listeria::listeria_bot::ListeriaBot;
+use listeria::listeria_bot_single::ListeriaBotSingle;
 use std::env;
 use std::sync::Arc;
 use std::time::Instant;
@@ -10,20 +11,8 @@ const MAX_THREADS: u64 = 3;
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 240;
 const DEFAULT_CONFIG_FILE: &str = "./config.json";
 
-/*
-TEST DB CONNECT
-ssh magnus@login.toolforge.org -L 3308:tools-db:3306 -N &
-
-REFRESH FROM GIT
-cd /data/project/listeria/listeria_rs ; ./build.sh
-
-# RUN BOT ON TOOLFORGE
-cd /data/project/listeria/listeria_rs ; ./restart.sh
-
-*/
-
 async fn run_singles(config_file: &str) -> Result<()> {
-    let bot = ListeriaBotWikidata::new(config_file).await?;
+    let bot = ListeriaBotSingle::new(config_file).await?;
     let max_threads = bot.config().max_threads();
     println!("Starting {max_threads} bots");
     let _ = bot.reset_running().await;
@@ -55,18 +44,19 @@ async fn run_singles(config_file: &str) -> Result<()> {
         );
         let bot = bot.clone();
         *last_activity.lock().expect("last_activity lock poisoned") = Instant::now();
-        tokio::spawn(async move {
-            let pagestatus_id = page.id();
-            let start_time = Instant::now();
-            if let Err(e) = bot.run_single_bot(page).await {
-                eprintln!("Bot run failed: {e}")
-            }
-            let end_time = Instant::now();
-            let diff = (end_time - start_time).as_secs();
-            let _ = bot.set_runtime(pagestatus_id, diff).await;
-            bot.release_running(pagestatus_id).await;
-            drop(permit);
-        });
+        // tokio::spawn(async move {
+        let pagestatus_id = page.id();
+        let start_time = Instant::now();
+        if let Err(e) = bot.run_single_bot(page).await {
+            eprintln!("Bot run failed: {e}")
+        }
+        let end_time = Instant::now();
+        let diff = (end_time - start_time).as_secs();
+        let _ = bot.set_runtime(pagestatus_id, diff).await;
+        bot.release_running(pagestatus_id).await;
+        drop(permit);
+        // });
+        return Ok(()); // TODO FIXME testing
     }
 }
 

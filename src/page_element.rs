@@ -21,6 +21,7 @@ pub struct PageElement {
 impl PageElement {
     pub async fn new_from_text(text: &str, page: &ListeriaPage) -> Option<Self> {
         let (seperator_start, seperator_end) = Self::get_start_stop_separators(page)?;
+        println!("{seperator_start}, {seperator_end}");
 
         let (match_start, match_end, single_template) =
             match Self::matches_from_separators(seperator_start, text, seperator_end) {
@@ -109,6 +110,7 @@ impl PageElement {
     }
 
     pub async fn process(&mut self) -> Result<()> {
+        println!("IS JUST TEXT: {}", self.is_just_text());
         match self.is_just_text {
             true => Ok(()),
             false => self.list.process().await,
