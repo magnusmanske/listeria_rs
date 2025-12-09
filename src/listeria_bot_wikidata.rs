@@ -1,10 +1,10 @@
+use crate::ApiArc;
 use crate::configuration::Configuration;
 use crate::listeria_page::ListeriaPage;
 use crate::page_to_process::PageToProcess;
 use crate::wiki_apis::WikiApis;
 use crate::wiki_page_result::WikiPageResult;
-use crate::ApiArc;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use dashmap::DashSet;
@@ -41,7 +41,7 @@ impl ListeriaBotWiki {
                         page,
                         "FAIL",
                         format!("Could not open/parse page '{page}': {e}"),
-                    )
+                    );
                 }
             };
         if let Err(wpr) = listeria_page.run().await {
@@ -56,14 +56,14 @@ impl ListeriaBotWiki {
 }
 
 #[derive(Debug, Clone)]
-pub struct ListeriaBot {
+pub struct ListeriaBotWikidata {
     config: Arc<Configuration>,
     wiki_apis: Arc<WikiApis>,
     bot_per_wiki: DashMap<String, ListeriaBotWiki>,
     running: DashSet<u64>,
 }
 
-impl ListeriaBot {
+impl ListeriaBotWikidata {
     pub async fn new(config_file: &str) -> Result<Self> {
         let config = Arc::new(Configuration::new_from_file(config_file).await?);
         let wiki_apis = WikiApis::new(config.clone()).await?;
