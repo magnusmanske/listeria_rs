@@ -79,7 +79,11 @@ impl SparqlResults {
         sparql: &str,
     ) -> Result<SparqlTable> {
         let query_api_url = self.get_sparql_endpoint(wb_api_sparql);
-        let params = [("query", sparql), ("format", "json")];
+        let sparql = match self.page_params.config().sparql_prefix() {
+            Some(prefix) => format!("{}\n{}", prefix, sparql),
+            None => sparql.to_string(),
+        };
+        let params = [("query", sparql.as_str()), ("format", "json")];
         let response = wb_api_sparql
             .client()
             .post(&query_api_url)

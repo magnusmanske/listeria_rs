@@ -54,8 +54,10 @@ pub struct Configuration {
     max_sparql_attempts: u64,
     profiling: bool,
     wikis: HashMap<String, Wiki>,
-    query_endpoint: Option<String>, // For single wiki mode, the SPARQL endpoint
     is_single_wiki: bool,
+    query_endpoint: Option<String>, // For single wiki mode, the SPARQL endpoint
+    sparql_prefix: Option<String>,  // For single wiki mode, a prefix for all SPARQL queries
+    main_item_prefix: String,       // For single wiki mode, the prefix for items
 }
 
 impl Configuration {
@@ -99,6 +101,10 @@ impl Configuration {
 
     pub fn query_endpoint(&self) -> Option<String> {
         self.query_endpoint.to_owned()
+    }
+
+    pub fn sparql_prefix(&self) -> Option<&str> {
+        self.sparql_prefix.as_deref()
     }
 
     fn new_from_json_namespace_blocks(&mut self, j: &Value) -> Result<()> {
@@ -214,6 +220,10 @@ impl Configuration {
             Some(x) => Ok(x.to_string()),
             None => Err(anyhow!("get_local_template_title_start: no match")),
         }
+    }
+
+    pub fn main_item_prefix(&self) -> String {
+        self.main_item_prefix.to_owned()
     }
 
     pub fn get_max_mw_apis_per_wiki(&self) -> &Option<usize> {
@@ -420,6 +430,11 @@ impl Configuration {
             .as_str()
             .unwrap_or(r#"\{\{(Wikidata[ _]list[ _]end|"#)
             .to_string();
+        self.main_item_prefix = j["main_item_prefix"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        self.sparql_prefix = j["sparql_prefix"].as_str().map(|s| s.to_string());
         if let Some(sic) = j["shadow_images_check"].as_array() {
             self.shadow_images_check = sic
                 .iter()

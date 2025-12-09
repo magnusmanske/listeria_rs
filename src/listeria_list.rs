@@ -1300,15 +1300,19 @@ impl ListeriaList {
     }
 
     pub fn is_main_wikibase_wiki(&self) -> bool {
-        let default_wiki = format!("{}wiki", self.page_params.config().get_default_api());
-        self.page_params.wiki() == default_wiki
+        if self.page_params.config().is_single_wiki() {
+            true
+        } else {
+            let default_wiki = format!("{}wiki", self.page_params.config().get_default_api());
+            self.page_params.wiki() == default_wiki
+        }
     }
 
     pub fn get_item_wiki_target(&self, entity_id: &str) -> String {
         let prefix = if self.is_main_wikibase_wiki() {
-            ""
+            self.page_params.config().main_item_prefix()
         } else {
-            ":d:"
+            ":d:".to_string()
         };
         if let Some(first_char) = entity_id.chars().next()
             && (first_char == 'p' || first_char == 'P')
