@@ -295,6 +295,11 @@ impl ListeriaList {
             None => return Err(anyhow!("No 'sparql' parameter in {:?}", &self.template)),
         };
         let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
+        if self.page_params.config().is_single_wiki()
+            && let Some(endpoint) = self.page_params.config().query_endpoint()
+        {
+            sparql_results = sparql_results.with_query_endpoint(endpoint);
+        }
         self.sparql_table = sparql_results.run_query(sparql).await?;
         self.sparql_table
             .set_main_variable(sparql_results.sparql_main_variable());

@@ -1,4 +1,4 @@
-use crate::{configuration::Configuration, ApiArc};
+use crate::{ApiArc, configuration::Configuration};
 use anyhow::Result;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
@@ -21,7 +21,11 @@ pub struct PageParams {
 impl PageParams {
     pub async fn new(config: Arc<Configuration>, mw_api: ApiArc, page: String) -> Result<Self> {
         let api = mw_api.clone();
-        let wiki_name = api.get_site_info_string("general", "wikiid")?.to_string();
+        let wiki_name = if config.is_single_wiki() {
+            "wiki".to_string()
+        } else {
+            api.get_site_info_string("general", "wikiid")?.to_string()
+        };
         let ret = Self {
             wiki: wiki_name,
             page,

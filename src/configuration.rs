@@ -54,6 +54,8 @@ pub struct Configuration {
     max_sparql_attempts: u64,
     profiling: bool,
     wikis: HashMap<String, Wiki>,
+    query_endpoint: Option<String>, // For single wiki mode, the SPARQL endpoint
+    is_single_wiki: bool,
 }
 
 impl Configuration {
@@ -79,6 +81,9 @@ impl Configuration {
     pub async fn new_from_json(j: Value) -> Result<Self> {
         let mut ret: Self = Self {
             max_mw_apis_per_wiki: j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize),
+            is_single_wiki: j["template_start"].as_str().is_some()
+                && j["template_end"].as_str().is_some()
+                && j["apis"]["wiki"].as_str().is_some(),
             ..Default::default()
         };
         ret.new_from_json_misc(&j);
@@ -90,6 +95,10 @@ impl Configuration {
             ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
         }
         Ok(ret)
+    }
+
+    pub fn query_endpoint(&self) -> Option<String> {
+        self.query_endpoint.to_owned()
     }
 
     fn new_from_json_namespace_blocks(&mut self, j: &Value) -> Result<()> {
@@ -300,6 +309,10 @@ impl Configuration {
         &self.pattern_string_end
     }
 
+    pub fn is_single_wiki(&self) -> bool {
+        self.is_single_wiki
+    }
+
     async fn new_from_json_start_end_tempate_mappings(&mut self, j: &Value) -> Result<()> {
         // Try hardcoded first
         if let Some(template_start) = j["template_start"].as_str()
@@ -382,6 +395,7 @@ impl Configuration {
     fn new_from_json_misc(&mut self, j: &Value) {
         self.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);
         self.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
+        self.query_endpoint = j["query_endpoint"].as_str().map(|s| s.to_string());
         self.default_language = j["default_language"]
             .as_str()
             .unwrap_or_default()
