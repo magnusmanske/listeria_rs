@@ -56,7 +56,7 @@ impl ListeriaBot for ListeriaBotWikidata {
 
     /// Removed a pagestatus ID from the running list
     async fn release_running(&self, pagestatus_id: u64) {
-        println!("Releasing {pagestatus_id}");
+        // println!("Releasing {pagestatus_id}");
         Self::print_sysinfo();
         self.running.remove(&pagestatus_id);
     }
@@ -205,7 +205,7 @@ impl ListeriaBotWikidata {
     ) -> Result<()> {
         let now: DateTime<Utc> = Utc::now();
         let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-        println!("{timestamp} {wiki}:{page} : {status}: {message}");
+        // println!("{timestamp} {wiki}:{page} : {status}: {message}");
         let params = params! {
             "wiki" => wiki,
             "page" => page,

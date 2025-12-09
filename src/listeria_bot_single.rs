@@ -51,7 +51,6 @@ impl ListeriaBot for ListeriaBotSingle {
                 //     &format!("No such wiki: {}", page.wiki()),
                 // )
                 // .await?;
-                println!("Bot creation failed");
                 return Err(anyhow!(
                     "ListeriaBot::run_single_bot: No such wiki '{}'",
                     page.wiki()
@@ -60,7 +59,6 @@ impl ListeriaBot for ListeriaBotSingle {
         };
         println!("Running bot");
         let mut wpr = bot.process_page(page.title()).await;
-        println!("Processing complete: {wpr:?}");
         wpr.standardize_meassage();
         // self.update_page_status(wpr.page(), wpr.wiki(), wpr.result(), wpr.message())
         //     .await?;

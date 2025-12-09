@@ -13,7 +13,6 @@ pub struct ListeriaBotWiki {
 
 impl ListeriaBotWiki {
     pub fn new(wiki: &str, api: ApiArc, config: Arc<Configuration>) -> Self {
-        println!("Creating bot for {wiki}");
         Self {
             wiki: wiki.to_string(),
             api,
@@ -37,11 +36,10 @@ impl ListeriaBotWiki {
         if let Err(wpr) = listeria_page.run().await {
             return wpr;
         }
-        let did_edit = match listeria_page.update_source_page().await {
+        let _ = match listeria_page.update_source_page().await {
             Ok(x) => x,
             Err(wpr) => return wpr,
         };
-        println!("DID EDIT: {did_edit}");
         WikiPageResult::new(&self.wiki, page, "OK", "".to_string())
     }
 }

@@ -92,7 +92,6 @@ impl SparqlResults {
             .send()
             .await?;
         // TODO .timeout(self.config.api_timeout())
-        println!("We have a result: {response:?}");
         let result = response.json::<SparqlApiResult>().await?;
         self.set_main_variable(&result);
 
