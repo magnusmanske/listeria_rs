@@ -335,7 +335,6 @@ mod tests {
         if path.to_str().unwrap() == "test_data/commons_sparql.fixture" {
             // HACKISH TODO FIXME
             let _ = config.wbapi_login("commons").await;
-            // println!("LOGIN TO COMMONS: {}", result);
         }
         let config = Arc::new(config);
         let mut page = ListeriaPage::new(config, mw_api, data["PAGETITLE"].clone())
