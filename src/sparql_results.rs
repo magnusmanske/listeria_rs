@@ -15,6 +15,7 @@ pub struct SparqlResults {
     page_params: Arc<PageParams>,
     sparql_main_variable: Option<String>,
     wikibase_key: String,
+    query_endpoint: Option<String>, // For single wiki mode, the SPARQL endpoint
     simulate: bool,
 }
 
@@ -25,8 +26,14 @@ impl SparqlResults {
             page_params,
             wikibase_key: wikibase_key.to_string(),
             sparql_main_variable: None,
+            query_endpoint: None,
             simulate,
         }
+    }
+
+    pub fn with_query_endpoint(mut self, query_endpoint: String) -> Self {
+        self.query_endpoint = Some(query_endpoint);
+        self
     }
 
     pub fn set_simulate(&mut self, simulate: bool) {
@@ -81,7 +88,7 @@ impl SparqlResults {
             .send()
             .await?;
         // TODO .timeout(self.config.api_timeout())
-
+        println!("We have a result: {response:?}");
         let result = response.json::<SparqlApiResult>().await?;
         self.set_main_variable(&result);
 
@@ -127,6 +134,9 @@ impl SparqlResults {
     }
 
     fn get_sparql_endpoint(&self, wb_api_sparql: &Api) -> String {
+        if let Some(endpoint) = &self.query_endpoint {
+            return endpoint.to_owned();
+        }
         wb_api_sparql
             .get_site_info_string("general", "wikibase-sparql")
             .unwrap_or("https://wcqs-beta.wmflabs.org/sparql")
