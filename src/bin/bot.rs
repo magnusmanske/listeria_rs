@@ -1,7 +1,5 @@
-extern crate config;
-extern crate serde_json;
-
 use anyhow::Result;
+use listeria::listeria_bot::ListeriaBot;
 use listeria::listeria_bot_wikidata::ListeriaBotWikidata;
 use std::env;
 use std::sync::Arc;
