@@ -1,6 +1,3 @@
-extern crate config;
-extern crate serde_json;
-
 use anyhow::Result;
 use listeria::listeria_bot_wikidata::ListeriaBotWikidata;
 use std::env;
@@ -9,8 +6,9 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use wikimisc::toolforge_app::ToolforgeApp;
 
+const MAX_THREADS: u64 = 3;
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 240;
-const DEFAULT_CONFIG_FILE: &str = "/data/project/listeria/listeria_rs/config.json";
+const DEFAULT_CONFIG_FILE: &str = "./config.json";
 
 /*
 TEST DB CONNECT
@@ -80,12 +78,12 @@ fn main() -> Result<()> {
         .get(1)
         .map(|s| s.to_owned())
         .unwrap_or_else(|| DEFAULT_CONFIG_FILE.to_string());
-    // run_singles(&config_file).await
 
-    let file = std::fs::File::open(&config_file)?;
+    let file = std::fs::File::open(&config_file).expect("Failed to find config file");
     let reader = std::io::BufReader::new(file);
-    let j: serde_json::Value = serde_json::from_reader(reader)?;
-    let threads = j["max_threads"].as_u64().unwrap_or(3) as usize;
+    let config: serde_json::Value =
+        serde_json::from_reader(reader).expect("Failed to parse config file");
+    let threads = config["max_threads"].as_u64().unwrap_or(MAX_THREADS) as usize;
 
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()

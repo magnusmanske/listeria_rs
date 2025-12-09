@@ -7,7 +7,7 @@ pub mod column;
 pub mod configuration;
 pub mod database_pool;
 pub mod entity_container_wrapper;
-pub mod listeria_bot;
+pub mod listeria_bot_wikidata;
 pub mod listeria_list;
 pub mod listeria_page;
 pub mod page_element;
@@ -29,7 +29,7 @@ pub mod wiki_page_result;
 
 use crate::listeria_list::ListeriaList;
 use crate::listeria_page::ListeriaPage;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
