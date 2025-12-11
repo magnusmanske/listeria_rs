@@ -765,13 +765,12 @@ impl ListeriaList {
             return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
         }
 
-        #[allow(clippy::needless_range_loop)]
         for row_id in 0..self.results.len() {
-            let row = match self.results.get_mut(row_id) {
-                Some(row) => row,
-                None => continue,
+            if let Some(row) = self.results.get_mut(row_id)
+                && let Some(sk) = sortkeys.get(row_id)
+            {
+                row.set_sortkey(sk.to_owned());
             };
-            row.set_sortkey(sortkeys[row_id].to_owned());
         }
 
         self.profile(&format!(
