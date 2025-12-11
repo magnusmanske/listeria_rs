@@ -118,7 +118,7 @@ impl ResultCell {
     }
 
     #[must_use]
-pub fn get_sortkey(&self) -> String {
+    pub fn get_sortkey(&self) -> String {
         match self.parts.first() {
             Some(part_with_reference) => match part_with_reference.part() {
                 ResultCellPart::Entity((id, _)) => id.to_owned(),
@@ -135,7 +135,7 @@ pub fn get_sortkey(&self) -> String {
     }
 
     #[must_use]
-pub const fn parts(&self) -> &Vec<PartWithReference> {
+    pub const fn parts(&self) -> &Vec<PartWithReference> {
         &self.parts
     }
 
@@ -180,32 +180,25 @@ pub const fn parts(&self) -> &Vec<PartWithReference> {
         rownum: usize,
         colnum: usize,
     ) -> String {
-        let mut ret;
-        if list.template_params().wdedit() && list.header_template().is_none() {
-            ret = match &self.wdedit_class {
-                Some(class) => format!("class='{}'| ", class.to_owned()),
-                None => " ".to_string(),
-            };
-        } else {
-            ret = " ".to_string();
-        }
-
         let mut parts: Vec<String> = vec![];
         for part_with_reference in &mut self.parts {
             parts.push(part_with_reference.as_wikitext(list, rownum, colnum).await);
         }
         if self.deduplicate_parts {
-            // Deduplicate but keep order?
-            let mut parts2 = Vec::new();
-            for part in &parts {
-                if !parts2.contains(part) {
-                    parts2.push(part.to_owned());
-                }
-            }
-            parts = parts2;
+            parts = Self::do_deduplicate_parts(&parts);
         }
-        ret += &parts.join("<br/>");
-        ret
+        self.get_cell_class(list) + &parts.join("<br/>")
+    }
+
+    fn get_cell_class(&mut self, list: &ListeriaList) -> String {
+        if list.template_params().wdedit()
+            && list.header_template().is_none()
+            && let Some(class) = &self.wdedit_class
+        {
+            format!("class='{}'| ", class.to_owned())
+        } else {
+            " ".to_string()
+        }
     }
 
     fn ct_number(ret: &mut ResultCell) {
@@ -425,6 +418,17 @@ pub const fn parts(&self) -> &Vec<PartWithReference> {
             ResultCellPart::Text(entity_id.to_string()),
             None,
         ));
+    }
+
+    fn do_deduplicate_parts(parts: &Vec<String>) -> Vec<String> {
+        // Deduplicate but keep order?
+        let mut parts2 = Vec::new();
+        for part in parts {
+            if !parts2.contains(part) {
+                parts2.push(part.to_owned());
+            }
+        }
+        parts2
     }
 }
 
