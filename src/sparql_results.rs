@@ -41,9 +41,7 @@ impl SparqlResults {
     }
 
     pub async fn run_query(&mut self, mut sparql: String) -> Result<SparqlTable> {
-        self.expand_sparql_templates(&mut sparql)
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
+        self.expand_sparql_templates(&mut sparql).await?;
 
         // Return simulated results
         if self.simulate {

@@ -36,8 +36,8 @@ impl std::fmt::Debug for EntityContainerWrapper {
 }
 
 impl EntityContainerWrapper {
-	/// # Panics
-	/// Panics if the required test files do not exist.
+    /// # Panics
+    /// Panics if the required test files do not exist.
     pub async fn new() -> Result<Self> {
         let ret = Self {
             entities: Self::create_entity_container().await?,
@@ -105,14 +105,13 @@ impl EntityContainerWrapper {
     }
 
     /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times
-    fn filter_ids(&self, ids: &[String]) -> Result<Vec<String>> {
-        let new_ids: Vec<String> = ids
+    fn filter_ids(&self, original_ids: &[String]) -> Result<Vec<String>> {
+        let new_ids: Vec<String> = original_ids
             .iter()
             .filter(|id| !self.entities.contains(*id))
-            .map(|id| id.to_owned()).collect();
-        let ids = Self::unique_shuffle_entity_ids(&new_ids)
-            .map_err(|e| anyhow!("{e}"))?;
-        Ok(ids)
+            .map(|id| id.to_owned())
+            .collect();
+        Self::unique_shuffle_entity_ids(&new_ids)
     }
 
     fn unique_shuffle_entity_ids(ids: &[String]) -> Result<Vec<String>> {
@@ -173,16 +172,15 @@ impl EntityContainerWrapper {
                     Some(s) => s,
                     None => {
                         // Try the usual suspects
-                        for language in ["mul", "en", "de", "fr", "es", "it", "el", "nl"].iter() {
-                            if let Some(label) =
-                                entity.label_in_locale(language).map(|s| s.to_string())
+                        for lang in ["mul", "en", "de", "fr", "es", "it", "el", "nl"].iter() {
+                            if let Some(label) = entity.label_in_locale(lang).map(|s| s.to_string())
                             {
                                 return label;
                             }
                         }
                         // Try any label, any language
-                        if let Some(entity) = self.get_entity(entity_id).await
-                            && let Some(label) = entity.labels().first()
+                        if let Some(entity2) = self.get_entity(entity_id).await
+                            && let Some(label) = entity2.labels().first()
                         {
                             return label.value().to_string();
                         }
@@ -256,8 +254,8 @@ impl EntityContainerWrapper {
             .filter_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
                 match data_value.value() {
-                    Value::StringValue(s) => {
-                        Some(s.to_owned().replace("$1", &urlencoding::decode(id).ok()?))
+                    Value::StringValue(s2) => {
+                        Some(s2.to_owned().replace("$1", &urlencoding::decode(id).ok()?))
                     }
                     _ => None,
                 }

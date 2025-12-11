@@ -50,51 +50,51 @@ impl ColumnType {
         if let Some(caps) = RE_LABEL_LANG.captures(s) {
             let ret = caps
                 .get(1)
-                .map(|s| s.as_str().to_lowercase())
+                .map(|s2| s2.as_str().to_lowercase())
                 .unwrap_or_default();
             return ColumnType::LabelLang(ret);
         }
         if let Some(caps) = RE_ALIAS_LANG.captures(s) {
             let ret = caps
                 .get(1)
-                .map(|s| s.as_str().to_lowercase())
+                .map(|s2| s2.as_str().to_lowercase())
                 .unwrap_or_default();
             return ColumnType::AliasLang(ret);
         }
         if let Some(caps) = RE_PROPERTY.captures(s) {
             let ret = caps
                 .get(1)
-                .map(|s| s.as_str().to_uppercase())
+                .map(|s2| s2.as_str().to_uppercase())
                 .unwrap_or_default();
             return ColumnType::Property(ret);
         }
         if let Some(caps) = RE_PROP_QUAL.captures(s) {
             return ColumnType::PropertyQualifier((
                 caps.get(1)
-                    .map(|s| s.as_str().to_uppercase())
+                    .map(|s2| s2.as_str().to_uppercase())
                     .unwrap_or_default(),
                 caps.get(2)
-                    .map(|s| s.as_str().to_uppercase())
+                    .map(|s2| s2.as_str().to_uppercase())
                     .unwrap_or_default(),
             ));
         }
         if let Some(caps) = RE_PROP_QUAL_VAL.captures(s) {
             return ColumnType::PropertyQualifierValue((
                 caps.get(1)
-                    .map(|s| s.as_str().to_uppercase())
+                    .map(|s2| s2.as_str().to_uppercase())
                     .unwrap_or_default(),
                 caps.get(2)
-                    .map(|s| s.as_str().to_uppercase())
+                    .map(|s2| s2.as_str().to_uppercase())
                     .unwrap_or_default(),
                 caps.get(3)
-                    .map(|s| s.as_str().to_uppercase())
+                    .map(|s2| s2.as_str().to_uppercase())
                     .unwrap_or_default(),
             ));
         }
         if let Some(caps) = RE_FIELD.captures(s) {
             let ret = caps
                 .get(1)
-                .map(|s| s.as_str().to_uppercase())
+                .map(|s2| s2.as_str().to_uppercase())
                 .unwrap_or_default();
             return ColumnType::Field(ret);
         }

@@ -22,14 +22,14 @@ pub struct ListeriaBotWikidata {
 
 impl ListeriaBot for ListeriaBotWikidata {
     async fn new(config_file: &str) -> Result<Self> {
-        let config = Arc::new(Configuration::new_from_file(config_file).await?);
-        let wiki_apis = WikiApis::new(config.clone()).await?;
-        let wikis = wiki_apis.get_all_wikis_in_database().await?;
-
-        // HACKISH BUT WORKS
-        let mut config = Configuration::new_from_file(config_file).await?;
-        config.set_wikis(wikis);
-        let config = Arc::new(config);
+        let mut config = Arc::new(Configuration::new_from_file(config_file).await?);
+        let wikis = WikiApis::new(config.clone())
+            .await?
+            .get_all_wikis_in_database()
+            .await?;
+        Arc::get_mut(&mut config)
+            .ok_or(anyhow!("Failed to get mutable reference to config"))?
+            .set_wikis(wikis);
         let wiki_apis = WikiApis::new(config.clone()).await?;
 
         Ok(Self {
