@@ -10,8 +10,8 @@ use crate::template_params::ReferencesParameter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wikimisc::sparql_table::SparqlTable;
-use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::Statement;
+use wikimisc::wikibase::entity::EntityTrait;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResultCell {
@@ -85,11 +85,7 @@ impl ResultCell {
                 ret.push(r);
             }
         }
-        if ret.is_empty() {
-            None
-        } else {
-            Some(ret)
-        }
+        if ret.is_empty() { None } else { Some(ret) }
     }
 
     fn get_parts_p_q_p(
@@ -138,11 +134,11 @@ impl ResultCell {
         }
     }
 
-    pub fn parts(&self) -> &Vec<PartWithReference> {
+    pub const fn parts(&self) -> &Vec<PartWithReference> {
         &self.parts
     }
 
-    pub fn parts_mut(&mut self) -> &mut Vec<PartWithReference> {
+    pub const fn parts_mut(&mut self) -> &mut Vec<PartWithReference> {
         &mut self.parts
     }
 

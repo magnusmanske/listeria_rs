@@ -115,7 +115,7 @@ impl PageElement {
         }
     }
 
-    pub fn is_just_text(&self) -> bool {
+    pub const fn is_just_text(&self) -> bool {
         self.is_just_text
     }
 

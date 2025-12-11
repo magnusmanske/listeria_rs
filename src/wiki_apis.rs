@@ -1,11 +1,11 @@
+use crate::ApiArc;
 use crate::configuration::Configuration;
 use crate::database_pool::DatabasePool;
 use crate::wiki::Wiki;
-use crate::ApiArc;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use log::info;
-use mysql_async::{from_row, prelude::*, Conn};
+use mysql_async::{Conn, from_row, prelude::*};
 use mysql_async::{Opts, OptsBuilder};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -65,7 +65,9 @@ impl WikiApis {
             while Arc::strong_count(api) >= *max {
                 sleep(Duration::from_millis(100)).await;
                 // warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
-                println!("WikiApis::wait_for_wiki_apis: sleeping because per-wiki limit {max} was reached");
+                println!(
+                    "WikiApis::wait_for_wiki_apis: sleeping because per-wiki limit {max} was reached"
+                );
             }
         }
     }
@@ -83,7 +85,9 @@ impl WikiApis {
                 }
                 sleep(Duration::from_millis(100)).await;
                 // warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
-                println!("WikiApis::wait_for_max_mw_apis_total: sleeping because total limit {max} was reached");
+                println!(
+                    "WikiApis::wait_for_max_mw_apis_total: sleeping because total limit {max} was reached"
+                );
             }
         }
     }
@@ -199,7 +203,9 @@ impl WikiApis {
             let chunk: Vec<String> = chunk.into();
             let placeholders =
                 self.placeholders(chunk.len(), &format!("({wiki_id},?,'WAITING','')"));
-            let sql = format!("INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}");
+            let sql = format!(
+                "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}"
+            );
             self.pool.get_conn().await?.exec_drop(sql, chunk).await?;
         }
         Ok(())
@@ -343,7 +349,7 @@ impl WikiApis {
     }
 
     /// Returns the server group for the database
-    fn get_db_server_group(&self) -> &str {
+    const fn get_db_server_group(&self) -> &str {
         ".web.db.svc.eqiad.wmflabs"
     }
 

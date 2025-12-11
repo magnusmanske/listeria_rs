@@ -42,12 +42,12 @@ impl Reference {
         if ret.is_empty() { None } else { Some(ret) }
     }
 
-    pub fn stated_in(&self) -> &Option<String> {
+    pub const fn stated_in(&self) -> &Option<String> {
         &self.stated_in
     }
 
     /// Returns true if the reference is empty
-    fn is_empty(&self) -> bool {
+    const fn is_empty(&self) -> bool {
         self.url.is_none() && self.stated_in.is_none()
     }
 

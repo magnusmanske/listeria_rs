@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use mysql_async::{from_row, prelude::*, Conn};
+use anyhow::{Result, anyhow};
+use mysql_async::{Conn, from_row, prelude::*};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum WikiStatus {
@@ -57,7 +57,7 @@ impl Wiki {
         Self::from_row(result.to_owned())
     }
 
-    pub fn id(&self) -> usize {
+    pub const fn id(&self) -> usize {
         self.id
     }
 
@@ -65,7 +65,7 @@ impl Wiki {
         &self.name
     }
 
-    pub fn status(&self) -> &WikiStatus {
+    pub const fn status(&self) -> &WikiStatus {
         &self.status
     }
 
@@ -73,11 +73,11 @@ impl Wiki {
         &self.timestamp
     }
 
-    pub fn use_invoke(&self) -> bool {
+    pub const fn use_invoke(&self) -> bool {
         self.use_invoke
     }
 
-    pub fn use_cite_web(&self) -> bool {
+    pub const fn use_cite_web(&self) -> bool {
         self.use_cite_web
     }
 

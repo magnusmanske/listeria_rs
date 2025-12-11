@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 
-pub struct RendererTabbedData {}
+#[derive(Debug)]
+pub struct RendererTabbedData;
 
 #[async_trait]
 impl Renderer for RendererTabbedData {

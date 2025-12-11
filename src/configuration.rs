@@ -68,7 +68,7 @@ impl Configuration {
         Self::new_from_json(j).await
     }
 
-    pub fn set_max_local_cached_entities(&mut self, max_local_cached_entities: usize) {
+    pub const fn set_max_local_cached_entities(&mut self, max_local_cached_entities: usize) {
         self.max_local_cached_entities = max_local_cached_entities;
     }
 
@@ -139,19 +139,19 @@ impl Configuration {
         Ok(())
     }
 
-    pub fn max_sparql_attempts(&self) -> u64 {
+    pub const fn max_sparql_attempts(&self) -> u64 {
         self.max_sparql_attempts
     }
 
-    pub fn max_sparql_simultaneous(&self) -> u64 {
+    pub const fn max_sparql_simultaneous(&self) -> u64 {
         self.max_sparql_simultaneous
     }
 
-    pub fn profiling(&self) -> bool {
+    pub const fn profiling(&self) -> bool {
         self.profiling
     }
 
-    pub fn set_profiling(&mut self, profiling: bool) {
+    pub const fn set_profiling(&mut self, profiling: bool) {
         self.profiling = profiling;
     }
 
@@ -162,19 +162,19 @@ impl Configuration {
         }
     }
 
-    pub fn max_threads(&self) -> usize {
+    pub const fn max_threads(&self) -> usize {
         self.max_threads
     }
 
-    pub fn ms_delay_after_edit(&self) -> Option<u64> {
+    pub const fn ms_delay_after_edit(&self) -> Option<u64> {
         self.ms_delay_after_edit
     }
 
-    pub fn api_timeout(&self) -> Duration {
+    pub const fn api_timeout(&self) -> Duration {
         Duration::from_secs(self.api_timeout)
     }
 
-    pub fn oauth2_token(&self) -> &String {
+    pub const fn oauth2_token(&self) -> &String {
         &self.oauth2_token
     }
 
@@ -185,7 +185,7 @@ impl Configuration {
         }
     }
 
-    pub fn max_local_cached_entities(&self) -> usize {
+    pub const fn max_local_cached_entities(&self) -> usize {
         self.max_local_cached_entities
     }
 
@@ -226,11 +226,11 @@ impl Configuration {
         self.main_item_prefix.to_owned()
     }
 
-    pub fn get_max_mw_apis_per_wiki(&self) -> &Option<usize> {
+    pub const fn get_max_mw_apis_per_wiki(&self) -> &Option<usize> {
         &self.max_mw_apis_per_wiki
     }
 
-    pub fn get_max_mw_apis_total(&self) -> &Option<usize> {
+    pub const fn get_max_mw_apis_total(&self) -> &Option<usize> {
         &self.max_mw_apis_total
     }
 
@@ -268,7 +268,7 @@ impl Configuration {
         self.template_start_q.to_owned()
     }
 
-    pub fn prefer_preferred(&self) -> bool {
+    pub const fn prefer_preferred(&self) -> bool {
         self.prefer_preferred
     }
 
@@ -280,7 +280,7 @@ impl Configuration {
         self.default_thumbnail_size.unwrap_or(128)
     }
 
-    pub fn location_regions(&self) -> &Vec<String> {
+    pub const fn location_regions(&self) -> &Vec<String> {
         &self.location_regions
     }
 
@@ -319,7 +319,7 @@ impl Configuration {
         &self.pattern_string_end
     }
 
-    pub fn is_single_wiki(&self) -> bool {
+    pub const fn is_single_wiki(&self) -> bool {
         self.is_single_wiki
     }
 
