@@ -14,8 +14,8 @@ use tokio::time::sleep;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::mediawiki::title::Title;
 use wikimisc::site_matrix::SiteMatrix;
-use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::entity_container::EntityContainer;
+use wikimisc::wikibase::{Entity, EntityTrait};
 
 #[derive(Debug, Clone)]
 pub struct WikiApis {

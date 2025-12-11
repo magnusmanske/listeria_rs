@@ -1,10 +1,11 @@
 use crate::database_pool::DatabasePool;
-use crate::*;
+use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
-use wiki::Wiki;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::entity_container::EntityContainer;
@@ -16,7 +17,7 @@ pub enum NamespaceGroup {
 }
 
 impl NamespaceGroup {
-	#[must_use]
+    #[must_use]
     pub fn can_edit_namespace(&self, nsid: i64) -> bool {
         match self {
             Self::All => false,

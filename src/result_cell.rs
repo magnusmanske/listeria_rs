@@ -1,11 +1,8 @@
-use crate::column::*;
+use crate::column::{Column, ColumnType};
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
-use crate::result_cell_part::AutoDesc;
-use crate::result_cell_part::LinkTarget;
-use crate::result_cell_part::PartWithReference;
-use crate::result_cell_part::ResultCellPart;
+use crate::result_cell_part::{AutoDesc, LinkTarget, PartWithReference, ResultCellPart};
 use crate::template_params::ReferencesParameter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
