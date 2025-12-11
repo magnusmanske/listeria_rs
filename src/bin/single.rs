@@ -42,7 +42,7 @@ async fn run_singles(config_file: &str) -> Result<()> {
             max_threads - THREADS_SEMAPHORE.available_permits(),
             THREADS_SEMAPHORE.available_permits()
         );
-        let bot = bot.clone();
+        // let bot = bot.clone();
         *last_activity.lock().expect("last_activity lock poisoned") = Instant::now();
         // tokio::spawn(async move {
         let pagestatus_id = page.id();
@@ -56,7 +56,6 @@ async fn run_singles(config_file: &str) -> Result<()> {
         bot.release_running(pagestatus_id).await;
         drop(permit);
         // });
-        return Ok(()); // TODO FIXME testing
     }
 }
 
