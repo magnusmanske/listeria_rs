@@ -155,6 +155,8 @@ impl Configuration {
         self.profiling = profiling;
     }
 
+    /// # Panics
+    /// Panics if the pool is not defined.
     pub fn pool(&self) -> &Arc<DatabasePool> {
         match &self.pool {
             Some(pool) => pool,

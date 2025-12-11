@@ -61,7 +61,7 @@ impl Renderer for RendererTabbedData {
             },
         };
 
-        let (start_template, rest) = match self.separate_start_template(&blob) {
+        let (start_template, rest) = match Self::separate_start_template(&blob) {
             Some(parts) => parts,
             None => return Err(anyhow!("Can't split start template")),
         };
@@ -149,7 +149,7 @@ impl RendererTabbedData {
         Ok(true) //list.data_has_changed = true; // Just to make sure to update including page
     }
 
-    fn separate_start_template(&self, blob: &str) -> Option<(String, String)> {
+    fn separate_start_template(blob: &str) -> Option<(String, String)> {
         let mut split_at: Option<usize> = None;
         let mut curly_count: i32 = 0;
         blob.char_indices().for_each(|(pos, c)| {

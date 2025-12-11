@@ -138,7 +138,7 @@ impl ResultRow {
         }
     }
 
-    fn no_value(&self, datatype: &SnakDataType) -> String {
+    fn no_value(datatype: &SnakDataType) -> String {
         match *datatype {
             SnakDataType::Time => "no time",
             SnakDataType::MonolingualText => "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
@@ -164,10 +164,10 @@ impl ResultRow {
                     .next()
                 {
                     Some(snak) => self.get_sortkey_from_snak(snak, list).await,
-                    None => self.no_value(datatype),
+                    None => Self::no_value(datatype),
                 }
             }
-            None => self.no_value(datatype),
+            None => Self::no_value(datatype),
         }
     }
 
@@ -263,7 +263,7 @@ impl ResultRow {
     }
 
     /// Get the cells as wikitext
-    fn cells_as_wikitext(&self, list: &ListeriaList, cells: &[String]) -> String {
+    fn cells_as_wikitext(list: &ListeriaList, cells: &[String]) -> String {
         cells
             .iter()
             .enumerate()
@@ -292,7 +292,7 @@ impl ResultRow {
             Some(t) => format!(
                 "{{{{{}\n| {}\n}}}}",
                 t,
-                self.cells_as_wikitext(list, &cells)
+                Self::cells_as_wikitext(list, &cells)
             ),
             None => "|".to_string() + &cells.join("\n|"),
         }

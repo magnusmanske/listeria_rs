@@ -56,7 +56,7 @@ impl RendererWikitext {
             wt += &Self::render_header(name);
         }
 
-        wt += &self.as_wikitext_table_header(list);
+        wt += &Self::as_wikitext_table_header(list);
 
         if list.get_row_template().is_none()
             && !list.skip_table()
@@ -113,7 +113,7 @@ impl RendererWikitext {
         wt
     }
 
-    fn as_wikitext_table_header(&self, list: &ListeriaList) -> String {
+    fn as_wikitext_table_header(list: &ListeriaList) -> String {
         let mut wt = String::new();
         match &list.header_template() {
             Some(t) => {
