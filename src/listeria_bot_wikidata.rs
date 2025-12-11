@@ -79,7 +79,7 @@ impl ListeriaBot for ListeriaBotWikidata {
         const IGNORE_STATUS: &str = "'RUNNING','DELETED','TRANSLATION'";
 
         // Tries to find a "priority" page
-        let sql = format!(
+        let sql_priority = format!(
             "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
             FROM pagestatus,wikis
             WHERE priority=1
@@ -90,7 +90,7 @@ impl ListeriaBot for ListeriaBotWikidata {
             ORDER BY pagestatus.timestamp
             LIMIT 1"
         );
-        if let Some(page) = self.get_page_for_sql(&sql).await {
+        if let Some(page) = self.get_page_for_sql(&sql_priority).await {
             self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
                 .await?;
             info!(target: "lock","Found a priority page: {:?}",&page);
@@ -99,7 +99,7 @@ impl ListeriaBot for ListeriaBotWikidata {
         }
 
         // Get the oldest page
-        let sql = format!(
+        let sql_oldest = format!(
             "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
             FROM pagestatus,wikis
             WHERE pagestatus.wiki=wikis.id
@@ -109,10 +109,9 @@ impl ListeriaBot for ListeriaBotWikidata {
             ORDER BY pagestatus.timestamp
             LIMIT 1"
         );
-        let page = self
-            .get_page_for_sql(&sql)
-            .await
-            .ok_or(anyhow!("prepare_next_single_page:: no pop\n{sql}\n{ids}"))?;
+        let page = self.get_page_for_sql(&sql_oldest).await.ok_or(anyhow!(
+            "prepare_next_single_page:: no pop\n{sql_oldest}\n{ids}"
+        ))?;
         info!(target: "lock","Found a page: {:?}",&page);
         self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
             .await?;

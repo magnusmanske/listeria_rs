@@ -133,9 +133,9 @@ impl Reference {
         // Timestamp/last access
         if let Some(dv) = snak.data_value()
             && let Value::Time(tv) = dv.value()
-            && let Some(pos) = tv.time().find('T')
+            && let Some(pos_t) = tv.time().find('T')
         {
-            let (date, _) = tv.time().split_at(pos);
+            let (date, _) = tv.time().split_at(pos_t);
             let mut date = date.replace('+', "").to_string();
             if *tv.precision() >= 11 { // Day
                 // Keep

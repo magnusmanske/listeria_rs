@@ -52,10 +52,10 @@ impl Template {
 
         let params: HashMap<String, String> = parts
             .iter()
-            .filter_map(|part| {
-                let pos = part.find('=')?;
-                let k = part.get(0..pos)?.trim().to_string();
-                let v = part.get(pos + 1..)?.trim().to_string();
+            .filter_map(|part_tmp| {
+                let pos = part_tmp.find('=')?;
+                let k = part_tmp.get(0..pos)?.trim().to_string();
+                let v = part_tmp.get(pos + 1..)?.trim().to_string();
                 Some((k, v))
             })
             .collect();

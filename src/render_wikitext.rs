@@ -82,8 +82,8 @@ impl RendererWikitext {
             if let Some(row) = list.results().get(rownum) {
                 let mut row = row.clone();
                 if row.section() == section_id {
-                    let wt = row.as_wikitext(list, current_sub_row).await;
-                    rows.push(wt);
+                    let wt_sub_row = row.as_wikitext(list, current_sub_row).await;
+                    rows.push(wt_sub_row);
                     current_sub_row += 1;
                 }
             }
