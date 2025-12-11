@@ -120,6 +120,7 @@ impl ListeriaBotSingle {
             ("action", "query"),
             ("prop", "transcludedin"),
             ("tishow", "!redirect"),
+            ("tilimit", "500"),
             (
                 "titles",
                 &format!("Template:{}", self.get_start_template()?),
@@ -128,7 +129,7 @@ impl ListeriaBotSingle {
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let ticontinue_lock = self.ticontinue.lock().await;
+        let mut ticontinue_lock = self.ticontinue.lock().await;
         if let Some(ticontinue) = &*ticontinue_lock {
             params.insert("ticontinue".to_string(), ticontinue.to_string());
         }
@@ -154,7 +155,11 @@ impl ListeriaBotSingle {
                 .collect();
             *(self.page_cache.lock().await) = pages;
         }
-        // TODO FIXME: update ticontinue
+        if let Some(s) = result["continue"]["ticontinue"].as_str() {
+            *ticontinue_lock = Some(s.to_string());
+        } else {
+            *ticontinue_lock = None;
+        }
         Ok(())
     }
 }
