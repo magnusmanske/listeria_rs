@@ -152,7 +152,7 @@ impl WikiApis {
         if new_wikis.is_empty() {
             return Ok(());
         }
-        let placeholders = self.placeholders(new_wikis.len(), "(?,'ACTIVE')");
+        let placeholders = Self::placeholders(new_wikis.len(), "(?,'ACTIVE')");
         let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
         println!("Adding {new_wikis:?}");
         self.pool
@@ -202,7 +202,7 @@ impl WikiApis {
         for chunk in new_pages.chunks(10000) {
             let chunk: Vec<String> = chunk.into();
             let placeholders =
-                self.placeholders(chunk.len(), &format!("({wiki_id},?,'WAITING','')"));
+                Self::placeholders(chunk.len(), &format!("({wiki_id},?,'WAITING','')"));
             let sql = format!(
                 "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}"
             );
@@ -253,7 +253,7 @@ impl WikiApis {
     }
 
     /// Returns a string with the given number of placeholders, separated by commas
-    fn placeholders(&self, num: usize, element: &str) -> String {
+    fn placeholders(num: usize, element: &str) -> String {
         let mut placeholders = Vec::with_capacity(num);
         placeholders.resize(num, element.to_string());
         placeholders.join(",")
@@ -349,6 +349,7 @@ impl WikiApis {
     }
 
     /// Returns the server group for the database
+    #[allow(clippy::unused_self)]
     const fn get_db_server_group(&self) -> &str {
         ".web.db.svc.eqiad.wmflabs"
     }
@@ -415,8 +416,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_placeholders() {
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let wa = WikiApis::new(Arc::new(config)).await.unwrap();
-        assert_eq!(wa.placeholders(3, "?"), "?,?,?");
+        assert_eq!(WikiApis::placeholders(3, "?"), "?,?,?");
     }
 }

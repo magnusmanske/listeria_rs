@@ -44,6 +44,8 @@ impl ListeriaPage {
         self.page_params.wiki()
     }
 
+    /// # Panics
+    /// Panics if the page parameters are not mutably accessible.
     pub fn do_simulate(
         &mut self,
         text: Option<String>,

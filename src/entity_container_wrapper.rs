@@ -36,6 +36,8 @@ impl std::fmt::Debug for EntityContainerWrapper {
 }
 
 impl EntityContainerWrapper {
+	/// # Panics
+	/// Panics if the required test files do not exist.
     pub async fn new() -> Result<Self> {
         let ret = Self {
             entities: Self::create_entity_container().await?,
@@ -107,8 +109,7 @@ impl EntityContainerWrapper {
         let new_ids: Vec<String> = ids
             .iter()
             .filter(|id| !self.entities.contains(*id))
-            .map(|id| id.to_owned())
-            .collect();
+            .map(|id| id.to_owned()).collect();
         let ids = Self::unique_shuffle_entity_ids(&new_ids)
             .map_err(|e| anyhow!("{e}"))?;
         Ok(ids)

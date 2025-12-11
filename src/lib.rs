@@ -15,7 +15,7 @@
     // missing_copy_implementations,
     missing_debug_implementations,
     // clippy::missing_errors_doc,
-    // clippy::missing_panics_doc,
+    clippy::missing_panics_doc,
     clippy::mod_module_files,
     non_ascii_idents,
     noop_method_call,
@@ -37,7 +37,6 @@
     // clippy::wildcard_dependencies,
     // clippy::wildcard_imports
 )]
-
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]

@@ -60,7 +60,7 @@ impl ResultCell {
         s.replace('\'', "&#39;").replace('<', "&lt;")
     }
 
-    fn get_parts_p_p(&self, statement: &Statement, property: &str) -> Vec<ResultCellPart> {
+    fn get_parts_p_p(statement: &Statement, property: &str) -> Vec<ResultCellPart> {
         statement
             .qualifiers()
             .iter()
@@ -89,7 +89,6 @@ impl ResultCell {
     }
 
     fn get_parts_p_q_p(
-        &self,
         statement: &Statement,
         target_item: &str,
         property: &str,
@@ -312,7 +311,7 @@ impl ResultCell {
             list.get_filtered_claims(e, p1)
                 .iter()
                 .for_each(|statement| {
-                    ret.get_parts_p_q_p(statement, q1, p2)
+                    ResultCell::get_parts_p_q_p(statement, q1, p2)
                         .iter()
                         .for_each(|part| {
                             ret.parts
@@ -333,10 +332,12 @@ impl ResultCell {
             list.get_filtered_claims(e, p1)
                 .iter()
                 .for_each(|statement| {
-                    ret.get_parts_p_p(statement, p2).iter().for_each(|part| {
-                        ret.parts
-                            .push(PartWithReference::new(part.to_owned(), None));
-                    });
+                    ResultCell::get_parts_p_p(statement, p2)
+                        .iter()
+                        .for_each(|part| {
+                            ret.parts
+                                .push(PartWithReference::new(part.to_owned(), None));
+                        });
                 });
         }
     }

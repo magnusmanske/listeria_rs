@@ -194,7 +194,7 @@ impl ResultCellPart {
         Some(Era::new(year, month, day, precision).to_string())
     }
 
-    fn tabbed_string_safe(&self, s: String) -> String {
+    fn tabbed_string_safe(s: String) -> String {
         let ret = s.replace(['\n', '\t'], " ");
         // 400 chars Max
         if ret.len() >= 380 {
@@ -332,7 +332,7 @@ impl ResultCellPart {
         rownum: usize,
         colnum: usize,
     ) -> String {
-        self.tabbed_string_safe(self.as_wikitext(list, rownum, colnum).await)
+        Self::tabbed_string_safe(self.as_wikitext(list, rownum, colnum).await)
     }
 
     fn render_entity_link(
