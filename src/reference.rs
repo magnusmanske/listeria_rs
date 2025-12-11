@@ -24,7 +24,8 @@ impl PartialEq for Reference {
 
 impl Reference {
     /// Creates a new reference from a snak array
-    pub fn new_from_snaks(snaks: &[Snak], language: &str) -> Option<Self> {
+    #[must_use]
+pub fn new_from_snaks(snaks: &[Snak], language: &str) -> Option<Self> {
         let mut ret = Self {
             ..Default::default()
         };
@@ -42,7 +43,8 @@ impl Reference {
         if ret.is_empty() { None } else { Some(ret) }
     }
 
-    pub const fn stated_in(&self) -> &Option<String> {
+    #[must_use]
+pub const fn stated_in(&self) -> &Option<String> {
         &self.stated_in
     }
 

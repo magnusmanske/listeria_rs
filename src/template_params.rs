@@ -34,6 +34,7 @@ pub enum SortMode {
 }
 
 impl SortMode {
+    #[must_use]
     pub fn new(os: Option<&String>) -> Self {
         lazy_static! {
             static ref RE_PROP: Regex = Regex::new(r"^P\d+$").expect("RE_PROP does not parse");
@@ -66,6 +67,7 @@ pub enum SortOrder {
 }
 
 impl SortOrder {
+    #[must_use]
     pub fn new(os: Option<&String>) -> Self {
         match os {
             Some(s) => {

@@ -18,15 +18,18 @@ pub struct PartWithReference {
 }
 
 impl PartWithReference {
-    pub const fn new(part: ResultCellPart, references: Option<Vec<Reference>>) -> Self {
+	#[must_use]
+pub const fn new(part: ResultCellPart, references: Option<Vec<Reference>>) -> Self {
         Self { part, references }
     }
 
-    pub const fn references(&self) -> &Option<Vec<Reference>> {
+    #[must_use]
+pub const fn references(&self) -> &Option<Vec<Reference>> {
         &self.references
     }
 
-    pub const fn part(&self) -> &ResultCellPart {
+    #[must_use]
+pub const fn part(&self) -> &ResultCellPart {
         &self.part
     }
 
@@ -93,7 +96,6 @@ pub enum LinkTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-/* trunk-ignore(clippy/large_enum_variant) */
 pub enum ResultCellPart {
     Number,
     Entity((String, bool)),                  // ID, try_localize

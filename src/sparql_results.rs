@@ -20,7 +20,8 @@ pub struct SparqlResults {
 }
 
 impl SparqlResults {
-    pub fn new(page_params: Arc<PageParams>, wikibase_key: &str) -> Self {
+	#[must_use]
+pub fn new(page_params: Arc<PageParams>, wikibase_key: &str) -> Self {
         let simulate = page_params.simulate();
         Self {
             page_params,
@@ -31,7 +32,8 @@ impl SparqlResults {
         }
     }
 
-    pub fn with_query_endpoint(mut self, query_endpoint: String) -> Self {
+    #[must_use]
+pub fn with_query_endpoint(mut self, query_endpoint: String) -> Self {
         self.query_endpoint = Some(query_endpoint);
         self
     }
@@ -144,7 +146,8 @@ impl SparqlResults {
             .to_string()
     }
 
-    pub fn sparql_main_variable(&self) -> Option<String> {
+    #[must_use]
+pub fn sparql_main_variable(&self) -> Option<String> {
         self.sparql_main_variable.to_owned()
     }
 }

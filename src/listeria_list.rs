@@ -761,7 +761,7 @@ impl ListeriaList {
             // Paranoia
             return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
         }
-        /* trunk-ignore(clippy/needless_range_loop) */
+
         #[allow(clippy::needless_range_loop)]
         for row_id in 0..self.results.len() {
             let row = match self.results.get_mut(row_id) {

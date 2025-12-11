@@ -7,6 +7,7 @@ pub struct WikiPageResult {
 }
 
 impl WikiPageResult {
+    #[must_use]
     pub fn new(wiki: &str, page: &str, result: &str, message: String) -> Self {
         Self {
             wiki: wiki.to_string(),
@@ -16,22 +17,27 @@ impl WikiPageResult {
         }
     }
 
+    #[must_use]
     pub fn wiki(&self) -> &str {
         &self.wiki
     }
 
+    #[must_use]
     pub fn page(&self) -> &str {
         &self.page
     }
 
+    #[must_use]
     pub fn result(&self) -> &str {
         &self.result
     }
 
+    #[must_use]
     pub fn message(&self) -> &str {
         &self.message
     }
 
+    #[must_use]
     pub fn fail(wiki: &str, page: &str, message: &str) -> Self {
         Self::new(wiki, page, "FAIL", message.to_string())
     }

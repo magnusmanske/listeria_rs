@@ -33,10 +33,17 @@
     clippy::unused_self,
     // clippy::use_debug,
     clippy::used_underscore_binding,
+    // clippy::wildcard_enum_match_arm,
     // clippy::useless_let_if_seq,
     // clippy::wildcard_dependencies,
-    // clippy::wildcard_imports
+    // clippy::wildcard_imports,
+    // clippy::must_use_candidate,
+    clippy::fallible_impl_from,
+    clippy::unneeded_field_pattern,
+    clippy::fn_params_excessive_bools,
+    clippy::indexing_slicing
 )]
+
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]

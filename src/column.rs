@@ -19,6 +19,7 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
+    #[must_use]
     pub fn new(s: &str) -> Self {
         lazy_static! {
             static ref RE_LABEL_LANG: Regex = RegexBuilder::new(r#"^label/(.+)$"#)
@@ -101,6 +102,7 @@ impl ColumnType {
         ColumnType::Unknown
     }
 
+    #[must_use]
     pub fn as_key(&self) -> String {
         match self {
             Self::Number => "number".to_string(),
@@ -129,6 +131,7 @@ pub struct Column {
 }
 
 impl Column {
+    #[must_use]
     pub fn new(s: &str) -> Option<Self> {
         lazy_static! {
             static ref RE_COLUMN_LABEL: Regex =
@@ -148,10 +151,12 @@ impl Column {
         }
     }
 
+    #[must_use]
     pub fn label(&self) -> &str {
         &self.label
     }
 
+    #[must_use]
     pub const fn obj(&self) -> &ColumnType {
         &self.obj
     }
@@ -172,7 +177,15 @@ impl Column {
                     + "/"
                     + &list.get_label_with_fallback(prop2).await
             }
-            _ => self.label.to_owned(), // Fallback
+            ColumnType::Number => self.label.to_owned(),
+            ColumnType::Label => self.label.to_owned(),
+            ColumnType::LabelLang(_) => self.label.to_owned(),
+            ColumnType::AliasLang(_) => self.label.to_owned(),
+            ColumnType::Description => self.label.to_owned(),
+            ColumnType::Item => self.label.to_owned(),
+            ColumnType::Qid => self.label.to_owned(),
+            ColumnType::Field(_) => self.label.to_owned(),
+            ColumnType::Unknown => self.label.to_owned(),
         };
     }
 }

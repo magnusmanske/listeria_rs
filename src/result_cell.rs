@@ -117,7 +117,8 @@ impl ResultCell {
             .collect()
     }
 
-    pub fn get_sortkey(&self) -> String {
+    #[must_use]
+pub fn get_sortkey(&self) -> String {
         match self.parts.first() {
             Some(part_with_reference) => match part_with_reference.part() {
                 ResultCellPart::Entity((id, _)) => id.to_owned(),
@@ -133,7 +134,8 @@ impl ResultCell {
         }
     }
 
-    pub const fn parts(&self) -> &Vec<PartWithReference> {
+    #[must_use]
+pub const fn parts(&self) -> &Vec<PartWithReference> {
         &self.parts
     }
 

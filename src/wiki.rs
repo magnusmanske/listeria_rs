@@ -57,30 +57,37 @@ impl Wiki {
         Self::from_row(result.to_owned())
     }
 
+    #[must_use]
     pub const fn id(&self) -> usize {
         self.id
     }
 
+    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
+    #[must_use]
     pub const fn status(&self) -> &WikiStatus {
         &self.status
     }
 
+    #[must_use]
     pub fn timestamp(&self) -> &str {
         &self.timestamp
     }
 
+    #[must_use]
     pub const fn use_invoke(&self) -> bool {
         self.use_invoke
     }
 
+    #[must_use]
     pub const fn use_cite_web(&self) -> bool {
         self.use_cite_web
     }
 
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.status == WikiStatus::Active
     }

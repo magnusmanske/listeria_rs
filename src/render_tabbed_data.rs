@@ -95,7 +95,8 @@ impl Renderer for RendererTabbedData {
 }
 
 impl RendererTabbedData {
-    pub fn tabbed_data_page_name(&self, list: &ListeriaList) -> Option<String> {
+	#[must_use]
+pub fn tabbed_data_page_name(&self, list: &ListeriaList) -> Option<String> {
         let ret = "Data:Listeria/".to_string() + list.wiki() + "/" + list.page_title() + ".tab";
         if ret.len() > 250 {
             return None; // Page title too long

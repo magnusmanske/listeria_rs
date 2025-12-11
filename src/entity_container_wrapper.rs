@@ -122,10 +122,12 @@ impl EntityContainerWrapper {
         Ok(ids)
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entity_count.load(Ordering::Relaxed)
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -257,7 +259,12 @@ impl EntityContainerWrapper {
                     Value::StringValue(s2) => {
                         Some(s2.to_owned().replace("$1", &urlencoding::decode(id).ok()?))
                     }
-                    _ => None,
+                    Value::Coordinate(_coordinate) => None,
+                    Value::MonoLingual(_mono_lingual_text) => None,
+                    Value::Entity(_entity_value) => None,
+                    Value::EntitySchema(_entity_value) => None,
+                    Value::Quantity(_quantity_value) => None,
+                    Value::Time(_time_value) => None,
                 }
             })
             .next()
@@ -266,7 +273,6 @@ impl EntityContainerWrapper {
     pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         #[allow(clippy::collapsible_match)]
         match self.get_entity(prop).await {
-            /* trunk-ignore(clippy/collapsible_match) */
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),
@@ -278,6 +284,7 @@ impl EntityContainerWrapper {
         }
     }
 
+    #[must_use]
     pub fn gather_entities_and_external_properties(parts: &[PartWithReference]) -> Vec<String> {
         let mut entities_to_load = vec![];
         for part_with_reference in parts {
