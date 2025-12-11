@@ -390,8 +390,11 @@ impl ListeriaList {
         if let Some(autodesc) = &self.page_params.simulated_autodesc() {
             for ad in autodesc {
                 let parts: Vec<&str> = ad.splitn(3, '|').collect();
-                if parts.len() == 3 && parts[0] == e.id() && parts[1] == self.language {
-                    return Ok(parts[2].trim().to_string());
+                if let [id, lang, ret] = parts.as_slice()
+                    && id == e.id()
+                    && *lang == self.language
+                {
+                    return Ok(ret.trim().to_string());
                 }
             }
         }
