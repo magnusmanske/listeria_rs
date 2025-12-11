@@ -190,7 +190,6 @@ impl Configuration {
     }
 
     fn get_sitelink_mapping(
-        &self,
         entities: &EntityContainer,
         q: &str,
     ) -> Result<HashMap<String, String>> {
@@ -351,8 +350,8 @@ impl Configuration {
             return Err(anyhow!("Error loading entities: {e}"));
         }
 
-        self.template_start_sites = self.get_sitelink_mapping(&entity_container, &q_start)?;
-        self.template_end_sites = self.get_sitelink_mapping(&entity_container, &q_end)?;
+        self.template_start_sites = Self::get_sitelink_mapping(&entity_container, &q_start)?;
+        self.template_end_sites = Self::get_sitelink_mapping(&entity_container, &q_end)?;
         self.template_start_q = q_start;
         Ok(())
     }

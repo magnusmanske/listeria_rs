@@ -148,7 +148,7 @@ impl ListeriaList {
 
     pub fn process_template(&mut self) -> Result<()> {
         let template = self.template.clone();
-        match self.get_template_value(&template, "columns") {
+        match Self::get_template_value(&template, "columns") {
             Some(columns) => {
                 columns
                     .split(',')
@@ -162,11 +162,11 @@ impl ListeriaList {
         }
 
         self.params = TemplateParams::new_from_params(&template, &self.page_params.config());
-        if let Some(s) = self.get_template_value(&template, "links") {
+        if let Some(s) = Self::get_template_value(&template, "links") {
             self.params
                 .set_links(LinksType::new_from_string(s.to_string()));
         }
-        if let Some(l) = self.get_template_value(&template, "language") {
+        if let Some(l) = Self::get_template_value(&template, "language") {
             self.language = l.to_lowercase();
         }
 
@@ -239,7 +239,7 @@ impl ListeriaList {
         *self.local_page_cache.get(page).unwrap_or(&false)
     }
 
-    fn first_letter_to_upper_case(&self, s1: &str) -> String {
+    fn first_letter_to_upper_case(s1: &str) -> String {
         let mut c = s1.chars();
         match c.next() {
             None => String::new(),
@@ -252,7 +252,7 @@ impl ListeriaList {
         if s.len() < 2 {
             return s.to_owned();
         }
-        self.first_letter_to_upper_case(s)
+        Self::first_letter_to_upper_case(s)
     }
 
     pub fn get_location_template(
@@ -273,13 +273,13 @@ impl ListeriaList {
 
     pub fn thumbnail_size(&self) -> u64 {
         let default = self.page_params.config().default_thumbnail_size();
-        match self.get_template_value(&self.template, "thumb") {
+        match Self::get_template_value(&self.template, "thumb") {
             Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap_or(default),
             None => default,
         }
     }
 
-    fn get_template_value(&self, template: &Template, key: &str) -> Option<String> {
+    fn get_template_value(template: &Template, key: &str) -> Option<String> {
         template
             .params()
             .iter()
@@ -290,7 +290,7 @@ impl ListeriaList {
 
     pub async fn run_query(&mut self) -> Result<()> {
         let wikibase_key = self.params.wikibase().to_lowercase();
-        let sparql = match self.get_template_value(&self.template, "sparql") {
+        let sparql = match Self::get_template_value(&self.template, "sparql") {
             Some(s) => s,
             None => return Err(anyhow!("No 'sparql' parameter in {:?}", &self.template)),
         };
