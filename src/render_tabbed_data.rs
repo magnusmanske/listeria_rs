@@ -1,8 +1,10 @@
-use crate::renderer::Renderer;
-use crate::*;
+use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
+use std::collections::HashMap;
+use wikimisc::mediawiki::Api;
 
 #[derive(Debug)]
 pub struct RendererTabbedData;
@@ -95,8 +97,8 @@ impl Renderer for RendererTabbedData {
 }
 
 impl RendererTabbedData {
-	#[must_use]
-pub fn tabbed_data_page_name(&self, list: &ListeriaList) -> Option<String> {
+    #[must_use]
+    pub fn tabbed_data_page_name(&self, list: &ListeriaList) -> Option<String> {
         let ret = "Data:Listeria/".to_string() + list.wiki() + "/" + list.page_title() + ".tab";
         if ret.len() > 250 {
             return None; // Page title too long

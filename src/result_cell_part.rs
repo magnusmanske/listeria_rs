@@ -4,7 +4,7 @@ use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
 use crate::template_params::LinksType;
 use async_recursion::async_recursion;
-use era_date::*;
+use era_date::{Era, Precision};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use wikimisc::sparql_value::SparqlValue;
@@ -18,18 +18,18 @@ pub struct PartWithReference {
 }
 
 impl PartWithReference {
-	#[must_use]
-pub const fn new(part: ResultCellPart, references: Option<Vec<Reference>>) -> Self {
+    #[must_use]
+    pub const fn new(part: ResultCellPart, references: Option<Vec<Reference>>) -> Self {
         Self { part, references }
     }
 
     #[must_use]
-pub const fn references(&self) -> &Option<Vec<Reference>> {
+    pub const fn references(&self) -> &Option<Vec<Reference>> {
         &self.references
     }
 
     #[must_use]
-pub const fn part(&self) -> &ResultCellPart {
+    pub const fn part(&self) -> &ResultCellPart {
         &self.part
     }
 

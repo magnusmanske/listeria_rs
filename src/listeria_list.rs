@@ -1,7 +1,7 @@
 use crate::column::{Column, ColumnType};
-use crate::entity_container_wrapper::*;
+use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::page_params::PageParams;
-use crate::result_cell::*;
+use crate::result_cell::ResultCell;
 use crate::result_cell_part::{LinkTarget, ResultCellPart};
 use crate::result_row::ResultRow;
 use crate::sparql_results::SparqlResults;
@@ -25,8 +25,7 @@ use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
 use wikimisc::sparql_value::SparqlValue;
-use wikimisc::wikibase::entity::*;
-use wikimisc::wikibase::{SnakDataType, Statement, StatementRank};
+use wikimisc::wikibase::{Entity, EntityTrait, SnakDataType, Statement, StatementRank};
 
 const MAX_CONCURRENT_REDLINKS_REQUESTS: usize = 5;
 

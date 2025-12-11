@@ -36,7 +36,7 @@
     // clippy::wildcard_enum_match_arm,
     clippy::useless_let_if_seq,
     // clippy::wildcard_dependencies,
-    // clippy::wildcard_imports,
+    clippy::wildcard_imports,
     // clippy::must_use_candidate,
     clippy::fallible_impl_from,
     clippy::unneeded_field_pattern,
@@ -76,10 +76,6 @@ pub mod wiki;
 pub mod wiki_apis;
 pub mod wiki_page_result;
 
-use crate::listeria_list::ListeriaList;
-use crate::listeria_page::ListeriaPage;
-use anyhow::{Result, anyhow};
-use std::collections::HashMap;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
 

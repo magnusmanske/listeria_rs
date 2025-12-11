@@ -15,8 +15,9 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
+use wikimisc::wikibase::Entity;
+use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::Value;
-use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::snak::SnakDataType;
 
 const CACHE_CAPACITY_MB: usize = 64;

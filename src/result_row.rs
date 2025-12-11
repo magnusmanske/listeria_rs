@@ -1,5 +1,5 @@
 use crate::column::ColumnType;
-use crate::listeria_list::*;
+use crate::listeria_list::ListeriaList;
 use crate::result_cell::ResultCell;
 use crate::result_cell_part::ResultCellPart;
 use regex::Regex;
