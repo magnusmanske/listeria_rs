@@ -328,10 +328,7 @@ impl ListeriaList {
         if ids.is_empty() {
             return Err(anyhow!("No items to show"));
         }
-        self.ecw
-            .load_entities(&self.wb_api, &ids)
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
+        self.ecw.load_entities(&self.wb_api, &ids).await?;
 
         self.label_columns().await;
 
@@ -797,10 +794,7 @@ impl ListeriaList {
             };
             items_to_load.push(row.entity_id().to_string());
         }
-        self.ecw
-            .load_entities(&self.wb_api, &items_to_load)
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
+        self.ecw.load_entities(&self.wb_api, &items_to_load).await?;
         Ok(())
     }
 
@@ -837,8 +831,7 @@ impl ListeriaList {
         // Make sure section name items are loaded
         self.ecw
             .load_entities(&self.wb_api, &section_names_q)
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
+            .await?;
         self.profile("AFTER list::process_assign_sections 3a");
         let mut section_names = vec![];
         for q in section_names_q {
@@ -1015,10 +1008,7 @@ impl ListeriaList {
         if !items_to_load.is_empty() {
             items_to_load.sort_unstable();
             items_to_load.dedup();
-            self.ecw
-                .load_entities(&self.wb_api, &items_to_load)
-                .await
-                .map_err(|e| anyhow!("{e}"))?;
+            self.ecw.load_entities(&self.wb_api, &items_to_load).await?;
         }
         Ok(())
     }
@@ -1129,8 +1119,7 @@ impl ListeriaList {
                     if let ResultCellPart::AutoDesc(ad) = part_with_reference.part() {
                         self.ecw
                             .load_entities(&self.wb_api, &[ad.entity_id().to_owned()])
-                            .await
-                            .map_err(|e| anyhow!("{e}"))?;
+                            .await?;
                         if let Some(entity) = self.ecw.get_entity(ad.entity_id()).await
                             && let Ok(desc) = self.get_autodesc_description(&entity).await
                         {
@@ -1233,8 +1222,7 @@ impl ListeriaList {
         }
         self.ecw
             .load_entities(&self.wb_api, &entities_to_load)
-            .await
-            .map_err(|e| anyhow!("{e}"))?;
+            .await?;
 
         entities_to_load = self.gather_items_sort().await?;
         let mut v2 = self.gather_items_section().await?;

@@ -24,7 +24,7 @@
     // clippy::print_stdout,
     clippy::semicolon_if_nothing_returned,
     clippy::unseparated_literal_suffix,
-    // clippy::shadow_unrelated,
+    clippy::shadow_unrelated,
     clippy::similar_names,
     clippy::suspicious_operation_groupings,
     // unused_crate_dependencies,

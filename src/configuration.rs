@@ -128,7 +128,7 @@ impl Configuration {
                 if let Some(a) = v.as_array() {
                     let nsids: Vec<i64> = a
                         .iter()
-                        .filter_map(|v| v.as_u64())
+                        .filter_map(|x| x.as_u64())
                         .map(|x| x as i64)
                         .collect();
                     self.namespace_blocks
