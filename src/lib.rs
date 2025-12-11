@@ -30,7 +30,7 @@
     // unused_crate_dependencies,
     unused_extern_crates,
     unused_import_braces,
-    // clippy::unused_self,
+    clippy::unused_self,
     // clippy::use_debug,
     clippy::used_underscore_binding,
     // clippy::useless_let_if_seq,

@@ -109,13 +109,12 @@ impl EntityContainerWrapper {
             .filter(|id| !self.entities.contains(*id))
             .map(|id| id.to_owned())
             .collect();
-        let ids = self
-            .unique_shuffle_entity_ids(&new_ids)
+        let ids = Self::unique_shuffle_entity_ids(&new_ids)
             .map_err(|e| anyhow!("{e}"))?;
         Ok(ids)
     }
 
-    fn unique_shuffle_entity_ids(&self, ids: &[String]) -> Result<Vec<String>> {
+    fn unique_shuffle_entity_ids(ids: &[String]) -> Result<Vec<String>> {
         let mut ids = ids.to_vec();
         ids.sort_unstable();
         ids.dedup();
