@@ -45,11 +45,11 @@ impl PageParams {
         Ok(ret)
     }
 
-    pub fn local_file_namespace_prefix(&self) -> &String {
+    pub const fn local_file_namespace_prefix(&self) -> &String {
         &self.local_file_namespace_prefix
     }
 
-    pub fn simulate(&self) -> bool {
+    pub const fn simulate(&self) -> bool {
         self.simulate
     }
 
@@ -69,7 +69,7 @@ impl PageParams {
         self.config.clone()
     }
 
-    pub fn mw_api(&self) -> &ApiArc {
+    pub const fn mw_api(&self) -> &ApiArc {
         &self.mw_api
     }
 
@@ -77,15 +77,15 @@ impl PageParams {
         self.wb_api.clone()
     }
 
-    pub fn simulated_text(&self) -> &Option<String> {
+    pub const fn simulated_text(&self) -> &Option<String> {
         &self.simulated_text
     }
 
-    pub fn simulated_sparql_results(&self) -> &Option<String> {
+    pub const fn simulated_sparql_results(&self) -> &Option<String> {
         &self.simulated_sparql_results
     }
 
-    pub fn simulated_autodesc(&self) -> &Option<Vec<String>> {
+    pub const fn simulated_autodesc(&self) -> &Option<Vec<String>> {
         &self.simulated_autodesc
     }
 

@@ -23,7 +23,7 @@ impl PageToProcess {
         Self::from_parts(parts)
     }
 
-    pub fn id(&self) -> u64 {
+    pub const fn id(&self) -> u64 {
         self.id
     }
 

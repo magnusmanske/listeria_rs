@@ -158,7 +158,7 @@ impl Default for TemplateParams {
 }
 
 impl TemplateParams {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             links: LinksType::All,
             sort: SortMode::None,
@@ -238,55 +238,55 @@ impl TemplateParams {
         self.autodesc.to_owned()
     }
 
-    pub fn one_row_per_item(&self) -> bool {
+    pub const fn one_row_per_item(&self) -> bool {
         self.one_row_per_item
     }
 
-    pub fn skip_table(&self) -> bool {
+    pub const fn skip_table(&self) -> bool {
         self.skip_table
     }
 
-    pub fn wdedit(&self) -> bool {
+    pub const fn wdedit(&self) -> bool {
         self.wdedit
     }
 
-    pub fn sort(&self) -> &SortMode {
+    pub const fn sort(&self) -> &SortMode {
         &self.sort
     }
 
-    pub fn sort_order(&self) -> &SortOrder {
+    pub const fn sort_order(&self) -> &SortOrder {
         &self.sort_order
     }
 
-    pub fn section(&self) -> &SectionType {
+    pub const fn section(&self) -> &SectionType {
         &self.section
     }
 
-    pub fn min_section(&self) -> u64 {
+    pub const fn min_section(&self) -> u64 {
         self.min_section
     }
 
-    pub fn summary(&self) -> &Option<String> {
+    pub const fn summary(&self) -> &Option<String> {
         &self.summary
     }
 
-    pub fn row_template(&self) -> &Option<String> {
+    pub const fn row_template(&self) -> &Option<String> {
         &self.row_template
     }
 
-    pub fn header_template(&self) -> &Option<String> {
+    pub const fn header_template(&self) -> &Option<String> {
         &self.header_template
     }
 
-    pub fn references(&self) -> &ReferencesParameter {
+    pub const fn references(&self) -> &ReferencesParameter {
         &self.references
     }
 
-    pub fn links(&self) -> &LinksType {
+    pub const fn links(&self) -> &LinksType {
         &self.links
     }
 
-    pub fn set_links(&mut self, links: LinksType) {
+    pub const fn set_links(&mut self, links: LinksType) {
         self.links = links;
     }
 }

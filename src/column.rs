@@ -152,7 +152,7 @@ impl Column {
         &self.label
     }
 
-    pub fn obj(&self) -> &ColumnType {
+    pub const fn obj(&self) -> &ColumnType {
         &self.obj
     }
 

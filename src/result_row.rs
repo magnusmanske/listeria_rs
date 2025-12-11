@@ -28,35 +28,35 @@ impl ResultRow {
         }
     }
 
-    pub fn set_keep(&mut self, keep: bool) {
+    pub const fn set_keep(&mut self, keep: bool) {
         self.keep = keep;
     }
 
-    pub fn keep(&self) -> bool {
+    pub const fn keep(&self) -> bool {
         self.keep
     }
 
-    pub fn entity_id(&self) -> &String {
+    pub const fn entity_id(&self) -> &String {
         &self.entity_id
     }
 
-    pub fn cells(&self) -> &Vec<ResultCell> {
+    pub const fn cells(&self) -> &Vec<ResultCell> {
         &self.cells
     }
 
-    pub fn cells_mut(&mut self) -> &mut Vec<ResultCell> {
+    pub const fn cells_mut(&mut self) -> &mut Vec<ResultCell> {
         &mut self.cells
     }
 
-    pub fn section(&self) -> usize {
+    pub const fn section(&self) -> usize {
         self.section
     }
 
-    pub fn set_section(&mut self, section: usize) {
+    pub const fn set_section(&mut self, section: usize) {
         self.section = section;
     }
 
-    pub fn sortkey(&self) -> &String {
+    pub const fn sortkey(&self) -> &String {
         &self.sortkey
     }
 

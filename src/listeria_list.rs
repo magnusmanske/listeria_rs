@@ -106,27 +106,27 @@ impl ListeriaList {
         self.ecw.external_id_url(prop, id).await
     }
 
-    pub fn results(&self) -> &Vec<ResultRow> {
+    pub const fn results(&self) -> &Vec<ResultRow> {
         &self.results
     }
 
-    pub fn results_mut(&mut self) -> &mut Vec<ResultRow> {
+    pub const fn results_mut(&mut self) -> &mut Vec<ResultRow> {
         &mut self.results
     }
 
-    pub fn columns(&self) -> &Vec<Column> {
+    pub const fn columns(&self) -> &Vec<Column> {
         &self.columns
     }
 
-    pub fn shadow_files(&self) -> &HashSet<String> {
+    pub const fn shadow_files(&self) -> &HashSet<String> {
         &self.shadow_files
     }
 
-    pub fn reference_ids(&self) -> &HashSet<String> {
+    pub const fn reference_ids(&self) -> &HashSet<String> {
         &self.reference_ids
     }
 
-    pub fn sparql_table(&self) -> &SparqlTable {
+    pub const fn sparql_table(&self) -> &SparqlTable {
         &self.sparql_table
     }
 
@@ -1143,7 +1143,7 @@ impl ListeriaList {
         Ok(autodescs)
     }
 
-    pub fn get_links_type(&self) -> &LinksType {
+    pub const fn get_links_type(&self) -> &LinksType {
         self.params.links()
     }
 
@@ -1151,11 +1151,11 @@ impl ListeriaList {
         self.ecw.get_entity(entity_id).await
     }
 
-    pub fn get_row_template(&self) -> &Option<String> {
+    pub const fn get_row_template(&self) -> &Option<String> {
         self.params.row_template()
     }
 
-    pub fn get_reference_parameter(&self) -> &ReferencesParameter {
+    pub const fn get_reference_parameter(&self) -> &ReferencesParameter {
         self.params.references()
     }
 
@@ -1253,7 +1253,7 @@ impl ListeriaList {
         self.columns.get(column_id)
     }
 
-    pub fn skip_table(&self) -> bool {
+    pub const fn skip_table(&self) -> bool {
         self.params.skip_table()
     }
 
@@ -1279,11 +1279,11 @@ impl ListeriaList {
         self.page_params.page()
     }
 
-    pub fn summary(&self) -> &Option<String> {
+    pub const fn summary(&self) -> &Option<String> {
         self.params.summary()
     }
 
-    pub fn header_template(&self) -> &Option<String> {
+    pub const fn header_template(&self) -> &Option<String> {
         self.params.header_template()
     }
 
@@ -1375,7 +1375,7 @@ impl ListeriaList {
         self.page_params.config().default_language().to_string()
     }
 
-    pub fn template_params(&self) -> &TemplateParams {
+    pub const fn template_params(&self) -> &TemplateParams {
         &self.params
     }
 

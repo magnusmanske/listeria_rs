@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
@@ -62,7 +62,7 @@ impl Template {
         Ok(Self { params })
     }
 
-    pub fn params(&self) -> &HashMap<String, String> {
+    pub const fn params(&self) -> &HashMap<String, String> {
         &self.params
     }
 

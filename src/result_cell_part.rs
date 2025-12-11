@@ -18,19 +18,19 @@ pub struct PartWithReference {
 }
 
 impl PartWithReference {
-    pub fn new(part: ResultCellPart, references: Option<Vec<Reference>>) -> Self {
+    pub const fn new(part: ResultCellPart, references: Option<Vec<Reference>>) -> Self {
         Self { part, references }
     }
 
-    pub fn references(&self) -> &Option<Vec<Reference>> {
+    pub const fn references(&self) -> &Option<Vec<Reference>> {
         &self.references
     }
 
-    pub fn part(&self) -> &ResultCellPart {
+    pub const fn part(&self) -> &ResultCellPart {
         &self.part
     }
 
-    pub fn part_mut(&mut self) -> &mut ResultCellPart {
+    pub const fn part_mut(&mut self) -> &mut ResultCellPart {
         &mut self.part
     }
 

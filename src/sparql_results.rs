@@ -36,7 +36,7 @@ impl SparqlResults {
         self
     }
 
-    pub fn set_simulate(&mut self, simulate: bool) {
+    pub const fn set_simulate(&mut self, simulate: bool) {
         self.simulate = simulate;
     }
 

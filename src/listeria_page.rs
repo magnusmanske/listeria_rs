@@ -193,7 +193,7 @@ impl ListeriaPage {
         Ok(ret)
     }
 
-    pub fn elements(&self) -> &Vec<PageElement> {
+    pub const fn elements(&self) -> &Vec<PageElement> {
         &self.elements
     }
 
