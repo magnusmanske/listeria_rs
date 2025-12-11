@@ -389,7 +389,7 @@ impl Configuration {
                         .expect("location_regions needs to be a string")
                         .to_string()
                 })
-                .collect()
+                .collect();
         }
 
         // Location template patterns
@@ -443,7 +443,7 @@ impl Configuration {
                         .expect("shadow_images_check needs to be a string")
                         .to_string()
                 })
-                .collect()
+                .collect();
         }
     }
 }

@@ -42,10 +42,10 @@ impl ResultCell {
             ColumnType::Property(property) => Self::ct_property(&entity, &mut ret, list, property),
             ColumnType::PropertyQualifier((p1, p2)) => Self::ct_pq(&entity, list, p1, &mut ret, p2),
             ColumnType::PropertyQualifierValue((p1, q1, p2)) => {
-                Self::ct_pqv(&entity, list, p1, &mut ret, q1, p2)
+                Self::ct_pqv(&entity, list, p1, &mut ret, q1, p2);
             }
             ColumnType::LabelLang(language) => {
-                Self::ct_label_lang(&entity, language, &mut ret, list)
+                Self::ct_label_lang(&entity, language, &mut ret, list);
             }
             ColumnType::AliasLang(language) => Self::ct_alias_lang(&entity, language, &mut ret),
             ColumnType::Label => Self::ct_label(entity, &mut ret, list, entity_id),
@@ -198,7 +198,7 @@ impl ResultCell {
             let mut parts2 = Vec::new();
             for part in &parts {
                 if !parts2.contains(part) {
-                    parts2.push(part.to_owned())
+                    parts2.push(part.to_owned());
                 }
             }
             parts = parts2;
@@ -316,7 +316,7 @@ impl ResultCell {
                         .iter()
                         .for_each(|part| {
                             ret.parts
-                                .push(PartWithReference::new(part.to_owned(), None))
+                                .push(PartWithReference::new(part.to_owned(), None));
                         });
                 });
         }
@@ -335,7 +335,7 @@ impl ResultCell {
                 .for_each(|statement| {
                     ret.get_parts_p_p(statement, p2).iter().for_each(|part| {
                         ret.parts
-                            .push(PartWithReference::new(part.to_owned(), None))
+                            .push(PartWithReference::new(part.to_owned(), None));
                     });
                 });
         }

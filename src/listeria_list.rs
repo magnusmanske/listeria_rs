@@ -164,10 +164,10 @@ impl ListeriaList {
         self.params = TemplateParams::new_from_params(&template, &self.page_params.config());
         if let Some(s) = self.get_template_value(&template, "links") {
             self.params
-                .set_links(LinksType::new_from_string(s.to_string()))
+                .set_links(LinksType::new_from_string(s.to_string()));
         }
         if let Some(l) = self.get_template_value(&template, "language") {
-            self.language = l.to_lowercase()
+            self.language = l.to_lowercase();
         }
 
         let wikibase = self.params.wikibase();
@@ -439,11 +439,11 @@ impl ListeriaList {
                     let row_ids = id2rows.get(id).map(|v| v.to_owned()).unwrap_or_default();
                     for row_id in row_ids {
                         if let Some(row) = self.sparql_table.get(row_id) {
-                            tmp_rows.push(row)
+                            tmp_rows.push(row);
                         }
                     }
                     if let Some(row) = self.ecw.get_result_row(id, &tmp_rows, self).await {
-                        tmp_results.push(row)
+                        tmp_results.push(row);
                     }
                 }
             }
@@ -462,7 +462,7 @@ impl ListeriaList {
                         let mut tmp_table = SparqlTable::from_table(&self.sparql_table);
                         tmp_table.push(row.to_owned());
                         if let Some(x) = self.ecw.get_result_row(&id, &tmp_table, self).await {
-                            tmp_results.push(x)
+                            tmp_results.push(x);
                         }
                     }
                 }
@@ -655,7 +655,7 @@ impl ListeriaList {
                         // _try_localize ?
                         ids.push(id.to_owned());
                     }
-                })
+                });
             });
         }
 
@@ -1005,7 +1005,7 @@ impl ListeriaList {
                     if let Some(references) = part_with_reference.references() {
                         for reference in references.iter() {
                             if let Some(stated_in) = &reference.stated_in() {
-                                items_to_load.push(stated_in.to_string())
+                                items_to_load.push(stated_in.to_string());
                             }
                         }
                     }
@@ -1109,7 +1109,7 @@ impl ListeriaList {
                     if let ResultCellPart::AutoDesc(ad) = part_with_reference.part_mut()
                         && let Some(desc) = autodescs.get(ad.entity_id())
                     {
-                        ad.set_description(desc)
+                        ad.set_description(desc);
                     }
                 }
             }
