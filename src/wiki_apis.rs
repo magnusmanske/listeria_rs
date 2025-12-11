@@ -355,6 +355,7 @@ impl WikiApis {
     }
 
     /// Adjusts the name of some wikis to work as a DB server name
+    #[must_use]
     pub fn fix_wiki_name(&self, wiki: &str) -> String {
         match wiki {
             "be-taraskwiki" | "be-x-oldwiki" | "be_taraskwiki" | "be_x_oldwiki" => "be_x_oldwiki",

@@ -16,6 +16,7 @@ pub enum NamespaceGroup {
 }
 
 impl NamespaceGroup {
+	#[must_use]
     pub fn can_edit_namespace(&self, nsid: i64) -> bool {
         match self {
             Self::All => false,
@@ -76,6 +77,7 @@ impl Configuration {
         self.wikis = wikis;
     }
 
+    #[must_use]
     pub fn get_wiki(&self, wiki: &str) -> Option<&Wiki> {
         self.wikis.get(wiki)
     }
@@ -99,6 +101,7 @@ impl Configuration {
         Ok(ret)
     }
 
+    #[must_use]
     pub fn query_endpoint(&self) -> Option<String> {
         self.query_endpoint.to_owned()
     }

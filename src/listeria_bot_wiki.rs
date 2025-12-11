@@ -12,7 +12,8 @@ pub struct ListeriaBotWiki {
 }
 
 impl ListeriaBotWiki {
-    pub fn new(wiki: &str, api: ApiArc, config: Arc<Configuration>) -> Self {
+	#[must_use]
+pub fn new(wiki: &str, api: ApiArc, config: Arc<Configuration>) -> Self {
         Self {
             wiki: wiki.to_string(),
             api,
