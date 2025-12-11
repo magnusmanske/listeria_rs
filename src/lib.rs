@@ -22,7 +22,7 @@
     // clippy::option_if_let_else,
     clippy::print_stderr,
     // clippy::print_stdout,
-    // clippy::semicolon_if_nothing_returned,
+    clippy::semicolon_if_nothing_returned,
     clippy::unseparated_literal_suffix,
     // clippy::shadow_unrelated,
     clippy::similar_names,

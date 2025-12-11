@@ -246,7 +246,7 @@ impl WikiApis {
         let wikis = self.get_all_wikis_in_database().await?;
         for (name, _wiki) in wikis {
             if let Err(e) = self.update_pages_on_wiki(&name).await {
-                println!("Problem with {name}: {e}")
+                println!("Problem with {name}: {e}");
             }
         }
         Ok(())

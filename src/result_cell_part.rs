@@ -131,7 +131,7 @@ impl ResultCellPart {
         match self {
             ResultCellPart::Entity((item, true)) => {
                 if let Some(ll) = ecw.entity_to_local_link(item, wiki, language).await {
-                    *self = ll
+                    *self = ll;
                 };
             }
             ResultCellPart::SnakList(v) => {

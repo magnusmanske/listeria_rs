@@ -41,7 +41,7 @@ impl Renderer for RendererWikitext {
         for element in page.elements() {
             let mut element = element.clone();
             if let Ok(s) = element.as_wikitext().await {
-                new_wikitext += &s
+                new_wikitext += &s;
             }
         }
         Ok(Some(new_wikitext))
