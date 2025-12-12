@@ -1,6 +1,6 @@
 [package]
 name = "listeria"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
 edition = "2024"
 
@@ -29,3 +29,4 @@ reqwest = { version = "*", features = ["gzip", "deflate", "brotli"] }
 log = "*"
 toolforge = { version = "*", features = ["mysql"] }
 sysinfo = "*"
+clap = { version = "*", features = ["derive"] }

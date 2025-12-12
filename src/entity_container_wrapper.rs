@@ -6,7 +6,6 @@ use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{Result, anyhow};
 use foyer::{BlockEngineBuilder, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
-use rand::rng;
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
@@ -119,7 +118,7 @@ impl EntityContainerWrapper {
         let mut ids = ids.to_vec();
         ids.sort_unstable();
         ids.dedup();
-        ids.shuffle(&mut rng());
+        ids.shuffle(&mut rand::thread_rng());
         Ok(ids)
     }
 
