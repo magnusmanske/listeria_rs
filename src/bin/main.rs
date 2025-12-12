@@ -11,7 +11,7 @@ use std::fs::read_to_string;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::Semaphore;
-use wikimisc::toolforge_app::ToolforgeApp;
+use wikimisc::seppuku::Seppuku;
 use wikimisc::wikibase::EntityTrait;
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 240;
@@ -110,7 +110,8 @@ impl MainCommands {
         let bot = Arc::new(bot);
         static THREADS_SEMAPHORE: Semaphore = Semaphore::const_new(0);
         THREADS_SEMAPHORE.add_permits(max_threads);
-        let last_activity = ToolforgeApp::seppuku(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
+        let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
+        seppuku.arm();
         loop {
             let page = match bot.prepare_next_single_page().await {
                 Ok(page) => page,
@@ -133,7 +134,7 @@ impl MainCommands {
                 THREADS_SEMAPHORE.available_permits()
             );
             let bot = bot.clone();
-            *last_activity.lock().expect("last_activity lock poisoned") = Instant::now();
+            seppuku.alive();
             tokio::spawn(async move {
                 let pagestatus_id = page.id();
                 let start_time = Instant::now();
@@ -158,7 +159,8 @@ impl MainCommands {
         let bot = Arc::new(bot);
         static THREADS_SEMAPHORE: Semaphore = Semaphore::const_new(0);
         THREADS_SEMAPHORE.add_permits(max_threads);
-        let last_activity = ToolforgeApp::seppuku(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
+        let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
+        seppuku.arm();
         loop {
             let page = match bot.prepare_next_single_page().await {
                 Ok(page) => page,
@@ -174,7 +176,7 @@ impl MainCommands {
                 max_threads - THREADS_SEMAPHORE.available_permits(),
                 THREADS_SEMAPHORE.available_permits()
             );
-            *last_activity.lock().expect("last_activity lock poisoned") = Instant::now();
+            seppuku.alive();
             let pagestatus_id = page.id();
             let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
