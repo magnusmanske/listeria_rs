@@ -12,6 +12,8 @@ pub struct ListeriaBotSingle {
     config: Arc<Configuration>,
     ticontinue: Arc<Mutex<Option<String>>>,
     page_cache: Arc<Mutex<Vec<PageToProcess>>>,
+    template_inclusion_end_reached: Arc<Mutex<bool>>,
+    the_bot: Arc<Mutex<Option<Arc<ListeriaBotWiki>>>>,
     running: usize,
 }
 
@@ -22,6 +24,8 @@ impl ListeriaBot for ListeriaBotSingle {
             config,
             ticontinue: Arc::new(Mutex::new(None)),
             page_cache: Arc::new(Mutex::new(Vec::new())),
+            template_inclusion_end_reached: Arc::new(Mutex::new(false)),
+            the_bot: Arc::new(Mutex::new(None)),
             running: 0,
         })
     }
@@ -44,24 +48,15 @@ impl ListeriaBot for ListeriaBotSingle {
         let bot = match self.create_bot_for_wiki(page.wiki()).await {
             Some(bot) => bot.to_owned(),
             None => {
-                // self.update_page_status(
-                //     page.title(),
-                //     page.wiki(),
-                //     "FAIL",
-                //     &format!("No such wiki: {}", page.wiki()),
-                // )
-                // .await?;
                 return Err(anyhow!(
                     "ListeriaBot::run_single_bot: No such wiki '{}'",
                     page.wiki()
                 ));
             }
         };
-        println!("Running bot");
+        println!("Running bot on {page:?}");
         let mut wpr = bot.process_page(page.title()).await;
         wpr.standardize_meassage();
-        // self.update_page_status(wpr.page(), wpr.wiki(), wpr.result(), wpr.message())
-        //     .await?;
         Ok(())
     }
 
@@ -78,6 +73,11 @@ impl ListeriaBot for ListeriaBotSingle {
     /// Returns a page to be processed.
     async fn prepare_next_single_page(&self) -> Result<PageToProcess> {
         if self.page_cache_is_empty().await {
+            if *self.template_inclusion_end_reached.lock().await {
+                // Throw an error but only once, so the caller knows the list has been processed
+                *self.template_inclusion_end_reached.lock().await = false;
+                return Err(anyhow!("End of template inclusion reached"));
+            }
             self.load_more_pages().await?;
         }
         let ret = match self.page_cache.lock().await.pop() {
@@ -89,17 +89,15 @@ impl ListeriaBot for ListeriaBotSingle {
 }
 
 impl ListeriaBotSingle {
-    async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
-        // TODO cache bot?
-        // if let Some(bot) = self.bot_per_wiki.get(wiki) {
-        //     let new_bot = bot.to_owned();
-        //     return Some(new_bot);
-        // }
+    async fn create_bot_for_wiki(&self, wiki: &str) -> Option<Arc<ListeriaBotWiki>> {
+        let mut the_bot = self.the_bot.lock().await;
+        if the_bot.is_some() {
+            return the_bot.clone();
+        }
         let mw_api = self.config.get_default_wbapi().ok()?;
-        // let mw_api = self.wiki_apis.get_or_create_wiki_api(wiki).await.ok()?;
         let bot = ListeriaBotWiki::new(wiki, mw_api.clone(), self.config.clone());
-        println!("Bot wiki created");
-        // self.bot_per_wiki.insert(wiki.to_string(), bot.clone());
+        let bot = Arc::new(bot);
+        *the_bot = Some(bot.clone());
         Some(bot)
     }
 
@@ -158,6 +156,7 @@ impl ListeriaBotSingle {
             *ticontinue_lock = Some(s.to_string());
         } else {
             *ticontinue_lock = None;
+            *self.template_inclusion_end_reached.lock().await = true;
         }
         Ok(())
     }

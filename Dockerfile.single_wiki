@@ -11,7 +11,7 @@ COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
 
 # Build the application in release mode
-RUN cargo build --release --bin single
+RUN cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -43,4 +43,4 @@ EXPOSE 8080
 # Run the binary
 ENTRYPOINT ["/usr/local/bin/app"]
 # Optionally specify the config file path as a default argument
-CMD ["--config","/etc/app/config.json"]
+CMD ["--config","/etc/app/config.json","single-wiki"]

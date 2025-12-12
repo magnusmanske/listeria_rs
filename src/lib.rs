@@ -20,7 +20,7 @@
     non_ascii_idents,
     noop_method_call,
     // clippy::option_if_let_else,
-    clippy::print_stderr,
+    // clippy::print_stderr,
     // clippy::print_stdout,
     clippy::semicolon_if_nothing_returned,
     clippy::unseparated_literal_suffix,
@@ -59,6 +59,7 @@ pub mod listeria_bot_wiki;
 pub mod listeria_bot_wikidata;
 pub mod listeria_list;
 pub mod listeria_page;
+pub mod main_commands;
 pub mod page_element;
 pub mod page_params;
 pub mod page_to_process;

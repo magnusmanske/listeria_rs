@@ -63,8 +63,9 @@ cd listeria_rs
 ## Run Listeria
 Build and run the application.
 ```bash
-cargo run --release -- single-wiki --once --config MY_CONFIG_FILE
+cargo run --release -- --config MY_CONFIG_FILE single-wiki --once
 ```
+The `--once` flag will run Listeria once and then exit. Without this flag, Listeria will run indefinitely.
 
 # Run Listeria using Docker
 ## Build the Docker Image
@@ -75,6 +76,7 @@ docker build -t listeria . -f Dockerfile.single_wiki
 ```
 
 ## Run from Docker Image
+This will run Listeria in the background. The `--once` flag is not available. Use Docker to kill the process.
 ```bash
-docker run --rm  --name listeria -v MY_CONFIG_FILE:/etc/app/config.json:ro listeria
+docker run -d --name listeria -v MY_CONFIG_FILE:/etc/app/config.json:ro listeria
 ```
