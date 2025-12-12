@@ -35,10 +35,13 @@ async fn main() -> Result<()> {
 
     let config_file = cli.config;
     let mut config = Configuration::new_from_file(&config_file).await?;
+
+    // Set the profiling flag for single use commands only
     match cli.cmd {
         Commands::Wikidata | Commands::SingleWiki { once: _ } => {}
         _ => config.set_profiling(true),
     }
+
     let mut main = MainCommands {
         config: Arc::new(config),
         config_file,

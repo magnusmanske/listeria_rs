@@ -20,6 +20,10 @@ pub struct ListeriaBotSingle {
 impl ListeriaBot for ListeriaBotSingle {
     async fn new(config_file: &str) -> Result<Self> {
         let config = Arc::new(Configuration::new_from_file(config_file).await?);
+        Self::new_from_config(config).await
+    }
+
+    async fn new_from_config(config: Arc<Configuration>) -> Result<Self> {
         Ok(Self {
             config,
             ticontinue: Arc::new(Mutex::new(None)),

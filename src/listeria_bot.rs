@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use sysinfo::System;
 
@@ -6,6 +8,9 @@ use crate::{configuration::Configuration, page_to_process::PageToProcess};
 #[allow(async_fn_in_trait)]
 pub trait ListeriaBot {
     async fn new(config_file: &str) -> Result<Self>
+    where
+        Self: Sized;
+    async fn new_from_config(config: Arc<Configuration>) -> Result<Self>
     where
         Self: Sized;
     fn config(&self) -> &Configuration;
