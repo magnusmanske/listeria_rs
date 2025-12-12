@@ -97,7 +97,8 @@ impl MainCommands {
     }
 
     pub async fn run_wikidata_bot(&self) -> Result<()> {
-        let bot = ListeriaBotWikidata::new(&self.config_file).await?;
+        let config = Arc::new((*self.config).clone());
+        let bot = ListeriaBotWikidata::new_from_config(config).await?;
         let max_threads = bot.config().max_threads();
         println!("Starting {max_threads} bots");
         let _ = bot.reset_running().await;
@@ -140,7 +141,8 @@ impl MainCommands {
     }
 
     pub async fn run_single_wiki_bot(&self, once: bool) -> Result<()> {
-        let bot = ListeriaBotSingle::new(&self.config_file).await?;
+        let config = Arc::new((*self.config).clone());
+        let bot = ListeriaBotSingle::new_from_config(config).await?;
         let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
         seppuku.arm();
         loop {

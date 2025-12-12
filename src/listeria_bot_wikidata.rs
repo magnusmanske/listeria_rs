@@ -22,7 +22,11 @@ pub struct ListeriaBotWikidata {
 
 impl ListeriaBot for ListeriaBotWikidata {
     async fn new(config_file: &str) -> Result<Self> {
-        let mut config = Arc::new(Configuration::new_from_file(config_file).await?);
+        let config = Arc::new(Configuration::new_from_file(config_file).await?);
+        Self::new_from_config(config).await
+    }
+
+    async fn new_from_config(mut config: Arc<Configuration>) -> Result<Self> {
         let wikis = WikiApis::new(config.clone())
             .await?
             .get_all_wikis_in_database()
