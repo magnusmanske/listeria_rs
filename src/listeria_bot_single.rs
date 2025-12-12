@@ -58,7 +58,7 @@ impl ListeriaBot for ListeriaBotSingle {
                 ));
             }
         };
-        println!("Running bot on {page:?}");
+        println!("Running bot on {}", page.title());
         let mut wpr = bot.process_page(page.title()).await;
         wpr.standardize_meassage();
         Ok(())
