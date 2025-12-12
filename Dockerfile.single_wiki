@@ -26,7 +26,7 @@ RUN apt-get update && \
 RUN useradd -m -u 1001 appuser
 
 # Copy the binary from builder stage
-COPY --from=builder /usr/src/app/target/release/single /usr/local/bin/app
+COPY --from=builder /usr/src/app/target/release/main /usr/local/bin/app
 
 # Create directory for config file
 RUN mkdir -p /etc/app && chown appuser:appuser /etc/app
@@ -43,4 +43,4 @@ EXPOSE 8080
 # Run the binary
 ENTRYPOINT ["/usr/local/bin/app"]
 # Optionally specify the config file path as a default argument
-CMD ["/etc/app/config.json"]
+CMD ["--config","/etc/app/config.json"]

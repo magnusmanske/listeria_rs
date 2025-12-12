@@ -7,6 +7,7 @@ use listeria::listeria_bot_single::ListeriaBotSingle;
 use listeria::listeria_bot_wikidata::ListeriaBotWikidata;
 use listeria::listeria_page::ListeriaPage;
 use listeria::wiki_apis::WikiApis;
+use log::info;
 use std::fs::read_to_string;
 use std::sync::Arc;
 use std::time::Instant;
@@ -150,32 +151,23 @@ impl MainCommands {
         }
     }
 
-    async fn run_single_wiki_bot(&self) -> Result<()> {
+    async fn run_single_wiki_bot(&self, once: bool) -> Result<()> {
         let bot = ListeriaBotSingle::new(&self.config_file).await?;
-        let max_threads = bot.config().max_threads();
-        println!("Starting {max_threads} bots");
-        let _ = bot.reset_running().await;
-        let _ = bot.clear_deleted().await;
-        let bot = Arc::new(bot);
-        static THREADS_SEMAPHORE: Semaphore = Semaphore::const_new(0);
-        THREADS_SEMAPHORE.add_permits(max_threads);
         let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
         seppuku.arm();
+        println!("Once: {}", once);
         loop {
             let page = match bot.prepare_next_single_page().await {
                 Ok(page) => page,
-                Err(e) => {
-                    eprintln!("Trying to get next page to process: {e}");
+                Err(_error) => {
+                    info!("All pages processed");
+                    if once {
+                        return Ok(());
+                    }
                     continue;
                 }
             };
 
-            let permit = THREADS_SEMAPHORE.acquire().await?;
-            println!(
-                "Starting new bot, {} running, {} available",
-                max_threads - THREADS_SEMAPHORE.available_permits(),
-                THREADS_SEMAPHORE.available_permits()
-            );
             seppuku.alive();
             let pagestatus_id = page.id();
             let start_time = Instant::now();
@@ -186,7 +178,6 @@ impl MainCommands {
             let diff = (end_time - start_time).as_secs();
             let _ = bot.set_runtime(pagestatus_id, diff).await;
             bot.release_running(pagestatus_id).await;
-            drop(permit);
         }
     }
 }
@@ -194,10 +185,10 @@ impl MainCommands {
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[command(subcommand)]
-    cmd: Commands,
     #[arg(short, long, default_value = "./config.json")]
     config: String,
+    #[command(subcommand)]
+    cmd: Commands,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -211,7 +202,10 @@ enum Commands {
         page: String,
     },
     Wikidata,
-    SingleWiki,
+    SingleWiki {
+        #[arg(short, long, default_value = "false")]
+        once: bool,
+    },
 }
 
 #[tokio::main]
@@ -221,7 +215,7 @@ async fn main() -> Result<()> {
     let config_file = cli.config;
     let mut config = Configuration::new_from_file(&config_file).await?;
     match cli.cmd {
-        Commands::Wikidata | Commands::SingleWiki => {}
+        Commands::Wikidata | Commands::SingleWiki { once: _ } => {}
         _ => config.set_profiling(true),
     }
     let mut main = MainCommands {
@@ -234,7 +228,7 @@ async fn main() -> Result<()> {
         Commands::LoadTestEntities => main.load_test_entities().await,
         Commands::Page { server, page } => main.process_page(&server, &page).await,
         Commands::Wikidata => main.run_wikidata_bot().await,
-        Commands::SingleWiki => main.run_single_wiki_bot().await,
+        Commands::SingleWiki { once } => main.run_single_wiki_bot(once).await,
     }
 }
 
