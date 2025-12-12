@@ -1,0 +1,171 @@
+use crate::{
+    configuration::Configuration, entity_container_wrapper::EntityContainerWrapper,
+    listeria_bot::ListeriaBot, listeria_bot_single::ListeriaBotSingle,
+    listeria_bot_wikidata::ListeriaBotWikidata, listeria_page::ListeriaPage, wiki_apis::WikiApis,
+};
+use anyhow::{Result, anyhow};
+use std::fs::read_to_string;
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::sync::Semaphore;
+use wikimisc::{seppuku::Seppuku, wikibase::EntityTrait};
+
+const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 240;
+
+#[derive(Debug, Clone)]
+pub struct MainCommands {
+    pub config: Arc<Configuration>,
+    pub config_file: String,
+}
+
+impl MainCommands {
+    async fn update_page(&self, page_title: &str, api_url: &str) -> Result<String> {
+        let mut mw_api = wikimisc::mediawiki::api::Api::new(api_url).await?;
+        mw_api.set_oauth2(self.config.oauth2_token());
+
+        let mw_api = Arc::new(mw_api);
+        let mut page = ListeriaPage::new(self.config.clone(), mw_api, page_title.into()).await?;
+        page.run().await.map_err(|e| anyhow!("{e:?}"))?;
+
+        if false {
+            // FOR TESTING
+            println!("{}", page.as_wikitext().await?[0]);
+            Ok("OK".to_string())
+        } else {
+            Ok(
+                match page
+                    .update_source_page()
+                    .await
+                    .map_err(|e| anyhow!("{e:?}"))?
+                {
+                    true => format!("{page_title} edited"),
+                    false => format!("{page_title} not edited"),
+                },
+            )
+        }
+    }
+
+    pub async fn update_wikis(&self) -> Result<()> {
+        let wiki_list = WikiApis::new(self.config.clone()).await?;
+        wiki_list.update_wiki_list_in_database().await?;
+        wiki_list.update_all_wikis().await?;
+        Ok(())
+    }
+
+    pub async fn load_test_entities(&mut self) -> Result<()> {
+        let mut items = vec![];
+        for line in read_to_string("test_data/entities.tab")?.lines() {
+            items.push(line.to_string());
+        }
+        // These two can be missing for some reason?
+        items.push("Q3".to_string());
+        items.push("Q4".to_string());
+
+        let config = Arc::get_mut(&mut self.config)
+            .ok_or(anyhow!("Failed to get mutable reference to config"))?;
+        config.set_max_local_cached_entities(1000000); // A lot
+        let ecw = EntityContainerWrapper::new().await?;
+        let api = wikimisc::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await?;
+        ecw.load_entities(&api, &items).await?;
+
+        let mut first = true;
+        for item in items {
+            let entity = match ecw.get_entity(&item).await {
+                Some(e) => e,
+                None => continue,
+            };
+            if first {
+                println!("{{");
+                first = false;
+            } else {
+                println!(",");
+            }
+            print!("\"{item}\":{}", serde_json::to_string(&entity.to_json())?);
+        }
+        println!("\n}}");
+        Ok(())
+    }
+
+    pub async fn process_page(&self, server: &str, page: &str) -> Result<()> {
+        let wiki_api = format!("https://{}/w/api.php", &server);
+        let message = match self.update_page(page, &wiki_api).await {
+            Ok(m) => format!("OK: {m}"),
+            Err(e) => format!("ERROR: {e}"),
+        };
+        println!("{message}");
+        Ok(())
+    }
+
+    pub async fn run_wikidata_bot(&self) -> Result<()> {
+        let bot = ListeriaBotWikidata::new(&self.config_file).await?;
+        let max_threads = bot.config().max_threads();
+        println!("Starting {max_threads} bots");
+        let _ = bot.reset_running().await;
+        let _ = bot.clear_deleted().await;
+        let bot = Arc::new(bot);
+        static THREADS_SEMAPHORE: Semaphore = Semaphore::const_new(0);
+        THREADS_SEMAPHORE.add_permits(max_threads);
+        let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
+        seppuku.arm();
+        loop {
+            let page = match bot.prepare_next_single_page().await {
+                Ok(page) => page,
+                Err(e) => {
+                    eprintln!("Trying to get next page to process: {e}");
+                    continue;
+                }
+            };
+
+            let permit = THREADS_SEMAPHORE.acquire().await?;
+            println!(
+                "Starting new bot, {} running, {} available",
+                max_threads - THREADS_SEMAPHORE.available_permits(),
+                THREADS_SEMAPHORE.available_permits()
+            );
+            let bot = bot.clone();
+            seppuku.alive();
+            tokio::spawn(async move {
+                let pagestatus_id = page.id();
+                let start_time = Instant::now();
+                if let Err(e) = bot.run_single_bot(page).await {
+                    eprintln!("Bot run failed: {e}");
+                }
+                let end_time = Instant::now();
+                let diff = (end_time - start_time).as_secs();
+                let _ = bot.set_runtime(pagestatus_id, diff).await;
+                bot.release_running(pagestatus_id).await;
+                drop(permit);
+            });
+        }
+    }
+
+    pub async fn run_single_wiki_bot(&self, once: bool) -> Result<()> {
+        let bot = ListeriaBotSingle::new(&self.config_file).await?;
+        let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
+        seppuku.arm();
+        loop {
+            let page = match bot.prepare_next_single_page().await {
+                Ok(page) => page,
+                Err(_error) => {
+                    if once {
+                        println!("All pages processed");
+                        return Ok(());
+                    }
+                    println!("All pages processed, restarting from beginning");
+                    continue;
+                }
+            };
+
+            seppuku.alive();
+            let pagestatus_id = page.id();
+            let start_time = Instant::now();
+            if let Err(e) = bot.run_single_bot(page).await {
+                eprintln!("Bot run failed: {e}");
+            }
+            let end_time = Instant::now();
+            let diff = (end_time - start_time).as_secs();
+            let _ = bot.set_runtime(pagestatus_id, diff).await;
+            bot.release_running(pagestatus_id).await;
+        }
+    }
+}
