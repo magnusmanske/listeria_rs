@@ -118,7 +118,7 @@ impl EntityContainerWrapper {
         let mut ids = ids.to_vec();
         ids.sort_unstable();
         ids.dedup();
-        ids.shuffle(&mut rand::thread_rng());
+        ids.shuffle(&mut rand::rng());
         Ok(ids)
     }
 
