@@ -115,7 +115,6 @@ impl ListeriaBotSingle {
     }
     async fn load_more_pages(&self) -> Result<()> {
         let api = self.config.get_default_wbapi()?;
-        // TODO tinamespace?
         let mut params: HashMap<String, String> = [
             ("action", "query"),
             ("prop", "transcludedin"),

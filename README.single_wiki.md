@@ -1,6 +1,12 @@
+Listeria can work in a single wiki mode, updating a single wiki independent of the Wikidata/Wikimedia ecosystem.
+You will need to prepare a basic JSON config file (refered to as `MY_CONFIG_FILE`) as described below.
+
 # Prepare config file
+This example uses `myproject.wikibase.cloud` as the wiki to run Listeria on. Adjust the server (and path is required) to match your wiki.
+This example uses `Template:Listeria list` and `Template:Listeria list end` as the start and end templates for the list, though you can use any names you like. These templates should be created on your wiki, and used where you want to display the list. See the [template description](https://en.wikipedia.org/wiki/Template:Wikidata_list) for more information about using the template.
+Adjust the `sparql_prefix` to match your wiki's setup. It will save you repeating the prefixes in every query.
+You will also need a `BOT_EDIT_TOKEN` for Listeria to edit the wiki.
 ## Basic configuration
-In this example, we use `myproject.wikibase.cloud` as the wiki to run Listeria on. You will also need a `BOT_EDIT_TOKEN` for Listeria to edit the wiki.
 ```json
 {
 	"apis": {
@@ -20,7 +26,8 @@ In this example, we use `myproject.wikibase.cloud` as the wiki to run Listeria o
 }
 ```
 ## Extended parameters
-You might want to use some extended parameters to fine-tune Listeria to your wiki setup:
+Optionally, you can use some extended parameters to fine-tune Listeria to your wiki setup.
+This should not be necessary for an initial test.
 ```json
 {
 	"profiling": false,
@@ -47,22 +54,27 @@ You might want to use some extended parameters to fine-tune Listeria to your wik
 Install Rust and Cargo, unless you have already done so. Clone the git repo.
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+## Clone the repo
+```bash
 git clone https://github.com/magnusmanske/listeria_rs.git
+cd listeria_rs
 ```
 ## Run Listeria
 Build and run the application.
 ```bash
-cd listeria_rs
-cargo run --release --bin single -- MY_CONFIG_FILE_PATH
+cargo run --release -- single-wiki --once --config MY_CONFIG_FILE
 ```
 
 # Run Listeria using Docker
 ## Build the Docker Image
 ```bash
+git clone https://github.com/magnusmanske/listeria_rs.git
+cd listeria_rs
 docker build -t listeria . -f Dockerfile.single_wiki
 ```
 
 ## Run from Docker Image
 ```bash
-docker run --rm  --name listeria -v MY_CONFIG_FILE_PATH:/etc/app/config.json:ro listeria
+docker run --rm  --name listeria -v MY_CONFIG_FILE:/etc/app/config.json:ro listeria
 ```
