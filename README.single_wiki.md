@@ -76,7 +76,12 @@ docker build -t listeria . -f Dockerfile.single_wiki
 ```
 
 ## Run from Docker Image
-This will run Listeria in the background. The `--once` flag is not available. Use Docker to kill the process.
+Start the container in detached mode.
 ```bash
-docker run -d --name listeria -v MY_CONFIG_FILE:/etc/app/config.json:ro listeria
+docker run --name listeria -v MY_CONFIG_FILE:/etc/app/config.json:ro -d -i -t listeria /bin/sh
 ```
+Then, run the listeria command:
+```bash
+docker exec -it listeria /usr/local/bin/listeria --config /etc/app/config.json single-wiki --once
+```
+The `--once` flag will run Listeria once and then exit. Without this flag, Listeria will run indefinitely.

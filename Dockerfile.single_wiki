@@ -26,7 +26,7 @@ RUN apt-get update && \
 RUN useradd -m -u 1001 appuser
 
 # Copy the binary from builder stage
-COPY --from=builder /usr/src/app/target/release/main /usr/local/bin/app
+COPY --from=builder /usr/src/app/target/release/main /usr/local/bin/listeria
 
 # Create directory for config file
 RUN mkdir -p /etc/app && chown appuser:appuser /etc/app
@@ -39,8 +39,3 @@ VOLUME ["/etc/app"]
 
 # Expose port (adjust as needed for your application)
 EXPOSE 8080
-
-# Run the binary
-ENTRYPOINT ["/usr/local/bin/app"]
-# Optionally specify the config file path as a default argument
-CMD ["--config","/etc/app/config.json","single-wiki"]
