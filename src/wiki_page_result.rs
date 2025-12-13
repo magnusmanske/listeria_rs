@@ -1,9 +1,13 @@
+use std::time::{Duration, Instant};
+
 #[derive(Debug, Clone)]
 pub struct WikiPageResult {
     wiki: String,
     page: String,
     result: String,
     message: String,
+    duration: Option<Duration>,
+    completed: Option<Instant>,
 }
 
 impl WikiPageResult {
@@ -14,6 +18,8 @@ impl WikiPageResult {
             page: page.to_string(),
             result: result.to_string(),
             message,
+            duration: None,
+            completed: None,
         }
     }
 
@@ -40,6 +46,22 @@ impl WikiPageResult {
     #[must_use]
     pub fn fail(wiki: &str, page: &str, message: &str) -> Self {
         Self::new(wiki, page, "FAIL", message.to_string())
+    }
+
+    pub const fn runtime(&self) -> Option<Duration> {
+        self.duration
+    }
+
+    pub const fn set_runtime(&mut self, runtime: Duration) {
+        self.duration = Some(runtime);
+    }
+
+    pub const fn completed(&self) -> Option<Instant> {
+        self.completed
+    }
+
+    pub const fn set_completed(&mut self, completed: Instant) {
+        self.completed = Some(completed);
     }
 
     pub fn standardize_meassage(&mut self) {

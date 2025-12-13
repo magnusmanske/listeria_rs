@@ -2,6 +2,7 @@ use crate::configuration::Configuration;
 use crate::listeria_bot::ListeriaBot;
 use crate::listeria_bot_wiki::ListeriaBotWiki;
 use crate::page_to_process::PageToProcess;
+use crate::wiki_page_result::WikiPageResult;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -48,7 +49,7 @@ impl ListeriaBot for ListeriaBotSingle {
         // No need
         Ok(())
     }
-    async fn run_single_bot(&self, page: PageToProcess) -> Result<()> {
+    async fn run_single_bot(&self, page: PageToProcess) -> Result<WikiPageResult> {
         let bot = match self.create_bot_for_wiki(page.wiki()).await {
             Some(bot) => bot.to_owned(),
             None => {
@@ -63,7 +64,7 @@ impl ListeriaBot for ListeriaBotSingle {
         }
         let mut wpr = bot.process_page(page.title()).await;
         wpr.standardize_meassage();
-        Ok(())
+        Ok(wpr)
     }
 
     /// Removed a pagestatus ID from the running list

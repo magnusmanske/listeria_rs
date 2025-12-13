@@ -3,7 +3,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use sysinfo::System;
 
-use crate::{configuration::Configuration, page_to_process::PageToProcess};
+use crate::{
+    configuration::Configuration, page_to_process::PageToProcess, wiki_page_result::WikiPageResult,
+};
 
 #[allow(async_fn_in_trait)]
 pub trait ListeriaBot {
@@ -17,7 +19,7 @@ pub trait ListeriaBot {
     async fn reset_running(&self) -> Result<()>;
     async fn clear_deleted(&self) -> Result<()>;
     async fn set_runtime(&self, pagestatus_id: u64, seconds: u64) -> Result<()>;
-    async fn run_single_bot(&self, page: PageToProcess) -> Result<()>;
+    async fn run_single_bot(&self, page: PageToProcess) -> Result<WikiPageResult>;
 
     /// Removed a pagestatus ID from the running list
     async fn release_running(&self, pagestatus_id: u64);

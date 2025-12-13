@@ -1,16 +1,27 @@
+use crate::wiki_page_result::WikiPageResult;
 use crate::{
     configuration::Configuration, entity_container_wrapper::EntityContainerWrapper,
     listeria_bot::ListeriaBot, listeria_bot_single::ListeriaBotSingle,
     listeria_bot_wikidata::ListeriaBotWikidata, listeria_page::ListeriaPage, wiki_apis::WikiApis,
 };
 use anyhow::{Result, anyhow};
-use std::fs::read_to_string;
+use axum::extract::State;
+use axum::{Router, response::Html, routing::get};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::Semaphore;
+use std::{fs::read_to_string, net::SocketAddr};
+use tokio::sync::{Mutex, Semaphore};
+use tower_http::compression::CompressionLayer;
 use wikimisc::{seppuku::Seppuku, wikibase::EntityTrait};
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 300;
+
+#[derive(Debug, Clone)]
+struct AppState {
+    pages: Arc<Mutex<HashMap<String, WikiPageResult>>>,
+    started: Instant,
+}
 
 #[derive(Debug, Clone)]
 pub struct MainCommands {
@@ -140,7 +151,112 @@ impl MainCommands {
         }
     }
 
+    async fn status_server_root(State(state): State<AppState>) -> Html<String> {
+        let now = Instant::now();
+        let server_uptime = now.duration_since(state.started);
+        let uptime_days = server_uptime.as_secs() / 86400;
+        let uptime_hours = (server_uptime.as_secs() % 86400) / 3600;
+        let uptime_minutes = (server_uptime.as_secs() % 3600) / 60;
+        let uptime_seconds = server_uptime.as_secs() % 60;
+
+        let mut statistics: HashMap<String, u64> = HashMap::new();
+        for (_page, result) in state.pages.lock().await.iter() {
+            *statistics.entry(result.result().to_string()).or_insert(0) += 1;
+        }
+
+        let last_event = state
+            .pages
+            .lock()
+            .await
+            .iter()
+            .filter_map(|(_page, result)| result.completed())
+            .map(|l| now.duration_since(l))
+            .min();
+
+        let problems: Vec<_> = state
+            .pages
+            .lock()
+            .await
+            .iter()
+            // .filter(|(_page, result)| result.result()!="OK")
+            .map(|(page, result)| (page.clone(), result.clone()))
+            .collect();
+
+        let mut html: String = "<html><body>".to_string();
+        html += "<p><h1>Listeria status</h1></p>";
+        html += &format!(
+            "<p>Uptime: {} days, {} hours, {} minutes, {} seconds</p>",
+            uptime_days, uptime_hours, uptime_minutes, uptime_seconds
+        );
+        if let Some(event) = last_event {
+            html += &format!("<p>Last page check: {} seconds ago</p>", event.as_secs());
+        }
+        html += &format!("<p>Total pages: {}</p>", state.pages.lock().await.len());
+
+        html += "<p><h2>Statistics</h2><table>";
+        html += "<thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>";
+        for (status, count) in statistics.iter() {
+            html += &format!("<tr><td>{status}</td><td>{count}</td></tr>");
+        }
+        html += "</tbody></table></p>";
+
+        if !problems.is_empty() {
+            // TODO wiki_page_pattern
+            html += "<p><h2>Problems</h2><table>";
+            html += "<thead><tr><th>Page</th><th>Status</th><th>Message</th></tr></thead><tbody>";
+            for (page, result) in problems {
+                html += &format!(
+                    "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    page,
+                    result.result(),
+                    result.message()
+                );
+            }
+            // for (status, count) in statistics.iter() {
+            //     html += &format!("<tr><td>{status}</td><td>{count}</td></tr>");
+            // }
+            html += "</tbody></table></p>";
+        }
+
+        html += "</body></html>";
+        Html(html)
+    }
+
+    async fn run_status_server(port: u16, state: AppState) {
+        // tracing_subscriber::fmt::init();
+
+        // let cors = CorsLayer::new().allow_origin(Any);
+        let app = Router::new()
+            .route("/", get(Self::status_server_root))
+            // .nest_service("/images", ServeDir::new("images"))
+            // .layer(cors),
+            // .layer(TraceLayer::new_for_http())
+            .layer(CompressionLayer::new())
+            .with_state(state);
+
+        let address = [0, 0, 0, 0]; // TODOO env::var("AC2WD_ADDRESS")
+
+        let addr = SocketAddr::from((address, port));
+        tracing::debug!("listening on {}", addr);
+        let listener = tokio::net::TcpListener::bind(addr)
+            .await
+            .expect("Could not create listener");
+        axum::serve(listener, app)
+            .await
+            .expect("Could not start server");
+    }
+
     pub async fn run_single_wiki_bot(&self, once: bool) -> Result<()> {
+        let state = AppState {
+            pages: Arc::new(Mutex::new(HashMap::new())),
+            started: Instant::now(),
+        };
+        if let Some(port) = self.config.status_server_port() {
+            let state_clone = state.clone();
+            tokio::spawn(async move {
+                Self::run_status_server(port, state_clone).await;
+            });
+        }
         let config = Arc::new((*self.config).clone());
         let bot = ListeriaBotSingle::new_from_config(config).await?;
         let mut seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
@@ -163,15 +279,20 @@ impl MainCommands {
             };
 
             seppuku.alive();
-            let pagestatus_id = page.id();
-            // let start_time = Instant::now();
-            if let Err(e) = bot.run_single_bot(page).await {
-                eprintln!("Bot run failed: {e}");
-            }
-            // let end_time = Instant::now();
-            // let diff = (end_time - start_time).as_secs();
-            // let _ = bot.set_runtime(pagestatus_id, diff).await;
-            bot.release_running(pagestatus_id).await;
+            let start_time = Instant::now();
+            let mut result = match bot.run_single_bot(page.clone()).await {
+                Ok(result) => result,
+                Err(e) => WikiPageResult::new("wiki", page.title(), "Error", e.to_string()),
+            };
+            let end_time = Instant::now();
+            let diff = end_time - start_time;
+            result.set_runtime(diff);
+            result.set_completed(Instant::now());
+            state
+                .pages
+                .lock()
+                .await
+                .insert(page.title().to_string(), result);
             if let Some(seconds) = bot.config().delay_after_page_check_sec() {
                 seppuku.disarm();
                 tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;

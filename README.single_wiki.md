@@ -6,6 +6,7 @@ This example uses `myproject.wikibase.cloud` as the wiki to run Listeria on. Adj
 This example uses `Template:Listeria list` and `Template:Listeria list end` as the start and end templates for the list, though you can use any names you like. These templates should be created on your wiki, and used where you want to display the list. See the [template description](https://en.wikipedia.org/wiki/Template:Wikidata_list) for more information about using the template.
 Adjust the `sparql_prefix` to match your wiki's setup. It will save you repeating the prefixes in every query.
 You will also need a `BOT_EDIT_TOKEN` for Listeria to edit the wiki.
+If you specify a `status_server_port`, Listeria will start a status server on that port (at 127.0.0.1), which can be used to monitor the status of Listeria.
 ## Basic configuration
 ```json
 {
@@ -20,6 +21,7 @@ You will also need a `BOT_EDIT_TOKEN` for Listeria to edit the wiki.
 	"template_start": "Listeria list",
 	"template_end": "Listeria list end",
 	"max_threads": 1,
+	"status_server_port": 8080,
 	"wiki_login": {
 		"token": "BOT_EDIT_TOKEN"
 	}
@@ -78,7 +80,7 @@ docker build -t listeria . -f Dockerfile.single_wiki
 ```
 
 ## Run from Docker Image
-Start the container in detached mode.
+Start the container in detached mode. If you want to monitor the status of Listeria, set `status_server_port` to 8080 in your configuration file, and add `-p HOST_PORT:8080` (with `HOST_PORT` the port you want to use in your browser) to the parameters below.
 ```bash
 docker run --name listeria -v MY_CONFIG_FILE:/etc/app/config.json:ro -d -i -t listeria /bin/sh
 ```
