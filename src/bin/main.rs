@@ -6,7 +6,7 @@ use std::sync::Arc;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    #[arg(short, long, default_value = "./config.json")]
+    #[arg(short, long, default_value = "/etc/app/config.json")]
     config: String,
     #[command(subcommand)]
     cmd: Commands,

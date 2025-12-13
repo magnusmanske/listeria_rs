@@ -82,6 +82,6 @@ docker run --name listeria -v MY_CONFIG_FILE:/etc/app/config.json:ro -d -i -t li
 ```
 Then, run the listeria command:
 ```bash
-docker exec -it listeria /usr/local/bin/listeria --config /etc/app/config.json single-wiki --once
+docker exec -it listeria /usr/local/bin/listeria single-wiki --once
 ```
 The `--once` flag will run Listeria once and then exit. Without this flag, Listeria will run indefinitely.

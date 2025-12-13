@@ -394,7 +394,6 @@ mod tests {
 
     /* TESTING
     ssh magnus@tools-login.wmflabs.org -L 3308:tools.db.svc.wikimedia.cloud:3306 -N &
-    ssh magnus@tools-login.wmflabs.org -L 3307:dewiki.web.db.svc.eqiad.wmflabs:3306 -N &
     */
 
     #[tokio::test]

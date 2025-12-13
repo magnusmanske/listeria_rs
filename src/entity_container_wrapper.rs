@@ -45,7 +45,6 @@ impl EntityContainerWrapper {
         };
         // Pre-cache test entities if testing
         if cfg!(test) {
-            // println!("Loading test entities from test_data/test_entities.json");
             let file = File::open("test_data/test_entities.json")
                 .expect("Could not open file test_data/test_entities.json");
             let reader = BufReader::new(file);
@@ -54,7 +53,6 @@ impl EntityContainerWrapper {
             for (_item, j) in test_items.as_object().unwrap() {
                 ret.set_entity_from_json(j).unwrap();
             }
-            // println!("Loaded");
         }
         Ok(ret)
     }
