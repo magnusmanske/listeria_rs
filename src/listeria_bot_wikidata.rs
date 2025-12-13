@@ -3,6 +3,7 @@ use crate::listeria_bot::ListeriaBot;
 use crate::listeria_bot_wiki::ListeriaBotWiki;
 use crate::page_to_process::PageToProcess;
 use crate::wiki_apis::WikiApis;
+use crate::wiki_page_result::WikiPageResult;
 use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
@@ -136,7 +137,7 @@ impl ListeriaBot for ListeriaBotWikidata {
         Ok(())
     }
 
-    async fn run_single_bot(&self, page: PageToProcess) -> Result<()> {
+    async fn run_single_bot(&self, page: PageToProcess) -> Result<WikiPageResult> {
         let bot = match self.create_bot_for_wiki(page.wiki()).await {
             Some(bot) => bot.to_owned(),
             None => {
@@ -157,7 +158,7 @@ impl ListeriaBot for ListeriaBotWikidata {
         wpr.standardize_meassage();
         self.update_page_status(wpr.page(), wpr.wiki(), wpr.result(), wpr.message())
             .await?;
-        Ok(())
+        Ok(wpr)
     }
 }
 

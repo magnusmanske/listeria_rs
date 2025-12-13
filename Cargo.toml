@@ -30,6 +30,16 @@ log = "*"
 toolforge = { version = "*", features = ["mysql"] }
 sysinfo = "*"
 clap = { version = "*", features = ["derive"] }
+axum = { version = "*", features = [
+	"http1",
+	"http2",
+	"tokio",
+	"json",
+	"macros",
+] }
+tracing = "*"
+tracing-subscriber = "*"
+tower-http = { version = "*", features = ["full"] }
 
 [profile.release]
 lto = 'thin'
