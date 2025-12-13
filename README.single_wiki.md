@@ -32,6 +32,7 @@ This should not be necessary for an initial test.
 {
 	"quiet": false,
 	"profiling": false,
+	"delay_after_page_check_sec": 10,
 	"default_language": "en",
 	"prefer_preferred": true,
 	"namespace_blocks": {},

@@ -10,7 +10,7 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use wikimisc::{seppuku::Seppuku, wikibase::EntityTrait};
 
-const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 240;
+const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 300;
 
 #[derive(Debug, Clone)]
 pub struct MainCommands {
@@ -143,7 +143,7 @@ impl MainCommands {
     pub async fn run_single_wiki_bot(&self, once: bool) -> Result<()> {
         let config = Arc::new((*self.config).clone());
         let bot = ListeriaBotSingle::new_from_config(config).await?;
-        let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
+        let mut seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
         seppuku.arm();
         loop {
             let page = match bot.prepare_next_single_page().await {
@@ -164,14 +164,19 @@ impl MainCommands {
 
             seppuku.alive();
             let pagestatus_id = page.id();
-            let start_time = Instant::now();
+            // let start_time = Instant::now();
             if let Err(e) = bot.run_single_bot(page).await {
                 eprintln!("Bot run failed: {e}");
             }
-            let end_time = Instant::now();
-            let diff = (end_time - start_time).as_secs();
-            let _ = bot.set_runtime(pagestatus_id, diff).await;
+            // let end_time = Instant::now();
+            // let diff = (end_time - start_time).as_secs();
+            // let _ = bot.set_runtime(pagestatus_id, diff).await;
             bot.release_running(pagestatus_id).await;
+            if let Some(seconds) = bot.config().delay_after_page_check_sec() {
+                seppuku.disarm();
+                tokio::time::sleep(std::time::Duration::from_secs(seconds)).await;
+                seppuku.arm();
+            }
         }
     }
 }
