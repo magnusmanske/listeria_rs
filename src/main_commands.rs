@@ -150,10 +150,14 @@ impl MainCommands {
                 Ok(page) => page,
                 Err(_error) => {
                     if once {
-                        println!("All pages processed");
+                        if !bot.config().quiet() {
+                            println!("All pages processed");
+                        }
                         return Ok(());
                     }
-                    println!("All pages processed, restarting from beginning");
+                    if !bot.config().quiet() {
+                        println!("All pages processed, restarting from beginning");
+                    }
                     continue;
                 }
             };
