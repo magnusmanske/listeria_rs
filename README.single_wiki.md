@@ -30,6 +30,7 @@ Optionally, you can use some extended parameters to fine-tune Listeria to your w
 This should not be necessary for an initial test.
 ```json
 {
+	"quiet": false,
 	"profiling": false,
 	"default_language": "en",
 	"prefer_preferred": true,
