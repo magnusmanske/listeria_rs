@@ -58,6 +58,7 @@ pub struct Configuration {
     wikis: HashMap<String, Wiki>,
     is_single_wiki: bool,
     quiet: bool,
+    delay_after_page_check_sec: Option<u64>,
     query_endpoint: Option<String>, // For single wiki mode, the SPARQL endpoint
     sparql_prefix: Option<String>,  // For single wiki mode, a prefix for all SPARQL queries
     main_item_prefix: String,       // For single wiki mode, the prefix for items
@@ -333,6 +334,10 @@ impl Configuration {
         self.is_single_wiki
     }
 
+    pub const fn delay_after_page_check_sec(&self) -> Option<u64> {
+        self.delay_after_page_check_sec
+    }
+
     async fn new_from_json_start_end_tempate_mappings(&mut self, j: &Value) -> Result<()> {
         // Try hardcoded first
         if let Some(template_start) = j["template_start"].as_str()
@@ -430,6 +435,7 @@ impl Configuration {
             j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
         self.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
         self.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
+        self.delay_after_page_check_sec = j["delay_after_page_check_sec"].as_u64();
         self.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
         self.profiling = j["profiling"].as_bool().unwrap_or_default();
         self.quiet = j["quiet"].as_bool().unwrap_or_default();
