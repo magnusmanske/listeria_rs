@@ -178,7 +178,7 @@ impl MainCommands {
             .lock()
             .await
             .iter()
-            // .filter(|(_page, result)| result.result()!="OK")
+            .filter(|(_page, result)| result.result() != "OK")
             .map(|(page, result)| (page.clone(), result.clone()))
             .collect();
 
@@ -201,20 +201,17 @@ impl MainCommands {
         html += "</tbody></table></p>";
 
         if !problems.is_empty() {
-            // TODO wiki_page_pattern
             html += "<p><h2>Problems</h2><table>";
             html += "<thead><tr><th>Page</th><th>Status</th><th>Message</th></tr></thead><tbody>";
             for (page, result) in problems {
                 html += &format!(
                     "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
-                    page,
+                    // TODO wiki_page_pattern
+                    html_escape::encode_text(&page),
                     result.result(),
                     result.message()
                 );
             }
-            // for (status, count) in statistics.iter() {
-            //     html += &format!("<tr><td>{status}</td><td>{count}</td></tr>");
-            // }
             html += "</tbody></table></p>";
         }
 

@@ -40,6 +40,7 @@ axum = { version = "*", features = [
 tracing = "*"
 tracing-subscriber = "*"
 tower-http = { version = "*", features = ["full"] }
+html-escape = "*"
 
 [profile.release]
 lto = 'thin'
