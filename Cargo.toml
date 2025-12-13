@@ -30,3 +30,12 @@ log = "*"
 toolforge = { version = "*", features = ["mysql"] }
 sysinfo = "*"
 clap = { version = "*", features = ["derive"] }
+
+[profile.release]
+lto = 'thin'
+panic = 'abort'
+codegen-units = 1
+
+[profile.bench]
+lto = 'thin'
+codegen-units = 1
