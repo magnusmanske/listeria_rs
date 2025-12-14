@@ -392,10 +392,6 @@ impl WikiApis {
 mod tests {
     use super::*;
 
-    /* TESTING
-    ssh magnus@tools-login.wmflabs.org -L 3308:tools.db.svc.wikimedia.cloud:3306 -N &
-    */
-
     #[tokio::test]
     async fn test_fix_wiki_name() {
         let config = Configuration::new_from_file("config.json").await.unwrap();
