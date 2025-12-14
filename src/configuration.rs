@@ -344,8 +344,8 @@ impl Configuration {
         self.status_server_port
     }
 
-    pub const fn wiki_page_pattern(&self) -> &Option<String> {
-        &self.wiki_page_pattern
+    pub fn wiki_page_pattern(&self) -> Option<String> {
+        self.wiki_page_pattern.clone()
     }
 
     async fn new_from_json_start_end_tempate_mappings(&mut self, j: &Value) -> Result<()> {
