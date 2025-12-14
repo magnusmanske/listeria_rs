@@ -419,55 +419,66 @@ impl ListeriaList {
 
     pub async fn generate_results(&mut self) -> Result<()> {
         let mut tmp_results: Vec<ResultRow> = Vec::new();
-        match self.params.one_row_per_item() {
-            true => {
-                let var_index = self.get_var_index()?;
-                let sparql_row_ids: Vec<String> =
-                    self.get_ids_from_sparql_rows()?.into_iter().collect(); // To preserve the original order
-                let mut id2rows: HashMap<String, Vec<usize>> = HashMap::new();
-
-                for row_id in 0..self.sparql_table.len() {
-                    if let Some(SparqlValue::Entity(id)) =
-                        self.sparql_table.get_row_col(row_id, var_index)
-                    {
-                        id2rows.entry(id.to_string()).or_default().push(row_id);
-                    };
-                }
-                for id in &sparql_row_ids {
-                    let mut tmp_rows = SparqlTable::from_table(&self.sparql_table);
-                    let row_ids = id2rows.get(id).map(|v| v.to_owned()).unwrap_or_default();
-                    for row_id in row_ids {
-                        if let Some(row) = self.sparql_table.get(row_id) {
-                            tmp_rows.push(row);
-                        }
-                    }
-                    if let Some(row) = self.ecw.get_result_row(id, &tmp_rows, self).await {
-                        tmp_results.push(row);
-                    }
-                }
-            }
-            false => {
-                let var_index = self.get_var_index()?;
-
-                for row_id in 0..self.sparql_table.len() {
-                    let row = match self.sparql_table.get(row_id) {
-                        Some(row) => row,
-                        None => {
-                            continue;
-                        }
-                    };
-                    let v = row.get(var_index).map(|v| v.to_owned());
-                    if let Some(Some(SparqlValue::Entity(id))) = v {
-                        let mut tmp_table = SparqlTable::from_table(&self.sparql_table);
-                        tmp_table.push(row.to_owned());
-                        if let Some(x) = self.ecw.get_result_row(&id, &tmp_table, self).await {
-                            tmp_results.push(x);
-                        }
-                    }
-                }
-            }
+        if self.params.one_row_per_item() {
+            self.generate_results_one_row_per_item(&mut tmp_results)
+                .await?;
+        } else {
+            self.generate_results_multiple_rows_per_item(&mut tmp_results)
+                .await?;
         };
         self.results = tmp_results;
+        Ok(())
+    }
+
+    async fn generate_results_multiple_rows_per_item(
+        &mut self,
+        tmp_results: &mut Vec<ResultRow>,
+    ) -> Result<()> {
+        let var_index = self.get_var_index()?;
+        for row_id in 0..self.sparql_table.len() {
+            let row = match self.sparql_table.get(row_id) {
+                Some(row) => row,
+                None => {
+                    continue;
+                }
+            };
+            let v = row.get(var_index).map(|v| v.to_owned());
+            if let Some(Some(SparqlValue::Entity(id))) = v {
+                let mut tmp_table = SparqlTable::from_table(&self.sparql_table);
+                tmp_table.push(row.to_owned());
+                if let Some(x) = self.ecw.get_result_row(&id, &tmp_table, self).await {
+                    tmp_results.push(x);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    async fn generate_results_one_row_per_item(
+        &mut self,
+        tmp_results: &mut Vec<ResultRow>,
+    ) -> Result<()> {
+        let var_index = self.get_var_index()?;
+        let sparql_row_ids: Vec<String> = self.get_ids_from_sparql_rows()?.into_iter().collect();
+        let mut id2rows: HashMap<String, Vec<usize>> = HashMap::new();
+        for row_id in 0..self.sparql_table.len() {
+            if let Some(SparqlValue::Entity(id)) = self.sparql_table.get_row_col(row_id, var_index)
+            {
+                id2rows.entry(id.to_string()).or_default().push(row_id);
+            };
+        }
+        for id in &sparql_row_ids {
+            let mut tmp_rows = SparqlTable::from_table(&self.sparql_table);
+            let row_ids = id2rows.get(id).map(|v| v.to_owned()).unwrap_or_default();
+            for row_id in row_ids {
+                if let Some(row) = self.sparql_table.get(row_id) {
+                    tmp_rows.push(row);
+                }
+            }
+            if let Some(row) = self.ecw.get_result_row(id, &tmp_rows, self).await {
+                tmp_results.push(row);
+            }
+        }
         Ok(())
     }
 
