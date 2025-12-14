@@ -187,8 +187,7 @@ impl MainCommands {
         let mut html: String = "<html><head>".to_string();
         html += r#"<meta charset="UTF-8">
         <title>Listeria</title>
-        <link href="html/bootstrap.min.css" rel="stylesheet">
-        <script src="html/bootstrap.bundle.min.js" ></script>"#;
+        <link href="html/bootstrap.min.css" rel="stylesheet">"#;
         html += "</head><body>";
         html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Listeria status</h5>"#;
         html += &format!(
