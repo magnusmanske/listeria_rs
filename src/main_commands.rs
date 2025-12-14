@@ -13,6 +13,7 @@ use std::time::Instant;
 use std::{fs::read_to_string, net::SocketAddr};
 use tokio::sync::{Mutex, Semaphore};
 use tower_http::compression::CompressionLayer;
+use tower_http::services::ServeDir;
 use wikimisc::{seppuku::Seppuku, wikibase::EntityTrait};
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 300;
@@ -179,30 +180,44 @@ impl MainCommands {
             .lock()
             .await
             .iter()
-            .filter(|(_page, result)| result.result() != "OK")
+            // .filter(|(_page, result)| result.result() != "OK")
             .map(|(page, result)| (page.clone(), result.clone()))
             .collect();
 
-        let mut html: String = "<html><body>".to_string();
-        html += "<p><h1>Listeria status</h1></p>";
+        let mut html: String = "<html><head>".to_string();
+        html += r#"<meta charset="UTF-8">
+        <link href="html/bootstrap.min.css" rel="stylesheet">
+        <script src="html/bootstrap.bundle.min.js" ></script>"#;
+        html += "</head><body>";
+        html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Listeria status</h5>"#;
         html += &format!(
-            "<p>Uptime: {} days, {} hours, {} minutes, {} seconds</p>",
+            "<p class='card-text'>Uptime: {} days, {} hours, {} minutes, {} seconds</p>",
             uptime_days, uptime_hours, uptime_minutes, uptime_seconds
         );
         if let Some(event) = last_event {
-            html += &format!("<p>Last page check: {} seconds ago</p>", event.as_secs());
+            html += &format!(
+                "<p class='card-text'>Last page check: {} seconds ago</p>",
+                event.as_secs()
+            );
         }
-        html += &format!("<p>Total pages: {}</p>", state.pages.lock().await.len());
+        html += &format!(
+            "<p class='card-text'>Total pages: {}</p>",
+            state.pages.lock().await.len()
+        );
+        html += "</div></div>";
 
-        html += "<p><h2>Statistics</h2><table>";
+        html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Page statistics</h5>"#;
+        html += "<p class='card-text'><table class='table table-striped'>";
         html += "<thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>";
         for (status, count) in statistics.iter() {
             html += &format!("<tr><td>{status}</td><td>{count}</td></tr>");
         }
-        html += "</tbody></table></p>";
+        html += "</tbody></table></p></div></div>";
 
         if !problems.is_empty() {
-            html += "<p><h2>Problems</h2><table>";
+            html +=
+                r#"<div class="card"><div class="card-body"><h5 class="card-title">Issues</h5>"#;
+            html += "<p class='card-text'><table class='table table-striped'>";
             html += "<thead><tr><th>Page</th><th>Status</th><th>Message</th></tr></thead><tbody>";
             for (page, result) in problems {
                 let link = match &state.wiki_page_pattern {
@@ -223,7 +238,7 @@ impl MainCommands {
                     result.message()
                 );
             }
-            html += "</tbody></table></p>";
+            html += "</tbody></table></p></div></div>";
         }
 
         html += "</body></html>";
@@ -236,7 +251,7 @@ impl MainCommands {
         // let cors = CorsLayer::new().allow_origin(Any);
         let app = Router::new()
             .route("/", get(Self::status_server_root))
-            // .nest_service("/images", ServeDir::new("images"))
+            .nest_service("/html", ServeDir::new("html"))
             // .layer(cors),
             // .layer(TraceLayer::new_for_http())
             .layer(CompressionLayer::new())
