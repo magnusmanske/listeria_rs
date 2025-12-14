@@ -15,6 +15,7 @@ If you specify a `status_server_port`, Listeria will start a status server on th
 		"commons": "https://commons.wikimedia.org/w/api.php"
 	},
 	"default_api": "wiki",
+	"wiki_page_pattern": "https://myproject.wikibase.cloud/wiki/$1",
 	"query_endpoint": "https://myproject.wikibase.cloud/query/sparql",
 	"sparql_prefix": "PREFIX m: <https://myproject.wikibase.cloud/entity/>\nPREFIX mt: <https://myproject.wikibase.cloud/prop/direct/>",
 	"main_item_prefix": "Item:",
