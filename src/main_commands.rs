@@ -180,7 +180,7 @@ impl MainCommands {
             .lock()
             .await
             .iter()
-            // .filter(|(_page, result)| result.result() != "OK")
+            .filter(|(_page, result)| result.result() != "OK")
             .map(|(page, result)| (page.clone(), result.clone()))
             .collect();
 
