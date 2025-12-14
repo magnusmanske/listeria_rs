@@ -66,44 +66,7 @@ impl RendererWikitext {
             wt += "|-\n";
         }
 
-        let mut row_entity_ids = vec![];
-        for rownum in 0..list.results().len() {
-            if let Some(row) = list.results().get(rownum)
-                && row.section() == section_id
-            {
-                row_entity_ids.push(row.entity_id().to_string());
-            }
-        }
-
-        // Rows
-        let mut current_sub_row = 0;
-        let mut rows = vec![];
-        for rownum in 0..list.results().len() {
-            if let Some(row) = list.results().get(rownum) {
-                let mut row = row.clone();
-                if row.section() == section_id {
-                    let wt_sub_row = row.as_wikitext(list, current_sub_row).await;
-                    rows.push(wt_sub_row);
-                    current_sub_row += 1;
-                }
-            }
-        }
-
-        if list.skip_table() {
-            wt += &rows.join("\n");
-        } else if list.template_params().wdedit() {
-            let x: Vec<String> = row_entity_ids
-                .iter()
-                .zip(rows.iter())
-                .map(|(entity_id, row)| match &list.header_template() {
-                    Some(_) => row.to_string(),
-                    None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row),
-                })
-                .collect();
-            wt += x.join("").trim();
-        } else {
-            wt += &rows.join("\n|-\n");
-        }
+        Self::process_rows(list, section_id, &mut wt).await;
 
         // End
         if !list.skip_table() {
@@ -144,6 +107,47 @@ impl RendererWikitext {
             "\n\n\n".to_string()
         } else {
             format!("\n\n\n== {name} ==\n")
+        }
+    }
+
+    async fn process_rows(list: &mut ListeriaList, section_id: usize, wt: &mut String) {
+        let mut row_entity_ids = vec![];
+        for rownum in 0..list.results().len() {
+            if let Some(row) = list.results().get(rownum)
+                && row.section() == section_id
+            {
+                row_entity_ids.push(row.entity_id().to_string());
+            }
+        }
+
+        // Rows
+        let mut current_sub_row = 0;
+        let mut rows = vec![];
+        for rownum in 0..list.results().len() {
+            if let Some(row) = list.results().get(rownum) {
+                let mut row = row.clone();
+                if row.section() == section_id {
+                    let wt_sub_row = row.as_wikitext(list, current_sub_row).await;
+                    rows.push(wt_sub_row);
+                    current_sub_row += 1;
+                }
+            }
+        }
+
+        if list.skip_table() {
+            *wt += &rows.join("\n");
+        } else if list.template_params().wdedit() {
+            let x: Vec<String> = row_entity_ids
+                .iter()
+                .zip(rows.iter())
+                .map(|(entity_id, row)| match &list.header_template() {
+                    Some(_) => row.to_string(),
+                    None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row),
+                })
+                .collect();
+            *wt += x.join("").trim();
+        } else {
+            *wt += &rows.join("\n|-\n");
         }
     }
 }
