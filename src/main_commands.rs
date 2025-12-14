@@ -21,6 +21,7 @@ const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 300;
 struct AppState {
     pages: Arc<Mutex<HashMap<String, WikiPageResult>>>,
     started: Instant,
+    wiki_page_pattern: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -204,10 +205,20 @@ impl MainCommands {
             html += "<p><h2>Problems</h2><table>";
             html += "<thead><tr><th>Page</th><th>Status</th><th>Message</th></tr></thead><tbody>";
             for (page, result) in problems {
+                let link = match &state.wiki_page_pattern {
+                    Some(wiki_page_pattern) => {
+                        format!(
+                            "<a target=\"_blank\" href=\"{}\">{}</a>",
+                            wiki_page_pattern
+                                .replace("$1", &urlencoding::encode(&page.replace(' ', "_"))),
+                            html_escape::encode_text(&page)
+                        )
+                    }
+                    None => html_escape::encode_text(&page).to_string(),
+                };
                 html += &format!(
                     "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
-                    // TODO wiki_page_pattern
-                    html_escape::encode_text(&page),
+                    link,
                     result.result(),
                     result.message()
                 );
@@ -247,6 +258,7 @@ impl MainCommands {
         let state = AppState {
             pages: Arc::new(Mutex::new(HashMap::new())),
             started: Instant::now(),
+            wiki_page_pattern: self.config.wiki_page_pattern(),
         };
         if let Some(port) = self.config.status_server_port() {
             let state_clone = state.clone();
