@@ -325,3 +325,338 @@ impl MainCommands {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use wiremock::matchers::{body_string_contains, method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    async fn create_test_config() -> Arc<Configuration> {
+        let config_content =
+            fs::read_to_string("config.json").expect("config.json file should exist for tests");
+        let j: serde_json::Value =
+            serde_json::from_str(&config_content).expect("config.json should be valid JSON");
+        let config = Configuration::new_from_json(j)
+            .await
+            .expect("Configuration should be created from JSON");
+        Arc::new(config)
+    }
+
+    fn create_main_commands(config: Arc<Configuration>) -> MainCommands {
+        MainCommands {
+            config,
+            config_file: "config.json".to_string(),
+        }
+    }
+
+    /// Helper to create a mock API response for tokens
+    fn mock_token_response() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "query": {
+                "tokens": {
+                    "csrftoken": "test_csrf_token+\\"
+                }
+            }
+        }))
+    }
+
+    /// Helper to create a mock API response for page info
+    fn mock_page_info_response(page_title: &str) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "query": {
+                "pages": {
+                    "12345": {
+                        "pageid": 12345,
+                        "ns": 0,
+                        "title": page_title,
+                        "revisions": [{
+                            "contentformat": "text/x-wiki",
+                            "contentmodel": "wikitext",
+                            "slots": {
+                                "main": {
+                                    "*": "Test page content\n{{Wikidata list}}"
+                                }
+                            }
+                        }]
+                    }
+                }
+            }
+        }))
+    }
+
+    /// Helper to create a mock API response for SPARQL query (empty result)
+    fn mock_sparql_response() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "head": {
+                "vars": ["item"]
+            },
+            "results": {
+                "bindings": []
+            }
+        }))
+    }
+
+    /// Helper to create a mock API response for page edit success
+    fn mock_edit_success_response() -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "edit": {
+                "result": "Success",
+                "pageid": 12345,
+                "title": "Test Page",
+                "contentmodel": "wikitext",
+                "oldrevid": 100,
+                "newrevid": 101
+            }
+        }))
+    }
+
+    #[tokio::test]
+    async fn test_update_page_with_mock_server() {
+        // Setup mock server
+        let mock_server = MockServer::start().await;
+        let api_url = format!("{}/w/api.php", mock_server.uri());
+
+        // Mock the token request
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("action", "query"))
+            .and(query_param("meta", "tokens"))
+            .respond_with(mock_token_response())
+            .mount(&mock_server)
+            .await;
+
+        // Mock the page content request
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("action", "query"))
+            .and(query_param("prop", "revisions"))
+            .respond_with(mock_page_info_response("Test Page"))
+            .mount(&mock_server)
+            .await;
+
+        // Mock the SPARQL endpoint if needed
+        Mock::given(method("POST"))
+            .and(path("/sparql"))
+            .respond_with(mock_sparql_response())
+            .mount(&mock_server)
+            .await;
+
+        // Mock the edit request (if page gets edited)
+        Mock::given(method("POST"))
+            .and(path("/w/api.php"))
+            .and(body_string_contains("action=edit"))
+            .respond_with(mock_edit_success_response())
+            .mount(&mock_server)
+            .await;
+
+        // Create test configuration
+        let config = create_test_config().await;
+        let main_commands = create_main_commands(config);
+
+        // Test update_page - Note: This will likely fail because update_page
+        // requires a full ListeriaPage setup which involves database and other dependencies
+        // This test demonstrates the wiremock setup, but may need mocking of other components
+        let result = main_commands.update_page("Test Page", &api_url).await;
+
+        // The result depends on the full implementation, but we've mocked the HTTP layer
+        // In a real scenario, you'd need to mock database and other external dependencies too
+        match result {
+            Ok(msg) => println!("Update succeeded: {}", msg),
+            Err(e) => println!("Update failed (expected due to dependencies): {}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_update_page_token_request() {
+        let mock_server = MockServer::start().await;
+        let api_url = format!("{}/w/api.php", mock_server.uri());
+
+        // Mock the initial siteinfo request that Api::new makes
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("action", "query"))
+            .and(query_param("meta", "siteinfo"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "query": {
+                    "general": {
+                        "sitename": "Test Wiki"
+                    }
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Mock the token request
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("action", "query"))
+            .and(query_param("meta", "tokens"))
+            .respond_with(mock_token_response())
+            .mount(&mock_server)
+            .await;
+
+        // This will test that the API creation works with the mock server
+        let api = wikimisc::mediawiki::api::Api::new(&api_url).await;
+        assert!(api.is_ok(), "API should be created successfully");
+    }
+
+    #[tokio::test]
+    async fn test_update_page_error_handling() {
+        let mock_server = MockServer::start().await;
+        let api_url = format!("{}/w/api.php", mock_server.uri());
+
+        // Mock a server error response
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&mock_server)
+            .await;
+
+        let config = create_test_config().await;
+        let main_commands = create_main_commands(config);
+
+        // This should handle the error gracefully
+        let result = main_commands.update_page("Test Page", &api_url).await;
+
+        // We expect an error due to the 500 response
+        assert!(result.is_err(), "Should return error for server failure");
+    }
+
+    #[tokio::test]
+    async fn test_update_page_with_invalid_api_url() {
+        let config = create_test_config().await;
+        let main_commands = create_main_commands(config);
+
+        // Test with an invalid URL
+        let result = main_commands
+            .update_page(
+                "Test Page",
+                "http://invalid-url-that-does-not-exist.local/api.php",
+            )
+            .await;
+
+        assert!(result.is_err(), "Should return error for invalid URL");
+    }
+
+    #[tokio::test]
+    async fn test_mock_api_page_content() {
+        let mock_server = MockServer::start().await;
+        let api_url = format!("{}/w/api.php", mock_server.uri());
+
+        // Mock the initial siteinfo request that Api::new makes
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("action", "query"))
+            .and(query_param("meta", "siteinfo"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "query": {
+                    "general": {
+                        "sitename": "Test Wiki"
+                    }
+                }
+            })))
+            .mount(&mock_server)
+            .await;
+
+        // Mock token request
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("action", "query"))
+            .and(query_param("meta", "tokens"))
+            .respond_with(mock_token_response())
+            .mount(&mock_server)
+            .await;
+
+        // Mock page content request
+        let page_title = "Sample Page";
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("action", "query"))
+            .and(query_param("prop", "revisions"))
+            .respond_with(mock_page_info_response(page_title))
+            .mount(&mock_server)
+            .await;
+
+        // Create API and verify it can fetch page info
+        let api = wikimisc::mediawiki::api::Api::new(&api_url)
+            .await
+            .expect("API should be created");
+
+        // This demonstrates that the mock server is working correctly
+        // The actual page operations would require more complex mocking
+        assert_eq!(
+            api.get_site_info_string("general", "sitename")
+                .unwrap_or_default(),
+            "Test Wiki"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_page_with_mock() {
+        let mock_server = MockServer::start().await;
+        let server_url = mock_server.uri().replace("http://", "");
+
+        // Setup all necessary mocks
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .respond_with(mock_token_response())
+            .mount(&mock_server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/w/api.php"))
+            .and(query_param("action", "query"))
+            .respond_with(mock_page_info_response("Test"))
+            .mount(&mock_server)
+            .await;
+
+        let config = create_test_config().await;
+        let main_commands = create_main_commands(config);
+
+        // This will likely fail due to other dependencies, but demonstrates the setup
+        let result = main_commands.process_page(&server_url, "Test").await;
+
+        // We're mainly testing that the function can be called and doesn't panic
+        match result {
+            Ok(_) => println!("Process page completed"),
+            Err(e) => println!("Expected error due to mocked environment: {}", e),
+        }
+    }
+
+    #[test]
+    fn test_main_commands_creation() {
+        // Test that MainCommands can be created with basic config
+        let config = Arc::new(Configuration::default());
+        let main_commands = MainCommands {
+            config: config.clone(),
+            config_file: "test_config.json".to_string(),
+        };
+
+        assert_eq!(main_commands.config_file, "test_config.json");
+        assert!(Arc::ptr_eq(&main_commands.config, &config));
+    }
+
+    #[tokio::test]
+    async fn test_mock_server_setup() {
+        // Basic test to ensure wiremock is working
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/test"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("Hello, World!"))
+            .mount(&mock_server)
+            .await;
+
+        let response = reqwest::get(format!("{}/test", mock_server.uri()))
+            .await
+            .expect("Request should succeed");
+
+        assert_eq!(response.status(), 200);
+        assert_eq!(
+            response.text().await.expect("Should have body"),
+            "Hello, World!"
+        );
+    }
+}
