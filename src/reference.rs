@@ -25,7 +25,7 @@ impl PartialEq for Reference {
 impl Reference {
     /// Creates a new reference from a snak array
     #[must_use]
-pub fn new_from_snaks(snaks: &[Snak], language: &str) -> Option<Self> {
+    pub fn new_from_snaks(snaks: &[Snak], language: &str) -> Option<Self> {
         let mut ret = Self {
             ..Default::default()
         };
@@ -44,7 +44,7 @@ pub fn new_from_snaks(snaks: &[Snak], language: &str) -> Option<Self> {
     }
 
     #[must_use]
-pub const fn stated_in(&self) -> &Option<String> {
+    pub const fn stated_in(&self) -> &Option<String> {
         &self.stated_in
     }
 
@@ -175,5 +175,146 @@ pub const fn stated_in(&self) -> &Option<String> {
         {
             ret.url = Some(url.to_owned());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reference_default_is_empty() {
+        let reference = Reference::default();
+        assert!(reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_url_not_empty() {
+        let reference = Reference {
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert!(!reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_stated_in_not_empty() {
+        let reference = Reference {
+            stated_in: Some("Q123".to_string()),
+            ..Default::default()
+        };
+        assert!(!reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_only_title_is_empty() {
+        let reference = Reference {
+            title: Some("Test Title".to_string()),
+            ..Default::default()
+        };
+        assert!(reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_only_date_is_empty() {
+        let reference = Reference {
+            date: Some("2025-01-01".to_string()),
+            ..Default::default()
+        };
+        assert!(reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_equality_same_references() {
+        let ref1 = Reference {
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            date: Some("2025-01-01".to_string()),
+            stated_in: Some("Q123".to_string()),
+            md5: "abc123".to_string(),
+            wikitext_cache: Some("cached".to_string()),
+        };
+        let ref2 = Reference {
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            date: Some("2025-01-01".to_string()),
+            stated_in: Some("Q123".to_string()),
+            md5: "different".to_string(), // MD5 ignored in equality
+            wikitext_cache: Some("also_different".to_string()), // Cache ignored in equality
+        };
+        assert_eq!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_reference_equality_different_url() {
+        let ref1 = Reference {
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            url: Some("https://different.com".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_reference_equality_different_title() {
+        let ref1 = Reference {
+            title: Some("Title 1".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            title: Some("Title 2".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_reference_equality_different_date() {
+        let ref1 = Reference {
+            date: Some("2025-01-01".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            date: Some("2025-01-02".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_reference_equality_different_stated_in() {
+        let ref1 = Reference {
+            stated_in: Some("Q123".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            stated_in: Some("Q456".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_stated_in_getter() {
+        let reference = Reference {
+            stated_in: Some("Q42".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(reference.stated_in(), &Some("Q42".to_string()));
+    }
+
+    #[test]
+    fn test_stated_in_getter_none() {
+        let reference = Reference::default();
+        assert_eq!(reference.stated_in(), &None);
     }
 }

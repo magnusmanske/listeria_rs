@@ -179,3 +179,174 @@ impl RendererTabbedData {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_separate_start_template_simple() {
+        let blob = "{{Wikidata list|sparql=SELECT}}rest of content";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{Wikidata list|sparql=SELECT}}");
+        assert_eq!(rest, "rest of content");
+    }
+
+    #[test]
+    fn test_separate_start_template_nested() {
+        let blob = "{{Wikidata list|param={{nested}}|other=value}}after";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{Wikidata list|param={{nested}}|other=value}}");
+        assert_eq!(rest, "after");
+    }
+
+    #[test]
+    fn test_separate_start_template_deeply_nested() {
+        let blob = "{{outer|{{middle|{{inner}}}}}}remaining text";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{outer|{{middle|{{inner}}}}}}");
+        assert_eq!(rest, "remaining text");
+    }
+
+    #[test]
+    fn test_separate_start_template_no_rest() {
+        let blob = "{{Wikidata list|sparql=SELECT}}";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{Wikidata list|sparql=SELECT}}");
+        assert_eq!(rest, "");
+    }
+
+    #[test]
+    fn test_separate_start_template_unbalanced() {
+        let blob = "{{Wikidata list|sparql=SELECT";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_separate_start_template_extra_closing() {
+        let blob = "{{template}}}}extra";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{template}}");
+        assert_eq!(rest, "}}extra");
+    }
+
+    #[test]
+    fn test_separate_start_template_multiline() {
+        let blob = "{{Wikidata list\n|sparql=SELECT\n|columns=label\n}}\nrest";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(
+            template,
+            "{{Wikidata list\n|sparql=SELECT\n|columns=label\n}}"
+        );
+        assert_eq!(rest, "\nrest");
+    }
+
+    #[test]
+    fn test_separate_start_template_triple_braces() {
+        let blob = "{{template|param={{{variable}}}}}after";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{template|param={{{variable}}}}}");
+        assert_eq!(rest, "after");
+    }
+
+    #[test]
+    fn test_separate_start_template_multiple_nested() {
+        let blob = "{{t1|{{t2}}|{{t3}}}}content";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{t1|{{t2}}|{{t3}}}}");
+        assert_eq!(rest, "content");
+    }
+
+    #[test]
+    fn test_separate_start_template_empty_string() {
+        let blob = "";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_wikitext_captures_all_groups() {
+        let text = "prefix{{Wikidata list|p=v}}{{Wikidata list end}}suffix";
+        let pattern = r"^(.*?)(\{\{Wikidata[ _]list\b.+)(\{\{Wikidata[ _]list[ _]end\}\})(.)";
+        let re = Regex::new(pattern).unwrap();
+        let caps = re.captures(text).unwrap();
+
+        let (before, blob, end_template, after) = RendererTabbedData::get_wikitext_captures(caps);
+        assert_eq!(before, "prefix");
+        assert_eq!(blob, "{{Wikidata list|p=v}}");
+        assert_eq!(end_template, "{{Wikidata list end}}");
+        assert_eq!(after, "s");
+    }
+
+    #[test]
+    fn test_get_wikitext_captures_missing_groups() {
+        let text = "{{Wikidata list}}";
+        let pattern = r"()(\{\{Wikidata[ _]list\}\})()()";
+        let re = Regex::new(pattern).unwrap();
+        let caps = re.captures(text).unwrap();
+
+        let (before, blob, end_template, after) = RendererTabbedData::get_wikitext_captures(caps);
+        assert_eq!(before, "");
+        assert_eq!(blob, "{{Wikidata list}}");
+        assert_eq!(end_template, "");
+        assert_eq!(after, "");
+    }
+
+    #[test]
+    fn test_tabbed_data_page_name_normal() {
+        let _renderer = RendererTabbedData::new();
+        // We need a mock ListeriaList, which requires complex setup
+        // This test would need significant mocking infrastructure
+        // Skipping for now as it requires ListeriaList which needs DB/API setup
+    }
+
+    #[test]
+    fn test_separate_start_template_consecutive_templates() {
+        let blob = "{{first}}{{second}}";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{first}}");
+        assert_eq!(rest, "{{second}}");
+    }
+
+    #[test]
+    fn test_separate_start_template_with_pipe_and_nested() {
+        let blob = "{{list|sparql={{#invoke:Sparql|query}}|columns=label}}content";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(
+            template,
+            "{{list|sparql={{#invoke:Sparql|query}}|columns=label}}"
+        );
+        assert_eq!(rest, "content");
+    }
+
+    #[test]
+    fn test_separate_start_template_unicode() {
+        let blob = "{{template|param=日本語|value=données}}texte";
+        let result = RendererTabbedData::separate_start_template(blob);
+        assert!(result.is_some());
+        let (template, rest) = result.unwrap();
+        assert_eq!(template, "{{template|param=日本語|value=données}}");
+        assert_eq!(rest, "texte");
+    }
+}

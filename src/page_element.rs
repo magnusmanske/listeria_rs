@@ -205,3 +205,237 @@ impl PageElement {
         Some(remaining)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_template_end_simple() {
+        let text = "param1|param2}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, Some(15));
+    }
+
+    #[test]
+    fn test_get_template_end_nested_single() {
+        let text = "param1|{{nested}}|param2}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, Some(26));
+    }
+
+    #[test]
+    fn test_get_template_end_nested_multiple() {
+        let text = "param1|{{nested1|{{nested2}}}}|param2}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, Some(39));
+    }
+
+    #[test]
+    fn test_get_template_end_deep_nesting() {
+        let text = "a|{{b|{{c|{{d}}}}}}|e}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, Some(23));
+    }
+
+    #[test]
+    fn test_get_template_end_unbalanced_missing_close() {
+        let text = "param1|{{nested|param2".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_get_template_end_unbalanced_extra_open() {
+        let text = "param1|{{{extra}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_get_template_end_empty() {
+        let text = "}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, Some(2));
+    }
+
+    #[test]
+    fn test_get_template_end_complex_with_pipes() {
+        let text =
+            "sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }|columns=label,P31}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, Some(69));
+    }
+
+    #[test]
+    fn test_get_template_end_with_triple_braces() {
+        let text = "param|{{{variable}}}}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, Some(22));
+    }
+
+    #[test]
+    fn test_get_template_end_consecutive_opens_and_closes() {
+        let text = "a|{{{{b}}}}|c}}".to_string();
+        let result = PageElement::get_template_end(text);
+        assert_eq!(result, Some(15));
+    }
+
+    #[test]
+    fn test_new_from_text_remaining_single_template() {
+        let text = "Some text {{template|param1|param2}} more text";
+        let match_start = regex::Regex::new(r"\{\{template")
+            .unwrap()
+            .find(text)
+            .unwrap();
+        let match_end = match_start; // Single template uses same match
+
+        let result = PageElement::new_from_text_remaining(true, text, match_start, match_end);
+        assert_eq!(result, Some("|param1|param2}} more text".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_text_remaining_paired_template() {
+        let text = "{{start|params}}content here{{end}}";
+        let match_start = regex::Regex::new(r"\{\{start").unwrap().find(text).unwrap();
+        let match_end = regex::Regex::new(r"\{\{end").unwrap().find(text).unwrap();
+
+        let result = PageElement::new_from_text_remaining(false, text, match_start, match_end);
+        assert_eq!(result, Some("|params}}content here".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_text_remaining_invalid_order() {
+        let text = "{{end}}content{{start}}";
+        let match_start = regex::Regex::new(r"\{\{start").unwrap().find(text).unwrap();
+        let match_end = regex::Regex::new(r"\{\{end").unwrap().find(text).unwrap();
+
+        let result = PageElement::new_from_text_remaining(false, text, match_start, match_end);
+        assert_eq!(result, None); // End comes before start
+    }
+
+    #[test]
+    fn test_new_from_text_remaining_empty_between() {
+        let text = "{{start}}{{end}}";
+        let match_start = regex::Regex::new(r"\{\{start").unwrap().find(text).unwrap();
+        let match_end = regex::Regex::new(r"\{\{end").unwrap().find(text).unwrap();
+
+        let result = PageElement::new_from_text_remaining(false, text, match_start, match_end);
+        assert_eq!(result, Some("}}".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_text_remaining_unicode() {
+        let text = "{{template|param=日本語}}{{end}}";
+        let match_start = regex::Regex::new(r"\{\{template")
+            .unwrap()
+            .find(text)
+            .unwrap();
+        let match_end = regex::Regex::new(r"\{\{end").unwrap().find(text).unwrap();
+
+        let result = PageElement::new_from_text_remaining(false, text, match_start, match_end);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("日本語"));
+    }
+
+    #[test]
+    fn test_new_from_text_remaining_multiline() {
+        let text = "{{start|p1=value1\n|p2=value2}}\ncontent\n{{end}}";
+        let match_start = regex::Regex::new(r"\{\{start").unwrap().find(text).unwrap();
+        let match_end = regex::Regex::new(r"\{\{end").unwrap().find(text).unwrap();
+
+        let result = PageElement::new_from_text_remaining(false, text, match_start, match_end);
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("content"));
+    }
+
+    #[test]
+    fn test_matches_from_separators_both_found() {
+        let text = "prefix {{Wikidata list|sparql=SELECT}} content {{Wikidata list end}} suffix";
+        let sep_start = RegexBuilder::new(r"\{\{Wikidata[ _]list")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        let sep_end = RegexBuilder::new(r"\{\{Wikidata[ _]list[ _]end")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        let result = PageElement::matches_from_separators(sep_start, text, sep_end);
+        assert!(result.is_ok());
+        let (match_start, match_end, single) = result.unwrap();
+        assert_eq!(match_start.start(), 7);
+        assert_eq!(match_end.start(), 47);
+        assert!(!single);
+    }
+
+    #[test]
+    fn test_matches_from_separators_no_start() {
+        let text = "just some text without templates";
+        let sep_start = RegexBuilder::new(r"\{\{Wikidata[ _]list")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        let sep_end = RegexBuilder::new(r"\{\{Wikidata[ _]list[ _]end")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        let result = PageElement::matches_from_separators(sep_start, text, sep_end);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().is_none());
+    }
+
+    #[test]
+    fn test_matches_from_separators_single_template() {
+        let text = "prefix {{Wikidata list|sparql=SELECT}} suffix";
+        let sep_start = RegexBuilder::new(r"\{\{Wikidata[ _]list")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        let sep_end = RegexBuilder::new(r"\{\{Wikidata[ _]list[ _]end")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        let result = PageElement::matches_from_separators(sep_start, text, sep_end);
+        assert!(result.is_ok());
+        let (match_start, match_end, single) = result.unwrap();
+        assert_eq!(match_start.start(), match_end.start());
+        assert!(single);
+    }
+
+    #[test]
+    fn test_matches_from_separators_case_insensitive() {
+        let text = "{{WIKIDATA_LIST|params}}content{{wikidata_list_end}}";
+        let sep_start = RegexBuilder::new(r"\{\{Wikidata[ _]list")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        let sep_end = RegexBuilder::new(r"\{\{Wikidata[ _]list[ _]end")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        let result = PageElement::matches_from_separators(sep_start, text, sep_end);
+        assert!(result.is_ok());
+        let (_, _, single) = result.unwrap();
+        assert!(!single);
+    }
+
+    #[test]
+    fn test_matches_from_separators_space_vs_underscore() {
+        let text = "{{Wikidata_list|params}}content{{Wikidata list end}}";
+        let sep_start = RegexBuilder::new(r"\{\{Wikidata[ _]list")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        let sep_end = RegexBuilder::new(r"\{\{Wikidata[ _]list[ _]end")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        let result = PageElement::matches_from_separators(sep_start, text, sep_end);
+        assert!(result.is_ok());
+    }
+}
