@@ -88,4 +88,117 @@ mod tests {
         t.fix_values();
         assert_eq!(t.params.get("foo"), Some(&"bar|baz".to_string()));
     }
+
+    #[test]
+    fn test_new_from_params_simple() {
+        let t =
+            Template::new_from_params("".to_string(), "param1=value1|param2=value2".to_string())
+                .unwrap();
+        assert_eq!(t.params.get("param1"), Some(&"value1".to_string()));
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_with_spaces() {
+        let t = Template::new_from_params(
+            "".to_string(),
+            "  param1  =  value1  |  param2  =  value2  ".to_string(),
+        )
+        .unwrap();
+        assert_eq!(t.params.get("param1"), Some(&"value1".to_string()));
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_nested_curly_braces() {
+        let t = Template::new_from_params(
+            "".to_string(),
+            "param1={{template|value}}|param2=value2".to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            t.params.get("param1"),
+            Some(&"{{template|value}}".to_string())
+        );
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_quoted_pipe() {
+        let t = Template::new_from_params(
+            "".to_string(),
+            "param1=\"value|with|pipes\"|param2=value2".to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            t.params.get("param1"),
+            Some(&"\"value|with|pipes\"".to_string())
+        );
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_single_quoted_pipe() {
+        let t = Template::new_from_params(
+            "".to_string(),
+            "param1='value|with|pipes'|param2=value2".to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            t.params.get("param1"),
+            Some(&"'value|with|pipes'".to_string())
+        );
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_unclosed_quote() {
+        let result = Template::new_from_params("".to_string(), "param1=\"unclosed".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_from_params_empty() {
+        let t = Template::new_from_params("".to_string(), "".to_string()).unwrap();
+        assert_eq!(t.params.len(), 0);
+    }
+
+    #[test]
+    fn test_new_from_params_no_equals() {
+        let t =
+            Template::new_from_params("".to_string(), "value1|value2|param1=value3".to_string())
+                .unwrap();
+        // Parameters without '=' are ignored in the filter_map
+        assert_eq!(t.params.len(), 1);
+        assert_eq!(t.params.get("param1"), Some(&"value3".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_complex_nested() {
+        let t = Template::new_from_params(
+            "".to_string(),
+            "p1={{cite web|url=http://example.com|title=Test}}|p2=simple".to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            t.params.get("p1"),
+            Some(&"{{cite web|url=http://example.com|title=Test}}".to_string())
+        );
+        assert_eq!(t.params.get("p2"), Some(&"simple".to_string()));
+    }
+
+    #[test]
+    fn test_fix_values_multiple_replacements() {
+        let mut t = Template {
+            params: HashMap::from([
+                ("p1".to_string(), "a{{!}}b{{!}}c".to_string()),
+                ("p2".to_string(), "no replacement".to_string()),
+                ("p3".to_string(), "{{!}}start".to_string()),
+            ]),
+        };
+        t.fix_values();
+        assert_eq!(t.params.get("p1"), Some(&"a|b|c".to_string()));
+        assert_eq!(t.params.get("p2"), Some(&"no replacement".to_string()));
+        assert_eq!(t.params.get("p3"), Some(&"|start".to_string()));
+    }
 }

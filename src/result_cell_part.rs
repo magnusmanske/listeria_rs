@@ -363,3 +363,104 @@ impl ResultCellPart {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tabbed_string_safe_removes_newlines() {
+        let input = "line1\nline2\nline3".to_string();
+        let result = ResultCellPart::tabbed_string_safe(input);
+        assert_eq!(result, "line1 line2 line3");
+    }
+
+    #[test]
+    fn test_tabbed_string_safe_removes_tabs() {
+        let input = "col1\tcol2\tcol3".to_string();
+        let result = ResultCellPart::tabbed_string_safe(input);
+        assert_eq!(result, "col1 col2 col3");
+    }
+
+    #[test]
+    fn test_tabbed_string_safe_removes_both() {
+        let input = "line1\tcol1\nline2\tcol2".to_string();
+        let result = ResultCellPart::tabbed_string_safe(input);
+        assert_eq!(result, "line1 col1 line2 col2");
+    }
+
+    #[test]
+    fn test_tabbed_string_safe_short_string() {
+        let input = "short string".to_string();
+        let result = ResultCellPart::tabbed_string_safe(input);
+        assert_eq!(result, "short string");
+    }
+
+    // TimeValue tests removed - complex external API dependency
+
+    #[test]
+    fn test_from_sparql_value_entity() {
+        let sparql_value = SparqlValue::Entity("Q42".to_string());
+        let result = ResultCellPart::from_sparql_value(&sparql_value);
+        assert_eq!(result, ResultCellPart::Entity(("Q42".to_string(), true)));
+    }
+
+    #[test]
+    fn test_from_sparql_value_file() {
+        let sparql_value = SparqlValue::File("Example.jpg".to_string());
+        let result = ResultCellPart::from_sparql_value(&sparql_value);
+        assert_eq!(result, ResultCellPart::File("Example.jpg".to_string()));
+    }
+
+    #[test]
+    fn test_from_sparql_value_uri() {
+        let sparql_value = SparqlValue::Uri("http://example.com".to_string());
+        let result = ResultCellPart::from_sparql_value(&sparql_value);
+        assert_eq!(
+            result,
+            ResultCellPart::Uri("http://example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_from_sparql_value_text() {
+        let sparql_value = SparqlValue::Time("2024-01-15".to_string());
+        let result = ResultCellPart::from_sparql_value(&sparql_value);
+        assert_eq!(result, ResultCellPart::Text("2024-01-15".to_string()));
+    }
+
+    #[test]
+    fn test_from_sparql_value_literal() {
+        let sparql_value = SparqlValue::Literal("Some text".to_string());
+        let result = ResultCellPart::from_sparql_value(&sparql_value);
+        assert_eq!(result, ResultCellPart::Text("Some text".to_string()));
+    }
+
+    #[test]
+    fn test_part_with_reference_new() {
+        let part = ResultCellPart::Text("test".to_string());
+        let references = Some(vec![Reference::default()]);
+        let pwr = PartWithReference::new(part.clone(), references.clone());
+        assert_eq!(pwr.part(), &part);
+        assert_eq!(pwr.references().as_ref().unwrap().len(), 1);
+    }
+
+    // SparqlValue::Location test removed - external struct instantiation not straightforward
+
+    #[test]
+    fn test_part_with_reference_no_references() {
+        let part = ResultCellPart::Text("test".to_string());
+        let pwr = PartWithReference::new(part.clone(), None);
+        assert_eq!(pwr.part(), &part);
+        assert!(pwr.references().is_none());
+    }
+
+    #[test]
+    fn test_link_target_equality() {
+        assert_eq!(LinkTarget::Page, LinkTarget::Page);
+        assert_eq!(LinkTarget::Category, LinkTarget::Category);
+        assert_ne!(LinkTarget::Page, LinkTarget::Category);
+    }
+
+    // AutoDesc tests removed - complex Entity API dependency
+}
