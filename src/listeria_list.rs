@@ -3,6 +3,7 @@ use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::list_processor::ListProcessor;
 use crate::page_params::PageParams;
 use crate::result_cell_part::ResultCellPart;
+use crate::result_generator::ResultGenerator;
 use crate::result_row::ResultRow;
 use crate::sparql_results::SparqlResults;
 use crate::template::Template;
@@ -21,7 +22,6 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
-use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::{Entity, EntityTrait, SnakDataType, Statement, StatementRank};
 
 const AUTODESC_FALLBACK: &str = "FALLBACK";
@@ -95,7 +95,7 @@ impl ListeriaList {
         self.profile("AFTER list::process run_query");
         self.load_entities().await?;
         self.profile("AFTER list::process load_entities");
-        self.generate_results().await?;
+        ResultGenerator::generate_results(self).await?;
         self.profile("AFTER list::process generate_results");
         self.process_results().await?;
         self.profile("AFTER list::process process_results");
@@ -344,7 +344,7 @@ impl ListeriaList {
             return Ok(());
         }
 
-        let ids = self.get_ids_from_sparql_rows()?;
+        let ids = ResultGenerator::get_ids_from_sparql_rows(self)?;
         if ids.is_empty() {
             return Err(anyhow!("No items to show"));
         }
@@ -363,44 +363,6 @@ impl ListeriaList {
             columns.push(c);
         }
         self.columns = columns;
-    }
-
-    fn get_ids_from_sparql_rows(&self) -> Result<Vec<String>> {
-        let var_index = self.get_var_index()?;
-        let mut ids_tmp = vec![];
-        for row_id in 0..self.sparql_table.len() {
-            if let Some(SparqlValue::Entity(id)) = self.sparql_table.get_row_col(row_id, var_index)
-            {
-                ids_tmp.push(id.to_string());
-            }
-        }
-
-        // Can't sort/dedup, need to preserve original order!
-        let mut ids: Vec<String> = vec![];
-        ids_tmp.iter().for_each(|id| {
-            if !ids.contains(id) {
-                ids.push(id.to_string());
-            }
-        });
-
-        // Column headers
-        self.columns.iter().for_each(|c| match c.obj() {
-            ColumnType::Property(prop) => {
-                ids.push(prop.to_owned());
-            }
-            ColumnType::PropertyQualifier((prop, qual)) => {
-                ids.push(prop.to_owned());
-                ids.push(qual.to_owned());
-            }
-            ColumnType::PropertyQualifierValue((prop1, qual, prop2)) => {
-                ids.push(prop1.to_owned());
-                ids.push(qual.to_owned());
-                ids.push(prop2.to_owned());
-            }
-            _ => {}
-        });
-
-        Ok(ids)
     }
 
     pub async fn get_autodesc_description(&self, e: &Entity) -> Result<String> {
@@ -430,77 +392,6 @@ impl ListeriaList {
             .as_str()
             .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("Not a valid autodesc result"))
-    }
-
-    fn get_var_index(&self) -> Result<usize> {
-        self.sparql_table
-            .main_column()
-            .ok_or_else(|| anyhow!("Could not find SPARQL variable in results"))
-    }
-
-    pub async fn generate_results(&mut self) -> Result<()> {
-        let mut tmp_results: Vec<ResultRow> = Vec::new();
-        if self.params.one_row_per_item() {
-            self.generate_results_one_row_per_item(&mut tmp_results)
-                .await?;
-        } else {
-            self.generate_results_multiple_rows_per_item(&mut tmp_results)
-                .await?;
-        };
-        self.results = tmp_results;
-        Ok(())
-    }
-
-    async fn generate_results_multiple_rows_per_item(
-        &mut self,
-        tmp_results: &mut Vec<ResultRow>,
-    ) -> Result<()> {
-        let var_index = self.get_var_index()?;
-        for row_id in 0..self.sparql_table.len() {
-            let row = match self.sparql_table.get(row_id) {
-                Some(row) => row,
-                None => {
-                    continue;
-                }
-            };
-            let v = row.get(var_index).map(|v| v.to_owned());
-            if let Some(Some(SparqlValue::Entity(id))) = v {
-                let mut tmp_table = SparqlTable::from_table(&self.sparql_table);
-                tmp_table.push(row.to_owned());
-                if let Some(x) = self.ecw.get_result_row(&id, &tmp_table, self).await {
-                    tmp_results.push(x);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    async fn generate_results_one_row_per_item(
-        &mut self,
-        tmp_results: &mut Vec<ResultRow>,
-    ) -> Result<()> {
-        let var_index = self.get_var_index()?;
-        let sparql_row_ids: Vec<String> = self.get_ids_from_sparql_rows()?.into_iter().collect();
-        let mut id2rows: HashMap<String, Vec<usize>> = HashMap::new();
-        for row_id in 0..self.sparql_table.len() {
-            if let Some(SparqlValue::Entity(id)) = self.sparql_table.get_row_col(row_id, var_index)
-            {
-                id2rows.entry(id.to_string()).or_default().push(row_id);
-            };
-        }
-        for id in &sparql_row_ids {
-            let mut tmp_rows = SparqlTable::from_table(&self.sparql_table);
-            let row_ids = id2rows.get(id).map(|v| v.to_owned()).unwrap_or_default();
-            for row_id in row_ids {
-                if let Some(row) = self.sparql_table.get(row_id) {
-                    tmp_rows.push(row);
-                }
-            }
-            if let Some(row) = self.ecw.get_result_row(id, &tmp_rows, self).await {
-                tmp_results.push(row);
-            }
-        }
-        Ok(())
     }
 
     pub async fn load_row_entities(&mut self) -> Result<()> {
