@@ -86,33 +86,31 @@ impl PageElement {
     }
 
     pub async fn new_inside(&mut self) -> Result<String> {
-        match self.is_just_text {
-            true => Ok(String::new()),
-            false => {
-                let mut renderer = RendererWikitext::new();
-                renderer.render(&mut self.list).await
-            }
+        if self.is_just_text {
+            return Ok(String::new());
         }
+        let mut renderer = RendererWikitext::new();
+        renderer.render(&mut self.list).await
     }
 
     pub async fn as_wikitext(&mut self) -> Result<String> {
-        match self.is_just_text {
-            true => Ok(self.before.clone()),
-            false => Ok(self.before.clone()
-                + &self.template_start
-                + "\n"
-                + &self.new_inside().await?
-                + "\n"
-                + &self.template_end
-                + &self.after),
+        if self.is_just_text {
+            return Ok(self.before.clone());
         }
+        Ok(self.before.clone()
+            + &self.template_start
+            + "\n"
+            + &self.new_inside().await?
+            + "\n"
+            + &self.template_end
+            + &self.after)
     }
 
     pub async fn process(&mut self) -> Result<()> {
-        match self.is_just_text {
-            true => Ok(()),
-            false => self.list.process().await,
+        if self.is_just_text {
+            return Ok(());
         }
+        self.list.process().await
     }
 
     #[must_use]
@@ -176,14 +174,10 @@ impl PageElement {
         text: &str,
         seperator_end: Regex,
     ) -> Result<(regex::Match<'_>, regex::Match<'_>, bool), Option<PageElement>> {
-        let match_start = match seperator_start.find(text) {
-            Some(m) => m,
-            None => return Err(None),
-        };
-        let (match_end, single_template) = match seperator_end.find_at(text, match_start.start()) {
-            Some(m) => (m, false),
-            None => (match_start, true), // No end template, could be tabbed data
-        };
+        let match_start = seperator_start.find(text).ok_or(None)?;
+        let (match_end, single_template) = seperator_end
+            .find_at(text, match_start.start())
+            .map_or((match_start, true), |m| (m, false));
         Ok((match_start, match_end, single_template))
     }
 

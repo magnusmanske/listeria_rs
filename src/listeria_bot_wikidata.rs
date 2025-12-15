@@ -129,7 +129,7 @@ impl ListeriaBot for ListeriaBotWikidata {
     async fn set_runtime(&self, pagestatus_id: u64, seconds: u64) -> Result<()> {
         let sql = "UPDATE `pagestatus` SET `last_runtime_sec`=:seconds WHERE `id`=:pagestatus_id";
         self.config
-            .pool()
+            .pool()?
             .get_conn()
             .await?
             .exec_drop(sql, params! {seconds, pagestatus_id})
@@ -177,19 +177,19 @@ impl ListeriaBotWikidata {
     }
 
     async fn run_sql(&self, sql: &str) -> Result<()> {
-        let _ = self
-            .config
-            .pool()
+        self.config
+            .pool()?
             .get_conn()
             .await?
             .exec_iter(sql, ())
-            .await;
+            .await?;
         Ok(())
     }
 
     async fn get_page_for_sql(&self, sql: &str) -> Option<PageToProcess> {
         self.config
             .pool()
+            .ok()?
             .get_conn()
             .await
             .ok()?
@@ -233,7 +233,7 @@ impl ListeriaBotWikidata {
             WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page"
         );
         self.config
-            .pool()
+            .pool()?
             .get_conn()
             .await?
             .exec_iter(sql.as_str(), params)

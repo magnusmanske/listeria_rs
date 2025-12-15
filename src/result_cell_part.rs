@@ -44,16 +44,14 @@ impl PartWithReference {
         colnum: usize,
     ) -> String {
         let wikitext_part = self.part.as_wikitext(list, rownum, colnum).await;
-        let wikitext_reference = match &mut self.references {
-            Some(references) => {
-                let mut wikitext: Vec<String> = vec![];
-                for reference in references.iter_mut() {
-                    let r = reference.as_reference(list).await;
-                    wikitext.push(r);
-                }
-                wikitext.join("")
+        let wikitext_reference = if let Some(references) = &mut self.references {
+            let mut parts = Vec::new();
+            for reference in references {
+                parts.push(reference.as_reference(list).await);
             }
-            None => String::new(),
+            parts.join("")
+        } else {
+            String::new()
         };
         wikitext_part + &wikitext_reference
     }
@@ -182,17 +180,13 @@ impl ResultCellPart {
                 Regex::new(r#"^\+?(-?\d+)-(\d{1,2})-(\d{1,2})T"#).expect("RE_DATE does not parse");
         }
         let s = v.time().to_string();
-        let (year, month, day) = match RE_DATE.captures(&s) {
-            Some(caps) => (
-                caps.get(1)?.as_str().parse::<i32>().ok()?,
-                caps.get(2)?.as_str().parse::<u8>().ok()?,
-                caps.get(3)?.as_str().parse::<u8>().ok()?,
-            ),
-            None => {
-                return Some(s);
-            }
-        };
+        let caps = RE_DATE.captures(&s)?;
+
+        let year = caps.get(1)?.as_str().parse::<i32>().ok()?;
+        let month = caps.get(2)?.as_str().parse::<u8>().ok()?;
+        let day = caps.get(3)?.as_str().parse::<u8>().ok()?;
         let precision = Precision::try_from(*v.precision() as u8).ok()?;
+
         Some(Era::new(year, month, day, precision).to_string())
     }
 
@@ -213,33 +207,36 @@ impl ResultCellPart {
         colnum: usize,
     ) -> String {
         if !try_localize {
-            let is_item_column = match list.column(colnum) {
-                Some(col) => *col.obj() == ColumnType::Item,
-                None => false,
-            };
-            if list.is_main_wikibase_wiki() || is_item_column {
-                return format!("[[{}|{}]]", list.get_item_wiki_target(id), id);
+            let is_item_column = list
+                .column(colnum)
+                .is_some_and(|col| *col.obj() == ColumnType::Item);
+
+            let target = list.get_item_wiki_target(id);
+            return if list.is_main_wikibase_wiki() || is_item_column {
+                format!("[[{target}|{id}]]")
             } else {
-                return format!("''[[{}|{}]]''", list.get_item_wiki_target(id), id);
-            }
+                format!("''[[{target}|{id}]]''")
+            };
         }
+
         let entity_id_link = list.get_item_link_with_fallback(id).await;
-        match list.get_entity(id).await {
-            Some(e) => {
-                let use_language = match e.label_in_locale(list.language()) {
-                    Some(_) => list.language().to_owned(),
-                    None => list.default_language(),
-                };
-                let use_label = list.get_label_with_fallback_lang(id, &use_language).await;
-                let labeled_entity_link = if list.is_main_wikibase_wiki() {
-                    format!("[[{}|{}]]", list.get_item_wiki_target(id), use_label)
-                } else {
-                    format!("''[[{}|{}]]''", list.get_item_wiki_target(id), use_label)
-                };
-                Self::render_entity_link(list, use_label, id, labeled_entity_link)
-            }
-            None => entity_id_link,
-        }
+        let Some(entity) = list.get_entity(id).await else {
+            return entity_id_link;
+        };
+
+        let use_language = entity
+            .label_in_locale(list.language())
+            .map_or_else(|| list.default_language(), |_| list.language().to_owned());
+
+        let use_label = list.get_label_with_fallback_lang(id, &use_language).await;
+        let target = list.get_item_wiki_target(id);
+        let labeled_entity_link = if list.is_main_wikibase_wiki() {
+            format!("[[{target}|{use_label}]]")
+        } else {
+            format!("''[[{target}|{use_label}]]''")
+        };
+
+        Self::render_entity_link(list, use_label, id, labeled_entity_link)
     }
 
     #[async_recursion]
@@ -294,24 +291,15 @@ impl ResultCellPart {
                     None => id.to_owned(),
                 }
             }
-            ResultCellPart::Text(text) => {
-                match list.column(colnum) {
-                    Some(col) => {
-                        match col.obj() {
-                            ColumnType::Property(p) => {
-                                // Commons category
-                                if p == "P373" {
-                                    format!("[[:commons:Category:{text}|{text}]]")
-                                } else {
-                                    text.to_owned()
-                                }
-                            }
-                            _ => text.to_owned(),
-                        }
+            ResultCellPart::Text(text) => list
+                .column(colnum)
+                .and_then(|col| match col.obj() {
+                    ColumnType::Property(p) if p == "P373" => {
+                        Some(format!("[[:commons:Category:{text}|{text}]]"))
                     }
-                    None => text.to_owned(),
-                }
-            }
+                    _ => None,
+                })
+                .unwrap_or_else(|| text.to_owned()),
             ResultCellPart::SnakList(v) => {
                 let mut ret = vec![];
                 for rcp in v {
@@ -319,12 +307,7 @@ impl ResultCellPart {
                 }
                 ret.join(" — ")
             }
-            ResultCellPart::AutoDesc(ad) => {
-                match &ad.desc {
-                    Some(desc) => desc.to_owned(),
-                    None => String::new(), // TODO check - manual description should have already been tried?
-                }
-            }
+            ResultCellPart::AutoDesc(ad) => ad.desc.clone().unwrap_or_default(),
         }
     }
 
