@@ -62,6 +62,7 @@ pub mod listeria_list;
 pub mod listeria_page;
 pub mod main_commands;
 pub mod page_element;
+pub mod page_operations;
 pub mod page_params;
 pub mod page_to_process;
 pub mod reference;
