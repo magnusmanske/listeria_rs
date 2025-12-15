@@ -71,6 +71,7 @@ pub mod render_wikitext;
 pub mod renderer;
 pub mod result_cell;
 pub mod result_cell_part;
+pub mod result_generator;
 pub mod result_row;
 pub mod sparql_results;
 pub mod template;
