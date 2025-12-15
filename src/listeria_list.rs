@@ -700,9 +700,7 @@ impl ListeriaList {
         } else {
             ":d:".to_string()
         };
-        if let Some(first_char) = entity_id.chars().next()
-            && (first_char == 'p' || first_char == 'P')
-        {
+        if entity_id.starts_with('p') || entity_id.starts_with('P') {
             return format!("{prefix}Property:{entity_id}");
         }
         format!("{prefix}{entity_id}")
