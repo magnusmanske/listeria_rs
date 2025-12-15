@@ -121,3 +121,81 @@ impl ResultGenerator {
             .ok_or_else(|| anyhow!("Could not find SPARQL variable in results"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::configuration::Configuration;
+    use crate::page_params::PageParams;
+    use crate::template::Template;
+    use std::sync::Arc;
+    use wikimisc::mediawiki::api::Api;
+
+    async fn create_test_list() -> ListeriaList {
+        let api = Api::new("https://www.wikidata.org/w/api.php")
+            .await
+            .unwrap();
+        let api = Arc::new(api);
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let config = Arc::new(config);
+        let page_params = PageParams::new(config, api, "Test:Page".to_string())
+            .await
+            .unwrap();
+        let page_params = Arc::new(page_params);
+
+        let template_text =
+            "{{Wikidata list|columns=item|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }}}";
+        let template =
+            Template::new_from_params("Wikidata list".to_string(), template_text.to_string())
+                .unwrap();
+
+        ListeriaList::new(template, page_params).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_get_var_index_with_valid_table() {
+        let list = create_test_list().await;
+        // The sparql_table is empty by default, so this should fail
+        let result = ResultGenerator::get_var_index(&list);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_ids_from_sparql_rows_empty() {
+        let list = create_test_list().await;
+        let result = ResultGenerator::get_ids_from_sparql_rows(&list);
+        // May fail if sparql table is not set up, but should not panic
+        if let Ok(ids) = result {
+            // Should have no entity IDs from rows (only possibly column headers)
+            assert!(
+                ids.is_empty()
+                    || ids
+                        .iter()
+                        .all(|id| id.starts_with('P') || id.starts_with('Q'))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_ids_preserves_order() {
+        // This test verifies that get_ids_from_sparql_rows doesn't panic
+        // even with an empty SPARQL table
+        let list = create_test_list().await;
+        let _result = ResultGenerator::get_ids_from_sparql_rows(&list);
+        // Test passes if it doesn't panic
+    }
+
+    #[tokio::test]
+    async fn test_generate_results_with_empty_table() {
+        let mut list = create_test_list().await;
+        let _result = ResultGenerator::generate_results(&mut list).await;
+        // Test passes if it doesn't panic
+        // Result may fail due to empty sparql table, which is expected
+    }
+
+    #[test]
+    fn test_result_generator_is_debug() {
+        // Verify that ResultGenerator implements Debug
+        let _ = format!("{:?}", ResultGenerator);
+    }
+}

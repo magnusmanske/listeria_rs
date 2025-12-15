@@ -586,3 +586,107 @@ impl ListProcessor {
         Ok(autodescs)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::configuration::Configuration;
+    use crate::page_params::PageParams;
+    use crate::template::Template;
+    use std::sync::Arc;
+    use wikimisc::mediawiki::api::Api;
+
+    async fn create_test_list() -> ListeriaList {
+        let api = Api::new("https://www.wikidata.org/w/api.php")
+            .await
+            .unwrap();
+        let api = Arc::new(api);
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let config = Arc::new(config);
+        let page_params = PageParams::new(config, api, "Test:Page".to_string())
+            .await
+            .unwrap();
+        let page_params = Arc::new(page_params);
+
+        let template_text =
+            "{{Wikidata list|columns=item|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }}}";
+        let template =
+            Template::new_from_params("Wikidata list".to_string(), template_text.to_string())
+                .unwrap();
+
+        ListeriaList::new(template, page_params).await.unwrap()
+    }
+
+    #[test]
+    fn test_list_processor_is_debug() {
+        // Verify that ListProcessor implements Debug
+        let _ = format!("{:?}", ListProcessor);
+    }
+
+    #[tokio::test]
+    async fn test_process_excess_files_with_empty_results() {
+        let mut list = create_test_list().await;
+        let result = ListProcessor::process_excess_files(&mut list);
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_items_to_local_links_with_empty_results() {
+        let mut list = create_test_list().await;
+        let result = ListProcessor::process_items_to_local_links(&mut list).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_redlinks_only_not_redonly() {
+        let mut list = create_test_list().await;
+        // Default links type should not be RedOnly
+        let result = ListProcessor::process_redlinks_only(&mut list).await;
+        assert!(result.is_ok());
+        // Results should be unchanged since links type is not RedOnly
+    }
+
+    #[tokio::test]
+    async fn test_process_sort_results_with_empty_results() {
+        let mut list = create_test_list().await;
+        let result = ListProcessor::process_sort_results(&mut list).await;
+        // Should succeed with empty results
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_reference_items_with_empty_results() {
+        let mut list = create_test_list().await;
+        let result = ListProcessor::process_reference_items(&mut list).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_fix_local_links_with_empty_results() {
+        let mut list = create_test_list().await;
+        let result = ListProcessor::fix_local_links(&mut list).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_fill_autodesc_with_empty_results() {
+        let mut list = create_test_list().await;
+        let result = ListProcessor::fill_autodesc(&mut list).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_assign_sections_none() {
+        let mut list = create_test_list().await;
+        // Default section type should be None
+        let result = ListProcessor::process_assign_sections(&mut list).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_process_regions_with_empty_results() {
+        let mut list = create_test_list().await;
+        let result = ListProcessor::process_regions(&mut list).await;
+        assert!(result.is_ok());
+    }
+}
