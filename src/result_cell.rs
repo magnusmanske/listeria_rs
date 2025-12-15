@@ -442,4 +442,99 @@ mod tests {
     fn test_fix_wikitext_for_output() {
         assert_eq!(ResultCell::fix_wikitext_for_output("a'b<c"), "a&#39;b&lt;c");
     }
+
+    #[test]
+    fn test_fix_wikitext_for_output_no_special_chars() {
+        assert_eq!(
+            ResultCell::fix_wikitext_for_output("normal text"),
+            "normal text"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_only_apostrophe() {
+        assert_eq!(ResultCell::fix_wikitext_for_output("it's"), "it&#39;s");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_only_less_than() {
+        assert_eq!(ResultCell::fix_wikitext_for_output("a<b"), "a&lt;b");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_multiple_apostrophes() {
+        assert_eq!(
+            ResultCell::fix_wikitext_for_output("it's John's"),
+            "it&#39;s John&#39;s"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_multiple_less_than() {
+        assert_eq!(ResultCell::fix_wikitext_for_output("a<b<c"), "a&lt;b&lt;c");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_empty_string() {
+        assert_eq!(ResultCell::fix_wikitext_for_output(""), "");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_html_tag() {
+        assert_eq!(
+            ResultCell::fix_wikitext_for_output("<script>alert('hi')</script>"),
+            "&lt;script>alert(&#39;hi&#39;)&lt;/script>"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_wikitext_bold() {
+        // Bold markup should remain unchanged
+        assert_eq!(
+            ResultCell::fix_wikitext_for_output("'''bold'''"),
+            "&#39;&#39;&#39;bold&#39;&#39;&#39;"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_comparison() {
+        assert_eq!(ResultCell::fix_wikitext_for_output("1<2"), "1&lt;2");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_unicode_with_special() {
+        assert_eq!(
+            ResultCell::fix_wikitext_for_output("日本's data<test"),
+            "日本&#39;s data&lt;test"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_consecutive_special() {
+        assert_eq!(
+            ResultCell::fix_wikitext_for_output("'<'<"),
+            "&#39;&lt;&#39;&lt;"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_greater_than_unchanged() {
+        // Greater than should NOT be escaped
+        assert_eq!(ResultCell::fix_wikitext_for_output("a>b"), "a>b");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_double_quote_unchanged() {
+        // Double quotes should NOT be escaped
+        assert_eq!(
+            ResultCell::fix_wikitext_for_output("\"quoted\""),
+            "\"quoted\""
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_ampersand_unchanged() {
+        // Ampersand should NOT be escaped
+        assert_eq!(ResultCell::fix_wikitext_for_output("a&b"), "a&b");
+    }
 }

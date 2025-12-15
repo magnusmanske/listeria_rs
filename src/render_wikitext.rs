@@ -162,4 +162,87 @@ mod tests {
         assert_eq!(RendererWikitext::render_header(""), "\n\n\n");
         assert_eq!(RendererWikitext::render_header("  "), "\n\n\n");
     }
+
+    #[test]
+    fn test_render_header_with_special_chars() {
+        assert_eq!(
+            RendererWikitext::render_header("Test & Section"),
+            "\n\n\n== Test & Section ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_unicode() {
+        assert_eq!(
+            RendererWikitext::render_header("日本語"),
+            "\n\n\n== 日本語 ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_wikitext() {
+        assert_eq!(
+            RendererWikitext::render_header("Section [[link]]"),
+            "\n\n\n== Section [[link]] ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_tabs() {
+        assert_eq!(RendererWikitext::render_header("\t\t"), "\n\n\n");
+    }
+
+    #[test]
+    fn test_render_header_with_newlines() {
+        assert_eq!(
+            RendererWikitext::render_header("Multi\nLine"),
+            "\n\n\n== Multi\nLine ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_long_title() {
+        let long_title = "A".repeat(100);
+        assert_eq!(
+            RendererWikitext::render_header(&long_title),
+            format!("\n\n\n== {} ==\n", long_title)
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_leading_trailing_spaces() {
+        assert_eq!(
+            RendererWikitext::render_header("  Section  "),
+            "\n\n\n==   Section   ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_single_space() {
+        assert_eq!(RendererWikitext::render_header(" "), "\n\n\n");
+    }
+
+    #[test]
+    fn test_render_header_with_equals() {
+        assert_eq!(
+            RendererWikitext::render_header("A = B"),
+            "\n\n\n== A = B ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_brackets() {
+        assert_eq!(
+            RendererWikitext::render_header("Section {test}"),
+            "\n\n\n== Section {test} ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_pipes() {
+        assert_eq!(
+            RendererWikitext::render_header("A | B"),
+            "\n\n\n== A | B ==\n"
+        );
+    }
 }

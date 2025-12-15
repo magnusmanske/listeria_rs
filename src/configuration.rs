@@ -476,3 +476,92 @@ impl Configuration {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_namespace_group_all_blocks_all() {
+        let group = NamespaceGroup::All;
+        assert!(!group.can_edit_namespace(0)); // Main namespace
+        assert!(!group.can_edit_namespace(1)); // Talk
+        assert!(!group.can_edit_namespace(10)); // Template
+        assert!(!group.can_edit_namespace(-1)); // Special
+        assert!(!group.can_edit_namespace(100)); // Any custom namespace
+    }
+
+    #[test]
+    fn test_namespace_group_list_allows_unlisted() {
+        let group = NamespaceGroup::List(vec![1, 3, 5]);
+        assert!(group.can_edit_namespace(0)); // Not in list, positive
+        assert!(group.can_edit_namespace(2)); // Not in list, positive
+        assert!(group.can_edit_namespace(10)); // Not in list, positive
+    }
+
+    #[test]
+    fn test_namespace_group_list_blocks_listed() {
+        let group = NamespaceGroup::List(vec![1, 3, 5]);
+        assert!(!group.can_edit_namespace(1)); // In list
+        assert!(!group.can_edit_namespace(3)); // In list
+        assert!(!group.can_edit_namespace(5)); // In list
+    }
+
+    #[test]
+    fn test_namespace_group_list_blocks_negative() {
+        let group = NamespaceGroup::List(vec![]);
+        assert!(!group.can_edit_namespace(-1)); // Negative always blocked
+        assert!(!group.can_edit_namespace(-2)); // Negative always blocked
+    }
+
+    #[test]
+    fn test_namespace_group_list_allows_zero() {
+        let group = NamespaceGroup::List(vec![1, 2, 3]);
+        assert!(group.can_edit_namespace(0)); // Main namespace, not in list
+    }
+
+    #[test]
+    fn test_namespace_group_empty_list_allows_all_positive() {
+        let group = NamespaceGroup::List(vec![]);
+        assert!(group.can_edit_namespace(0));
+        assert!(group.can_edit_namespace(1));
+        assert!(group.can_edit_namespace(100));
+        assert!(!group.can_edit_namespace(-1)); // Still blocks negative
+    }
+
+    #[test]
+    fn test_namespace_group_list_with_duplicates() {
+        let group = NamespaceGroup::List(vec![1, 1, 2, 2, 3]);
+        assert!(!group.can_edit_namespace(1));
+        assert!(!group.can_edit_namespace(2));
+        assert!(!group.can_edit_namespace(3));
+        assert!(group.can_edit_namespace(4));
+    }
+
+    #[test]
+    fn test_namespace_group_list_large_numbers() {
+        let group = NamespaceGroup::List(vec![1000, 2000, 3000]);
+        assert!(!group.can_edit_namespace(1000));
+        assert!(!group.can_edit_namespace(2000));
+        assert!(group.can_edit_namespace(999));
+        assert!(group.can_edit_namespace(1001));
+    }
+
+    #[test]
+    fn test_namespace_group_list_with_zero() {
+        let group = NamespaceGroup::List(vec![0, 1, 2]);
+        assert!(!group.can_edit_namespace(0)); // 0 is in the list
+        assert!(!group.can_edit_namespace(1));
+        assert!(group.can_edit_namespace(3));
+    }
+
+    #[test]
+    fn test_namespace_group_list_negative_in_list() {
+        // Edge case: what if someone adds negative to the list?
+        let group = NamespaceGroup::List(vec![-1, 0, 1]);
+        assert!(!group.can_edit_namespace(-1)); // Negative always blocked
+        assert!(!group.can_edit_namespace(-2)); // Negative always blocked
+        assert!(!group.can_edit_namespace(0)); // 0 in list
+        assert!(!group.can_edit_namespace(1)); // 1 in list
+    }
+}
