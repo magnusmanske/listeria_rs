@@ -292,3 +292,279 @@ impl TemplateParams {
         self.links = links;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_links_type_new_from_string() {
+        assert_eq!(
+            LinksType::new_from_string("LOCAL".to_string()),
+            LinksType::Local
+        );
+        assert_eq!(
+            LinksType::new_from_string("local".to_string()),
+            LinksType::Local
+        );
+        assert_eq!(
+            LinksType::new_from_string("  local  ".to_string()),
+            LinksType::Local
+        );
+
+        assert_eq!(
+            LinksType::new_from_string("RED".to_string()),
+            LinksType::Red
+        );
+        assert_eq!(
+            LinksType::new_from_string("red".to_string()),
+            LinksType::Red
+        );
+
+        assert_eq!(
+            LinksType::new_from_string("RED_ONLY".to_string()),
+            LinksType::RedOnly
+        );
+        assert_eq!(
+            LinksType::new_from_string("red_only".to_string()),
+            LinksType::RedOnly
+        );
+
+        assert_eq!(
+            LinksType::new_from_string("TEXT".to_string()),
+            LinksType::Text
+        );
+        assert_eq!(
+            LinksType::new_from_string("text".to_string()),
+            LinksType::Text
+        );
+
+        assert_eq!(
+            LinksType::new_from_string("REASONATOR".to_string()),
+            LinksType::Reasonator
+        );
+        assert_eq!(
+            LinksType::new_from_string("reasonator".to_string()),
+            LinksType::Reasonator
+        );
+
+        // Default fallback
+        assert_eq!(
+            LinksType::new_from_string("ALL".to_string()),
+            LinksType::All
+        );
+        assert_eq!(
+            LinksType::new_from_string("invalid".to_string()),
+            LinksType::All
+        );
+        assert_eq!(LinksType::new_from_string("".to_string()), LinksType::All);
+    }
+
+    #[test]
+    fn test_sort_mode_new_label() {
+        assert_eq!(
+            matches!(SortMode::new(Some(&"LABEL".to_string())), SortMode::Label),
+            true
+        );
+        assert_eq!(
+            matches!(SortMode::new(Some(&"label".to_string())), SortMode::Label),
+            true
+        );
+        assert_eq!(
+            matches!(
+                SortMode::new(Some(&"  label  ".to_string())),
+                SortMode::Label
+            ),
+            true
+        );
+    }
+
+    #[test]
+    fn test_sort_mode_new_family_name() {
+        assert_eq!(
+            matches!(
+                SortMode::new(Some(&"FAMILY_NAME".to_string())),
+                SortMode::FamilyName
+            ),
+            true
+        );
+        assert_eq!(
+            matches!(
+                SortMode::new(Some(&"family_name".to_string())),
+                SortMode::FamilyName
+            ),
+            true
+        );
+    }
+
+    #[test]
+    fn test_sort_mode_new_property() {
+        match SortMode::new(Some(&"P31".to_string())) {
+            SortMode::Property(p) => assert_eq!(p, "P31"),
+            _ => panic!("Expected Property variant"),
+        }
+
+        match SortMode::new(Some(&"p569".to_string())) {
+            SortMode::Property(p) => assert_eq!(p, "P569"),
+            _ => panic!("Expected Property variant"),
+        }
+
+        match SortMode::new(Some(&"P1".to_string())) {
+            SortMode::Property(p) => assert_eq!(p, "P1"),
+            _ => panic!("Expected Property variant"),
+        }
+    }
+
+    #[test]
+    fn test_sort_mode_new_sparql_variable() {
+        match SortMode::new(Some(&"?birthDate".to_string())) {
+            SortMode::SparqlVariable(v) => assert_eq!(v, "BIRTHDATE"),
+            _ => panic!("Expected SparqlVariable variant"),
+        }
+
+        match SortMode::new(Some(&"?name".to_string())) {
+            SortMode::SparqlVariable(v) => assert_eq!(v, "NAME"),
+            _ => panic!("Expected SparqlVariable variant"),
+        }
+    }
+
+    #[test]
+    fn test_sort_mode_new_none() {
+        assert!(matches!(SortMode::new(None), SortMode::None));
+        // Note: Due to the regex r"^?\S+$" (unescaped ?), strings like "invalid"
+        // match as SparqlVariable. Empty string returns None.
+        assert!(matches!(
+            SortMode::new(Some(&"".to_string())),
+            SortMode::None
+        ));
+    }
+
+    #[test]
+    fn test_sort_order_new() {
+        assert_eq!(
+            SortOrder::new(Some(&"DESC".to_string())),
+            SortOrder::Descending
+        );
+        assert_eq!(
+            SortOrder::new(Some(&"desc".to_string())),
+            SortOrder::Descending
+        );
+        assert_eq!(
+            SortOrder::new(Some(&"  desc  ".to_string())),
+            SortOrder::Descending
+        );
+
+        assert_eq!(
+            SortOrder::new(Some(&"ASC".to_string())),
+            SortOrder::Ascending
+        );
+        assert_eq!(
+            SortOrder::new(Some(&"asc".to_string())),
+            SortOrder::Ascending
+        );
+        assert_eq!(
+            SortOrder::new(Some(&"anything".to_string())),
+            SortOrder::Ascending
+        );
+        assert_eq!(SortOrder::new(None), SortOrder::Ascending);
+    }
+
+    #[test]
+    fn test_references_parameter_new() {
+        assert_eq!(
+            ReferencesParameter::new(Some(&"ALL".to_string())),
+            ReferencesParameter::All
+        );
+        assert_eq!(
+            ReferencesParameter::new(Some(&"all".to_string())),
+            ReferencesParameter::All
+        );
+        assert_eq!(
+            ReferencesParameter::new(Some(&"  all  ".to_string())),
+            ReferencesParameter::All
+        );
+
+        assert_eq!(
+            ReferencesParameter::new(Some(&"NONE".to_string())),
+            ReferencesParameter::None
+        );
+        assert_eq!(
+            ReferencesParameter::new(Some(&"anything".to_string())),
+            ReferencesParameter::None
+        );
+        assert_eq!(ReferencesParameter::new(None), ReferencesParameter::None);
+    }
+
+    #[test]
+    fn test_section_type_new_property() {
+        match SectionType::new_from_string_option(Some(&"P31".to_string())) {
+            SectionType::Property(p) => assert_eq!(p, "P31"),
+            _ => panic!("Expected Property variant"),
+        }
+
+        match SectionType::new_from_string_option(Some(&"p569".to_string())) {
+            SectionType::Property(p) => assert_eq!(p, "P569"),
+            _ => panic!("Expected Property variant"),
+        }
+    }
+
+    #[test]
+    fn test_section_type_new_property_from_number() {
+        match SectionType::new_from_string_option(Some(&"31".to_string())) {
+            SectionType::Property(p) => assert_eq!(p, "P31"),
+            _ => panic!("Expected Property variant"),
+        }
+
+        match SectionType::new_from_string_option(Some(&"569".to_string())) {
+            SectionType::Property(p) => assert_eq!(p, "P569"),
+            _ => panic!("Expected Property variant"),
+        }
+    }
+
+    #[test]
+    fn test_section_type_new_sparql_variable() {
+        match SectionType::new_from_string_option(Some(&"@section".to_string())) {
+            SectionType::SparqlVariable(v) => assert_eq!(v, "@SECTION"),
+            _ => panic!("Expected SparqlVariable variant"),
+        }
+
+        match SectionType::new_from_string_option(Some(&"@variable".to_string())) {
+            SectionType::SparqlVariable(v) => assert_eq!(v, "@VARIABLE"),
+            _ => panic!("Expected SparqlVariable variant"),
+        }
+    }
+
+    #[test]
+    fn test_section_type_new_none() {
+        assert!(matches!(
+            SectionType::new_from_string_option(None),
+            SectionType::None
+        ));
+        assert!(matches!(
+            SectionType::new_from_string_option(Some(&"invalid".to_string())),
+            SectionType::None
+        ));
+        assert!(matches!(
+            SectionType::new_from_string_option(Some(&"".to_string())),
+            SectionType::None
+        ));
+    }
+
+    #[test]
+    fn test_template_params_default() {
+        let params = TemplateParams::new();
+        assert_eq!(params.links(), &LinksType::All);
+        assert!(matches!(params.sort(), SortMode::None));
+        assert!(matches!(params.section(), SectionType::None));
+        assert_eq!(params.min_section(), 2);
+        assert_eq!(params.row_template(), &None);
+        assert_eq!(params.header_template(), &None);
+        assert_eq!(params.autodesc(), None);
+        assert_eq!(params.summary(), &None);
+        assert!(!params.skip_table());
+        assert!(!params.wdedit());
+        assert_eq!(params.references(), &ReferencesParameter::None);
+        assert!(!params.one_row_per_item()); // Default is false in new()
+        assert_eq!(params.sort_order(), &SortOrder::Ascending);
+    }
+}
