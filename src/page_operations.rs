@@ -143,3 +143,73 @@ impl PageOperations {
         WikiPageResult::fail(page.wiki(), page.page_params().page(), message)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::configuration::Configuration;
+    use std::sync::Arc;
+    use wikimisc::mediawiki::api::Api;
+
+    async fn create_test_page() -> ListeriaPage {
+        let api = Api::new("https://en.wikipedia.org/w/api.php")
+            .await
+            .unwrap();
+        let api = Arc::new(api);
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let config = Arc::new(config);
+
+        ListeriaPage::new(config, api, "Test:Page".to_string())
+            .await
+            .unwrap()
+    }
+
+    #[test]
+    fn test_page_operations_is_debug() {
+        // Verify that PageOperations implements Debug
+        let _ = format!("{:?}", PageOperations);
+    }
+
+    #[tokio::test]
+    async fn test_load_page_as_wikitext_with_simulation() {
+        let mut page = create_test_page().await;
+        // Set up simulation with some test text
+        page.do_simulate(Some("Test wikitext content".to_string()), None, None);
+
+        // This should work with simulated text
+        let result = PageOperations::load_page_as(&page, "wikitext").await;
+        // The result might fail due to API issues, but the function should handle it
+        // We're mainly testing that it doesn't panic
+        let _ = result;
+    }
+
+    #[tokio::test]
+    async fn test_purge_page_with_simulation() {
+        let mut page = create_test_page().await;
+        page.do_simulate(Some("Test".to_string()), None, None);
+
+        // Purge should succeed in simulation mode without making actual API calls
+        let result = PageOperations::purge_page(&page).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_fail_creates_wiki_page_result() {
+        let page = create_test_page().await;
+        let result = PageOperations::fail(&page, "Test error message");
+
+        assert_eq!(result.result(), "FAIL");
+        assert!(result.message().contains("Test error message"));
+    }
+
+    #[tokio::test]
+    async fn test_load_page_with_simulation() {
+        let mut page = create_test_page().await;
+        page.do_simulate(Some("{{Wikidata list}}".to_string()), None, None);
+
+        // This should attempt to load and parse the page
+        let result = PageOperations::load_page(&mut page).await;
+        // The result may vary, but we're testing it doesn't panic
+        let _ = result;
+    }
+}
