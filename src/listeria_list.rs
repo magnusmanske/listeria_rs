@@ -49,6 +49,17 @@ pub struct ListeriaList {
 }
 
 impl ListeriaList {
+    /// Helper iterator for safely iterating over results with their indices
+    fn results_iter(&self) -> impl Iterator<Item = (usize, &ResultRow)> + '_ {
+        (0..self.results.len()).filter_map(|id| self.results.get(id).map(|row| (id, row)))
+    }
+
+    /// Helper iterator for safely iterating over results with mutable access
+    fn results_iter_mut(&mut self) -> impl Iterator<Item = (usize, &mut ResultRow)> + '_ {
+        let len = self.results.len();
+        self.results.iter_mut().enumerate().take(len)
+    }
+
     pub async fn new(template: Template, page_params: Arc<PageParams>) -> Result<Self> {
         let wb_api = page_params.wb_api();
         let mut template = template;
@@ -506,10 +517,8 @@ impl ListeriaList {
     }
 
     fn process_excess_files(&mut self) -> Result<()> {
-        for row_id in 0..self.results.len() {
-            if let Some(row) = self.results.get_mut(row_id) {
-                row.remove_excess_files();
-            }
+        for (_row_id, row) in self.results_iter_mut() {
+            row.remove_excess_files();
         }
         Ok(())
     }
@@ -579,11 +588,7 @@ impl ListeriaList {
 
     fn get_files_to_check(&self) -> Vec<String> {
         let mut files_to_check = vec![];
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter() {
             for cell in row.cells() {
                 for part in cell.parts() {
                     if let ResultCellPart::File(file) = part.part() {
@@ -654,11 +659,7 @@ impl ListeriaList {
 
         // Cache if local pages exist
         let mut ids = vec![];
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter() {
             row.cells().iter().for_each(|cell| {
                 cell.parts().iter().for_each(|part| {
                     if let ResultCellPart::Entity((id, true)) = part.part() {
@@ -717,41 +718,23 @@ impl ListeriaList {
         match &self.params.sort() {
             SortMode::Label => {
                 self.load_row_entities().await?;
-                for row_id in 0..self.results.len() {
-                    let row = match self.results.get(row_id) {
-                        Some(row) => row,
-                        None => continue,
-                    };
+                for (_row_id, row) in self.results_iter() {
                     sortkeys.push(row.get_sortkey_label(self).await);
                 }
             }
             SortMode::FamilyName => {
-                for row_id in 0..self.results.len() {
-                    let row = match self.results.get(row_id) {
-                        Some(row) => row,
-                        None => continue,
-                    };
-
+                for (_row_id, row) in self.results_iter() {
                     sortkeys.push(row.get_sortkey_family_name(self).await);
                 }
             }
             SortMode::Property(prop) => {
                 datatype = self.ecw.get_datatype_for_property(prop).await;
-                for row_id in 0..self.results.len() {
-                    let row = match self.results.get(row_id) {
-                        Some(row) => row,
-                        None => continue,
-                    };
-
+                for (_row_id, row) in self.results_iter() {
                     sortkeys.push(row.get_sortkey_prop(prop, self, &datatype).await);
                 }
             }
             SortMode::SparqlVariable(variable) => {
-                for row_id in 0..self.results.len() {
-                    let row = match self.results.get(row_id) {
-                        Some(row) => row,
-                        None => continue,
-                    };
+                for (_row_id, row) in self.results_iter() {
                     sortkeys.push(row.get_sortkey_sparql(variable, self));
                 }
             }
@@ -799,11 +782,7 @@ impl ListeriaList {
 
     async fn load_row_entities(&mut self) -> Result<()> {
         let mut items_to_load = vec![];
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter() {
             items_to_load.push(row.entity_id().to_string());
         }
         self.ecw.load_entities(&self.wb_api, &items_to_load).await?;
@@ -827,12 +806,7 @@ impl ListeriaList {
         self.profile("AFTER list::process_assign_sections 1");
 
         let mut section_names_q = vec![];
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
-
+        for (_row_id, row) in self.results_iter() {
             section_names_q.push(
                 row.get_sortkey_prop(&section_property, self, &datatype)
                     .await,
@@ -899,11 +873,7 @@ impl ListeriaList {
         name2id: HashMap<String, usize>,
         misc_id: usize,
     ) -> Result<()> {
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get_mut(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (row_id, row) in self.results_iter_mut() {
             let section_name = match section_names.get(row_id) {
                 Some(name) => name,
                 None => continue,
@@ -955,11 +925,7 @@ impl ListeriaList {
         }
 
         let mut entity_ids = HashSet::new();
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter() {
             row.cells().iter().for_each(|cell| {
                 cell.parts().iter().for_each(|part| {
                     if let ResultCellPart::Location((_lat, _lon, _region)) = part.part() {
@@ -977,11 +943,7 @@ impl ListeriaList {
             }
         }
 
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get_mut(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter_mut() {
             let the_region = match entity_id2region.get(row.entity_id()) {
                 Some(r) => r,
                 None => continue,
@@ -1000,11 +962,7 @@ impl ListeriaList {
 
     async fn process_reference_items(&mut self) -> Result<()> {
         let mut items_to_load: Vec<String> = vec![];
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get_mut(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter_mut() {
             for cell in row.cells_mut().iter_mut() {
                 for part_with_reference in cell.parts_mut().iter_mut() {
                     if let Some(references) = part_with_reference.references() {
@@ -1028,11 +986,7 @@ impl ListeriaList {
     async fn fix_local_links(&mut self) -> Result<()> {
         // Set the is_category flag
         let mw_api = self.mw_api();
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get_mut(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter_mut() {
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
                     if let ResultCellPart::LocalLink((page, _label, link_target)) = part.part_mut()
@@ -1101,11 +1055,7 @@ impl ListeriaList {
     }
 
     fn fill_autodesc_set_descriptions(&mut self, autodescs: HashMap<String, String>) -> Result<()> {
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get_mut(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter_mut() {
             for cell in row.cells_mut() {
                 for part_with_reference in cell.parts_mut() {
                     if let ResultCellPart::AutoDesc(ad) = part_with_reference.part_mut()
@@ -1121,11 +1071,7 @@ impl ListeriaList {
 
     async fn fill_autodesc_gather_descriptions(&mut self) -> Result<HashMap<String, String>> {
         let mut autodescs = HashMap::new();
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter() {
             for cell in row.cells() {
                 for part_with_reference in cell.parts() {
                     if let ResultCellPart::AutoDesc(ad) = part_with_reference.part() {
@@ -1162,11 +1108,7 @@ impl ListeriaList {
 
     async fn gather_items_for_property(&mut self, prop: &str) -> Result<Vec<String>> {
         let mut entities_to_load = vec![];
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter() {
             if let Some(entity) = self.ecw.get_entity(row.entity_id()).await {
                 self.get_filtered_claims(&entity, prop)
                     .iter()
@@ -1208,11 +1150,7 @@ impl ListeriaList {
     async fn gather_and_load_items(&mut self) -> Result<()> {
         // Gather items to load
         let mut entities_to_load: Vec<String> = vec![];
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter() {
             for cell in row.cells() {
                 EntityContainerWrapper::gather_entities_and_external_properties(cell.parts())
                     .iter()
@@ -1259,11 +1197,7 @@ impl ListeriaList {
 
     pub fn get_section_ids(&self) -> Vec<usize> {
         let mut ret = vec![];
-        for row_id in 0..self.results.len() {
-            let row = match self.results.get(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
+        for (_row_id, row) in self.results_iter() {
             ret.push(row.section());
         }
         ret.sort_unstable();
