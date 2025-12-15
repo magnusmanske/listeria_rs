@@ -362,39 +362,30 @@ mod tests {
 
     #[test]
     fn test_sort_mode_new_label() {
-        assert_eq!(
-            matches!(SortMode::new(Some(&"LABEL".to_string())), SortMode::Label),
-            true
-        );
-        assert_eq!(
-            matches!(SortMode::new(Some(&"label".to_string())), SortMode::Label),
-            true
-        );
-        assert_eq!(
-            matches!(
-                SortMode::new(Some(&"  label  ".to_string())),
-                SortMode::Label
-            ),
-            true
-        );
+        assert!(matches!(
+            SortMode::new(Some(&"LABEL".to_string())),
+            SortMode::Label
+        ));
+        assert!(matches!(
+            SortMode::new(Some(&"label".to_string())),
+            SortMode::Label
+        ));
+        assert!(matches!(
+            SortMode::new(Some(&"  label  ".to_string())),
+            SortMode::Label
+        ));
     }
 
     #[test]
     fn test_sort_mode_new_family_name() {
-        assert_eq!(
-            matches!(
-                SortMode::new(Some(&"FAMILY_NAME".to_string())),
-                SortMode::FamilyName
-            ),
-            true
-        );
-        assert_eq!(
-            matches!(
-                SortMode::new(Some(&"family_name".to_string())),
-                SortMode::FamilyName
-            ),
-            true
-        );
+        assert!(matches!(
+            SortMode::new(Some(&"FAMILY_NAME".to_string())),
+            SortMode::FamilyName
+        ));
+        assert!(matches!(
+            SortMode::new(Some(&"family_name".to_string())),
+            SortMode::FamilyName
+        ));
     }
 
     #[test]
