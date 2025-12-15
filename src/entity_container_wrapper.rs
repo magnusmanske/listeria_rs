@@ -166,31 +166,27 @@ impl EntityContainerWrapper {
     }
 
     pub async fn get_entity_label_with_fallback(&self, entity_id: &str, language: &str) -> String {
-        match self.get_entity(entity_id).await {
-            Some(entity) => {
-                match entity.label_in_locale(language).map(|s| s.to_string()) {
-                    Some(s) => s,
-                    None => {
-                        // Try the usual suspects
-                        for lang in ["mul", "en", "de", "fr", "es", "it", "el", "nl"].iter() {
-                            if let Some(label) = entity.label_in_locale(lang).map(|s| s.to_string())
-                            {
-                                return label;
-                            }
-                        }
-                        // Try any label, any language
-                        if let Some(entity2) = self.get_entity(entity_id).await
-                            && let Some(label) = entity2.labels().first()
-                        {
-                            return label.value().to_string();
-                        }
-                        // Fallback to item ID as label
-                        entity_id.to_string()
-                    }
-                }
-            }
-            None => entity_id.to_string(), // Fallback
+        let Some(entity) = self.get_entity(entity_id).await else {
+            return entity_id.to_string();
+        };
+
+        if let Some(label) = entity.label_in_locale(language) {
+            return label.to_string();
         }
+
+        for lang in ["mul", "en", "de", "fr", "es", "it", "el", "nl"] {
+            if let Some(label) = entity.label_in_locale(lang) {
+                return label.to_string();
+            }
+        }
+
+        if let Some(entity2) = self.get_entity(entity_id).await
+            && let Some(label) = entity2.labels().first()
+        {
+            return label.value().to_string();
+        }
+
+        entity_id.to_string()
     }
 
     pub async fn entity_to_local_link(
@@ -200,18 +196,18 @@ impl EntityContainerWrapper {
         language: &str,
     ) -> Option<ResultCellPart> {
         let entity = self.get_entity(item).await?;
-        let page = match entity.sitelinks() {
-            Some(sl) => sl
-                .iter()
-                .filter(|s| *s.site() == wiki)
-                .map(|s| s.title().to_string())
-                .next(),
-            None => None,
-        }?;
+        let page = entity
+            .sitelinks()
+            .as_ref()?
+            .iter()
+            .find(|s| *s.site() == wiki)
+            .map(|s| s.title().to_string())?;
+
         let label = self
             .get_local_entity_label(item, language)
             .await
             .unwrap_or_else(|| page.clone());
+
         Some(ResultCellPart::LocalLink((page, label, LinkTarget::Page)))
     }
 
@@ -234,16 +230,12 @@ impl EntityContainerWrapper {
     async fn use_local_links(&self, list: &ListeriaList, entity_id: &str) -> Option<()> {
         if LinksType::Local == *list.template_params().links() {
             let entity = self.get_entity(entity_id).await?;
-            let page = match entity.sitelinks() {
-                Some(sl) => sl
-                    .iter()
-                    .filter(|s| *s.site() == *list.wiki())
-                    .map(|s| s.title().to_string())
-                    .next(),
-                None => None,
-            };
-            page.as_ref()?; // return None if no page on this wiki
-        };
+            entity
+                .sitelinks()
+                .as_ref()?
+                .iter()
+                .find(|s| *s.site() == *list.wiki())?;
+        }
         Some(())
     }
 

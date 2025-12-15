@@ -167,13 +167,10 @@ impl Configuration {
         self.profiling = profiling;
     }
 
-    /// # Panics
-    /// Panics if the pool is not defined.
-    pub fn pool(&self) -> &Arc<DatabasePool> {
-        match &self.pool {
-            Some(pool) => pool,
-            None => panic!("Configuration::pool(): pool not defined"),
-        }
+    pub fn pool(&self) -> Result<&Arc<DatabasePool>> {
+        self.pool
+            .as_ref()
+            .ok_or_else(|| anyhow!("Database pool not configured"))
     }
 
     pub const fn max_threads(&self) -> usize {
@@ -224,15 +221,16 @@ impl Configuration {
     }
 
     pub fn get_local_template_title_start(&self, wiki: &str) -> Result<String> {
-        let ret = self
+        let template = self
             .template_start_sites
             .get(wiki)
-            .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("Cannot find local start template"))?;
-        match ret.split(':').next_back() {
-            Some(x) => Ok(x.to_string()),
-            None => Err(anyhow!("get_local_template_title_start: no match")),
-        }
+
+        template
+            .split(':')
+            .next_back()
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow!("Invalid template format"))
     }
 
     pub fn main_item_prefix(&self) -> String {
@@ -248,33 +246,30 @@ impl Configuration {
     }
 
     pub fn get_local_template_title_end(&self, wiki: &str) -> Result<String> {
-        let ret = self
+        let template = self
             .template_end_sites
             .get(wiki)
-            .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("Cannot find local end template"))?;
-        match ret.split(':').next_back() {
-            Some(x) => Ok(x.to_string()),
-            None => Err(anyhow!("get_local_template_title_end: no match")),
-        }
+
+        template
+            .split(':')
+            .next_back()
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow!("Invalid template format"))
     }
 
     pub fn can_edit_namespace(&self, wiki: &str, nsid: i64) -> bool {
-        match self.namespace_blocks.get(wiki) {
-            Some(nsg) => nsg.can_edit_namespace(nsid),
-            None => true, // Default
-        }
+        self.namespace_blocks
+            .get(wiki)
+            .is_none_or(|nsg| nsg.can_edit_namespace(nsid))
     }
 
     pub fn get_location_template(&self, wiki: &str) -> String {
-        match self.location_templates.get(wiki) {
-            Some(s) => s.to_owned(),
-            None => self
-                .location_templates
-                .get("default")
-                .map(|s| s.to_owned())
-                .unwrap_or_default(),
-        }
+        self.location_templates
+            .get(wiki)
+            .or_else(|| self.location_templates.get("default"))
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn get_template_start_q(&self) -> String {
@@ -349,9 +344,8 @@ impl Configuration {
     }
 
     async fn new_from_json_start_end_tempate_mappings(&mut self, j: &Value) -> Result<()> {
-        // Try hardcoded first
-        if let Some(template_start) = j["template_start"].as_str()
-            && let Some(template_end) = j["template_end"].as_str()
+        if let (Some(template_start), Some(template_end)) =
+            (j["template_start"].as_str(), j["template_end"].as_str())
         {
             self.template_start_sites
                 .insert("wiki".to_string(), template_start.replace('_', " "));
@@ -360,21 +354,22 @@ impl Configuration {
             return Ok(());
         }
 
-        // Get list from central wikibase
         let api = self.get_default_wbapi()?;
-        let q_start = match j["template_start_q"].as_str() {
-            Some(q) => q.to_string(),
-            None => return Err(anyhow!("No template_start_q in config")),
-        };
-        let q_end = match j["template_end_q"].as_str() {
-            Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
-            None => return Err(anyhow!("No template_end_q in config")),
-        };
+        let q_start = j["template_start_q"]
+            .as_str()
+            .ok_or_else(|| anyhow!("No template_start_q in config"))?
+            .to_string();
+        let q_end = j["template_end_q"]
+            .as_str()
+            .ok_or_else(|| anyhow!("No template_end_q in config"))?
+            .to_string();
+
         let to_load = vec![q_start.clone(), q_end.clone()];
         let entity_container = EntityContainer::new();
-        if let Err(e) = entity_container.load_entities(api, &to_load).await {
-            return Err(anyhow!("Error loading entities: {e}"));
-        }
+        entity_container
+            .load_entities(api, &to_load)
+            .await
+            .map_err(|e| anyhow!("Error loading entities: {e}"))?;
 
         self.template_start_sites = Self::get_sitelink_mapping(&entity_container, &q_start)?;
         self.template_end_sites = Self::get_sitelink_mapping(&entity_container, &q_end)?;

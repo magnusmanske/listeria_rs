@@ -205,45 +205,42 @@ impl ListeriaList {
             ("titles", pages.join("|").as_str()),
         ]
         .iter()
-        .map(|x| (x.0.to_string(), x.1.to_string()))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
         let result = match self.page_params.mw_api().get_query_api_json(&params).await {
             Ok(r) => r,
-            Err(_e) => return vec![],
+            Err(_) => return vec![],
         };
 
-        let mut normalized = HashMap::new();
-        for page in pages {
-            normalized.insert(page.to_string(), page.to_string());
-        }
+        let mut normalized: HashMap<String, String> = pages
+            .iter()
+            .map(|page| (page.clone(), page.clone()))
+            .collect();
+
         if let Some(query_normalized) = result["query"]["normalized"].as_array() {
             for n in query_normalized {
-                let from = match n["from"].as_str() {
-                    Some(from) => from,
-                    None => continue,
-                };
-                let to = match n["to"].as_str() {
-                    Some(to) => to,
-                    None => continue,
-                };
-                normalized.insert(to.to_string(), from.to_string());
+                if let (Some(from), Some(to)) = (n["from"].as_str(), n["to"].as_str()) {
+                    normalized.insert(to.to_string(), from.to_string());
+                }
             }
         }
 
-        let mut ret = vec![];
-        if let Some(obj) = result["query"]["pages"].as_object() {
-            for (_k, v) in obj.iter() {
-                if let Some(title) = v["title"].as_str()
-                    && normalized.contains_key(title)
-                {
-                    let page_exists = v["missing"].as_str().is_none();
-                    ret.push((title.to_string(), page_exists));
-                    // self.local_page_cache.insert(title.to_string(), page_exists);
-                }
-            }
-        };
-        ret
+        result["query"]["pages"]
+            .as_object()
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(_k, v)| {
+                        v["title"].as_str().and_then(|title| {
+                            normalized.contains_key(title).then(|| {
+                                let page_exists = v["missing"].as_str().is_none();
+                                (title.to_string(), page_exists)
+                            })
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     pub fn local_page_exists(&self, page: &str) -> bool {
@@ -493,9 +490,9 @@ impl ListeriaList {
     }
 
     async fn process_items_to_local_links(&mut self) -> Result<()> {
-        // Try to change items to local link
         let wiki = self.wiki().to_owned();
         let language = self.language().to_owned();
+
         for row_id in 0..self.results.len() {
             let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
@@ -504,13 +501,12 @@ impl ListeriaList {
             for cell in row.cells_mut().iter_mut() {
                 ResultCell::localize_item_links_in_parts(
                     cell.parts_mut(),
-                    &self.ecw, // &ecw,
+                    &self.ecw,
                     &wiki,
                     &language,
                 )
                 .await;
             }
-            // self.results.set(row_id, row)?;
         }
         Ok(())
     }
@@ -561,19 +557,17 @@ impl ListeriaList {
         self.shadow_files = tmp_results
             .into_iter()
             .filter_map(|(filename, j)| {
-                let could_be_local = match j["query"]["pages"].as_object() {
-                    Some(results) => results
+                let could_be_local = j["query"]["pages"].as_object().is_none_or(|results| {
+                    results
                         .iter()
                         .filter_map(|(_k, o)| o["imagerepository"].as_str())
-                        .any(|s| s != "shared"),
-                    None => true,
-                };
+                        .any(|s| s != "shared")
+                });
 
-                if could_be_local { Some(filename) } else { None }
+                could_be_local.then_some(filename)
             })
             .collect();
 
-        // Remove shadow files from data table
         for row_id in 0..self.results.len() {
             let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
@@ -629,22 +623,23 @@ impl ListeriaList {
             return Ok(());
         }
 
-        // Remove all rows with existing local page
         let wiki = self.page_params.wiki().to_string();
         for row_id in 0..self.results.len() {
             let row = match self.results.get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
-            row.set_keep(match self.ecw.get_entity(row.entity_id()).await {
-                Some(entity) => {
-                    match entity.sitelinks() {
-                        Some(sl) => sl.iter().filter(|s| *s.site() == wiki).count() == 0,
-                        None => true, // No sitelinks, keep
-                    }
-                }
-                _ => false,
-            });
+            let keep = self
+                .ecw
+                .get_entity(row.entity_id())
+                .await
+                .is_some_and(|entity| {
+                    entity
+                        .sitelinks()
+                        .as_ref()
+                        .is_none_or(|sl| !sl.iter().any(|s| *s.site() == wiki))
+                });
+            row.set_keep(keep);
         }
         self.results.retain(|r| r.keep());
         Ok(())
