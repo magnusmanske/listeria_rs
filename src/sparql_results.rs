@@ -20,8 +20,8 @@ pub struct SparqlResults {
 }
 
 impl SparqlResults {
-	#[must_use]
-pub fn new(page_params: Arc<PageParams>, wikibase_key: &str) -> Self {
+    #[must_use]
+    pub fn new(page_params: Arc<PageParams>, wikibase_key: &str) -> Self {
         let simulate = page_params.simulate();
         Self {
             page_params,
@@ -33,7 +33,7 @@ pub fn new(page_params: Arc<PageParams>, wikibase_key: &str) -> Self {
     }
 
     #[must_use]
-pub fn with_query_endpoint(mut self, query_endpoint: String) -> Self {
+    pub fn with_query_endpoint(mut self, query_endpoint: String) -> Self {
         self.query_endpoint = Some(query_endpoint);
         self
     }
@@ -147,7 +147,199 @@ pub fn with_query_endpoint(mut self, query_endpoint: String) -> Self {
     }
 
     #[must_use]
-pub fn sparql_main_variable(&self) -> Option<String> {
+    pub fn sparql_main_variable(&self) -> Option<String> {
         self.sparql_main_variable.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sparql_result_parsing_with_item_variable() {
+        // Test parsing SPARQL result with "item" variable
+        let json = r#"{
+            "head": {
+                "vars": ["item", "itemLabel"]
+            },
+            "results": {
+                "bindings": []
+            }
+        }"#;
+
+        let result: SparqlApiResult = serde_json::from_str(json).unwrap();
+
+        // Verify the result has the expected structure
+        assert!(result.head().get("vars").is_some());
+        if let Some(vars) = result.head().get("vars") {
+            assert!(vars.contains(&"item".to_string()));
+            assert_eq!(vars.len(), 2);
+        }
+    }
+
+    #[test]
+    fn test_sparql_result_parsing_without_item_variable() {
+        // Test parsing SPARQL result without "item" variable
+        let json = r#"{
+            "head": {
+                "vars": ["foo", "bar"]
+            },
+            "results": {
+                "bindings": []
+            }
+        }"#;
+
+        let result: SparqlApiResult = serde_json::from_str(json).unwrap();
+
+        // Verify "item" is not present
+        if let Some(vars) = result.head().get("vars") {
+            assert!(!vars.contains(&"item".to_string()));
+            assert_eq!(vars.len(), 2);
+        }
+    }
+
+    #[test]
+    fn test_sparql_result_item_not_first_position() {
+        // Test SPARQL result with "item" not as first variable
+        let json = r#"{
+            "head": {
+                "vars": ["foo", "item", "bar"]
+            },
+            "results": {
+                "bindings": []
+            }
+        }"#;
+
+        let result: SparqlApiResult = serde_json::from_str(json).unwrap();
+
+        // Verify "item" is present even when not first
+        if let Some(vars) = result.head().get("vars") {
+            assert!(vars.contains(&"item".to_string()));
+            assert_eq!(vars[1], "item");
+        }
+    }
+
+    #[test]
+    fn test_sparql_result_empty_vars() {
+        // Test SPARQL result with empty vars array
+        let json = r#"{
+            "head": {
+                "vars": []
+            },
+            "results": {
+                "bindings": []
+            }
+        }"#;
+
+        let result: SparqlApiResult = serde_json::from_str(json).unwrap();
+
+        // Verify empty vars array
+        if let Some(vars) = result.head().get("vars") {
+            assert_eq!(vars.len(), 0);
+        }
+    }
+
+    #[test]
+    fn test_sparql_result_multiple_variables() {
+        // Test SPARQL result with multiple variables
+        let json = r#"{
+            "head": {
+                "vars": ["item", "prop", "value", "itemLabel"]
+            },
+            "results": {
+                "bindings": []
+            }
+        }"#;
+
+        let result: SparqlApiResult = serde_json::from_str(json).unwrap();
+
+        // Verify multiple variables are parsed correctly
+        if let Some(vars) = result.head().get("vars") {
+            assert_eq!(vars.len(), 4);
+            assert!(vars.contains(&"item".to_string()));
+            assert!(vars.contains(&"prop".to_string()));
+            assert!(vars.contains(&"value".to_string()));
+            assert!(vars.contains(&"itemLabel".to_string()));
+        }
+    }
+
+    #[test]
+    fn test_sparql_table_creation() {
+        // Test that SparqlTable can be created from a valid result
+        let json = r#"{
+            "head": {
+                "vars": ["item"]
+            },
+            "results": {
+                "bindings": []
+            }
+        }"#;
+
+        let result: SparqlApiResult = serde_json::from_str(json).unwrap();
+        let table = SparqlTable::from_api_result(result);
+
+        assert!(table.is_ok());
+    }
+
+    #[test]
+    fn test_sparql_table_creation_with_data() {
+        // Test SparqlTable creation with actual data
+        let json = r#"{
+            "head": {
+                "vars": ["item", "itemLabel"]
+            },
+            "results": {
+                "bindings": [
+                    {
+                        "item": {
+                            "type": "uri",
+                            "value": "http://www.wikidata.org/entity/Q42"
+                        },
+                        "itemLabel": {
+                            "type": "literal",
+                            "value": "Douglas Adams"
+                        }
+                    }
+                ]
+            }
+        }"#;
+
+        let result: SparqlApiResult = serde_json::from_str(json).unwrap();
+        let table = SparqlTable::from_api_result(result);
+
+        assert!(table.is_ok());
+    }
+
+    #[test]
+    fn test_clone_string_types() {
+        // Test cloning of the string types used in SparqlResults
+        let wikibase_key = "wikidata".to_string();
+        let cloned = wikibase_key.clone();
+        assert_eq!(wikibase_key, cloned);
+
+        let endpoint = Some("https://example.com/sparql".to_string());
+        let cloned_endpoint = endpoint.clone();
+        assert_eq!(endpoint, cloned_endpoint);
+
+        let main_var: Option<String> = Some("item".to_string());
+        let cloned_var = main_var.clone();
+        assert_eq!(main_var, cloned_var);
+    }
+
+    #[test]
+    fn test_json_parsing_edge_cases() {
+        // Test that we can parse various SPARQL result formats
+        let json_no_bindings = r#"{"head": {"vars": []}, "results": {"bindings": []}}"#;
+        let result1: Result<SparqlApiResult, _> = serde_json::from_str(json_no_bindings);
+        assert!(result1.is_ok());
+
+        // Test with multiple variables
+        let json_multi = r#"{
+            "head": {"vars": ["a", "b", "c"]},
+            "results": {"bindings": []}
+        }"#;
+        let result2: Result<SparqlApiResult, _> = serde_json::from_str(json_multi);
+        assert!(result2.is_ok());
     }
 }
