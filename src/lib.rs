@@ -53,6 +53,7 @@ pub mod column;
 pub mod configuration;
 pub mod database_pool;
 pub mod entity_container_wrapper;
+pub mod list_processor;
 pub mod listeria_bot;
 pub mod listeria_bot_single;
 pub mod listeria_bot_wiki;
