@@ -28,6 +28,7 @@ use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::{Entity, EntityTrait, SnakDataType, Statement, StatementRank};
 
 const MAX_CONCURRENT_REDLINKS_REQUESTS: usize = 5;
+const AUTODESC_FALLBACK: &str = "FALLBACK";
 
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
@@ -251,10 +252,9 @@ impl ListeriaList {
 
     fn first_letter_to_upper_case(s1: &str) -> String {
         let mut c = s1.chars();
-        match c.next() {
-            None => String::new(),
-            Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-        }
+        c.next()
+            .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+            .unwrap_or_default()
     }
 
     pub fn normalize_page_title(&self, s: &str) -> String {
@@ -283,10 +283,9 @@ impl ListeriaList {
 
     pub fn thumbnail_size(&self) -> u64 {
         let default = self.page_params.config().default_thumbnail_size();
-        match Self::get_template_value(&self.template, "thumb") {
-            Some(s) => s.parse::<u64>().ok().or(Some(default)).unwrap_or(default),
-            None => default,
-        }
+        Self::get_template_value(&self.template, "thumb")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(default)
     }
 
     fn get_template_value(template: &Template, key: &str) -> Option<String> {
@@ -394,7 +393,7 @@ impl ListeriaList {
     }
 
     pub async fn get_autodesc_description(&self, e: &Entity) -> Result<String> {
-        if self.params.autodesc() != Some("FALLBACK".to_string()) {
+        if self.params.autodesc() != Some(AUTODESC_FALLBACK.to_string()) {
             return Err(anyhow!("Not used"));
         }
         if let Some(autodesc) = &self.page_params.simulated_autodesc() {
@@ -416,10 +415,10 @@ impl ListeriaList {
         let api = self.page_params.mw_api();
         let body = api.query_raw(&url, &api.no_params(), "GET").await?;
         let json: Value = serde_json::from_str(&body)?;
-        match json["result"].as_str() {
-            Some(result) => Ok(result.to_string()),
-            None => Err(anyhow!("Not a valid autodesc result")),
-        }
+        json["result"]
+            .as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow!("Not a valid autodesc result"))
     }
 
     fn get_var_index(&self) -> Result<usize> {

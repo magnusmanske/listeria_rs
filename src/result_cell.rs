@@ -10,6 +10,10 @@ use wikimisc::sparql_table::SparqlTable;
 use wikimisc::wikibase::Statement;
 use wikimisc::wikibase::entity::EntityTrait;
 
+// Wikitext escape sequences
+const WIKITEXT_APOSTROPHE_ESCAPE: &str = "&#39;";
+const WIKITEXT_LT_ESCAPE: &str = "&lt;";
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResultCell {
     parts: Vec<PartWithReference>,
@@ -54,7 +58,8 @@ impl ResultCell {
     }
 
     fn fix_wikitext_for_output(s: &str) -> String {
-        s.replace('\'', "&#39;").replace('<', "&lt;")
+        s.replace('\'', WIKITEXT_APOSTROPHE_ESCAPE)
+            .replace('<', WIKITEXT_LT_ESCAPE)
     }
 
     fn get_parts_p_p(statement: &Statement, property: &str) -> Vec<ResultCellPart> {
