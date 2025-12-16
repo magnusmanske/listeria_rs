@@ -41,31 +41,10 @@ impl Renderer for RendererTabbedData {
     ) -> Result<Option<String>> {
         // TODO use local template name
 
-        // Start/end template
-        let pattern1 =
-            r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#;
+        let (before, blob, end_template, after) =
+            RendererTabbedData::extract_template_parts(wikitext)?;
 
-        // No end template
-        let pattern2 = r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)"#;
-
-        let re_wikitext1: Regex = RegexBuilder::new(pattern1)
-            .multi_line(true)
-            .dot_matches_new_line(true)
-            .build()?;
-        let re_wikitext2: Regex = RegexBuilder::new(pattern2)
-            .multi_line(true)
-            .dot_matches_new_line(true)
-            .build()?;
-
-        let (before, blob, end_template, after) = match re_wikitext1.captures(wikitext) {
-            Some(caps) => Self::get_wikitext_captures(caps),
-            None => match re_wikitext2.captures(wikitext) {
-                Some(caps) => Self::get_wikitext_captures(caps),
-                None => return Err(anyhow!("No template/end template found")),
-            },
-        };
-
-        let (start_template, rest) = match Self::separate_start_template(&blob) {
+        let (start_template, rest) = match RendererTabbedData::separate_start_template(&blob) {
             Some(parts) => parts,
             None => return Err(anyhow!("Can't split start template")),
         };
@@ -76,17 +55,9 @@ impl Renderer for RendererTabbedData {
             after.to_string()
         };
 
-        // Remove tabbed data marker
-        let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")?.replace(&start_template, "");
-
-        // Add tabbed data marker
-        let start_template = start_template[0..start_template.len() - 2]
-            .trim()
-            .to_string()
-            + "\n|tabbed_data=1}}";
-
-        // Create new wikitext
-        let new_wikitext = before.to_owned() + &start_template + "\n" + append.trim();
+        let start_template = RendererTabbedData::process_template_marker(&start_template)?;
+        let new_wikitext =
+            RendererTabbedData::build_new_wikitext(&before, &start_template, &append);
 
         // Compare to old wikitext
         if wikitext == new_wikitext {
@@ -99,6 +70,50 @@ impl Renderer for RendererTabbedData {
 }
 
 impl RendererTabbedData {
+    fn build_template_regex(pattern: &str) -> Result<Regex> {
+        RegexBuilder::new(pattern)
+            .multi_line(true)
+            .dot_matches_new_line(true)
+            .build()
+            .map_err(|e| anyhow!("Failed to build regex: {}", e))
+    }
+
+    fn extract_template_parts(wikitext: &str) -> Result<(String, String, String, String)> {
+        // Start/end template
+        let pattern1 =
+            r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#;
+        // No end template
+        let pattern2 = r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)"#;
+
+        let re_wikitext1 = Self::build_template_regex(pattern1)?;
+        let re_wikitext2 = Self::build_template_regex(pattern2)?;
+
+        match re_wikitext1.captures(wikitext) {
+            Some(caps) => Ok(Self::get_wikitext_captures(caps)),
+            None => match re_wikitext2.captures(wikitext) {
+                Some(caps) => Ok(Self::get_wikitext_captures(caps)),
+                None => Err(anyhow!("No template/end template found")),
+            },
+        }
+    }
+
+    fn process_template_marker(start_template: &str) -> Result<String> {
+        // Remove tabbed data marker
+        let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")?.replace(start_template, "");
+
+        // Add tabbed data marker
+        let processed = start_template[0..start_template.len() - 2]
+            .trim()
+            .to_string()
+            + "\n|tabbed_data=1}}";
+
+        Ok(processed)
+    }
+
+    fn build_new_wikitext(before: &str, start_template: &str, append: &str) -> String {
+        before.to_owned() + start_template + "\n" + append.trim()
+    }
+
     #[must_use]
     pub fn tabbed_data_page_name(&self, list: &ListeriaList) -> Option<String> {
         let ret = "Data:Listeria/".to_string() + list.wiki() + "/" + list.page_title() + ".tab";
