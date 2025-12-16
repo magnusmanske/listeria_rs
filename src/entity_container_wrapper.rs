@@ -38,8 +38,6 @@ impl std::fmt::Debug for EntityContainerWrapper {
 }
 
 impl EntityContainerWrapper {
-    /// # Panics
-    /// Panics if the required test files do not exist.
     pub async fn new() -> Result<Self> {
         let ret = Self {
             entities: Self::create_entity_container().await?,
@@ -47,13 +45,11 @@ impl EntityContainerWrapper {
         };
         // Pre-cache test entities if testing
         if cfg!(test) {
-            let file = File::open("test_data/test_entities.json")
-                .expect("Could not open file test_data/test_entities.json");
+            let file = File::open("test_data/test_entities.json")?;
             let reader = BufReader::new(file);
-            let test_items: serde_json::Value = serde_json::from_reader(reader)
-                .expect("Failed to parse JSON from test_data/test_entities.json");
-            for (_item, j) in test_items.as_object().unwrap() {
-                ret.set_entity_from_json(j).unwrap();
+            let test_items: serde_json::Value = serde_json::from_reader(reader)?;
+            for (_item, j) in test_items.as_object().ok_or(anyhow!("Not an object"))? {
+                ret.set_entity_from_json(j)?;
             }
         }
         Ok(ret)
