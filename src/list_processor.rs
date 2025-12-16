@@ -174,14 +174,8 @@ impl ListProcessor {
         if *list.get_links_type() != LinksType::RedOnly {
             return Ok(());
         }
-
         let keep_flags = Self::find_keep_flags(list).await;
-
-        // Second pass: set keep flags
-        for (row, keep) in list.results_mut().iter_mut().zip(keep_flags) {
-            row.set_keep(keep);
-        }
-
+        Self::set_keep_flags(list, keep_flags);
         list.results_mut().retain(|r| r.keep());
         Ok(())
     }
@@ -192,7 +186,14 @@ impl ListProcessor {
             return Ok(());
         }
 
-        // Cache if local pages exist
+        let ids = Self::collect_entity_ids_from_results(list);
+        let labels = Self::get_labels_for_entity_ids(list, ids).await;
+        Self::cache_local_page_existence(list, labels).await;
+
+        Ok(())
+    }
+
+    fn collect_entity_ids_from_results(list: &ListeriaList) -> Vec<String> {
         let mut ids = vec![];
         for row in list.results().iter() {
             row.cells().iter().for_each(|cell| {
@@ -207,6 +208,10 @@ impl ListProcessor {
 
         ids.sort();
         ids.dedup();
+        ids
+    }
+
+    async fn get_labels_for_entity_ids(list: &mut ListeriaList, ids: Vec<String>) -> Vec<String> {
         let mut labels = vec![];
         for id in ids {
             if let Some(e) = list.get_entity(&id).await
@@ -218,7 +223,10 @@ impl ListProcessor {
 
         labels.sort();
         labels.dedup();
-        // TODO in parallel
+        labels
+    }
+
+    async fn cache_local_page_existence(list: &mut ListeriaList, labels: Vec<String>) {
         let labels_per_chunk = if list.mw_api().user().is_bot() {
             500
         } else {
@@ -236,8 +244,6 @@ impl ListProcessor {
         for (title, page_exists) in results.into_iter().flatten() {
             list.local_page_cache_mut().insert(title, page_exists);
         }
-
-        Ok(())
     }
 
     pub async fn process_sort_results(list: &mut ListeriaList) -> Result<()> {
@@ -646,6 +652,12 @@ impl ListProcessor {
             }
         }
         entity_id2region
+    }
+
+    fn set_keep_flags(list: &mut ListeriaList, keep_flags: Vec<bool>) {
+        for (row, keep) in list.results_mut().iter_mut().zip(keep_flags) {
+            row.set_keep(keep);
+        }
     }
 }
 
