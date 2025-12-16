@@ -21,6 +21,76 @@ pub struct PageElement {
 }
 
 impl PageElement {
+    fn extract_text_segment(text: &str, start: usize, end: usize) -> Option<String> {
+        String::from_utf8(text.as_bytes()[start..end].to_vec()).ok()
+    }
+
+    fn extract_template_text(
+        text: &str,
+        match_start: &regex::Match<'_>,
+        template_start_end_bytes: usize,
+    ) -> Option<String> {
+        Self::extract_text_segment(text, match_start.end(), template_start_end_bytes - 2)
+    }
+
+    fn create_template_from_text(template_text: String) -> Option<Template> {
+        Template::new_from_params("".to_string(), template_text).ok()
+    }
+
+    fn extract_inside_text(
+        text: &str,
+        single_template: bool,
+        template_start_end_bytes: usize,
+        match_end: &regex::Match<'_>,
+    ) -> Option<String> {
+        if single_template {
+            Some(String::new())
+        } else {
+            Self::extract_text_segment(text, template_start_end_bytes, match_end.start())
+        }
+    }
+
+    fn extract_template_end_text(
+        text: &str,
+        single_template: bool,
+        match_end: &regex::Match<'_>,
+    ) -> Option<String> {
+        if single_template {
+            Some(String::new())
+        } else {
+            Self::extract_text_segment(text, match_end.start(), match_end.end())
+        }
+    }
+
+    async fn build_page_element(
+        text: &str,
+        match_start: regex::Match<'_>,
+        match_end: regex::Match<'_>,
+        template_start_end_bytes: usize,
+        single_template: bool,
+        template: Template,
+        page: &ListeriaPage,
+    ) -> Option<Self> {
+        Some(Self {
+            before: Self::extract_text_segment(text, 0, match_start.start())?,
+            template_start: Self::extract_text_segment(
+                text,
+                match_start.start(),
+                template_start_end_bytes,
+            )?,
+            _inside: Self::extract_inside_text(
+                text,
+                single_template,
+                template_start_end_bytes,
+                &match_end,
+            )?,
+            template_end: Self::extract_template_end_text(text, single_template, &match_end)?,
+            after: Self::extract_text_segment(text, match_end.end(), text.len())?,
+            list: ListeriaList::new(template, page.page_params()).await.ok()?,
+            is_just_text: false,
+        })
+    }
+
     pub async fn new_from_text(text: &str, page: &ListeriaPage) -> Option<Self> {
         let (seperator_start, seperator_end) = Self::get_start_stop_separators(page)?;
 
@@ -33,39 +103,21 @@ impl PageElement {
         let remaining =
             Self::new_from_text_remaining(single_template, text, match_start, match_end)?;
         let template_start_end_bytes = Self::get_template_end(remaining)? + match_start.end();
-        let inside = if single_template {
-            String::new()
-        } else {
-            String::from_utf8(text.as_bytes()[template_start_end_bytes..match_end.start()].to_vec())
-                .ok()?
-        };
 
-        let template = Template::new_from_params(
-            "".to_string(),
-            String::from_utf8(
-                text.as_bytes()[match_start.end()..template_start_end_bytes - 2].to_vec(),
-            )
-            .ok()?,
+        let template_text =
+            Self::extract_template_text(text, &match_start, template_start_end_bytes)?;
+        let template = Self::create_template_from_text(template_text)?;
+
+        Self::build_page_element(
+            text,
+            match_start,
+            match_end,
+            template_start_end_bytes,
+            single_template,
+            template,
+            page,
         )
-        .ok()?;
-
-        Some(Self {
-            before: String::from_utf8(text.as_bytes()[0..match_start.start()].to_vec()).ok()?,
-            template_start: String::from_utf8(
-                text.as_bytes()[match_start.start()..template_start_end_bytes].to_vec(),
-            )
-            .ok()?,
-            _inside: inside,
-            template_end: if single_template {
-                String::new()
-            } else {
-                String::from_utf8(text.as_bytes()[match_end.start()..match_end.end()].to_vec())
-                    .ok()?
-            },
-            after: String::from_utf8(text.as_bytes()[match_end.end()..].to_vec()).ok()?,
-            list: ListeriaList::new(template, page.page_params()).await.ok()?,
-            is_just_text: false,
-        })
+        .await
     }
 
     pub async fn new_just_text(text: &str, page: &ListeriaPage) -> Result<Self> {
