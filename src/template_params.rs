@@ -1,3 +1,5 @@
+//! Template parameter definitions and validation.
+
 use crate::{configuration::Configuration, template::Template};
 use regex::Regex;
 

@@ -1,3 +1,5 @@
+//! Wikidata reference handling and formatting.
+
 use crate::listeria_list::ListeriaList;
 use serde::{Deserialize, Serialize};
 use wikimisc::wikibase::Snak;

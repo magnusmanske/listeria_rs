@@ -1,3 +1,8 @@
+//! Listeria bot for generating dynamic lists on wikis from SPARQL queries.
+//!
+//! This bot processes Wikidata list templates on MediaWiki wikis, executes SPARQL queries,
+//! and renders results as wikitext tables or tabbed data.
+
 #![forbid(unsafe_code)]
 #![warn(
     clippy::cognitive_complexity,

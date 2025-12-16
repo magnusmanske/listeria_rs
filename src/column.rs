@@ -1,3 +1,5 @@
+//! Column definitions and types for result tables.
+
 use crate::listeria_list::ListeriaList;
 
 use regex::{Regex, RegexBuilder};

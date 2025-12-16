@@ -1,3 +1,5 @@
+//! Individual parts that make up table cells, with rendering logic for different data types.
+
 use crate::column::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
@@ -185,7 +187,8 @@ impl ResultCellPart {
         let year = caps.get(1)?.as_str().parse::<i32>().ok()?;
         let month = caps.get(2)?.as_str().parse::<u8>().ok()?;
         let day = caps.get(3)?.as_str().parse::<u8>().ok()?;
-        let precision = Precision::try_from(*v.precision() as u8).ok()?;
+        let precision_val: u8 = (*v.precision()).try_into().ok()?;
+        let precision = Precision::try_from(precision_val).ok()?;
 
         Some(Era::new(year, month, day, precision).to_string())
     }

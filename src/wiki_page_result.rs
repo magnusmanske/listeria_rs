@@ -1,3 +1,5 @@
+//! Result tracking for processed wiki pages.
+
 use std::time::{Duration, Instant};
 
 #[derive(Debug, Clone)]

@@ -1,3 +1,5 @@
+//! Wiki page parsing to extract Listeria template blocks.
+
 use crate::listeria_list::ListeriaList;
 use crate::listeria_page::ListeriaPage;
 use crate::render_wikitext::RendererWikitext;

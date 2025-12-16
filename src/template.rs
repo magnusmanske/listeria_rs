@@ -1,3 +1,5 @@
+//! Template parsing and parameter extraction.
+
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 

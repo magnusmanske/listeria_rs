@@ -1,3 +1,5 @@
+//! Represents a wiki page containing one or more Listeria lists.
+
 use anyhow::{Result, anyhow};
 use futures::future::try_join_all;
 use std::sync::Arc;
@@ -70,6 +72,7 @@ impl ListeriaPage {
         self.page_params.language()
     }
 
+    /// Verifies that the page is in an editable namespace.
     pub async fn check_namespace(&self) -> Result<()> {
         let api = self.page_params.mw_api();
         let title = wikimisc::mediawiki::title::Title::new_from_full(self.page_params.page(), api);

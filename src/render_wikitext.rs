@@ -1,3 +1,5 @@
+//! Renders results as MediaWiki wikitext tables.
+
 use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
 use anyhow::Result;
 use async_trait::async_trait;

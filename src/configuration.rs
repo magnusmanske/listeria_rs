@@ -1,3 +1,8 @@
+//! Bot configuration management.
+//!
+//! Handles loading and parsing configuration from JSON files, including API endpoints,
+//! template mappings, database settings, and operational parameters.
+
 use crate::database_pool::DatabasePool;
 use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
@@ -67,6 +72,7 @@ pub struct Configuration {
 }
 
 impl Configuration {
+    /// Loads configuration from a JSON file.
     pub async fn new_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -87,9 +93,13 @@ impl Configuration {
         self.wikis.get(wiki)
     }
 
+    /// Constructs a configuration from parsed JSON.
+    /// Sets up APIs, database connections, and template mappings.
     pub async fn new_from_json(j: Value) -> Result<Self> {
         let mut ret: Self = Self {
-            max_mw_apis_per_wiki: j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize),
+            max_mw_apis_per_wiki: j["max_mw_apis_per_wiki"]
+                .as_u64()
+                .and_then(|u| u.try_into().ok()),
             is_single_wiki: j["template_start"].as_str().is_some()
                 && j["template_end"].as_str().is_some()
                 && j["apis"]["wiki"].as_str().is_some(),
@@ -137,7 +147,7 @@ impl Configuration {
                     let nsids: Vec<i64> = a
                         .iter()
                         .filter_map(|x| x.as_u64())
-                        .map(|x| x as i64)
+                        .filter_map(|x| x.try_into().ok())
                         .collect();
                     self.namespace_blocks
                         .insert(k.to_string(), NamespaceGroup::List(nsids));
@@ -167,6 +177,7 @@ impl Configuration {
         self.profiling = profiling;
     }
 
+    /// Returns the database connection pool if configured.
     pub fn pool(&self) -> Result<&Arc<DatabasePool>> {
         self.pool
             .as_ref()
@@ -257,6 +268,7 @@ impl Configuration {
         Self::get_local_template_title(&self.template_end_sites, wiki, "end")
     }
 
+    /// Checks if editing is allowed in the given namespace on this wiki.
     pub fn can_edit_namespace(&self, wiki: &str, nsid: i64) -> bool {
         self.namespace_blocks
             .get(wiki)
@@ -312,6 +324,7 @@ impl Configuration {
         &self.default_api
     }
 
+    /// Returns the default Wikibase API client.
     pub fn get_default_wbapi(&self) -> Result<&Arc<Api>> {
         self.wb_apis
             .get(&self.default_api)
@@ -422,7 +435,9 @@ impl Configuration {
     }
 
     fn new_from_json_misc(&mut self, j: &Value) {
-        self.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);
+        self.max_mw_apis_total = j["max_mw_apis_total"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok());
         self.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
         self.query_endpoint = j["query_endpoint"].as_str().map(|s| s.to_string());
         self.default_language = j["default_language"]
@@ -433,15 +448,24 @@ impl Configuration {
         self.max_sparql_simultaneous = j["max_sparql_simultaneous"].as_u64().unwrap_or(10);
         self.max_sparql_attempts = j["max_sparql_attempts"].as_u64().unwrap_or(5);
         self.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
-        self.max_local_cached_entities =
-            j["max_local_cached_entities"].as_u64().unwrap_or(5000) as usize;
-        self.max_concurrent_entry_queries =
-            j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
+        self.max_local_cached_entities = j["max_local_cached_entities"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(5000);
+        self.max_concurrent_entry_queries = j["max_concurrent_entry_queries"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(5);
         self.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
         self.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
         self.delay_after_page_check_sec = j["delay_after_page_check_sec"].as_u64();
-        self.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
-        self.status_server_port = j["status_server_port"].as_u64().map(|x| x as u16);
+        self.max_threads = j["max_threads"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(8);
+        self.status_server_port = j["status_server_port"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok());
         self.profiling = j["profiling"].as_bool().unwrap_or_default();
         self.quiet = j["quiet"].as_bool().unwrap_or_default();
         self.wiki_page_pattern = j["wiki_page_pattern"].as_str().map(|s| s.to_string());

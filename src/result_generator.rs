@@ -1,3 +1,5 @@
+//! Generates result tables from SPARQL query results.
+
 use crate::column::ColumnType;
 use crate::listeria_list::ListeriaList;
 use crate::result_row::ResultRow;

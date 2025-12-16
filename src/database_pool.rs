@@ -1,5 +1,7 @@
+//! MySQL database connection pooling.
+
 use crate::configuration::Configuration;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use mysql_async::{Conn, OptsBuilder, Pool, PoolConstraints, PoolOpts};
 
 #[derive(Debug, Clone)]
@@ -8,6 +10,7 @@ pub struct DatabasePool {
 }
 
 impl DatabasePool {
+    /// Creates a new connection pool from configuration settings.
     pub fn new(config: &Configuration) -> Result<Self> {
         let pool = if true {
             // Use DB connection as defined in the config
@@ -19,6 +22,7 @@ impl DatabasePool {
         Ok(Self { pool })
     }
 
+    /// Gets a database connection from the pool.
     pub async fn get_conn(&self) -> Result<Conn> {
         let ret = self.pool.get_conn().await?;
         Ok(ret)
@@ -47,7 +51,9 @@ impl DatabasePool {
         let port = config
             .mysql("port")
             .as_u64()
-            .ok_or(anyhow!("No port in config"))? as u16;
+            .ok_or(anyhow!("No port in config"))?
+            .try_into()
+            .map_err(|_| anyhow!("Port value out of range"))?;
         let user = config
             .mysql("user")
             .as_str()
@@ -58,7 +64,11 @@ impl DatabasePool {
             .as_str()
             .ok_or(anyhow!("No password in config"))?
             .to_string();
-        let max_connections = config.mysql("max_connections").as_u64().unwrap_or(8) as usize;
+        let max_connections = config
+            .mysql("max_connections")
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(8);
         let constraints = PoolConstraints::new(0, max_connections)
             .ok_or(anyhow!("Could not get pool constraints"))?;
         let pool_opts = PoolOpts::default().with_constraints(constraints);

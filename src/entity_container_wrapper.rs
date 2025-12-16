@@ -1,3 +1,5 @@
+//! Wrapper for entity container with caching and batch loading.
+
 use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::LinkTarget;
 use crate::result_cell_part::PartWithReference;

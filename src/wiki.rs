@@ -1,3 +1,5 @@
+//! Wiki configuration and database operations.
+
 use anyhow::{Result, anyhow};
 use mysql_async::{Conn, from_row, prelude::*};
 

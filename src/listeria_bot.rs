@@ -1,3 +1,5 @@
+//! Bot trait defining the interface for Listeria bot implementations.
+
 use std::sync::Arc;
 
 use anyhow::Result;

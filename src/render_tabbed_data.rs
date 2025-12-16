@@ -1,3 +1,5 @@
+//! Renders results as tabbed data stored in database tables.
+
 use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;

@@ -9,6 +9,7 @@ use std::collections::HashMap;
 pub struct PageOperations;
 
 impl PageOperations {
+    /// Loads a page and extracts all Listeria template blocks.
     pub async fn load_page(page: &mut ListeriaPage) -> Result<Vec<PageElement>, WikiPageResult> {
         let mut text = Self::load_page_as(page, "wikitext").await?;
         let mut ret = vec![];
@@ -31,6 +32,7 @@ impl PageOperations {
         Ok(ret)
     }
 
+    /// Loads page content via the MediaWiki API in the specified format.
     pub async fn load_page_as(page: &ListeriaPage, mode: &str) -> Result<String, WikiPageResult> {
         let mut params: HashMap<String, String> = [("action", "parse"), ("prop", mode)]
             .iter()

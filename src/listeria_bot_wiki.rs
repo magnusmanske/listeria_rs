@@ -1,3 +1,5 @@
+//! Per-wiki bot wrapper handling page processing for a single wiki.
+
 use crate::ApiArc;
 use crate::configuration::Configuration;
 use crate::listeria_page::ListeriaPage;
@@ -12,8 +14,8 @@ pub struct ListeriaBotWiki {
 }
 
 impl ListeriaBotWiki {
-	#[must_use]
-pub fn new(wiki: &str, api: ApiArc, config: Arc<Configuration>) -> Self {
+    #[must_use]
+    pub fn new(wiki: &str, api: ApiArc, config: Arc<Configuration>) -> Self {
         Self {
             wiki: wiki.to_string(),
             api,
