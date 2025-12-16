@@ -57,19 +57,16 @@ impl ListProcessor {
             .check_for_shadow_images(&list.wiki().to_string())
     }
 
-    pub async fn process_remove_shadow_files(list: &mut ListeriaList) -> Result<()> {
-        if !Self::check_this_wiki_for_shadow_images(list) {
-            return Ok(());
-        }
-        let files_to_check = Self::get_files_to_check(list);
-        list.shadow_files_mut().clear();
-        let param_list: Vec<HashMap<String, String>> =
-            Self::get_param_list_for_files(list, &files_to_check);
+    async fn fetch_file_info(
+        list: &mut ListeriaList,
+        param_list: &[HashMap<String, String>],
+        files_to_check: Vec<String>,
+    ) -> Vec<(String, Value)> {
         let page_params = list.page_params().clone();
         let api_read = page_params.mw_api();
 
         let mut futures = vec![];
-        for params in &param_list {
+        for params in param_list {
             futures.push(api_read.get_query_api_json(params));
         }
         list.profile(&format!(
@@ -77,7 +74,7 @@ impl ListProcessor {
             futures.len()
         ));
 
-        let tmp_results: Vec<(String, Value)> = join_all(futures)
+        join_all(futures)
             .await
             .iter()
             .zip(files_to_check)
@@ -85,9 +82,11 @@ impl ListProcessor {
                 Ok(j) => Some((filename, j.to_owned())),
                 _ => None,
             })
-            .collect();
+            .collect()
+    }
 
-        let shadow_files: HashSet<String> = tmp_results
+    fn identify_shadow_files(api_results: Vec<(String, Value)>) -> HashSet<String> {
+        api_results
             .into_iter()
             .filter_map(|(filename, j)| {
                 let could_be_local = j["query"]["pages"].as_object().is_none_or(|results| {
@@ -99,15 +98,30 @@ impl ListProcessor {
 
                 could_be_local.then_some(filename)
             })
-            .collect();
+            .collect()
+    }
 
+    fn remove_shadow_files_from_rows(list: &mut ListeriaList, shadow_files: &HashSet<String>) {
         for row_id in 0..list.results().len() {
             let row = match list.results_mut().get_mut(row_id) {
                 Some(row) => row,
                 None => continue,
             };
-            row.remove_shadow_files(&shadow_files);
+            row.remove_shadow_files(shadow_files);
         }
+    }
+
+    pub async fn process_remove_shadow_files(list: &mut ListeriaList) -> Result<()> {
+        if !Self::check_this_wiki_for_shadow_images(list) {
+            return Ok(());
+        }
+        let files_to_check = Self::get_files_to_check(list);
+        list.shadow_files_mut().clear();
+        let param_list = Self::get_param_list_for_files(list, &files_to_check);
+
+        let api_results = Self::fetch_file_info(list, &param_list, files_to_check).await;
+        let shadow_files = Self::identify_shadow_files(api_results);
+        Self::remove_shadow_files_from_rows(list, &shadow_files);
 
         *list.shadow_files_mut() = shadow_files;
 
@@ -310,6 +324,73 @@ impl ListProcessor {
         Ok(())
     }
 
+    async fn get_section_names_for_rows(
+        list: &mut ListeriaList,
+        section_property: &str,
+        datatype: &SnakDataType,
+    ) -> Result<Vec<String>> {
+        let mut section_names_q = vec![];
+        for row in list.results().iter() {
+            section_names_q.push(row.get_sortkey_prop(section_property, list, datatype).await);
+        }
+        list.profile("AFTER list::process_assign_sections 2");
+
+        // Make sure section name items are loaded
+        list.ecw()
+            .load_entities(list.wb_api(), &section_names_q)
+            .await?;
+        list.profile("AFTER list::process_assign_sections 3a");
+
+        let mut section_names = vec![];
+        for q in section_names_q {
+            let label = list.get_label_with_fallback(&q).await;
+            section_names.push(label);
+        }
+        Ok(section_names)
+    }
+
+    fn build_section_count(section_names: &[String]) -> HashMap<&String, u64> {
+        let mut section_count = HashMap::new();
+        for name in section_names {
+            *section_count.entry(name).or_insert(0) += 1;
+        }
+        section_count
+    }
+
+    fn build_valid_section_names(
+        section_count: HashMap<&String, u64>,
+        min_section: u64,
+    ) -> Vec<String> {
+        let mut valid_section_names: Vec<String> = section_count
+            .into_iter()
+            .filter(|(_name, count)| *count >= min_section)
+            .map(|(name, _count)| name.to_owned())
+            .collect();
+        valid_section_names.sort();
+        valid_section_names
+    }
+
+    fn create_section_mappings(
+        valid_section_names: Vec<String>,
+    ) -> (HashMap<String, usize>, HashMap<usize, String>, usize) {
+        let misc_id = valid_section_names.len();
+        let mut names_with_misc = valid_section_names;
+        names_with_misc.push("Misc".to_string());
+
+        let name2id: HashMap<String, usize> = names_with_misc
+            .iter()
+            .enumerate()
+            .map(|(num, name)| (name.to_string(), num))
+            .collect();
+
+        let id2name: HashMap<usize, String> = name2id
+            .iter()
+            .map(|(name, id)| (*id, name.to_owned()))
+            .collect();
+
+        (name2id, id2name, misc_id)
+    }
+
     pub async fn process_assign_sections(list: &mut ListeriaList) -> Result<()> {
         list.profile("BEFORE list::process_assign_sections");
 
@@ -329,60 +410,20 @@ impl ListProcessor {
             .await;
         list.profile("AFTER list::process_assign_sections 1");
 
-        let mut section_names_q = vec![];
-        for row in list.results().iter() {
-            section_names_q.push(
-                row.get_sortkey_prop(&section_property, list, &datatype)
-                    .await,
-            );
-        }
-        list.profile("AFTER list::process_assign_sections 2");
+        let section_names =
+            Self::get_section_names_for_rows(list, &section_property, &datatype).await?;
 
-        // Make sure section name items are loaded
-        list.ecw()
-            .load_entities(list.wb_api(), &section_names_q)
-            .await?;
-        list.profile("AFTER list::process_assign_sections 3a");
-        let mut section_names = vec![];
-        for q in section_names_q {
-            let label = list.get_label_with_fallback(&q).await;
-            section_names.push(label);
-        }
-
-        // Count names
-        let mut section_count = HashMap::new();
-        for name in &section_names {
-            *section_count.entry(name).or_insert(0) += 1;
-        }
+        let section_count = Self::build_section_count(&section_names);
         list.profile("AFTER list::process_assign_sections 4");
 
-        // Remove low counts
-        section_count.retain(|&_name, &mut count| count >= list.template_params().min_section());
-        list.profile("AFTER list::process_assign_sections 5");
-
-        // Sort by section name
-        let mut valid_section_names: Vec<String> =
-            section_count.keys().map(|k| (*k).to_owned()).collect();
-        valid_section_names.sort();
+        let valid_section_names =
+            Self::build_valid_section_names(section_count, list.template_params().min_section());
         list.profile("AFTER list::process_assign_sections 6");
 
-        let misc_id = valid_section_names.len();
-        valid_section_names.push("Misc".to_string());
-
-        // TODO skip if no/one section?
-
-        // name to id
-        let name2id: HashMap<String, usize> = valid_section_names
-            .iter()
-            .enumerate()
-            .map(|(num, name)| (name.to_string(), num))
-            .collect();
+        let (name2id, id2name, misc_id) = Self::create_section_mappings(valid_section_names);
         list.profile("AFTER list::process_assign_sections 7");
 
-        *list.section_id_to_name_mut() = name2id
-            .iter()
-            .map(|x| (x.1.to_owned(), x.0.to_owned()))
-            .collect();
+        *list.section_id_to_name_mut() = id2name;
         list.profile("AFTER list::process_assign_sections 8");
 
         Self::assign_row_section_ids(list, section_names, name2id, misc_id)?;

@@ -242,6 +242,84 @@ impl ResultCellPart {
         Self::render_entity_link(list, use_label, id, labeled_entity_link)
     }
 
+    fn as_wikitext_local_link(
+        list: &ListeriaList,
+        title: &str,
+        label: &str,
+        link_target: &LinkTarget,
+    ) -> String {
+        let start = match link_target {
+            LinkTarget::Page => "[[",
+            LinkTarget::Category => "[[:",
+        };
+        if list
+            .normalize_page_title(list.page_title())
+            .replace(' ', "_")
+            == list.normalize_page_title(title).replace(' ', "_")
+        {
+            label.to_string()
+        } else if list.normalize_page_title(title) == list.normalize_page_title(label) {
+            format!("{start}{label}]]")
+        } else {
+            format!("{start}{title}|{label}]]")
+        }
+    }
+
+    fn as_wikitext_location(
+        list: &ListeriaList,
+        lat: f64,
+        lon: f64,
+        region: &Option<String>,
+        rownum: usize,
+    ) -> String {
+        let entity_id = list
+            .results()
+            .get(rownum)
+            .map(|e| e.entity_id().to_string());
+        list.get_location_template(lat, lon, entity_id, region.to_owned())
+    }
+
+    fn as_wikitext_file(list: &ListeriaList, file: &str) -> String {
+        let thumb = list.thumbnail_size();
+        format!(
+            "[[{}:{}|center|{}px]]",
+            list.local_file_namespace_prefix(),
+            file,
+            thumb
+        )
+    }
+
+    async fn as_wikitext_external_id(list: &ListeriaList, property: &str, id: &str) -> String {
+        match list.external_id_url(property, id).await {
+            Some(url) => "[".to_string() + &url + " " + id + "]",
+            None => id.to_owned(),
+        }
+    }
+
+    fn as_wikitext_text(list: &ListeriaList, text: &str, colnum: usize) -> String {
+        list.column(colnum)
+            .and_then(|col| match col.obj() {
+                ColumnType::Property(p) if p == "P373" => {
+                    Some(format!("[[:commons:Category:{text}|{text}]]"))
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| text.to_owned())
+    }
+
+    async fn as_wikitext_snak_list(
+        v: &[PartWithReference],
+        list: &ListeriaList,
+        rownum: usize,
+        colnum: usize,
+    ) -> String {
+        let mut ret = vec![];
+        for rcp in v {
+            ret.push(rcp.part.as_wikitext(list, rownum, colnum).await);
+        }
+        ret.join(" — ")
+    }
+
     #[async_recursion]
     pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         match self {
@@ -254,61 +332,20 @@ impl ResultCellPart {
                 format!("[[EntitySchema:{id}|{id}]]") // TODO use self.as_wikitext_entity ?
             }
             ResultCellPart::LocalLink((title, label, link_target)) => {
-                let start = match link_target {
-                    LinkTarget::Page => "[[",
-                    LinkTarget::Category => "[[:",
-                };
-                if list
-                    .normalize_page_title(list.page_title())
-                    .replace(' ', "_")
-                    == list.normalize_page_title(title).replace(' ', "_")
-                {
-                    label.to_string()
-                } else if list.normalize_page_title(title) == list.normalize_page_title(label) {
-                    format!("{start}{label}]]")
-                } else {
-                    format!("{start}{title}|{label}]]")
-                }
+                Self::as_wikitext_local_link(list, title, label, link_target)
             }
             ResultCellPart::Time(time) => time.to_owned(),
             ResultCellPart::Location((lat, lon, region)) => {
-                let entity_id = list
-                    .results()
-                    .get(rownum)
-                    .map(|e| e.entity_id().to_string());
-                list.get_location_template(*lat, *lon, entity_id, region.to_owned())
+                Self::as_wikitext_location(list, *lat, *lon, region, rownum)
             }
-            ResultCellPart::File(file) => {
-                let thumb = list.thumbnail_size();
-                format!(
-                    "[[{}:{}|center|{}px]]",
-                    list.local_file_namespace_prefix(),
-                    &file,
-                    thumb
-                )
-            }
+            ResultCellPart::File(file) => Self::as_wikitext_file(list, file),
             ResultCellPart::Uri(url) => url.to_owned(),
             ResultCellPart::ExternalId((property, id)) => {
-                match list.external_id_url(property, id).await {
-                    Some(url) => "[".to_string() + &url + " " + id + "]",
-                    None => id.to_owned(),
-                }
+                Self::as_wikitext_external_id(list, property, id).await
             }
-            ResultCellPart::Text(text) => list
-                .column(colnum)
-                .and_then(|col| match col.obj() {
-                    ColumnType::Property(p) if p == "P373" => {
-                        Some(format!("[[:commons:Category:{text}|{text}]]"))
-                    }
-                    _ => None,
-                })
-                .unwrap_or_else(|| text.to_owned()),
+            ResultCellPart::Text(text) => Self::as_wikitext_text(list, text, colnum),
             ResultCellPart::SnakList(v) => {
-                let mut ret = vec![];
-                for rcp in v {
-                    ret.push(rcp.part.as_wikitext(list, rownum, colnum).await);
-                }
-                ret.join(" — ")
+                Self::as_wikitext_snak_list(v, list, rownum, colnum).await
             }
             ResultCellPart::AutoDesc(ad) => ad.desc.clone().unwrap_or_default(),
         }

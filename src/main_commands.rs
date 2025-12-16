@@ -157,6 +157,85 @@ impl MainCommands {
         }
     }
 
+    fn build_html_header() -> String {
+        let mut html = "<html><head>".to_string();
+        html += r#"<meta charset="UTF-8">
+        <title>Listeria</title>
+        <link href="html/bootstrap.min.css" rel="stylesheet">"#;
+        html += "</head><body>";
+        html
+    }
+
+    fn build_status_card(
+        uptime_days: u64,
+        uptime_hours: u64,
+        uptime_minutes: u64,
+        uptime_seconds: u64,
+        last_event: Option<std::time::Duration>,
+        total_pages: usize,
+    ) -> String {
+        let mut html = String::new();
+        html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Listeria status</h5>"#;
+        html += &format!(
+            "<p class='card-text'>Uptime: {} days, {} hours, {} minutes, {} seconds</p>",
+            uptime_days, uptime_hours, uptime_minutes, uptime_seconds
+        );
+        if let Some(event) = last_event {
+            html += &format!(
+                "<p class='card-text'>Last page check: {} seconds ago</p>",
+                event.as_secs()
+            );
+        }
+        html += &format!("<p class='card-text'>Total pages: {}</p>", total_pages);
+        html += "</div></div>";
+        html
+    }
+
+    fn build_statistics_table(statistics: &HashMap<String, u64>) -> String {
+        let mut html = String::new();
+        html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Page statistics</h5>"#;
+        html += "<p class='card-text'><table class='table table-striped'>";
+        html += "<thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>";
+        for (status, count) in statistics.iter() {
+            html += &format!("<tr><td>{status}</td><td>{count}</td></tr>");
+        }
+        html += "</tbody></table></p></div></div>";
+        html
+    }
+
+    fn build_problems_table(
+        problems: &[(String, WikiPageResult)],
+        wiki_page_pattern: &Option<String>,
+    ) -> String {
+        let mut html = String::new();
+        if !problems.is_empty() {
+            html +=
+                r#"<div class="card"><div class="card-body"><h5 class="card-title">Issues</h5>"#;
+            html += "<p class='card-text'><table class='table table-striped'>";
+            html += "<thead><tr><th>Page</th><th>Status</th><th>Message</th></tr></thead><tbody>";
+            for (page, result) in problems {
+                let link = match wiki_page_pattern {
+                    Some(pattern) => {
+                        format!(
+                            "<a target=\"_blank\" href=\"{}\">{}</a>",
+                            pattern.replace("$1", &urlencoding::encode(&page.replace(' ', "_"))),
+                            html_escape::encode_text(page)
+                        )
+                    }
+                    None => html_escape::encode_text(page).to_string(),
+                };
+                html += &format!(
+                    "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
+                    link,
+                    result.result(),
+                    result.message()
+                );
+            }
+            html += "</tbody></table></p></div></div>";
+        }
+        html
+    }
+
     async fn status_server_root(State(state): State<AppState>) -> Html<String> {
         let now = Instant::now();
         let server_uptime = now.duration_since(state.started);
@@ -179,6 +258,8 @@ impl MainCommands {
             .map(|l| now.duration_since(l))
             .min();
 
+        let total_pages = state.pages.lock().await.len();
+
         let problems: Vec<_> = state
             .pages
             .lock()
@@ -188,63 +269,17 @@ impl MainCommands {
             .map(|(page, result)| (page.clone(), result.clone()))
             .collect();
 
-        let mut html: String = "<html><head>".to_string();
-        html += r#"<meta charset="UTF-8">
-        <title>Listeria</title>
-        <link href="html/bootstrap.min.css" rel="stylesheet">"#;
-        html += "</head><body>";
-        html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Listeria status</h5>"#;
-        html += &format!(
-            "<p class='card-text'>Uptime: {} days, {} hours, {} minutes, {} seconds</p>",
-            uptime_days, uptime_hours, uptime_minutes, uptime_seconds
+        let mut html = Self::build_html_header();
+        html += &Self::build_status_card(
+            uptime_days,
+            uptime_hours,
+            uptime_minutes,
+            uptime_seconds,
+            last_event,
+            total_pages,
         );
-        if let Some(event) = last_event {
-            html += &format!(
-                "<p class='card-text'>Last page check: {} seconds ago</p>",
-                event.as_secs()
-            );
-        }
-        html += &format!(
-            "<p class='card-text'>Total pages: {}</p>",
-            state.pages.lock().await.len()
-        );
-        html += "</div></div>";
-
-        html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Page statistics</h5>"#;
-        html += "<p class='card-text'><table class='table table-striped'>";
-        html += "<thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>";
-        for (status, count) in statistics.iter() {
-            html += &format!("<tr><td>{status}</td><td>{count}</td></tr>");
-        }
-        html += "</tbody></table></p></div></div>";
-
-        if !problems.is_empty() {
-            html +=
-                r#"<div class="card"><div class="card-body"><h5 class="card-title">Issues</h5>"#;
-            html += "<p class='card-text'><table class='table table-striped'>";
-            html += "<thead><tr><th>Page</th><th>Status</th><th>Message</th></tr></thead><tbody>";
-            for (page, result) in problems {
-                let link = match &state.wiki_page_pattern {
-                    Some(wiki_page_pattern) => {
-                        format!(
-                            "<a target=\"_blank\" href=\"{}\">{}</a>",
-                            wiki_page_pattern
-                                .replace("$1", &urlencoding::encode(&page.replace(' ', "_"))),
-                            html_escape::encode_text(&page)
-                        )
-                    }
-                    None => html_escape::encode_text(&page).to_string(),
-                };
-                html += &format!(
-                    "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
-                    link,
-                    result.result(),
-                    result.message()
-                );
-            }
-            html += "</tbody></table></p></div></div>";
-        }
-
+        html += &Self::build_statistics_table(&statistics);
+        html += &Self::build_problems_table(&problems, &state.wiki_page_pattern);
         html += "</body></html>";
         Html(html)
     }
