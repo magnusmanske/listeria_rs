@@ -1,3 +1,5 @@
+//! Represents a page queued for processing.
+
 use mysql_async::from_row;
 
 #[derive(Debug, Clone, Default)]

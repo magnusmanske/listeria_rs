@@ -1,3 +1,5 @@
+//! CLI command implementations for the bot's operation modes.
+
 use crate::wiki_page_result::WikiPageResult;
 use crate::{
     configuration::Configuration, entity_container_wrapper::EntityContainerWrapper,
@@ -32,6 +34,7 @@ pub struct MainCommands {
 }
 
 impl MainCommands {
+    /// Processes a single page and updates it with generated list content.
     async fn update_page(&self, page_title: &str, api_url: &str) -> Result<String> {
         let mut mw_api = wikimisc::mediawiki::api::Api::new(api_url).await?;
         mw_api.set_oauth2(self.config.oauth2_token());
@@ -58,6 +61,7 @@ impl MainCommands {
         }
     }
 
+    /// Updates the wiki list in the database and processes all queued pages.
     pub async fn update_wikis(&self) -> Result<()> {
         let wiki_list = WikiApis::new(self.config.clone()).await?;
         wiki_list.update_wiki_list_in_database().await?;

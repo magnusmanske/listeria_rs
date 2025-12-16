@@ -1,3 +1,5 @@
+//! CLI entry point for the Listeria bot.
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use listeria::{configuration::Configuration, main_commands::MainCommands};

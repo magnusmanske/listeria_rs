@@ -1,3 +1,5 @@
+//! Table cells composed of parts with optional references.
+
 use crate::column::{Column, ColumnType};
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;

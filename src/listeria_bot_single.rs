@@ -1,3 +1,5 @@
+//! Single-wiki bot implementation for dedicated wiki installations.
+
 use crate::configuration::Configuration;
 use crate::listeria_bot::ListeriaBot;
 use crate::listeria_bot_wiki::ListeriaBotWiki;

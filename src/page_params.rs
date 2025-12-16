@@ -1,3 +1,5 @@
+//! Page-level parameter handling and API resolution.
+
 use crate::{ApiArc, configuration::Configuration};
 use anyhow::Result;
 use std::sync::Arc;

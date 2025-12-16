@@ -1,3 +1,7 @@
+//! Result processing and entity resolution.
+//!
+//! Transforms SPARQL results into structured data with resolved entities and references.
+
 use crate::listeria_list::ListeriaList;
 use crate::result_cell::ResultCell;
 use crate::result_cell_part::{LinkTarget, ResultCellPart};

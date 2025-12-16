@@ -1,3 +1,7 @@
+//! Core list processing logic.
+//!
+//! Handles the full pipeline from SPARQL query execution to rendered output.
+
 use crate::column::{Column, ColumnType};
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::list_processor::ListProcessor;
@@ -87,6 +91,7 @@ impl ListeriaList {
         }
     }
 
+    /// Main processing pipeline: parses template, runs SPARQL query, and generates results.
     pub async fn process(&mut self) -> Result<()> {
         self.profile("START list::process");
         self.process_template()?;

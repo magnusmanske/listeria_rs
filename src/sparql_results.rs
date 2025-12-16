@@ -1,3 +1,5 @@
+//! SPARQL query execution with retry logic and rate limiting.
+
 use anyhow::{Result, anyhow};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Semaphore;
@@ -42,6 +44,7 @@ impl SparqlResults {
         self.simulate = simulate;
     }
 
+    /// Executes a SPARQL query with template expansion and retry logic.
     pub async fn run_query(&mut self, mut sparql: String) -> Result<SparqlTable> {
         self.expand_sparql_templates(&mut sparql).await?;
 

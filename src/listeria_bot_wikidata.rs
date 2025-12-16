@@ -1,3 +1,5 @@
+//! Multi-wiki bot that processes Listeria templates across Wikimedia wikis.
+
 use crate::configuration::Configuration;
 use crate::listeria_bot::ListeriaBot;
 use crate::listeria_bot_wiki::ListeriaBotWiki;

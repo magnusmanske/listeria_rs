@@ -1,3 +1,5 @@
+//! MediaWiki API management and connection pooling for multiple wikis.
+
 use crate::ApiArc;
 use crate::configuration::Configuration;
 use crate::database_pool::DatabasePool;
@@ -345,7 +347,11 @@ impl WikiApis {
         let port: u16 = if host == "127.0.0.1" {
             3307
         } else {
-            self.config.mysql("port").as_u64().unwrap_or(3306) as u16
+            self.config
+                .mysql("port")
+                .as_u64()
+                .and_then(|u| u.try_into().ok())
+                .unwrap_or(3306)
         };
         let opts = OptsBuilder::default()
             .ip_or_hostname(host)
