@@ -19,6 +19,16 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
+    /// Helper method to extract and transform a capture group
+    fn extract_capture<F>(caps: &regex::Captures, index: usize, transform: F) -> String
+    where
+        F: Fn(&str) -> String,
+    {
+        caps.get(index)
+            .map(|m| transform(m.as_str()))
+            .unwrap_or_default()
+    }
+
     #[must_use]
     pub fn new(s: &str) -> Self {
         lazy_static! {
@@ -49,55 +59,29 @@ impl ColumnType {
             _ => {}
         }
         if let Some(caps) = RE_LABEL_LANG.captures(s) {
-            let ret = caps
-                .get(1)
-                .map(|s2| s2.as_str().to_lowercase())
-                .unwrap_or_default();
-            return ColumnType::LabelLang(ret);
+            return ColumnType::LabelLang(Self::extract_capture(&caps, 1, |t| t.to_lowercase()));
         }
         if let Some(caps) = RE_ALIAS_LANG.captures(s) {
-            let ret = caps
-                .get(1)
-                .map(|s2| s2.as_str().to_lowercase())
-                .unwrap_or_default();
-            return ColumnType::AliasLang(ret);
+            return ColumnType::AliasLang(Self::extract_capture(&caps, 1, |t| t.to_lowercase()));
         }
         if let Some(caps) = RE_PROPERTY.captures(s) {
-            let ret = caps
-                .get(1)
-                .map(|s2| s2.as_str().to_uppercase())
-                .unwrap_or_default();
-            return ColumnType::Property(ret);
+            return ColumnType::Property(Self::extract_capture(&caps, 1, |t| t.to_uppercase()));
         }
         if let Some(caps) = RE_PROP_QUAL.captures(s) {
             return ColumnType::PropertyQualifier((
-                caps.get(1)
-                    .map(|s2| s2.as_str().to_uppercase())
-                    .unwrap_or_default(),
-                caps.get(2)
-                    .map(|s2| s2.as_str().to_uppercase())
-                    .unwrap_or_default(),
+                Self::extract_capture(&caps, 1, |t| t.to_uppercase()),
+                Self::extract_capture(&caps, 2, |t| t.to_uppercase()),
             ));
         }
         if let Some(caps) = RE_PROP_QUAL_VAL.captures(s) {
             return ColumnType::PropertyQualifierValue((
-                caps.get(1)
-                    .map(|s2| s2.as_str().to_uppercase())
-                    .unwrap_or_default(),
-                caps.get(2)
-                    .map(|s2| s2.as_str().to_uppercase())
-                    .unwrap_or_default(),
-                caps.get(3)
-                    .map(|s2| s2.as_str().to_uppercase())
-                    .unwrap_or_default(),
+                Self::extract_capture(&caps, 1, |t| t.to_uppercase()),
+                Self::extract_capture(&caps, 2, |t| t.to_uppercase()),
+                Self::extract_capture(&caps, 3, |t| t.to_uppercase()),
             ));
         }
         if let Some(caps) = RE_FIELD.captures(s) {
-            let ret = caps
-                .get(1)
-                .map(|s2| s2.as_str().to_uppercase())
-                .unwrap_or_default();
-            return ColumnType::Field(ret);
+            return ColumnType::Field(Self::extract_capture(&caps, 1, |t| t.to_uppercase()));
         }
         ColumnType::Unknown
     }

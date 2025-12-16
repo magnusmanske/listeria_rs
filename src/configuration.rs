@@ -220,17 +220,25 @@ impl Configuration {
         self.shadow_images_check.contains(wiki)
     }
 
-    pub fn get_local_template_title_start(&self, wiki: &str) -> Result<String> {
-        let template = self
-            .template_start_sites
+    /// Helper method to extract template title from a template map
+    fn get_local_template_title(
+        template_map: &HashMap<String, String>,
+        wiki: &str,
+        template_type: &str,
+    ) -> Result<String> {
+        let template = template_map
             .get(wiki)
-            .ok_or_else(|| anyhow!("Cannot find local start template"))?;
+            .ok_or_else(|| anyhow!("Cannot find local {template_type} template"))?;
 
         template
             .split(':')
             .next_back()
             .map(|s| s.to_string())
             .ok_or_else(|| anyhow!("Invalid template format"))
+    }
+
+    pub fn get_local_template_title_start(&self, wiki: &str) -> Result<String> {
+        Self::get_local_template_title(&self.template_start_sites, wiki, "start")
     }
 
     pub fn main_item_prefix(&self) -> String {
@@ -246,16 +254,7 @@ impl Configuration {
     }
 
     pub fn get_local_template_title_end(&self, wiki: &str) -> Result<String> {
-        let template = self
-            .template_end_sites
-            .get(wiki)
-            .ok_or_else(|| anyhow!("Cannot find local end template"))?;
-
-        template
-            .split(':')
-            .next_back()
-            .map(|s| s.to_string())
-            .ok_or_else(|| anyhow!("Invalid template format"))
+        Self::get_local_template_title(&self.template_end_sites, wiki, "end")
     }
 
     pub fn can_edit_namespace(&self, wiki: &str, nsid: i64) -> bool {

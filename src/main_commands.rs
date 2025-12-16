@@ -257,10 +257,10 @@ impl MainCommands {
             .layer(CompressionLayer::new())
             .with_state(state);
 
-        let address = [0, 0, 0, 0]; // TODOO env::var("AC2WD_ADDRESS")
+        let address = [0, 0, 0, 0];
 
         let addr = SocketAddr::from((address, port));
-        tracing::debug!("listening on {}", addr);
+        println!("listening on http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr)
             .await
             .expect("Could not create listener");
