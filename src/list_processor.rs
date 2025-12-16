@@ -175,20 +175,7 @@ impl ListProcessor {
             return Ok(());
         }
 
-        let wiki = list.wiki().to_string();
-        let ecw = list.ecw().clone();
-
-        // First pass: collect entity IDs and check sitelinks
-        let mut keep_flags = Vec::new();
-        for row in list.results().iter() {
-            let keep = ecw.get_entity(row.entity_id()).await.is_some_and(|entity| {
-                entity
-                    .sitelinks()
-                    .as_ref()
-                    .is_none_or(|sl| !sl.iter().any(|s| *s.site() == wiki))
-            });
-            keep_flags.push(keep);
-        }
+        let keep_flags = Self::find_keep_flags(list).await;
 
         // Second pass: set keep flags
         for (row, keep) in list.results_mut().iter_mut().zip(keep_flags) {
@@ -489,23 +476,8 @@ impl ListProcessor {
             return Ok(());
         }
 
-        let mut entity_ids = HashSet::new();
-        for row in list.results().iter() {
-            row.cells().iter().for_each(|cell| {
-                cell.parts().iter().for_each(|part| {
-                    if let ResultCellPart::Location((_lat, _lon, _region)) = part.part() {
-                        entity_ids.insert(row.entity_id().to_string());
-                    }
-                });
-            });
-        }
-
-        let mut entity_id2region = HashMap::new();
-        for entity_id in entity_ids {
-            if let Some(region) = Self::get_region_for_entity_id(list, &entity_id).await {
-                entity_id2region.insert(entity_id, region);
-            }
-        }
+        let entity_ids = Self::process_regions_get_entity_ids(list);
+        let entity_id2region = Self::process_regions_get_eneity_id2region(list, entity_ids).await;
 
         for row in list.results_mut().iter_mut() {
             let the_region = match entity_id2region.get(row.entity_id()) {
@@ -629,6 +601,51 @@ impl ListProcessor {
             }
         }
         Ok(autodescs)
+    }
+
+    async fn find_keep_flags(list: &mut ListeriaList) -> Vec<bool> {
+        let wiki = list.wiki().to_string();
+        let ecw = list.ecw().clone();
+
+        // First pass: collect entity IDs and check sitelinks
+        let mut keep_flags = Vec::new();
+        for row in list.results().iter() {
+            let keep = ecw.get_entity(row.entity_id()).await.is_some_and(|entity| {
+                entity
+                    .sitelinks()
+                    .as_ref()
+                    .is_none_or(|sl| !sl.iter().any(|s| *s.site() == wiki))
+            });
+            keep_flags.push(keep);
+        }
+        keep_flags
+    }
+
+    fn process_regions_get_entity_ids(list: &mut ListeriaList) -> HashSet<String> {
+        let mut entity_ids = HashSet::new();
+        for row in list.results().iter() {
+            row.cells().iter().for_each(|cell| {
+                cell.parts().iter().for_each(|part| {
+                    if let ResultCellPart::Location((_lat, _lon, _region)) = part.part() {
+                        entity_ids.insert(row.entity_id().to_string());
+                    }
+                });
+            });
+        }
+        entity_ids
+    }
+
+    async fn process_regions_get_eneity_id2region(
+        list: &mut ListeriaList,
+        entity_ids: HashSet<String>,
+    ) -> HashMap<String, String> {
+        let mut entity_id2region = HashMap::new();
+        for entity_id in entity_ids {
+            if let Some(region) = Self::get_region_for_entity_id(list, &entity_id).await {
+                entity_id2region.insert(entity_id, region);
+            }
+        }
+        entity_id2region
     }
 }
 
