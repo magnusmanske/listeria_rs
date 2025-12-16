@@ -503,23 +503,8 @@ impl ListProcessor {
     }
 
     pub async fn process_reference_items(list: &mut ListeriaList) -> Result<()> {
-        let mut items_to_load: Vec<String> = vec![];
-        for row in list.results_mut().iter_mut() {
-            for cell in row.cells_mut().iter_mut() {
-                for part_with_reference in cell.parts_mut().iter_mut() {
-                    if let Some(references) = part_with_reference.references() {
-                        for reference in references.iter() {
-                            if let Some(stated_in) = &reference.stated_in() {
-                                items_to_load.push(stated_in.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let items_to_load = Self::collect_stated_in_items_from_references(list);
         if !items_to_load.is_empty() {
-            items_to_load.sort_unstable();
-            items_to_load.dedup();
             list.ecw()
                 .load_entities(list.wb_api(), &items_to_load)
                 .await?;
@@ -527,37 +512,76 @@ impl ListProcessor {
         Ok(())
     }
 
+    fn collect_stated_in_items_from_references(list: &mut ListeriaList) -> Vec<String> {
+        let mut items_to_load: Vec<String> = vec![];
+        for row in list.results_mut().iter_mut() {
+            for cell in row.cells_mut().iter_mut() {
+                for part_with_reference in cell.parts_mut().iter_mut() {
+                    Self::collect_stated_in_from_part(part_with_reference, &mut items_to_load);
+                }
+            }
+        }
+        items_to_load.sort_unstable();
+        items_to_load.dedup();
+        items_to_load
+    }
+
+    fn collect_stated_in_from_part(
+        part: &crate::result_cell_part::PartWithReference,
+        items_to_load: &mut Vec<String>,
+    ) {
+        if let Some(references) = part.references() {
+            for reference in references.iter() {
+                if let Some(stated_in) = reference.stated_in() {
+                    items_to_load.push(stated_in.to_string());
+                }
+            }
+        }
+    }
+
     pub async fn fix_local_links(list: &mut ListeriaList) -> Result<()> {
-        // Set the is_category flag
         let mw_api = list.mw_api();
         for row in list.results_mut().iter_mut() {
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
-                    if let ResultCellPart::LocalLink((page, _label, link_target)) = part.part_mut()
-                    {
-                        let title = wikimisc::mediawiki::title::Title::new_from_full(page, &mw_api);
-                        *link_target = match title.namespace_id() {
-                            14 => LinkTarget::Category,
-                            _ => LinkTarget::Page,
-                        }
-                    } else if let ResultCellPart::SnakList(v) = part.part_mut() {
-                        for subpart in v.iter_mut() {
-                            if let ResultCellPart::LocalLink((page, _label, link_target)) =
-                                subpart.part_mut()
-                            {
-                                let title =
-                                    wikimisc::mediawiki::title::Title::new_from_full(page, &mw_api);
-                                *link_target = match title.namespace_id() {
-                                    14 => LinkTarget::Category,
-                                    _ => LinkTarget::Page,
-                                }
-                            }
-                        }
-                    }
+                    Self::fix_local_link_in_part(part, &mw_api);
                 }
             }
         }
         Ok(())
+    }
+
+    fn fix_local_link_in_part(
+        part: &mut crate::result_cell_part::PartWithReference,
+        mw_api: &wikimisc::mediawiki::api::Api,
+    ) {
+        match part.part_mut() {
+            ResultCellPart::LocalLink((page, _label, link_target)) => {
+                Self::set_link_target_from_page(page, link_target, mw_api);
+            }
+            ResultCellPart::SnakList(v) => {
+                for subpart in v.iter_mut() {
+                    if let ResultCellPart::LocalLink((page, _label, link_target)) =
+                        subpart.part_mut()
+                    {
+                        Self::set_link_target_from_page(page, link_target, mw_api);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn set_link_target_from_page(
+        page: &str,
+        link_target: &mut LinkTarget,
+        mw_api: &wikimisc::mediawiki::api::Api,
+    ) {
+        let title = wikimisc::mediawiki::title::Title::new_from_full(page, mw_api);
+        *link_target = match title.namespace_id() {
+            14 => LinkTarget::Category,
+            _ => LinkTarget::Page,
+        };
     }
 
     pub async fn fill_autodesc(list: &mut ListeriaList) -> Result<()> {
@@ -589,21 +613,37 @@ impl ListProcessor {
     async fn fill_autodesc_gather_descriptions(
         list: &mut ListeriaList,
     ) -> Result<HashMap<String, String>> {
-        let mut autodescs = HashMap::new();
+        let entity_ids = Self::collect_autodesc_entity_ids(list);
+        Self::load_and_get_descriptions(list, entity_ids).await
+    }
+
+    fn collect_autodesc_entity_ids(list: &ListeriaList) -> Vec<String> {
+        let mut entity_ids = Vec::new();
         for row in list.results().iter() {
             for cell in row.cells() {
                 for part_with_reference in cell.parts() {
                     if let ResultCellPart::AutoDesc(ad) = part_with_reference.part() {
-                        list.ecw()
-                            .load_entities(list.wb_api(), &[ad.entity_id().to_owned()])
-                            .await?;
-                        if let Some(entity) = list.ecw().get_entity(ad.entity_id()).await
-                            && let Ok(desc) = list.get_autodesc_description(&entity).await
-                        {
-                            autodescs.insert(ad.entity_id().to_owned(), desc);
-                        }
+                        entity_ids.push(ad.entity_id().to_owned());
                     }
                 }
+            }
+        }
+        entity_ids
+    }
+
+    async fn load_and_get_descriptions(
+        list: &mut ListeriaList,
+        entity_ids: Vec<String>,
+    ) -> Result<HashMap<String, String>> {
+        let mut autodescs = HashMap::new();
+        for entity_id in entity_ids {
+            list.ecw()
+                .load_entities(list.wb_api(), std::slice::from_ref(&entity_id))
+                .await?;
+            if let Some(entity) = list.ecw().get_entity(&entity_id).await
+                && let Ok(desc) = list.get_autodesc_description(&entity).await
+            {
+                autodescs.insert(entity_id, desc);
             }
         }
         Ok(autodescs)
