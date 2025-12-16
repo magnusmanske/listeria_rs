@@ -58,37 +58,45 @@ impl WikiApis {
             .map(|ret| (*ret).clone())
     }
 
+    async fn wait_with_condition<F>(&self, mut condition: F, message: String)
+    where
+        F: FnMut() -> bool,
+    {
+        while condition() {
+            sleep(Duration::from_millis(100)).await;
+            println!("{message}");
+        }
+    }
+
     async fn wait_for_wiki_apis(&self, api: &ApiArc) {
         // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
         // See https://phabricator.wikimedia.org/T356160
         if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
-            while Arc::strong_count(api) >= *max {
-                sleep(Duration::from_millis(100)).await;
-                // warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
-                println!(
-                    "WikiApis::wait_for_wiki_apis: sleeping because per-wiki limit {max} was reached"
-                );
-            }
+            let max = *max;
+            let api = Arc::clone(api);
+            self.wait_with_condition(
+                move || Arc::strong_count(&api) >= max,
+                format!("WikiApis::wait_for_wiki_apis: sleeping because per-wiki limit {max} was reached"),
+            )
+            .await;
         }
     }
 
     async fn wait_for_max_mw_apis_total(&self) {
         if let Some(max) = self.config.get_max_mw_apis_total() {
-            loop {
-                let current_strong_locks: usize = self
-                    .apis
-                    .iter()
-                    .map(|entry| Arc::strong_count(entry.value()))
-                    .sum();
-                if current_strong_locks < *max {
-                    break;
-                }
-                sleep(Duration::from_millis(100)).await;
-                // warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
-                println!(
-                    "WikiApis::wait_for_max_mw_apis_total: sleeping because total limit {max} was reached"
-                );
-            }
+            let max = *max;
+            self.wait_with_condition(
+                || {
+                    let current_strong_locks: usize = self
+                        .apis
+                        .iter()
+                        .map(|entry| Arc::strong_count(entry.value()))
+                        .sum();
+                    current_strong_locks >= max
+                },
+                format!("WikiApis::wait_for_max_mw_apis_total: sleeping because total limit {max} was reached"),
+            )
+            .await;
         }
     }
 
@@ -310,22 +318,23 @@ impl WikiApis {
             .ok_or_else(|| anyhow!("Wiki {wiki} not known"))
     }
 
+    /// Helper method to extract a string value from MySQL configuration
+    fn get_mysql_config_string(&self, key: &str) -> Result<String> {
+        self.config
+            .mysql(key)
+            .as_str()
+            .ok_or_else(|| anyhow!("No MySQL {key} set"))
+            .map(|s| s.to_string())
+    }
+
     /// Returns the database connection settings for a given wiki
     fn get_mysql_user(&self) -> Result<String> {
-        self.config
-            .mysql("user")
-            .as_str()
-            .ok_or_else(|| anyhow!("No MySQL user set"))
-            .map(|s| s.to_string())
+        self.get_mysql_config_string("user")
     }
 
     /// Returns the MySQL password from the configuration
     fn get_mysql_password(&self) -> Result<String> {
-        self.config
-            .mysql("password")
-            .as_str()
-            .ok_or_else(|| anyhow!("No MySQL password set"))
-            .map(|s| s.to_string())
+        self.get_mysql_config_string("password")
     }
 
     /// Returns the database connection settings for a given wiki
