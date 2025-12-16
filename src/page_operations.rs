@@ -176,7 +176,8 @@ mod tests {
     async fn test_load_page_as_wikitext_with_simulation() {
         let mut page = create_test_page().await;
         // Set up simulation with some test text
-        page.do_simulate(Some("Test wikitext content".to_string()), None, None);
+        page.do_simulate(Some("Test wikitext content".to_string()), None, None)
+            .unwrap();
 
         // This should work with simulated text
         let result = PageOperations::load_page_as(&page, "wikitext").await;
@@ -188,7 +189,8 @@ mod tests {
     #[tokio::test]
     async fn test_purge_page_with_simulation() {
         let mut page = create_test_page().await;
-        page.do_simulate(Some("Test".to_string()), None, None);
+        page.do_simulate(Some("Test".to_string()), None, None)
+            .unwrap();
 
         // Purge should succeed in simulation mode without making actual API calls
         let result = PageOperations::purge_page(&page).await;
@@ -207,7 +209,8 @@ mod tests {
     #[tokio::test]
     async fn test_load_page_with_simulation() {
         let mut page = create_test_page().await;
-        page.do_simulate(Some("{{Wikidata list}}".to_string()), None, None);
+        page.do_simulate(Some("{{Wikidata list}}".to_string()), None, None)
+            .unwrap();
 
         // This should attempt to load and parse the page
         let result = PageOperations::load_page(&mut page).await;

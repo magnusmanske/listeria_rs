@@ -46,22 +46,16 @@ impl ListeriaPage {
         self.page_params.wiki()
     }
 
-    /// # Panics
-    /// Panics if the page parameters are not mutably accessible.
     pub fn do_simulate(
         &mut self,
         text: Option<String>,
         sparql_results: Option<String>,
         autodesc: Option<Vec<String>>,
-    ) {
-        match Arc::get_mut(&mut self.page_params) {
-            Some(pp) => {
-                pp.set_simulation(text, sparql_results, autodesc);
-            }
-            None => {
-                panic!("Cannot simulate")
-            }
-        }
+    ) -> Result<()> {
+        Arc::get_mut(&mut self.page_params)
+            .ok_or(anyhow!("Cannot simulate"))?
+            .set_simulation(text, sparql_results, autodesc);
+        Ok(())
     }
 
     pub fn page_params(&self) -> Arc<PageParams> {
@@ -233,7 +227,8 @@ mod tests {
             data.get("SPARQL_RESULTS").map(|s| s.to_string()),
             data.get("AUTODESC")
                 .map(|s| s.split('\n').map(|s| s.to_string()).collect()),
-        );
+        )
+        .unwrap();
         page.run().await.unwrap();
         let wt = page.as_wikitext().await.unwrap();
         let wt = wt.join("\n\n----\n\n");
@@ -471,7 +466,8 @@ mod tests {
             data.get("WIKITEXT").map(|s| s.to_string()),
             data.get("SPARQL_RESULTS").map(|s| s.to_string()),
             None,
-        );
+        )
+        .unwrap();
         page.run().await.unwrap();
         let wikitext = page
             .load_page_as("wikitext")
