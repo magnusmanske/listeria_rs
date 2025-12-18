@@ -1,9 +1,7 @@
 //! Wrapper for entity container with caching and batch loading.
 
 use crate::listeria_list::ListeriaList;
-use crate::result_cell_part::LinkTarget;
-use crate::result_cell_part::PartWithReference;
-use crate::result_cell_part::ResultCellPart;
+use crate::result_cell_part::{LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart};
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{Result, anyhow};
@@ -206,7 +204,11 @@ impl EntityContainerWrapper {
             .await
             .unwrap_or_else(|| page.to_string());
 
-        Some(ResultCellPart::LocalLink((page, label, LinkTarget::Page)))
+        Some(ResultCellPart::LocalLink(LocalLinkInfo::new(
+            page,
+            label,
+            LinkTarget::Page,
+        )))
     }
 
     pub async fn get_result_row(
@@ -277,11 +279,11 @@ impl EntityContainerWrapper {
         let mut entities_to_load = vec![];
         for part_with_reference in parts {
             match part_with_reference.part() {
-                ResultCellPart::Entity((item, true)) => {
-                    entities_to_load.push(item.to_owned());
+                ResultCellPart::Entity(entity_info) if entity_info.try_localize => {
+                    entities_to_load.push(entity_info.id.to_owned());
                 }
-                ResultCellPart::ExternalId((property, _id)) => {
-                    entities_to_load.push(property.to_owned());
+                ResultCellPart::ExternalId(ext_id_info) => {
+                    entities_to_load.push(ext_id_info.property.to_owned());
                 }
                 ResultCellPart::SnakList(v) => Self::gather_entities_and_external_properties(v)
                     .iter()

@@ -198,9 +198,10 @@ impl ListProcessor {
         for row in list.results().iter() {
             row.cells().iter().for_each(|cell| {
                 cell.parts().iter().for_each(|part| {
-                    if let ResultCellPart::Entity((id, true)) = part.part() {
-                        // _try_localize ?
-                        ids.push(id.to_owned());
+                    if let ResultCellPart::Entity(entity_info) = part.part()
+                        && entity_info.try_localize
+                    {
+                        ids.push(entity_info.id.to_owned());
                     }
                 });
             });
@@ -501,8 +502,8 @@ impl ListProcessor {
             };
             for cell in row.cells_mut().iter_mut() {
                 for part in cell.parts_mut().iter_mut() {
-                    if let ResultCellPart::Location((_lat, _lon, region)) = part.part_mut() {
-                        *region = Some(the_region.clone());
+                    if let ResultCellPart::Location(loc_info) = part.part_mut() {
+                        loc_info.region = Some(the_region.clone());
                     }
                 }
             }
@@ -565,15 +566,17 @@ impl ListProcessor {
         mw_api: &wikimisc::mediawiki::api::Api,
     ) {
         match part.part_mut() {
-            ResultCellPart::LocalLink((page, _label, link_target)) => {
-                Self::set_link_target_from_page(page, link_target, mw_api);
+            ResultCellPart::LocalLink(link_info) => {
+                Self::set_link_target_from_page(&link_info.page, &mut link_info.target, mw_api);
             }
             ResultCellPart::SnakList(v) => {
                 for subpart in v.iter_mut() {
-                    if let ResultCellPart::LocalLink((page, _label, link_target)) =
-                        subpart.part_mut()
-                    {
-                        Self::set_link_target_from_page(page, link_target, mw_api);
+                    if let ResultCellPart::LocalLink(link_info) = subpart.part_mut() {
+                        Self::set_link_target_from_page(
+                            &link_info.page,
+                            &mut link_info.target,
+                            mw_api,
+                        );
                     }
                 }
             }
@@ -681,7 +684,7 @@ impl ListProcessor {
         for row in list.results().iter() {
             row.cells().iter().for_each(|cell| {
                 cell.parts().iter().for_each(|part| {
-                    if let ResultCellPart::Location((_lat, _lon, _region)) = part.part() {
+                    if let ResultCellPart::Location(_loc_info) = part.part() {
                         entity_ids.insert(row.entity_id().to_string());
                     }
                 });

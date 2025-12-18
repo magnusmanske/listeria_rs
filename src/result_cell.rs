@@ -4,7 +4,9 @@ use crate::column::{Column, ColumnType};
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
-use crate::result_cell_part::{AutoDesc, LinkTarget, PartWithReference, ResultCellPart};
+use crate::result_cell_part::{
+    AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart,
+};
 use crate::template_params::ReferencesParameter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -125,13 +127,13 @@ impl ResultCell {
     pub fn get_sortkey(&self) -> String {
         match self.parts.first() {
             Some(part_with_reference) => match part_with_reference.part() {
-                ResultCellPart::Entity((id, _)) => id.to_owned(),
-                ResultCellPart::LocalLink((page, _label, _)) => page.to_owned(),
+                ResultCellPart::Entity(entity_info) => entity_info.id.to_owned(),
+                ResultCellPart::LocalLink(link_info) => link_info.page.to_owned(),
                 ResultCellPart::Time(time) => time.to_owned(),
                 ResultCellPart::File(s) => s.to_owned(),
                 ResultCellPart::Uri(s) => s.to_owned(),
                 ResultCellPart::Text(s) => s.to_owned(),
-                ResultCellPart::ExternalId((_prop, id)) => id.to_owned(),
+                ResultCellPart::ExternalId(ext_id_info) => ext_id_info.id.to_owned(),
                 _ => String::new(),
             },
             None => String::new(),
@@ -236,13 +238,17 @@ impl ResultCell {
             match local_page {
                 Some(page) => {
                     ret.parts.push(PartWithReference::new(
-                        ResultCellPart::LocalLink((page, label, LinkTarget::Page)),
+                        ResultCellPart::LocalLink(LocalLinkInfo::new(
+                            page,
+                            label,
+                            LinkTarget::Page,
+                        )),
                         None,
                     ));
                 }
                 None => {
                     ret.parts.push(PartWithReference::new(
-                        ResultCellPart::Entity((entity_id.to_string(), true)),
+                        ResultCellPart::Entity(EntityInfo::new(entity_id.to_string(), true)),
                         None,
                     ));
                 }
@@ -412,7 +418,7 @@ impl ResultCell {
 
     fn ct_item(ret: &mut ResultCell, entity_id: &str) {
         ret.parts.push(PartWithReference::new(
-            ResultCellPart::Entity((entity_id.to_owned(), false)),
+            ResultCellPart::Entity(EntityInfo::new(entity_id.to_owned(), false)),
             None,
         ));
     }

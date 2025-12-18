@@ -61,7 +61,6 @@ impl PartWithReference {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AutoDesc {
-    // entity: Entity,
     entity_id: String,
     desc: Option<String>,
 }
@@ -96,16 +95,78 @@ pub enum LinkTarget {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EntityInfo {
+    pub id: String,
+    pub try_localize: bool,
+}
+
+impl EntityInfo {
+    #[must_use]
+    pub const fn new(id: String, try_localize: bool) -> Self {
+        Self { id, try_localize }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LocalLinkInfo {
+    pub page: String,
+    pub label: String,
+    pub target: LinkTarget,
+}
+
+impl LocalLinkInfo {
+    #[must_use]
+    pub const fn new(page: String, label: String, target: LinkTarget) -> Self {
+        Self {
+            page,
+            label,
+            target,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LocationInfo {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub region: Option<String>,
+}
+
+impl LocationInfo {
+    #[must_use]
+    pub const fn new(latitude: f64, longitude: f64, region: Option<String>) -> Self {
+        Self {
+            latitude,
+            longitude,
+            region,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExternalIdInfo {
+    pub property: String,
+    pub id: String,
+}
+
+impl ExternalIdInfo {
+    #[must_use]
+    pub const fn new(property: String, id: String) -> Self {
+        Self { property, id }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ResultCellPart {
     Number,
-    Entity((String, bool)),                  // ID, try_localize
-    EntitySchema(String),                    // ID
-    LocalLink((String, String, LinkTarget)), // Page, label, LinkTarget
+    Entity(EntityInfo),
+    EntitySchema(String),
+    LocalLink(LocalLinkInfo),
     Time(String),
-    Location((f64, f64, Option<String>)),
+    Location(LocationInfo),
     File(String),
     Uri(String),
-    ExternalId((String, String)), // Property, ID
+    ExternalId(ExternalIdInfo),
     Text(String),
     SnakList(Vec<PartWithReference>), // PP and PQP
     AutoDesc(AutoDesc),
@@ -114,11 +175,13 @@ pub enum ResultCellPart {
 impl ResultCellPart {
     pub fn from_sparql_value(v: &SparqlValue) -> Self {
         match v {
-            SparqlValue::Entity(x) => ResultCellPart::Entity((x.to_owned(), true)),
+            SparqlValue::Entity(x) => ResultCellPart::Entity(EntityInfo::new(x.to_owned(), true)),
             SparqlValue::File(x) => ResultCellPart::File(x.to_owned()),
             SparqlValue::Uri(x) => ResultCellPart::Uri(x.to_owned()),
             SparqlValue::Time(x) => ResultCellPart::Text(x.to_owned()),
-            SparqlValue::Location(x) => ResultCellPart::Location((x.lat, x.lon, None)),
+            SparqlValue::Location(x) => {
+                ResultCellPart::Location(LocationInfo::new(x.lat, x.lon, None))
+            }
             SparqlValue::Literal(x) => ResultCellPart::Text(x.to_owned()),
         }
     }
@@ -131,8 +194,11 @@ impl ResultCellPart {
         language: &str,
     ) {
         match self {
-            ResultCellPart::Entity((item, true)) => {
-                if let Some(ll) = ecw.entity_to_local_link(item, wiki, language).await {
+            ResultCellPart::Entity(entity_info) if entity_info.try_localize => {
+                if let Some(ll) = ecw
+                    .entity_to_local_link(&entity_info.id, wiki, language)
+                    .await
+                {
                     *self = ll;
                 };
             }
@@ -151,12 +217,15 @@ impl ResultCellPart {
     pub fn from_snak(snak: &Snak) -> Self {
         match &snak.data_value() {
             Some(dv) => match dv.value() {
-                Value::Entity(v) => ResultCellPart::Entity((v.id().to_string(), true)),
+                Value::Entity(v) => {
+                    ResultCellPart::Entity(EntityInfo::new(v.id().to_string(), true))
+                }
                 Value::StringValue(v) => match snak.datatype() {
                     SnakDataType::CommonsMedia => ResultCellPart::File(v.to_string()),
-                    SnakDataType::ExternalId => {
-                        ResultCellPart::ExternalId((snak.property().to_string(), v.to_string()))
-                    }
+                    SnakDataType::ExternalId => ResultCellPart::ExternalId(ExternalIdInfo::new(
+                        snak.property().to_string(),
+                        v.to_string(),
+                    )),
                     _ => ResultCellPart::Text(v.to_string()),
                 },
                 Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
@@ -165,7 +234,7 @@ impl ResultCellPart {
                     None => ResultCellPart::Text("No/unknown value".to_string()),
                 },
                 Value::Coordinate(v) => {
-                    ResultCellPart::Location((*v.latitude(), *v.longitude(), None))
+                    ResultCellPart::Location(LocationInfo::new(*v.latitude(), *v.longitude(), None))
                 }
                 Value::MonoLingual(v) => {
                     ResultCellPart::Text(v.language().to_string() + ":" + v.text())
@@ -324,24 +393,31 @@ impl ResultCellPart {
     pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         match self {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
-            ResultCellPart::Entity((id, try_localize)) => {
-                self.as_wikitext_entity(list, id, *try_localize, colnum)
+            ResultCellPart::Entity(entity_info) => {
+                self.as_wikitext_entity(list, &entity_info.id, entity_info.try_localize, colnum)
                     .await
             }
             ResultCellPart::EntitySchema(id) => {
                 format!("[[EntitySchema:{id}|{id}]]") // TODO use self.as_wikitext_entity ?
             }
-            ResultCellPart::LocalLink((title, label, link_target)) => {
-                Self::as_wikitext_local_link(list, title, label, link_target)
-            }
+            ResultCellPart::LocalLink(link_info) => Self::as_wikitext_local_link(
+                list,
+                &link_info.page,
+                &link_info.label,
+                &link_info.target,
+            ),
             ResultCellPart::Time(time) => time.to_owned(),
-            ResultCellPart::Location((lat, lon, region)) => {
-                Self::as_wikitext_location(list, *lat, *lon, region, rownum)
-            }
+            ResultCellPart::Location(loc_info) => Self::as_wikitext_location(
+                list,
+                loc_info.latitude,
+                loc_info.longitude,
+                &loc_info.region,
+                rownum,
+            ),
             ResultCellPart::File(file) => Self::as_wikitext_file(list, file),
             ResultCellPart::Uri(url) => url.to_owned(),
-            ResultCellPart::ExternalId((property, id)) => {
-                Self::as_wikitext_external_id(list, property, id).await
+            ResultCellPart::ExternalId(ext_id_info) => {
+                Self::as_wikitext_external_id(list, &ext_id_info.property, &ext_id_info.id).await
             }
             ResultCellPart::Text(text) => Self::as_wikitext_text(list, text, colnum),
             ResultCellPart::SnakList(v) => {
@@ -425,7 +501,10 @@ mod tests {
     fn test_from_sparql_value_entity() {
         let sparql_value = SparqlValue::Entity("Q42".to_string());
         let result = ResultCellPart::from_sparql_value(&sparql_value);
-        assert_eq!(result, ResultCellPart::Entity(("Q42".to_string(), true)));
+        assert_eq!(
+            result,
+            ResultCellPart::Entity(EntityInfo::new("Q42".to_string(), true))
+        );
     }
 
     #[test]
