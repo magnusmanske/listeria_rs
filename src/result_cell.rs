@@ -166,7 +166,7 @@ impl ResultCell {
     }
 
     pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
-        let mut ret = vec![];
+        let mut ret = Vec::with_capacity(self.parts.len());
         for part_with_reference in self.parts.iter() {
             ret.push(
                 part_with_reference
@@ -184,7 +184,7 @@ impl ResultCell {
         rownum: usize,
         colnum: usize,
     ) -> String {
-        let mut parts: Vec<String> = vec![];
+        let mut parts = Vec::with_capacity(self.parts.len());
         for part_with_reference in &mut self.parts {
             parts.push(part_with_reference.as_wikitext(list, rownum, colnum).await);
         }

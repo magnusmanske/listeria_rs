@@ -399,7 +399,7 @@ impl ListeriaList {
     }
 
     pub async fn load_row_entities(&mut self) -> Result<()> {
-        let mut items_to_load = vec![];
+        let mut items_to_load = Vec::with_capacity(self.results.len());
         for (_row_id, row) in self.results_iter() {
             items_to_load.push(row.entity_id().to_string());
         }
