@@ -79,6 +79,7 @@ pub mod result_cell_part;
 pub mod result_generator;
 pub mod result_row;
 pub mod sparql_results;
+pub mod status_server;
 pub mod template;
 pub mod template_params;
 pub mod wiki;
