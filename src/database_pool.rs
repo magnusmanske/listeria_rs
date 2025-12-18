@@ -12,14 +12,9 @@ pub struct DatabasePool {
 impl DatabasePool {
     /// Creates a new connection pool from configuration settings.
     pub fn new(config: &Configuration) -> Result<Self> {
-        let pool = if true {
-            // Use DB connection as defined in the config
-            Pool::new(Self::pool_opts_from_config(config)?)
-        } else {
-            // Use toolforge crate DOES NOT WORK RIGHT NOW
-            Pool::new(Self::pool_opts_from_toolforge(config)?.as_str())
-        };
-        Ok(Self { pool })
+        Ok(Self {
+            pool: Pool::new(Self::pool_opts_from_config(config)?),
+        })
     }
 
     /// Gets a database connection from the pool.
@@ -28,14 +23,15 @@ impl DatabasePool {
         Ok(ret)
     }
 
-    fn pool_opts_from_toolforge(config: &Configuration) -> Result<String> {
-        let schema = config
-            .mysql("schema")
-            .as_str()
-            .ok_or(anyhow!("No schema in config"))?
-            .to_string();
-        Ok(toolforge::db::toolsdb(schema)?.to_string())
-    }
+    // Use toolforge crate, does not work right now
+    // fn pool_opts_from_toolforge(config: &Configuration) -> Result<String> {
+    //     let schema = config
+    //         .mysql("schema")
+    //         .as_str()
+    //         .ok_or(anyhow!("No schema in config"))?
+    //         .to_string();
+    //     Ok(toolforge::db::toolsdb(schema)?.to_string())
+    // }
 
     fn pool_opts_from_config(config: &Configuration) -> Result<OptsBuilder> {
         let host = config
@@ -83,9 +79,5 @@ impl DatabasePool {
             .pool_opts(pool_opts);
 
         Ok(opts)
-    }
-
-    pub async fn destruct(&mut self) {
-        //self.pool.disconnect().await; // TODO
     }
 }

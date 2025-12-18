@@ -2,12 +2,13 @@
 
 use crate::wiki_page_result::WikiPageResult;
 use anyhow::Result;
-use axum::extract::State;
-use axum::{Router, response::Html, routing::get};
-use std::collections::HashMap;
-use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use axum::{Router, extract::State, response::Html, routing::get};
+use std::{
+    collections::HashMap,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use tokio::sync::Mutex;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;

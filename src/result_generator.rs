@@ -1,12 +1,9 @@
 //! Generates result tables from SPARQL query results.
 
-use crate::column_type::ColumnType;
-use crate::listeria_list::ListeriaList;
-use crate::result_row::ResultRow;
+use crate::{column_type::ColumnType, listeria_list::ListeriaList, result_row::ResultRow};
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
-use wikimisc::sparql_table::SparqlTable;
-use wikimisc::sparql_value::SparqlValue;
+use wikimisc::{sparql_table::SparqlTable, sparql_value::SparqlValue};
 
 /// Handles the generation of result rows from SPARQL query results
 #[derive(Debug)]

@@ -1,17 +1,18 @@
 //! Table rows containing cells with formatted data.
 
-use crate::column_type::ColumnType;
-use crate::listeria_list::ListeriaList;
-use crate::result_cell::ResultCell;
-use crate::result_cell_part::ResultCellPart;
+use crate::{
+    column_type::ColumnType, listeria_list::ListeriaList, result_cell::ResultCell,
+    result_cell_part::ResultCellPart,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use wikimisc::sparql_table::SparqlTable;
-use wikimisc::wikibase::entity::EntityTrait;
-use wikimisc::wikibase::{Snak, SnakDataType};
+use wikimisc::{
+    sparql_table::SparqlTable,
+    wikibase::{Snak, SnakDataType, entity::EntityTrait},
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResultRow {

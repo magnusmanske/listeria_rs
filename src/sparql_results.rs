@@ -1,11 +1,10 @@
 //! SPARQL query execution with retry logic and rate limiting.
 
+use crate::page_params::PageParams;
 use anyhow::{Result, anyhow};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Semaphore;
 use wikimisc::{mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable};
-
-use crate::page_params::PageParams;
 
 lazy_static! {
     static ref sparql_request_semaphore: Semaphore = Semaphore::new(3);
