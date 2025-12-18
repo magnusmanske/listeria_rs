@@ -164,8 +164,20 @@ impl RendererTabbedData {
         .map(|x| (x.0.to_string(), x.1.to_string()))
         .collect();
         // No need to check if this is the same as the existing data; MW API will return OK but not actually edit
-        let _result = commons_api.post_query_api_json_mut(&params).await?;
-        // TODO check ["edit"]["result"] == "Success"
+        let result = commons_api.post_query_api_json_mut(&params).await?;
+
+        // Check if the edit was successful
+        if result["edit"]["result"].as_str() != Some("Success") {
+            return Err(anyhow!(
+                "Edit failed: {}",
+                result
+                    .get("error")
+                    .and_then(|e| e.get("info"))
+                    .and_then(|i| i.as_str())
+                    .unwrap_or("Unknown error")
+            ));
+        }
+
         Ok(true) //list.data_has_changed = true; // Just to make sure to update including page
     }
 
