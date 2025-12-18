@@ -220,13 +220,12 @@ impl ListeriaList {
             ("prop", ""),
             ("titles", pages.join("|").as_str()),
         ]
-        .iter()
+        .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
-        let result = match self.page_params.mw_api().get_query_api_json(&params).await {
-            Ok(r) => r,
-            Err(_) => return vec![],
+        let Ok(result) = self.page_params.mw_api().get_query_api_json(&params).await else {
+            return vec![];
         };
 
         let mut normalized: HashMap<String, String> = pages

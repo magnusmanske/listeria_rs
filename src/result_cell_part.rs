@@ -319,13 +319,17 @@ impl ResultCellPart {
         label: &str,
         link_target: &LinkTarget,
     ) -> String {
-        let start = match link_target {
-            LinkTarget::Page => "[[",
-            LinkTarget::Category => "[[:",
+        let start = if matches!(link_target, LinkTarget::Category) {
+            "[[:"
+        } else {
+            "[["
         };
-        if ListeriaList::normalize_page_title(list.page_title()).replace(' ', "_")
-            == ListeriaList::normalize_page_title(title).replace(' ', "_")
-        {
+
+        let normalized_page =
+            ListeriaList::normalize_page_title(list.page_title()).replace(' ', "_");
+        let normalized_title = ListeriaList::normalize_page_title(title).replace(' ', "_");
+
+        if normalized_page == normalized_title {
             label.to_string()
         } else if ListeriaList::normalize_page_title(title)
             == ListeriaList::normalize_page_title(label)
@@ -347,7 +351,7 @@ impl ResultCellPart {
             .results()
             .get(rownum)
             .map(|e| e.entity_id().to_string());
-        list.get_location_template(lat, lon, entity_id, region.to_owned())
+        list.get_location_template(lat, lon, entity_id, region.clone())
     }
 
     fn as_wikitext_file(list: &ListeriaList, file: &str) -> String {
