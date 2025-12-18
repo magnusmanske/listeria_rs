@@ -139,21 +139,75 @@ impl Reference {
         {
             let (date, _) = tv.time().split_at(pos_t);
             let mut date = date.replace('+', "").to_string();
-            if *tv.precision() >= 11 { // Day
-                // Keep
+
+            // Extract year for further processing
+            let year = if let Some(pos) = date.find('-') {
+                date.split_at(pos).0.parse::<i32>().ok()
+            } else {
+                date.parse::<i32>().ok()
+            };
+
+            if *tv.precision() >= 11 {
+                // Day precision - keep full date
             } else if *tv.precision() == 10 {
-                // Month
+                // Month precision - remove day
                 if let Some(pos) = date.rfind('-') {
                     date = date.split_at(pos).0.to_string();
                 }
-            } else if *tv.precision() <= 9 {
-                // Year etc TODO century etc
+            } else if *tv.precision() == 9 {
+                // Year precision - keep only year
+                if let Some(pos) = date.find('-') {
+                    date = date.split_at(pos).0.to_string();
+                }
+            } else if *tv.precision() == 8 {
+                // Decade precision (e.g., "1990s")
+                if let Some(y) = year {
+                    date = format!("{}0s", y / 10);
+                }
+            } else if *tv.precision() == 7 {
+                // Century precision (e.g., "20th century")
+                if let Some(y) = year {
+                    let century = if y > 0 {
+                        (y - 1) / 100 + 1
+                    } else {
+                        y / 100 - 1
+                    };
+                    date = format!("{} century", Self::ordinal_suffix(century));
+                }
+            } else if *tv.precision() == 6 {
+                // Millennium precision (e.g., "3rd millennium")
+                if let Some(y) = year {
+                    let millennium = if y > 0 {
+                        (y - 1) / 1000 + 1
+                    } else {
+                        y / 1000 - 1
+                    };
+                    date = format!("{} millennium", Self::ordinal_suffix(millennium));
+                }
+            } else {
+                // Lower precision - just use year
                 if let Some(pos) = date.find('-') {
                     date = date.split_at(pos).0.to_string();
                 }
             }
             ret.date = Some(date);
         }
+    }
+
+    /// Converts a number to its ordinal form (e.g., 1 -> "1st", 21 -> "21st")
+    fn ordinal_suffix(n: i32) -> String {
+        let abs_n = n.abs();
+        let suffix = if (abs_n % 100) >= 11 && (abs_n % 100) <= 13 {
+            "th"
+        } else {
+            match abs_n % 10 {
+                1 => "st",
+                2 => "nd",
+                3 => "rd",
+                _ => "th",
+            }
+        };
+        format!("{}{}", n, suffix)
     }
 
     /// Extracts the title from a snak
@@ -316,5 +370,43 @@ mod tests {
     fn test_stated_in_getter_none() {
         let reference = Reference::default();
         assert_eq!(reference.stated_in(), &None);
+    }
+
+    #[test]
+    fn test_ordinal_suffix_basic() {
+        assert_eq!(Reference::ordinal_suffix(1), "1st");
+        assert_eq!(Reference::ordinal_suffix(2), "2nd");
+        assert_eq!(Reference::ordinal_suffix(3), "3rd");
+        assert_eq!(Reference::ordinal_suffix(4), "4th");
+        assert_eq!(Reference::ordinal_suffix(5), "5th");
+    }
+
+    #[test]
+    fn test_ordinal_suffix_teens() {
+        assert_eq!(Reference::ordinal_suffix(11), "11th");
+        assert_eq!(Reference::ordinal_suffix(12), "12th");
+        assert_eq!(Reference::ordinal_suffix(13), "13th");
+    }
+
+    #[test]
+    fn test_ordinal_suffix_twenties() {
+        assert_eq!(Reference::ordinal_suffix(21), "21st");
+        assert_eq!(Reference::ordinal_suffix(22), "22nd");
+        assert_eq!(Reference::ordinal_suffix(23), "23rd");
+        assert_eq!(Reference::ordinal_suffix(24), "24th");
+    }
+
+    #[test]
+    fn test_ordinal_suffix_hundreds() {
+        assert_eq!(Reference::ordinal_suffix(101), "101st");
+        assert_eq!(Reference::ordinal_suffix(111), "111th");
+        assert_eq!(Reference::ordinal_suffix(121), "121st");
+    }
+
+    #[test]
+    fn test_ordinal_suffix_negative() {
+        assert_eq!(Reference::ordinal_suffix(-1), "-1st");
+        assert_eq!(Reference::ordinal_suffix(-2), "-2nd");
+        assert_eq!(Reference::ordinal_suffix(-11), "-11th");
     }
 }
