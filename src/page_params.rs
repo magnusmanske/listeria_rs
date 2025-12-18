@@ -47,7 +47,7 @@ impl PageParams {
         Ok(ret)
     }
 
-    pub const fn local_file_namespace_prefix(&self) -> &String {
+    pub fn local_file_namespace_prefix(&self) -> &str {
         &self.local_file_namespace_prefix
     }
 

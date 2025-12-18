@@ -54,7 +54,7 @@ impl ListProcessor {
     fn check_this_wiki_for_shadow_images(list: &ListeriaList) -> bool {
         list.page_params()
             .config()
-            .check_for_shadow_images(&list.wiki().to_string())
+            .check_for_shadow_images(list.wiki())
     }
 
     async fn fetch_file_info(
