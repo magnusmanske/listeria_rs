@@ -1,6 +1,7 @@
 //! Column types for result tables.
 
 use regex::{Regex, RegexBuilder};
+use std::sync::LazyLock;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ColumnType {
@@ -31,25 +32,29 @@ impl ColumnType {
 
     #[must_use]
     pub fn new(s: &str) -> Self {
-        lazy_static! {
-            static ref RE_LABEL_LANG: Regex = RegexBuilder::new(r#"^label/(.+)$"#)
+        static RE_LABEL_LANG: LazyLock<Regex> = LazyLock::new(|| {
+            RegexBuilder::new(r#"^label/(.+)$"#)
                 .case_insensitive(true)
                 .build()
-                .expect("RE_LABEL_LANG does not parse");
-            static ref RE_ALIAS_LANG: Regex = RegexBuilder::new(r#"^alias/(.+)$"#)
+                .expect("RE_LABEL_LANG does not parse")
+        });
+        static RE_ALIAS_LANG: LazyLock<Regex> = LazyLock::new(|| {
+            RegexBuilder::new(r#"^alias/(.+)$"#)
                 .case_insensitive(true)
                 .build()
-                .expect("RE_ALIAS_LANG does not parse");
-            static ref RE_PROPERTY: Regex =
-                Regex::new(r#"^([Pp]\d+)$"#).expect("RE_PROPERTY does not parse");
-            static ref RE_PROP_QUAL: Regex = Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#)
-                .expect("RE_PROP_QUAL does not parse");
-            static ref RE_PROP_QUAL_VAL: Regex =
-                Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#)
-                    .expect("RE_PROP_QUAL_VAL does not parse");
-            static ref RE_FIELD: Regex =
-                Regex::new(r#"^\?(.+)$"#).expect("RE_FIELD does not parse");
-        }
+                .expect("RE_ALIAS_LANG does not parse")
+        });
+        static RE_PROPERTY: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#"^([Pp]\d+)$"#).expect("RE_PROPERTY does not parse"));
+        static RE_PROP_QUAL: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#).expect("RE_PROP_QUAL does not parse")
+        });
+        static RE_PROP_QUAL_VAL: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#)
+                .expect("RE_PROP_QUAL_VAL does not parse")
+        });
+        static RE_FIELD: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r#"^\?(.+)$"#).expect("RE_FIELD does not parse"));
         match s.to_lowercase().as_str() {
             "number" => return ColumnType::Number,
             "label" => return ColumnType::Label,

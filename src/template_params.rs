@@ -2,6 +2,7 @@
 
 use crate::{configuration::Configuration, template::Template};
 use regex::Regex;
+use std::sync::LazyLock;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum LinksType {
@@ -38,10 +39,10 @@ pub enum SortMode {
 impl SortMode {
     #[must_use]
     pub fn new(os: Option<&String>) -> Self {
-        lazy_static! {
-            static ref RE_PROP: Regex = Regex::new(r"^P\d+$").expect("RE_PROP does not parse");
-            static ref RE_SPARQL: Regex = Regex::new(r"^?\S+$").expect("RE_SPARQL does not parse");
-        }
+        static RE_PROP: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^P\d+$").expect("RE_PROP does not parse"));
+        static RE_SPARQL: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^?\S+$").expect("RE_SPARQL does not parse"));
         let os = os.map(|s| s.trim().to_uppercase());
         match os {
             Some(s) => match s.as_str() {
@@ -114,11 +115,12 @@ pub enum SectionType {
 
 impl SectionType {
     pub fn new_from_string_option(s: Option<&String>) -> Self {
-        lazy_static! {
-            static ref RE_PROP : Regex = Regex::new(r"^[Pp]\d+$").expect("RE_PROP does not parse");
-            static ref RE_PROP_NUM : Regex = Regex::new(r"^\d+$").expect("RE_PROP_NUM does not parse"); // Yes people do that!
-            static ref RE_SPARQL : Regex = Regex::new(r"^@.+$").expect("RE_SPARQL does not parse");
-        }
+        static RE_PROP: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^[Pp]\d+$").expect("RE_PROP does not parse"));
+        static RE_PROP_NUM: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^\d+$").expect("RE_PROP_NUM does not parse")); // Yes people do that!
+        static RE_SPARQL: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"^@.+$").expect("RE_SPARQL does not parse"));
         let s = match s {
             Some(s) => s,
             None => return Self::None,

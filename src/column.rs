@@ -2,6 +2,7 @@
 
 use crate::{column_type::ColumnType, listeria_list::ListeriaList};
 use regex::Regex;
+use std::sync::LazyLock;
 
 #[derive(Debug, Clone)]
 pub struct Column {
@@ -13,10 +14,9 @@ pub struct Column {
 impl Column {
     #[must_use]
     pub fn new(s: &str) -> Option<Self> {
-        lazy_static! {
-            static ref RE_COLUMN_LABEL: Regex =
-                Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).expect("RE_COLUMN_LABEL does not parse");
-        }
+        static RE_COLUMN_LABEL: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"^\s*(.+?)\s*:\s*(.+?)\s*$"#).expect("RE_COLUMN_LABEL does not parse")
+        });
         match RE_COLUMN_LABEL.captures(s) {
             Some(caps) => Some(Self {
                 obj: ColumnType::new(caps.get(1)?.as_str()),
