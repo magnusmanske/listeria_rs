@@ -27,7 +27,6 @@ tempfile = "*"
 anyhow = "*"
 reqwest = { version = "*", features = ["gzip", "deflate", "brotli"] }
 log = "*"
-toolforge = { version = "*", features = ["mysql"] }
 sysinfo = "*"
 clap = { version = "*", features = ["derive"] }
 axum = { version = "*", features = [

@@ -1,23 +1,19 @@
 //! MediaWiki API management and connection pooling for multiple wikis.
 
-use crate::ApiArc;
-use crate::configuration::Configuration;
-use crate::database_pool::DatabasePool;
-use crate::wiki::Wiki;
+use crate::{ApiArc, configuration::Configuration, database_pool::DatabasePool, wiki::Wiki};
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use log::info;
-use mysql_async::{Conn, from_row, prelude::*};
-use mysql_async::{Opts, OptsBuilder};
+use mysql_async::{Conn, Opts, OptsBuilder, from_row, prelude::*};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use wikimisc::mediawiki::api::Api;
-use wikimisc::mediawiki::title::Title;
-use wikimisc::site_matrix::SiteMatrix;
-use wikimisc::wikibase::entity_container::EntityContainer;
-use wikimisc::wikibase::{Entity, EntityTrait};
+use wikimisc::{
+    mediawiki::{api::Api, title::Title},
+    site_matrix::SiteMatrix,
+    wikibase::{Entity, EntityTrait, entity_container::EntityContainer},
+};
 
 #[derive(Debug, Clone)]
 pub struct WikiApis {

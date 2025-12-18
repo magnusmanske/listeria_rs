@@ -1,19 +1,22 @@
 //! Table cells composed of parts with optional references.
 
-use crate::column::Column;
-use crate::column_type::ColumnType;
-use crate::entity_container_wrapper::EntityContainerWrapper;
-use crate::listeria_list::ListeriaList;
-use crate::reference::Reference;
-use crate::result_cell_part::{
-    AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart,
+use crate::{
+    column::Column,
+    column_type::ColumnType,
+    entity_container_wrapper::EntityContainerWrapper,
+    listeria_list::ListeriaList,
+    reference::Reference,
+    result_cell_part::{
+        AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart,
+    },
+    template_params::ReferencesParameter,
 };
-use crate::template_params::ReferencesParameter;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use wikimisc::sparql_table::SparqlTable;
-use wikimisc::wikibase::Statement;
-use wikimisc::wikibase::entity::EntityTrait;
+use wikimisc::{
+    sparql_table::SparqlTable,
+    wikibase::{Statement, entity::EntityTrait},
+};
 
 // Wikitext escape sequences
 const WIKITEXT_APOSTROPHE_ESCAPE: &str = "&#39;";
