@@ -92,7 +92,7 @@ impl Reference {
                 s += &list.get_item_link_with_fallback(q).await;
             }
 
-            self.md5 = format!("{:x}", md5::compute(s.clone()));
+            self.md5 = format!("{:x}", md5::compute(&s));
             self.wikitext_cache = Some(s);
         }
         "Error: Could not generate reference wikitext, too many iterations".to_string()

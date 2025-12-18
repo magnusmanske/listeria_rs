@@ -177,8 +177,7 @@ impl ListeriaList {
     }
 
     pub fn process_template(&mut self) -> Result<()> {
-        let template = self.template.clone();
-        match Self::get_template_value(&template, "columns") {
+        match Self::get_template_value(&self.template, "columns") {
             Some(columns) => {
                 columns
                     .split(',')
@@ -191,12 +190,12 @@ impl ListeriaList {
             }
         }
 
-        self.params = TemplateParams::new_from_params(&template, &self.page_params.config());
-        if let Some(s) = Self::get_template_value(&template, "links") {
+        self.params = TemplateParams::new_from_params(&self.template, &self.page_params.config());
+        if let Some(s) = Self::get_template_value(&self.template, "links") {
             self.params
                 .set_links(LinksType::new_from_string(s.to_string()));
         }
-        if let Some(l) = Self::get_template_value(&template, "language") {
+        if let Some(l) = Self::get_template_value(&self.template, "language") {
             self.language = l.to_lowercase();
         }
 
@@ -234,7 +233,7 @@ impl ListeriaList {
 
         let mut normalized: HashMap<String, String> = pages
             .iter()
-            .map(|page| (page.clone(), page.clone()))
+            .map(|page| (page.to_string(), page.to_string()))
             .collect();
 
         if let Some(query_normalized) = result["query"]["normalized"].as_array() {
@@ -478,7 +477,7 @@ impl ListeriaList {
     async fn gather_items_section(&mut self) -> Result<Vec<String>> {
         // TODO support all of SectionType
         let prop = match self.params.section() {
-            SectionType::Property(p) => p.clone(),
+            SectionType::Property(p) => p.to_string(),
             SectionType::SparqlVariable(_v) => {
                 return Err(anyhow!("SPARQL variable section type not supported yet"));
             }
@@ -489,7 +488,7 @@ impl ListeriaList {
 
     async fn gather_items_sort(&mut self) -> Result<Vec<String>> {
         let prop = match self.params.sort() {
-            SortMode::Property(prop) => prop.clone(),
+            SortMode::Property(prop) => prop.to_string(),
             _ => return Ok(vec![]),
         };
         self.gather_items_for_property(&prop).await
