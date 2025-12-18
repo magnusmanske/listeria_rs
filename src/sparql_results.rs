@@ -2,14 +2,15 @@
 
 use crate::page_params::PageParams;
 use anyhow::{Result, anyhow};
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, LazyLock},
+};
 use tokio::sync::Semaphore;
 use wikimisc::{mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable};
 
-lazy_static! {
-    static ref sparql_request_semaphore: Semaphore = Semaphore::new(3);
-    // TODO set from self.page_params.config().max_sparql_simultaneous()
-}
+static SPARQL_REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(3));
+// TODO set from self.page_params.config().max_sparql_simultaneous()
 
 #[derive(Debug, Clone)]
 pub struct SparqlResults {
@@ -71,7 +72,7 @@ impl SparqlResults {
             Some(api) => api.clone(),
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
         };
-        let _permit = sparql_request_semaphore.acquire().await?;
+        let _permit = SPARQL_REQUEST_SEMAPHORE.acquire().await?;
         self.run_sparql_query_stream(&api, sparql).await
     }
 

@@ -9,6 +9,7 @@ use async_recursion::async_recursion;
 use era_date::{Era, Precision};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::{Entity, Snak, SnakDataType, TimeValue, Value};
@@ -246,10 +247,9 @@ impl ResultCellPart {
     }
 
     pub fn reduce_time(v: &TimeValue) -> Option<String> {
-        lazy_static! {
-            static ref RE_DATE: Regex =
-                Regex::new(r#"^\+?(-?\d+)-(\d{1,2})-(\d{1,2})T"#).expect("RE_DATE does not parse");
-        }
+        static RE_DATE: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r#"^\+?(-?\d+)-(\d{1,2})-(\d{1,2})T"#).expect("RE_DATE does not parse")
+        });
         let s = v.time().to_string();
         let caps = RE_DATE.captures(&s)?;
 

@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::sync::LazyLock;
 use wikimisc::{
     sparql_table::SparqlTable,
     wikibase::{Snak, SnakDataType, entity::EntityTrait},
@@ -118,14 +119,13 @@ impl ResultRow {
 
     /// Get the sortkey for the family name of the entity
     pub async fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
-        lazy_static! {
-            static ref RE_SR_JR: Regex =
-                Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse");
-            static ref RE_BRACES: Regex =
-                Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse");
-            static ref RE_LAST_FIRST: Regex =
-                Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
-        }
+        static RE_SR_JR: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse"));
+        static RE_BRACES: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse"));
+        static RE_LAST_FIRST: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse")
+        });
         match page.get_entity(&self.entity_id).await {
             Some(entity) => match entity.label_in_locale(page.language()) {
                 Some(label) => {
