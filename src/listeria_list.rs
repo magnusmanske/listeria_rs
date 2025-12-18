@@ -161,7 +161,7 @@ impl ListeriaList {
         &self.sparql_table
     }
 
-    pub fn local_file_namespace_prefix(&self) -> &String {
+    pub fn local_file_namespace_prefix(&self) -> &str {
         self.page_params.local_file_namespace_prefix()
     }
 
@@ -173,8 +173,8 @@ impl ListeriaList {
             .map(|wiki| wiki.to_owned())
     }
 
-    pub fn section_name(&self, id: usize) -> Option<&String> {
-        self.section_id_to_name.get(&id)
+    pub fn section_name(&self, id: usize) -> Option<&str> {
+        self.section_id_to_name.get(&id).map(|s| s.as_str())
     }
 
     pub fn process_template(&mut self) -> Result<()> {

@@ -39,7 +39,7 @@ impl ResultRow {
         self.keep
     }
 
-    pub const fn entity_id(&self) -> &String {
+    pub fn entity_id(&self) -> &str {
         &self.entity_id
     }
 
@@ -59,7 +59,7 @@ impl ResultRow {
         self.section = section;
     }
 
-    pub const fn sortkey(&self) -> &String {
+    pub fn sortkey(&self) -> &str {
         &self.sortkey
     }
 
@@ -218,37 +218,27 @@ impl ResultRow {
     }
 
     fn compare_entity_ids(&self, other: &ResultRow) -> Ordering {
-        let id1 = self.entity_id[1..]
-            .parse::<usize>()
-            .ok()
-            .or(Some(0))
-            .unwrap_or(0);
-        let id2 = other.entity_id[1..]
-            .parse::<usize>()
-            .ok()
-            .or(Some(0))
-            .unwrap_or(0);
-        id1.partial_cmp(&id2).unwrap_or(Ordering::Equal)
+        let id1 = self.entity_id[1..].parse::<usize>().unwrap_or(0);
+        let id2 = other.entity_id[1..].parse::<usize>().unwrap_or(0);
+        id1.cmp(&id2)
     }
 
     pub fn compare_to(&self, other: &ResultRow, datatype: &SnakDataType) -> Ordering {
         match datatype {
             SnakDataType::Quantity => {
-                let va = self.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
-                let vb = other.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
+                let va = self.sortkey.parse::<u64>().unwrap_or(0);
+                let vb = other.sortkey.parse::<u64>().unwrap_or(0);
                 if va == 0 && vb == 0 {
                     self.compare_entity_ids(other)
                 } else {
-                    va.partial_cmp(&vb).unwrap_or(Ordering::Equal)
+                    va.cmp(&vb)
                 }
             }
             _ => {
                 if self.sortkey == other.sortkey {
                     self.compare_entity_ids(other)
                 } else {
-                    self.sortkey
-                        .partial_cmp(&other.sortkey)
-                        .unwrap_or(Ordering::Equal)
+                    self.sortkey.cmp(&other.sortkey)
                 }
             }
         }

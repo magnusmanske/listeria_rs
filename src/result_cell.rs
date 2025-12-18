@@ -434,8 +434,7 @@ impl ResultCell {
         ));
     }
 
-    fn do_deduplicate_parts(parts: &Vec<String>) -> Vec<String> {
-        // Deduplicate but keep order?
+    fn do_deduplicate_parts(parts: &[String]) -> Vec<String> {
         let mut parts2 = Vec::new();
         for part in parts {
             if !parts2.contains(part) {

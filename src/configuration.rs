@@ -196,7 +196,7 @@ impl Configuration {
         Duration::from_secs(self.api_timeout)
     }
 
-    pub const fn oauth2_token(&self) -> &String {
+    pub fn oauth2_token(&self) -> &str {
         &self.oauth2_token
     }
 
@@ -227,8 +227,8 @@ impl Configuration {
         }
     }
 
-    pub fn check_for_shadow_images(&self, wiki: &String) -> bool {
-        self.shadow_images_check.contains(wiki)
+    pub fn check_for_shadow_images(&self, wiki: &str) -> bool {
+        self.shadow_images_check.iter().any(|w| w == wiki)
     }
 
     /// Helper method to extract template title from a template map
