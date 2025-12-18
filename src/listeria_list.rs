@@ -53,7 +53,7 @@ pub struct ListeriaList {
 impl ListeriaList {
     /// Helper iterator for safely iterating over results with their indices
     fn results_iter(&self) -> impl Iterator<Item = (usize, &ResultRow)> + '_ {
-        (0..self.results.len()).filter_map(|id| self.results.get(id).map(|row| (id, row)))
+        self.results.iter().enumerate()
     }
 
     pub async fn new(template: Template, page_params: Arc<PageParams>) -> Result<Self> {
@@ -63,7 +63,7 @@ impl ListeriaList {
         Ok(Self {
             page_params: page_params.clone(),
             template,
-            columns: vec![],
+            columns: Vec::new(),
             params: TemplateParams::new(),
             sparql_table: SparqlTable::new(),
             ecw: EntityContainerWrapper::new().await?,
@@ -225,7 +225,7 @@ impl ListeriaList {
         .collect();
 
         let Ok(result) = self.page_params.mw_api().get_query_api_json(&params).await else {
-            return vec![];
+            return Vec::new();
         };
 
         let mut normalized: HashMap<String, String> = pages
@@ -351,7 +351,7 @@ impl ListeriaList {
     }
 
     async fn label_columns(&mut self) {
-        let mut columns = vec![];
+        let mut columns = Vec::with_capacity(self.columns.len());
         for c in &self.columns {
             let mut c = c.clone();
             c.generate_label(self).await;
@@ -472,7 +472,7 @@ impl ListeriaList {
             SectionType::SparqlVariable(_v) => {
                 return Err(anyhow!("SPARQL variable section type not supported yet"));
             }
-            SectionType::None => return Ok(vec![]), // Nothing to do
+            SectionType::None => return Ok(Vec::new()), // Nothing to do
         };
         self.gather_items_for_property(&prop).await
     }
@@ -480,14 +480,14 @@ impl ListeriaList {
     async fn gather_items_sort(&mut self) -> Result<Vec<String>> {
         let prop = match self.params.sort() {
             SortMode::Property(prop) => prop.to_string(),
-            _ => return Ok(vec![]),
+            _ => return Ok(Vec::new()),
         };
         self.gather_items_for_property(&prop).await
     }
 
     async fn gather_and_load_items(&mut self) -> Result<()> {
         // Gather items to load
-        let mut entities_to_load: Vec<String> = vec![];
+        let mut entities_to_load: Vec<String> = Vec::new();
         for (_row_id, row) in self.results_iter() {
             for cell in row.cells() {
                 EntityContainerWrapper::gather_entities_and_external_properties(cell.parts())
@@ -534,7 +534,7 @@ impl ListeriaList {
     }
 
     pub fn get_section_ids(&self) -> Vec<usize> {
-        let mut ret = vec![];
+        let mut ret = Vec::new();
         for (_row_id, row) in self.results_iter() {
             ret.push(row.section());
         }

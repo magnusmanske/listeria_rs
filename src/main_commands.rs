@@ -60,7 +60,7 @@ impl MainCommands {
     }
 
     pub async fn load_test_entities(&mut self) -> Result<()> {
-        let mut items = vec![];
+        let mut items = Vec::new();
         for line in read_to_string("test_data/entities.tab")?.lines() {
             items.push(line.to_string());
         }

@@ -37,7 +37,7 @@ impl ResultCell {
         col: &Column,
     ) -> Self {
         let mut ret = Self {
-            parts: vec![],
+            parts: Vec::new(),
             wdedit_class: None,
             deduplicate_parts: true,
         };
@@ -89,7 +89,7 @@ impl ResultCell {
         language: &str,
     ) -> Option<Vec<Reference>> {
         let references = statement.references();
-        let mut ret: Vec<Reference> = vec![];
+        let mut ret: Vec<Reference> = Vec::with_capacity(references.len());
         for reference in references.iter() {
             if let Some(r) = Reference::new_from_snaks(reference.snaks(), language) {
                 ret.push(r);
@@ -111,7 +111,7 @@ impl ResultCell {
             None => false,
         };
         if !links_to_target {
-            return vec![];
+            return Vec::new();
         }
         //self.get_parts_p_p(statement,property)
         statement

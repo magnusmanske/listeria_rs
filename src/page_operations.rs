@@ -12,7 +12,7 @@ impl PageOperations {
     /// Loads a page and extracts all Listeria template blocks.
     pub async fn load_page(page: &mut ListeriaPage) -> Result<Vec<PageElement>, WikiPageResult> {
         let mut text = Self::load_page_as(page, "wikitext").await?;
-        let mut ret = vec![];
+        let mut ret = Vec::new();
         let mut again: bool = true;
         while again {
             let mut element = match PageElement::new_from_text(&text, page).await {
