@@ -72,9 +72,8 @@ impl ResultRow {
             if let Some(part) = cell.parts().first() {
                 let has_files = matches!(*part.part(), ResultCellPart::File(_));
                 if has_files {
-                    let mut parts = cell.parts().clone();
-                    parts.truncate(1);
-                    cell.set_parts(parts.to_vec());
+                    let first_part = part.clone();
+                    cell.set_parts(vec![first_part]);
                 }
             }
         });

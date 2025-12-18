@@ -134,9 +134,7 @@ impl PageElement {
     }
 
     pub fn get_and_clean_after(&mut self) -> String {
-        let ret = self.after.clone();
-        self.after = String::new();
-        ret
+        std::mem::take(&mut self.after)
     }
 
     pub async fn new_inside(&mut self) -> Result<String> {
@@ -151,13 +149,11 @@ impl PageElement {
         if self.is_just_text {
             return Ok(self.before.clone());
         }
-        Ok(self.before.clone()
-            + &self.template_start
-            + "\n"
-            + &self.new_inside().await?
-            + "\n"
-            + &self.template_end
-            + &self.after)
+        let new_inside = self.new_inside().await?;
+        Ok(format!(
+            "{}{}\n{}\n{}{}",
+            &self.before, &self.template_start, &new_inside, &self.template_end, &self.after
+        ))
     }
 
     pub async fn process(&mut self) -> Result<()> {

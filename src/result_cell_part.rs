@@ -347,7 +347,7 @@ impl ResultCellPart {
             ResultCellPart::SnakList(v) => {
                 Self::as_wikitext_snak_list(v, list, rownum, colnum).await
             }
-            ResultCellPart::AutoDesc(ad) => ad.desc.clone().unwrap_or_default(),
+            ResultCellPart::AutoDesc(ad) => ad.desc.as_deref().unwrap_or_default().to_string(),
         }
     }
 

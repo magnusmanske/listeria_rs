@@ -204,7 +204,7 @@ impl EntityContainerWrapper {
         let label = self
             .get_local_entity_label(item, language)
             .await
-            .unwrap_or_else(|| page.clone());
+            .unwrap_or_else(|| page.to_string());
 
         Some(ResultCellPart::LocalLink((page, label, LinkTarget::Page)))
     }
