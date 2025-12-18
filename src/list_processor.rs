@@ -247,32 +247,40 @@ impl ListProcessor {
     }
 
     pub async fn process_sort_results(list: &mut ListeriaList) -> Result<()> {
-        let mut sortkeys: Vec<String> = vec![];
+        let sortkeys: Vec<String>;
         // Default
         let mut datatype = SnakDataType::String;
         list.profile("BEFORE process_sort_results SORTKEYS");
         match list.template_params().sort() {
             SortMode::Label => {
                 list.load_row_entities().await?;
+                let mut futures = vec![];
                 for row in list.results().iter() {
-                    sortkeys.push(row.get_sortkey_label(list).await);
+                    futures.push(row.get_sortkey_label(list));
                 }
+                sortkeys = join_all(futures).await.to_vec();
             }
             SortMode::FamilyName => {
+                let mut futures = vec![];
                 for row in list.results().iter() {
-                    sortkeys.push(row.get_sortkey_family_name(list).await);
+                    futures.push(row.get_sortkey_family_name(list));
                 }
+                sortkeys = join_all(futures).await.to_vec();
             }
             SortMode::Property(prop) => {
                 datatype = list.ecw().get_datatype_for_property(prop).await;
+                let mut futures = vec![];
                 for row in list.results().iter() {
-                    sortkeys.push(row.get_sortkey_prop(prop, list, &datatype).await);
+                    futures.push(row.get_sortkey_prop(prop, list, &datatype));
                 }
+                sortkeys = join_all(futures).await.to_vec();
             }
             SortMode::SparqlVariable(variable) => {
-                for row in list.results().iter() {
-                    sortkeys.push(row.get_sortkey_sparql(variable, list));
-                }
+                sortkeys = list
+                    .results()
+                    .iter()
+                    .map(|row| row.get_sortkey_sparql(variable, list))
+                    .collect();
             }
             SortMode::None => return Ok(()),
         }
