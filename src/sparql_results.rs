@@ -86,14 +86,15 @@ impl SparqlResults {
             None => sparql.to_string(),
         };
         let params = [("query", sparql.as_str()), ("format", "json")];
+        let timeout = self.page_params.config().api_timeout();
         let response = wb_api_sparql
             .client()
             .post(&query_api_url)
             .header(reqwest::header::USER_AGENT, crate::LISTERIA_USER_AGENT)
+            .timeout(timeout)
             .form(&params)
             .send()
             .await?;
-        // TODO .timeout(self.config.api_timeout())
         let result = response.json::<SparqlApiResult>().await?;
         self.set_main_variable(&result);
 
