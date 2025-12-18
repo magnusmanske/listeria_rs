@@ -55,6 +55,7 @@ extern crate lazy_static;
 extern crate serde_json;
 
 pub mod column;
+pub mod column_type;
 pub mod configuration;
 pub mod database_pool;
 pub mod entity_container_wrapper;

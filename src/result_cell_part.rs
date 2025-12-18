@@ -1,6 +1,6 @@
 //! Individual parts that make up table cells, with rendering logic for different data types.
 
-use crate::column::ColumnType;
+use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
 use crate::reference::Reference;
