@@ -144,9 +144,7 @@ mod tests {
 
         let template_text =
             "{{Wikidata list|columns=item|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }}}";
-        let template =
-            Template::new_from_params("Wikidata list".to_string(), template_text.to_string())
-                .unwrap();
+        let template = Template::new_from_params(template_text).unwrap();
 
         ListeriaList::new(template, page_params).await.unwrap()
     }

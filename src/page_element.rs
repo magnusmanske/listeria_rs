@@ -33,8 +33,8 @@ impl PageElement {
         Self::extract_text_segment(text, match_start.end(), template_start_end_bytes - 2)
     }
 
-    fn create_template_from_text(template_text: String) -> Option<Template> {
-        Template::new_from_params("".to_string(), template_text).ok()
+    fn create_template_from_text(template_text: &str) -> Option<Template> {
+        Template::new_from_params(template_text).ok()
     }
 
     fn extract_inside_text(
@@ -106,7 +106,7 @@ impl PageElement {
 
         let template_text =
             Self::extract_template_text(text, &match_start, template_start_end_bytes)?;
-        let template = Self::create_template_from_text(template_text)?;
+        let template = Self::create_template_from_text(&template_text)?;
 
         Self::build_page_element(
             text,
