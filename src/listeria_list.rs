@@ -2,7 +2,8 @@
 //!
 //! Handles the full pipeline from SPARQL query execution to rendered output.
 
-use crate::column::{Column, ColumnType};
+use crate::column::Column;
+use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::list_processor::ListProcessor;
 use crate::page_params::PageParams;

@@ -1,6 +1,6 @@
 //! Table rows containing cells with formatted data.
 
-use crate::column::ColumnType;
+use crate::column_type::ColumnType;
 use crate::listeria_list::ListeriaList;
 use crate::result_cell::ResultCell;
 use crate::result_cell_part::ResultCellPart;
