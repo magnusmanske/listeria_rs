@@ -39,7 +39,7 @@ impl ListeriaPage {
     }
 
     pub fn config(&self) -> Arc<Configuration> {
-        self.page_params.config()
+        Arc::clone(&self.page_params.config())
     }
 
     pub fn wiki(&self) -> &str {
@@ -59,7 +59,7 @@ impl ListeriaPage {
     }
 
     pub fn page_params(&self) -> Arc<PageParams> {
-        self.page_params.clone()
+        Arc::clone(&self.page_params)
     }
 
     pub fn language(&self) -> &str {

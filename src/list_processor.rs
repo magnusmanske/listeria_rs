@@ -89,12 +89,15 @@ impl ListProcessor {
         api_results
             .into_iter()
             .filter_map(|(filename, j)| {
-                let could_be_local = j["query"]["pages"].as_object().is_none_or(|results| {
-                    results
-                        .iter()
-                        .filter_map(|(_k, o)| o["imagerepository"].as_str())
-                        .any(|s| s != "shared")
-                });
+                let could_be_local = j["query"]["pages"].as_object().map_or_else(
+                    || true,
+                    |results| {
+                        results
+                            .iter()
+                            .filter_map(|(_k, o)| o["imagerepository"].as_str())
+                            .any(|s| s != "shared")
+                    },
+                );
 
                 could_be_local.then_some(filename)
             })
@@ -672,7 +675,7 @@ impl ListProcessor {
                 entity
                     .sitelinks()
                     .as_ref()
-                    .is_none_or(|sl| !sl.iter().any(|s| *s.site() == wiki))
+                    .map_or_else(|| true, |sl| !sl.iter().any(|s| *s.site() == wiki))
             });
             keep_flags.push(keep);
         }
