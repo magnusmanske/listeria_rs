@@ -1,5 +1,6 @@
 //! CLI command implementations for the bot's operation modes.
 
+use crate::status_server::{AppState, StatusServer};
 use crate::wiki_page_result::WikiPageResult;
 use crate::{
     configuration::Configuration, entity_container_wrapper::EntityContainerWrapper,
@@ -7,25 +8,14 @@ use crate::{
     listeria_bot_wikidata::ListeriaBotWikidata, listeria_page::ListeriaPage, wiki_apis::WikiApis,
 };
 use anyhow::{Result, anyhow};
-use axum::extract::State;
-use axum::{Router, response::Html, routing::get};
 use std::collections::HashMap;
+use std::fs::read_to_string;
 use std::sync::Arc;
 use std::time::Instant;
-use std::{fs::read_to_string, net::SocketAddr};
 use tokio::sync::{Mutex, Semaphore};
-use tower_http::compression::CompressionLayer;
-use tower_http::services::ServeDir;
 use wikimisc::{seppuku::Seppuku, wikibase::EntityTrait};
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 300;
-
-#[derive(Debug, Clone)]
-struct AppState {
-    pages: Arc<Mutex<HashMap<String, WikiPageResult>>>,
-    started: Instant,
-    wiki_page_pattern: Option<String>,
-}
 
 #[derive(Debug, Clone)]
 pub struct MainCommands {
@@ -157,157 +147,6 @@ impl MainCommands {
         }
     }
 
-    fn build_html_header() -> String {
-        let mut html = "<html><head>".to_string();
-        html += r#"<meta charset="UTF-8">
-        <title>Listeria</title>
-        <link href="html/bootstrap.min.css" rel="stylesheet">"#;
-        html += "</head><body>";
-        html
-    }
-
-    fn build_status_card(
-        uptime_days: u64,
-        uptime_hours: u64,
-        uptime_minutes: u64,
-        uptime_seconds: u64,
-        last_event: Option<std::time::Duration>,
-        total_pages: usize,
-    ) -> String {
-        let mut html = String::new();
-        html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Listeria status</h5>"#;
-        html += &format!(
-            "<p class='card-text'>Uptime: {} days, {} hours, {} minutes, {} seconds</p>",
-            uptime_days, uptime_hours, uptime_minutes, uptime_seconds
-        );
-        if let Some(event) = last_event {
-            html += &format!(
-                "<p class='card-text'>Last page check: {} seconds ago</p>",
-                event.as_secs()
-            );
-        }
-        html += &format!("<p class='card-text'>Total pages: {}</p>", total_pages);
-        html += "</div></div>";
-        html
-    }
-
-    fn build_statistics_table(statistics: &HashMap<String, u64>) -> String {
-        let mut html = String::new();
-        html += r#"<div class="card"><div class="card-body"><h5 class="card-title">Page statistics</h5>"#;
-        html += "<p class='card-text'><table class='table table-striped'>";
-        html += "<thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>";
-        for (status, count) in statistics.iter() {
-            html += &format!("<tr><td>{status}</td><td>{count}</td></tr>");
-        }
-        html += "</tbody></table></p></div></div>";
-        html
-    }
-
-    fn build_problems_table(
-        problems: &[(String, WikiPageResult)],
-        wiki_page_pattern: &Option<String>,
-    ) -> String {
-        let mut html = String::new();
-        if !problems.is_empty() {
-            html +=
-                r#"<div class="card"><div class="card-body"><h5 class="card-title">Issues</h5>"#;
-            html += "<p class='card-text'><table class='table table-striped'>";
-            html += "<thead><tr><th>Page</th><th>Status</th><th>Message</th></tr></thead><tbody>";
-            for (page, result) in problems {
-                let link = match wiki_page_pattern {
-                    Some(pattern) => {
-                        format!(
-                            "<a target=\"_blank\" href=\"{}\">{}</a>",
-                            pattern.replace("$1", &urlencoding::encode(&page.replace(' ', "_"))),
-                            html_escape::encode_text(page)
-                        )
-                    }
-                    None => html_escape::encode_text(page).to_string(),
-                };
-                html += &format!(
-                    "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
-                    link,
-                    result.result(),
-                    result.message()
-                );
-            }
-            html += "</tbody></table></p></div></div>";
-        }
-        html
-    }
-
-    async fn status_server_root(State(state): State<AppState>) -> Html<String> {
-        let now = Instant::now();
-        let server_uptime = now.duration_since(state.started);
-        let uptime_days = server_uptime.as_secs() / 86400;
-        let uptime_hours = (server_uptime.as_secs() % 86400) / 3600;
-        let uptime_minutes = (server_uptime.as_secs() % 3600) / 60;
-        let uptime_seconds = server_uptime.as_secs() % 60;
-
-        let mut statistics: HashMap<String, u64> = HashMap::new();
-        for (_page, result) in state.pages.lock().await.iter() {
-            *statistics.entry(result.result().to_string()).or_insert(0) += 1;
-        }
-
-        let last_event = state
-            .pages
-            .lock()
-            .await
-            .iter()
-            .filter_map(|(_page, result)| result.completed())
-            .map(|l| now.duration_since(l))
-            .min();
-
-        let total_pages = state.pages.lock().await.len();
-
-        let problems: Vec<_> = state
-            .pages
-            .lock()
-            .await
-            .iter()
-            .filter(|(_page, result)| result.result() != "OK")
-            .map(|(page, result)| (page.clone(), result.clone()))
-            .collect();
-
-        let mut html = Self::build_html_header();
-        html += &Self::build_status_card(
-            uptime_days,
-            uptime_hours,
-            uptime_minutes,
-            uptime_seconds,
-            last_event,
-            total_pages,
-        );
-        html += &Self::build_statistics_table(&statistics);
-        html += &Self::build_problems_table(&problems, &state.wiki_page_pattern);
-        html += "</body></html>";
-        Html(html)
-    }
-
-    async fn run_status_server(port: u16, state: AppState) {
-        // tracing_subscriber::fmt::init();
-
-        // let cors = CorsLayer::new().allow_origin(Any);
-        let app = Router::new()
-            .route("/", get(Self::status_server_root))
-            .nest_service("/html", ServeDir::new("html"))
-            // .layer(cors),
-            // .layer(TraceLayer::new_for_http())
-            .layer(CompressionLayer::new())
-            .with_state(state);
-
-        let address = [0, 0, 0, 0];
-
-        let addr = SocketAddr::from((address, port));
-        println!("listening on http://{}", addr);
-        let listener = tokio::net::TcpListener::bind(addr)
-            .await
-            .expect("Could not create listener");
-        axum::serve(listener, app)
-            .await
-            .expect("Could not start server");
-    }
-
     pub async fn run_single_wiki_bot(&self, once: bool) -> Result<()> {
         let state = AppState {
             pages: Arc::new(Mutex::new(HashMap::new())),
@@ -317,7 +156,9 @@ impl MainCommands {
         if let Some(port) = self.config.status_server_port() {
             let state_clone = state.clone();
             tokio::spawn(async move {
-                Self::run_status_server(port, state_clone).await;
+                if let Err(e) = StatusServer::run(port, state_clone).await {
+                    eprintln!("Status server error: {e}");
+                }
             });
         }
         let config = Arc::new((*self.config).clone());
