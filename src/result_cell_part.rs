@@ -300,7 +300,7 @@ impl ResultCellPart {
 
         let use_language = entity
             .label_in_locale(list.language())
-            .map_or_else(|| list.default_language(), |_| list.language().to_owned());
+            .map_or_else(|| list.default_language(), |_| list.language().to_string());
 
         let use_label = list.get_label_with_fallback_lang(id, &use_language).await;
         let target = list.get_item_wiki_target(id);
@@ -362,8 +362,8 @@ impl ResultCellPart {
 
     async fn as_wikitext_external_id(list: &ListeriaList, property: &str, id: &str) -> String {
         match list.external_id_url(property, id).await {
-            Some(url) => "[".to_string() + &url + " " + id + "]",
-            None => id.to_owned(),
+            Some(url) => format!("[{url} {id}]"),
+            None => id.to_string(),
         }
     }
 
@@ -375,7 +375,7 @@ impl ResultCellPart {
                 }
                 _ => None,
             })
-            .unwrap_or_else(|| text.to_owned())
+            .unwrap_or_else(|| text.to_string())
     }
 
     async fn as_wikitext_snak_list(
@@ -408,7 +408,7 @@ impl ResultCellPart {
                 &link_info.label,
                 &link_info.target,
             ),
-            ResultCellPart::Time(time) => time.to_owned(),
+            ResultCellPart::Time(time) => time.clone(),
             ResultCellPart::Location(loc_info) => Self::as_wikitext_location(
                 list,
                 loc_info.latitude,
@@ -417,7 +417,7 @@ impl ResultCellPart {
                 rownum,
             ),
             ResultCellPart::File(file) => Self::as_wikitext_file(list, file),
-            ResultCellPart::Uri(url) => url.to_owned(),
+            ResultCellPart::Uri(url) => url.clone(),
             ResultCellPart::ExternalId(ext_id_info) => {
                 Self::as_wikitext_external_id(list, &ext_id_info.property, &ext_id_info.id).await
             }

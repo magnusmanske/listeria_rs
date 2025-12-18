@@ -72,7 +72,7 @@ impl Template {
         self.params = self
             .params
             .iter()
-            .map(|(k, v)| (k.to_owned(), v.replace("{{!}}", "|")))
+            .map(|(k, v)| (k.clone(), v.replace("{{!}}", "|")))
             .collect();
         // TODO proper template replacement
     }
@@ -82,7 +82,7 @@ impl Template {
         self.params
             .iter()
             .find(|(k, _v)| k.eq_ignore_ascii_case(key))
-            .map(|(_k, v)| v.to_owned())
+            .map(|(_k, v)| v.clone())
     }
 }
 

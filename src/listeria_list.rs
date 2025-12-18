@@ -81,8 +81,8 @@ impl ListeriaList {
 
     pub fn profile(&mut self, msg: &str) {
         if self.profiling {
-            let now: DateTime<Utc> = Utc::now();
-            let last = self.last_timestamp.to_owned();
+            let now = Utc::now();
+            let last = self.last_timestamp;
             self.last_timestamp = now;
             let diff = now - last;
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
@@ -167,10 +167,7 @@ impl ListeriaList {
 
     pub fn get_wiki(&self) -> Option<Wiki> {
         let wiki = self.page_params.wiki();
-        self.page_params
-            .config()
-            .get_wiki(wiki)
-            .map(|wiki| wiki.to_owned())
+        self.page_params.config().get_wiki(wiki).cloned()
     }
 
     pub fn section_name(&self, id: usize) -> Option<&str> {
@@ -234,7 +231,7 @@ impl ListeriaList {
 
         let mut normalized: HashMap<String, String> = pages
             .iter()
-            .map(|page| (page.to_string(), page.to_string()))
+            .map(|page| ((*page).to_string(), (*page).to_string()))
             .collect();
 
         if let Some(query_normalized) = result["query"]["normalized"].as_array() {
@@ -278,7 +275,7 @@ impl ListeriaList {
     /// TODO: use wiki configuration to determine first character capitalization rules
     pub fn normalize_page_title(s: &str) -> String {
         if s.len() < 2 {
-            return s.to_owned();
+            return s.to_string();
         }
         Self::first_letter_to_upper_case(s)
     }
@@ -625,7 +622,7 @@ impl ListeriaList {
         let mut ret: Vec<Statement> = e
             .claims_with_property(property)
             .iter()
-            .map(|x| (*x).clone())
+            .map(|&x| x.clone())
             .collect();
 
         if self.page_params.config().prefer_preferred() {
@@ -633,10 +630,8 @@ impl ListeriaList {
             if has_preferred {
                 ret.retain(|x| *x.rank() == StatementRank::Preferred);
             }
-            ret
-        } else {
-            ret
         }
+        ret
     }
 
     pub async fn entity_to_local_link(&self, item: &str) -> Option<ResultCellPart> {
@@ -654,6 +649,6 @@ impl ListeriaList {
     }
 
     pub fn mw_api(&self) -> crate::ApiArc {
-        self.page_params.mw_api().clone()
+        Arc::clone(self.page_params.mw_api())
     }
 }

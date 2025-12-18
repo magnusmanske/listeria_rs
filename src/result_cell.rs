@@ -131,13 +131,13 @@ impl ResultCell {
     pub fn get_sortkey(&self) -> String {
         match self.parts.first() {
             Some(part_with_reference) => match part_with_reference.part() {
-                ResultCellPart::Entity(entity_info) => entity_info.id.to_owned(),
-                ResultCellPart::LocalLink(link_info) => link_info.page.to_owned(),
-                ResultCellPart::Time(time) => time.to_owned(),
-                ResultCellPart::File(s) => s.to_owned(),
-                ResultCellPart::Uri(s) => s.to_owned(),
-                ResultCellPart::Text(s) => s.to_owned(),
-                ResultCellPart::ExternalId(ext_id_info) => ext_id_info.id.to_owned(),
+                ResultCellPart::Entity(entity_info) => entity_info.id.clone(),
+                ResultCellPart::LocalLink(link_info) => link_info.page.clone(),
+                ResultCellPart::Time(time) => time.clone(),
+                ResultCellPart::File(s) | ResultCellPart::Uri(s) | ResultCellPart::Text(s) => {
+                    s.clone()
+                }
+                ResultCellPart::ExternalId(ext_id_info) => ext_id_info.id.clone(),
                 _ => String::new(),
             },
             None => String::new(),
@@ -205,7 +205,7 @@ impl ResultCell {
             && list.header_template().is_none()
             && let Some(class) = &self.wdedit_class
         {
-            format!("class='{}'| ", class.to_owned())
+            format!("class='{class}'| ")
         } else {
             " ".to_string()
         }

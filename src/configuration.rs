@@ -202,7 +202,7 @@ impl Configuration {
 
     pub fn mysql(&self, key: &str) -> Value {
         match &self.mysql {
-            Some(mysql) => mysql[key].to_owned(),
+            Some(mysql) => mysql[key].clone(),
             None => Value::Null,
         }
     }
@@ -221,7 +221,7 @@ impl Configuration {
         match entity.sitelinks() {
             Some(sl) => Ok(sl
                 .iter()
-                .map(|s| (s.site().to_owned(), s.title().to_owned()))
+                .map(|s| (s.site().to_string(), s.title().to_string()))
                 .collect()),
             None => Err(anyhow!("No sitelink in {q}")),
         }
@@ -272,7 +272,7 @@ impl Configuration {
     pub fn can_edit_namespace(&self, wiki: &str, nsid: i64) -> bool {
         self.namespace_blocks
             .get(wiki)
-            .is_none_or(|nsg| nsg.can_edit_namespace(nsid))
+            .map_or_else(|| true, |nsg| nsg.can_edit_namespace(nsid))
     }
 
     pub fn get_location_template(&self, wiki: &str) -> String {
