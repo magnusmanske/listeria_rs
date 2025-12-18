@@ -100,13 +100,13 @@ impl ListeriaBot for ListeriaBotSingle {
 impl ListeriaBotSingle {
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<Arc<ListeriaBotWiki>> {
         let mut the_bot = self.the_bot.lock().await;
-        if the_bot.is_some() {
-            return the_bot.clone();
+        if let Some(bot) = &*the_bot {
+            return Some(Arc::clone(bot));
         }
         let mw_api = self.config.get_default_wbapi().ok()?;
         let bot = ListeriaBotWiki::new(wiki, mw_api.clone(), self.config.clone());
         let bot = Arc::new(bot);
-        *the_bot = Some(bot.clone());
+        *the_bot = Some(Arc::clone(&bot));
         Some(bot)
     }
 

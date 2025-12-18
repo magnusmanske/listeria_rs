@@ -24,7 +24,7 @@ impl Renderer for RendererTabbedData {
                 x.push(json!({"name":"col_".to_string()+&colnum.to_string(),"type":"string","title":{list.language().to_owned():col.label()}}));
             }
         });
-        let mut ret_data = vec![];
+        let mut ret_data = Vec::with_capacity(list.results().len());
         for rownum in 0..list.results().len() {
             if let Some(row) = list.results().get(rownum) {
                 ret_data.push(row.as_tabbed_data(list, rownum).await);

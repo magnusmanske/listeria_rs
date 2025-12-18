@@ -84,10 +84,8 @@ impl Reference {
 
             if use_cite_web && self.title.is_some() && self.url.is_some() {
                 s = self.render_cite_web(use_invoke, list).await;
-            } else if self.url.is_some() {
-                if let Some(x) = self.url.as_ref() {
-                    s += x;
-                }
+            } else if let Some(url) = &self.url {
+                s += url;
             } else if let Some(q) = &self.stated_in {
                 s += &list.get_item_link_with_fallback(q).await;
             }

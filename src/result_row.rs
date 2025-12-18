@@ -255,11 +255,11 @@ impl ResultRow {
 
     /// Get the cells as tabbed data
     pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
-        let mut ret = vec![];
+        let mut ret = Vec::with_capacity(self.cells.len() + 1);
+        ret.push(json!(self.section));
         for (colnum, cell) in self.cells.iter().enumerate() {
             ret.push(cell.as_tabbed_data(list, rownum, colnum).await);
         }
-        ret.insert(0, json!(self.section));
         json!(ret)
     }
 
@@ -285,7 +285,7 @@ impl ResultRow {
 
     /// Get the row as wikitext
     pub async fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize) -> String {
-        let mut cells: Vec<String> = vec![];
+        let mut cells = Vec::with_capacity(self.cells.len());
         for (colnum, cell) in self.cells.iter_mut().enumerate() {
             cells.push(cell.as_wikitext(list, rownum, colnum).await);
         }

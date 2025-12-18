@@ -65,7 +65,7 @@ impl ListProcessor {
         let page_params = list.page_params().clone();
         let api_read = page_params.mw_api();
 
-        let mut futures = vec![];
+        let mut futures = Vec::with_capacity(param_list.len());
         for params in param_list {
             futures.push(api_read.get_query_api_json(params));
         }
@@ -233,7 +233,8 @@ impl ListProcessor {
             50
         };
 
-        let mut futures = vec![];
+        let num_chunks = labels.len().div_ceil(labels_per_chunk);
+        let mut futures = Vec::with_capacity(num_chunks);
         for chunk in labels.chunks(labels_per_chunk) {
             let future = list.cache_local_pages_exist(chunk);
             futures.push(future);
@@ -254,14 +255,14 @@ impl ListProcessor {
         match list.template_params().sort() {
             SortMode::Label => {
                 list.load_row_entities().await?;
-                let mut futures = vec![];
+                let mut futures = Vec::with_capacity(list.results().len());
                 for row in list.results().iter() {
                     futures.push(row.get_sortkey_label(list));
                 }
                 sortkeys = join_all(futures).await.to_vec();
             }
             SortMode::FamilyName => {
-                let mut futures = vec![];
+                let mut futures = Vec::with_capacity(list.results().len());
                 for row in list.results().iter() {
                     futures.push(row.get_sortkey_family_name(list));
                 }
@@ -269,7 +270,7 @@ impl ListProcessor {
             }
             SortMode::Property(prop) => {
                 datatype = list.ecw().get_datatype_for_property(prop).await;
-                let mut futures = vec![];
+                let mut futures = Vec::with_capacity(list.results().len());
                 for row in list.results().iter() {
                     futures.push(row.get_sortkey_prop(prop, list, &datatype));
                 }
