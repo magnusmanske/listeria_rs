@@ -76,6 +76,14 @@ impl Template {
             .collect();
         // TODO proper template replacement
     }
+
+    /// Get a template parameter value by key (case-insensitive).
+    pub fn get_value(&self, key: &str) -> Option<String> {
+        self.params
+            .iter()
+            .find(|(k, _v)| k.eq_ignore_ascii_case(key))
+            .map(|(_k, v)| v.to_owned())
+    }
 }
 
 #[cfg(test)]

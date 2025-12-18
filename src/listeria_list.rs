@@ -178,7 +178,7 @@ impl ListeriaList {
     }
 
     pub fn process_template(&mut self) -> Result<()> {
-        match Self::get_template_value(&self.template, "columns") {
+        match self.template.get_value("columns") {
             Some(columns) => {
                 columns
                     .split(',')
@@ -192,11 +192,11 @@ impl ListeriaList {
         }
 
         self.params = TemplateParams::new_from_params(&self.template, &self.page_params.config());
-        if let Some(s) = Self::get_template_value(&self.template, "links") {
+        if let Some(s) = self.template.get_value("links") {
             self.params
                 .set_links(LinksType::new_from_string(s.to_string()));
         }
-        if let Some(l) = Self::get_template_value(&self.template, "language") {
+        if let Some(l) = self.template.get_value("language") {
             self.language = l.to_lowercase();
         }
 
@@ -266,6 +266,7 @@ impl ListeriaList {
         *self.local_page_cache.get(page).unwrap_or(&false)
     }
 
+    /// Converts the first letter of a string to uppercase.
     fn first_letter_to_upper_case(s1: &str) -> String {
         let mut c = s1.chars();
         c.next()
@@ -273,8 +274,9 @@ impl ListeriaList {
             .unwrap_or_default()
     }
 
-    pub fn normalize_page_title(&self, s: &str) -> String {
-        // TODO use page to find out about first character capitalization on the current wiki
+    /// Normalizes a page title by capitalizing the first letter.
+    /// TODO: use wiki configuration to determine first character capitalization rules
+    pub fn normalize_page_title(s: &str) -> String {
         if s.len() < 2 {
             return s.to_owned();
         }
@@ -299,23 +301,15 @@ impl ListeriaList {
 
     pub fn thumbnail_size(&self) -> u64 {
         let default = self.page_params.config().default_thumbnail_size();
-        Self::get_template_value(&self.template, "thumb")
+        self.template
+            .get_value("thumb")
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(default)
     }
 
-    fn get_template_value(template: &Template, key: &str) -> Option<String> {
-        template
-            .params()
-            .iter()
-            .filter(|(k, _v)| k.to_lowercase() == key.to_lowercase())
-            .map(|(_k, v)| v.to_owned())
-            .next()
-    }
-
     pub async fn run_query(&mut self) -> Result<()> {
         let wikibase_key = self.params.wikibase().to_lowercase();
-        let sparql = match Self::get_template_value(&self.template, "sparql") {
+        let sparql = match self.template.get_value("sparql") {
             Some(s) => s,
             None => return Err(anyhow!("No 'sparql' parameter in {:?}", &self.template)),
         };
