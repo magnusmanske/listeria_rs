@@ -34,7 +34,7 @@ impl ListeriaPage {
         Ok(Self {
             page_params,
             data_has_changed: false,
-            elements: vec![],
+            elements: Vec::new(),
         })
     }
 
@@ -110,7 +110,7 @@ impl ListeriaPage {
     }
 
     pub async fn as_wikitext(&mut self) -> Result<Vec<String>> {
-        let mut ret: Vec<String> = vec![];
+        let mut ret: Vec<String> = Vec::with_capacity(self.elements.len());
         for element in &mut self.elements {
             if !element.is_just_text() {
                 ret.push(element.new_inside().await?);

@@ -132,7 +132,7 @@ impl ListProcessor {
     }
 
     fn get_files_to_check(list: &ListeriaList) -> Vec<String> {
-        let mut files_to_check = vec![];
+        let mut files_to_check = Vec::new();
         for row in list.results().iter() {
             for cell in row.cells() {
                 for part in cell.parts() {
@@ -197,7 +197,7 @@ impl ListProcessor {
     }
 
     fn collect_entity_ids_from_results(list: &ListeriaList) -> Vec<String> {
-        let mut ids = vec![];
+        let mut ids = Vec::new();
         for row in list.results().iter() {
             row.cells().iter().for_each(|cell| {
                 cell.parts().iter().for_each(|part| {
@@ -216,7 +216,7 @@ impl ListProcessor {
     }
 
     async fn get_labels_for_entity_ids(list: &mut ListeriaList, ids: Vec<String>) -> Vec<String> {
-        let mut labels = vec![];
+        let mut labels = Vec::with_capacity(ids.len());
         for id in ids {
             if let Some(e) = list.get_entity(&id).await
                 && let Some(l) = e.label_in_locale(list.language())
@@ -335,7 +335,7 @@ impl ListProcessor {
         section_property: &str,
         datatype: &SnakDataType,
     ) -> Result<Vec<String>> {
-        let mut section_names_q = vec![];
+        let mut section_names_q = Vec::with_capacity(list.results().len());
         for row in list.results().iter() {
             section_names_q.push(row.get_sortkey_prop(section_property, list, datatype).await);
         }
@@ -347,7 +347,7 @@ impl ListProcessor {
             .await?;
         list.profile("AFTER list::process_assign_sections 3a");
 
-        let mut section_names = vec![];
+        let mut section_names = Vec::with_capacity(section_names_q.len());
         for q in section_names_q {
             let label = list.get_label_with_fallback(&q).await;
             section_names.push(label);
@@ -526,7 +526,7 @@ impl ListProcessor {
     }
 
     fn collect_stated_in_items_from_references(list: &mut ListeriaList) -> Vec<String> {
-        let mut items_to_load: Vec<String> = vec![];
+        let mut items_to_load: Vec<String> = Vec::new();
         for row in list.results_mut().iter_mut() {
             for cell in row.cells_mut().iter_mut() {
                 for part_with_reference in cell.parts_mut().iter_mut() {

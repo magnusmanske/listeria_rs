@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_namespace_group_list_blocks_negative() {
-        let group = NamespaceGroup::List(vec![]);
+        let group = NamespaceGroup::List(Vec::new());
         assert!(!group.can_edit_namespace(-1)); // Negative always blocked
         assert!(!group.can_edit_namespace(-2)); // Negative always blocked
     }
@@ -540,7 +540,7 @@ mod tests {
 
     #[test]
     fn test_namespace_group_empty_list_allows_all_positive() {
-        let group = NamespaceGroup::List(vec![]);
+        let group = NamespaceGroup::List(Vec::new());
         assert!(group.can_edit_namespace(0));
         assert!(group.can_edit_namespace(1));
         assert!(group.can_edit_namespace(100));

@@ -388,7 +388,7 @@ impl ResultCellPart {
         rownum: usize,
         colnum: usize,
     ) -> String {
-        let mut ret = vec![];
+        let mut ret = Vec::with_capacity(v.len());
         for rcp in v {
             ret.push(rcp.part.as_wikitext(list, rownum, colnum).await);
         }

@@ -113,7 +113,7 @@ impl RendererWikitext {
     }
 
     async fn process_rows(list: &mut ListeriaList, section_id: usize, wt: &mut String) {
-        let mut row_entity_ids = vec![];
+        let mut row_entity_ids = Vec::new();
         for rownum in 0..list.results().len() {
             if let Some(row) = list.results().get(rownum)
                 && row.section() == section_id
@@ -124,7 +124,7 @@ impl RendererWikitext {
 
         // Rows
         let mut current_sub_row = 0;
-        let mut rows = vec![];
+        let mut rows = Vec::new();
         for rownum in 0..list.results().len() {
             if let Some(row) = list.results().get(rownum) {
                 let mut row = row.clone();

@@ -77,7 +77,7 @@ impl ResultGenerator {
 
     pub fn get_ids_from_sparql_rows(list: &ListeriaList) -> Result<Vec<String>> {
         let var_index = Self::get_var_index(list)?;
-        let mut ids_tmp = vec![];
+        let mut ids_tmp = Vec::new();
         for row_id in 0..list.sparql_table().len() {
             if let Some(SparqlValue::Entity(id)) =
                 list.sparql_table().get_row_col(row_id, var_index)
@@ -87,7 +87,7 @@ impl ResultGenerator {
         }
 
         // Can't sort/dedup, need to preserve original order!
-        let mut ids: Vec<String> = vec![];
+        let mut ids: Vec<String> = Vec::new();
         ids_tmp.iter().for_each(|id| {
             if !ids.contains(id) {
                 ids.push(id.to_string());

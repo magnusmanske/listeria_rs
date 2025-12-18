@@ -11,8 +11,8 @@ pub struct Template {
 impl Template {
     pub fn new_from_params(text: &str) -> Result<Self> {
         let mut curly_braces = 0;
-        let mut parts: Vec<String> = vec![];
-        let mut part: Vec<char> = vec![];
+        let mut parts: Vec<String> = Vec::new();
+        let mut part: Vec<char> = Vec::new();
         let mut quoted = false;
         let mut quote_char: char = ' ';
         text.chars().for_each(|c| match c {

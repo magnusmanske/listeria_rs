@@ -276,7 +276,7 @@ impl EntityContainerWrapper {
 
     #[must_use]
     pub fn gather_entities_and_external_properties(parts: &[PartWithReference]) -> Vec<String> {
-        let mut entities_to_load = vec![];
+        let mut entities_to_load = Vec::new();
         for part_with_reference in parts {
             match part_with_reference.part() {
                 ResultCellPart::Entity(entity_info) if entity_info.try_localize => {
