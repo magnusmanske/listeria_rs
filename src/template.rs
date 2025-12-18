@@ -9,7 +9,7 @@ pub struct Template {
 }
 
 impl Template {
-    pub fn new_from_params(_title: String, text: String) -> Result<Self> {
+    pub fn new_from_params(text: &str) -> Result<Self> {
         let mut curly_braces = 0;
         let mut parts: Vec<String> = vec![];
         let mut part: Vec<char> = vec![];
@@ -101,31 +101,21 @@ mod tests {
 
     #[test]
     fn test_new_from_params_simple() {
-        let t =
-            Template::new_from_params("".to_string(), "param1=value1|param2=value2".to_string())
-                .unwrap();
+        let t = Template::new_from_params("param1=value1|param2=value2").unwrap();
         assert_eq!(t.params.get("param1"), Some(&"value1".to_string()));
         assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
     }
 
     #[test]
     fn test_new_from_params_with_spaces() {
-        let t = Template::new_from_params(
-            "".to_string(),
-            "  param1  =  value1  |  param2  =  value2  ".to_string(),
-        )
-        .unwrap();
+        let t = Template::new_from_params("  param1  =  value1  |  param2  =  value2  ").unwrap();
         assert_eq!(t.params.get("param1"), Some(&"value1".to_string()));
         assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
     }
 
     #[test]
     fn test_new_from_params_nested_curly_braces() {
-        let t = Template::new_from_params(
-            "".to_string(),
-            "param1={{template|value}}|param2=value2".to_string(),
-        )
-        .unwrap();
+        let t = Template::new_from_params("param1={{template|value}}|param2=value2").unwrap();
         assert_eq!(
             t.params.get("param1"),
             Some(&"{{template|value}}".to_string())
@@ -135,11 +125,7 @@ mod tests {
 
     #[test]
     fn test_new_from_params_quoted_pipe() {
-        let t = Template::new_from_params(
-            "".to_string(),
-            "param1=\"value|with|pipes\"|param2=value2".to_string(),
-        )
-        .unwrap();
+        let t = Template::new_from_params("param1=\"value|with|pipes\"|param2=value2").unwrap();
         assert_eq!(
             t.params.get("param1"),
             Some(&"\"value|with|pipes\"".to_string())
@@ -149,11 +135,7 @@ mod tests {
 
     #[test]
     fn test_new_from_params_single_quoted_pipe() {
-        let t = Template::new_from_params(
-            "".to_string(),
-            "param1='value|with|pipes'|param2=value2".to_string(),
-        )
-        .unwrap();
+        let t = Template::new_from_params("param1='value|with|pipes'|param2=value2").unwrap();
         assert_eq!(
             t.params.get("param1"),
             Some(&"'value|with|pipes'".to_string())
@@ -163,21 +145,19 @@ mod tests {
 
     #[test]
     fn test_new_from_params_unclosed_quote() {
-        let result = Template::new_from_params("".to_string(), "param1=\"unclosed".to_string());
+        let result = Template::new_from_params("param1=\"unclosed");
         assert!(result.is_err());
     }
 
     #[test]
     fn test_new_from_params_empty() {
-        let t = Template::new_from_params("".to_string(), "".to_string()).unwrap();
+        let t = Template::new_from_params("").unwrap();
         assert_eq!(t.params.len(), 0);
     }
 
     #[test]
     fn test_new_from_params_no_equals() {
-        let t =
-            Template::new_from_params("".to_string(), "value1|value2|param1=value3".to_string())
-                .unwrap();
+        let t = Template::new_from_params("value1|value2|param1=value3").unwrap();
         // Parameters without '=' are ignored in the filter_map
         assert_eq!(t.params.len(), 1);
         assert_eq!(t.params.get("param1"), Some(&"value3".to_string()));
@@ -186,8 +166,7 @@ mod tests {
     #[test]
     fn test_new_from_params_complex_nested() {
         let t = Template::new_from_params(
-            "".to_string(),
-            "p1={{cite web|url=http://example.com|title=Test}}|p2=simple".to_string(),
+            "p1={{cite web|url=http://example.com|title=Test}}|p2=simple",
         )
         .unwrap();
         assert_eq!(

@@ -264,11 +264,13 @@ impl ResultCellPart {
 
     fn tabbed_string_safe(s: String) -> String {
         let ret = s.replace(['\n', '\t'], " ");
-        // 400 chars Max
+
+        // limit string to ~400 chars Max
         if ret.len() >= 380 {
-            ret[0..380].to_string();
+            ret[0..380].to_string()
+        } else {
+            ret
         }
-        ret
     }
 
     async fn as_wikitext_entity(
