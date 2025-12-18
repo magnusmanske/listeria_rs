@@ -104,8 +104,8 @@ impl Reference {
         };
         let mut ret = format!(
             "{template}|url={}|title={}",
-            self.url.as_ref().unwrap_or(&String::new()),
-            self.title.as_ref().unwrap_or(&String::new())
+            self.url.as_deref().unwrap_or(""),
+            self.title.as_deref().unwrap_or("")
         );
         if let Some(stated_in) = &self.stated_in {
             ret += &format!(

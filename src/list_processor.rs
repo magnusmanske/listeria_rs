@@ -165,8 +165,8 @@ impl ListProcessor {
                     ("titles", prefixed_filename.as_str()),
                     ("prop", "imageinfo"),
                 ]
-                .iter()
-                .map(|x| (x.0.to_string(), x.1.to_string()))
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect();
                 params
             })

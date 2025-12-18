@@ -284,7 +284,7 @@ impl Configuration {
     }
 
     pub fn get_template_start_q(&self) -> String {
-        self.template_start_q.to_owned()
+        self.template_start_q.clone()
     }
 
     pub const fn prefer_preferred(&self) -> bool {

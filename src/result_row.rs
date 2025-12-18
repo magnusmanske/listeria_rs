@@ -111,9 +111,10 @@ impl ResultRow {
 
     /// Get the sortkey for the label of the entity
     pub async fn get_sortkey_label(&self, list: &ListeriaList) -> String {
-        match list.get_entity(self.entity_id()).await {
-            Some(_entity) => list.get_label_with_fallback(self.entity_id()).await,
-            None => "".to_string(),
+        if list.get_entity(self.entity_id()).await.is_some() {
+            list.get_label_with_fallback(self.entity_id()).await
+        } else {
+            String::new()
         }
     }
 
