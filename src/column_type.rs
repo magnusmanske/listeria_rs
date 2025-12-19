@@ -111,7 +111,7 @@ impl ColumnType {
         match self {
             Self::Number => "number".to_string(),
             Self::Label => "label".to_string(),
-            Self::Description(languages) => format!("description:{}", languages.join(",")),
+            Self::Description(_) => "desc".to_string(),
             Self::Item => "item".to_string(),
             Self::Qid => "qid".to_string(),
             Self::LabelLang(l) => format!("language:{l}"),
