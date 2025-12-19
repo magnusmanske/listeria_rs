@@ -163,7 +163,7 @@ impl MainCommands {
         }
         let config = Arc::new((*self.config).clone());
         let bot = ListeriaBotSingle::new_from_config(config).await?;
-        let mut seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
+        let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
         seppuku.arm();
         loop {
             let page = match bot.prepare_next_single_page().await {
