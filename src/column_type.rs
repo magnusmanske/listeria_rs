@@ -9,7 +9,7 @@ pub enum ColumnType {
     Label,
     LabelLang(String),
     AliasLang(String),
-    Description,
+    Description(Vec<String>),
     Item,
     Qid,
     Property(String),
@@ -44,6 +44,12 @@ impl ColumnType {
                 .build()
                 .expect("RE_ALIAS_LANG does not parse")
         });
+        static RE_DESCRIPTION_LANG: LazyLock<Regex> = LazyLock::new(|| {
+            RegexBuilder::new(r#"^description/(.+)$"#)
+                .case_insensitive(true)
+                .build()
+                .expect("RE_DESCRIPTION_LANG does not parse")
+        });
         static RE_PROPERTY: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r#"^([Pp]\d+)$"#).expect("RE_PROPERTY does not parse"));
         static RE_PROP_QUAL: LazyLock<Regex> = LazyLock::new(|| {
@@ -58,10 +64,19 @@ impl ColumnType {
         match s.to_lowercase().as_str() {
             "number" => return ColumnType::Number,
             "label" => return ColumnType::Label,
-            "description" => return ColumnType::Description,
+            "description" => return ColumnType::Description(Vec::new()),
             "item" => return ColumnType::Item,
             "qid" => return ColumnType::Qid,
             _ => {}
+        }
+        if let Some(caps) = RE_DESCRIPTION_LANG.captures(s) {
+            let langs_str = Self::extract_capture(&caps, 1, |t| t.to_lowercase());
+            let langs: Vec<String> = langs_str
+                .split(',')
+                .map(|lang| lang.trim().to_string())
+                .filter(|lang| !lang.is_empty())
+                .collect();
+            return ColumnType::Description(langs);
         }
         if let Some(caps) = RE_LABEL_LANG.captures(s) {
             return ColumnType::LabelLang(Self::extract_capture(&caps, 1, |t| t.to_lowercase()));
@@ -96,7 +111,7 @@ impl ColumnType {
         match self {
             Self::Number => "number".to_string(),
             Self::Label => "label".to_string(),
-            Self::Description => "desc".to_string(),
+            Self::Description(languages) => format!("description:{}", languages.join(",")),
             Self::Item => "item".to_string(),
             Self::Qid => "qid".to_string(),
             Self::LabelLang(l) => format!("language:{l}"),
