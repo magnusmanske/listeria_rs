@@ -226,7 +226,7 @@ mod tests {
     fn test_column_type_as_key() {
         assert_eq!(ColumnType::Number.as_key(), "number");
         assert_eq!(ColumnType::Label.as_key(), "label");
-        assert_eq!(ColumnType::Description(Vec::new()).as_key(), "description:");
+        assert_eq!(ColumnType::Description(Vec::new()).as_key(), "desc");
         assert_eq!(ColumnType::Item.as_key(), "item");
         assert_eq!(ColumnType::Qid.as_key(), "qid");
         assert_eq!(
@@ -375,11 +375,50 @@ mod tests {
     fn test_column_type_description_as_key_with_langs() {
         assert_eq!(
             ColumnType::Description(vec!["de".to_string()]).as_key(),
-            "description:de"
+            "desc"
         );
         assert_eq!(
             ColumnType::Description(vec!["de".to_string(), "en".to_string()]).as_key(),
-            "description:de,en"
+            "desc"
         );
+    }
+
+    #[test]
+    fn test_all_description_formats() {
+        // "description" - plain, no label
+        let col1 = Column::new("description").unwrap();
+        assert_eq!(col1.obj(), &ColumnType::Description(Vec::new()));
+        assert_eq!(col1.label(), "description");
+        assert!(!col1.has_label);
+
+        // "description:Column heading" - plain with label
+        let col2 = Column::new("description:Column heading").unwrap();
+        assert_eq!(col2.obj(), &ColumnType::Description(Vec::new()));
+        assert_eq!(col2.label(), "Column heading");
+        assert!(col2.has_label);
+
+        // "description/de" - single language
+        let col3 = Column::new("description/de").unwrap();
+        assert_eq!(col3.obj(), &ColumnType::Description(vec!["de".to_string()]));
+        assert_eq!(col3.label(), "description/de");
+        assert!(!col3.has_label);
+
+        // "description/en,de" - multiple languages
+        let col4 = Column::new("description/en,de").unwrap();
+        assert_eq!(
+            col4.obj(),
+            &ColumnType::Description(vec!["en".to_string(), "de".to_string()])
+        );
+        assert_eq!(col4.label(), "description/en,de");
+        assert!(!col4.has_label);
+
+        // "description/en,de:Column heading" - multiple languages with label
+        let col5 = Column::new("description/en,de:Column heading").unwrap();
+        assert_eq!(
+            col5.obj(),
+            &ColumnType::Description(vec!["en".to_string(), "de".to_string()])
+        );
+        assert_eq!(col5.label(), "Column heading");
+        assert!(col5.has_label);
     }
 }
