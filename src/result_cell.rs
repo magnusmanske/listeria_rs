@@ -46,7 +46,7 @@ impl ResultCell {
         match col.obj() {
             ColumnType::Qid => Self::ct_qid(&mut ret, entity_id),
             ColumnType::Item => Self::ct_item(&mut ret, entity_id),
-            ColumnType::Description => Self::ct_description(&entity, list, &mut ret),
+            ColumnType::Description(langs) => Self::ct_description(&entity, list, &mut ret, langs),
             ColumnType::Field(varname) => Self::ct_field(varname, sparql_table, &mut ret),
             ColumnType::Property(property) => Self::ct_property(&entity, &mut ret, list, property),
             ColumnType::PropertyQualifier((p1, p2)) => Self::ct_pq(&entity, list, p1, &mut ret, p2),
@@ -398,9 +398,18 @@ impl ResultCell {
         entity: &Option<wikimisc::wikibase::Entity>,
         list: &ListeriaList,
         ret: &mut ResultCell,
+        langs: &[String],
     ) {
         if let Some(e) = entity {
-            match e.description_in_locale(list.language()) {
+            let description = if langs.is_empty() {
+                // Default behavior: use list language
+                e.description_in_locale(list.language())
+            } else {
+                // Try each fallback language in order
+                langs.iter().find_map(|lang| e.description_in_locale(lang))
+            };
+
+            match description {
                 Some(s) => {
                     ret.wdedit_class = match &list.header_template() {
                         Some(_) => None,

@@ -61,7 +61,7 @@ impl Column {
             ColumnType::Label => self.label.to_owned(),
             ColumnType::LabelLang(_) => self.label.to_owned(),
             ColumnType::AliasLang(_) => self.label.to_owned(),
-            ColumnType::Description => self.label.to_owned(),
+            ColumnType::Description(_) => self.label.to_owned(),
             ColumnType::Item => self.label.to_owned(),
             ColumnType::Qid => self.label.to_owned(),
             ColumnType::Field(_) => self.label.to_owned(),
@@ -89,8 +89,14 @@ mod tests {
 
     #[test]
     fn test_column_type_new_description() {
-        assert_eq!(ColumnType::new("description"), ColumnType::Description);
-        assert_eq!(ColumnType::new("DESCRIPTION"), ColumnType::Description);
+        assert_eq!(
+            ColumnType::new("description"),
+            ColumnType::Description(Vec::new())
+        );
+        assert_eq!(
+            ColumnType::new("DESCRIPTION"),
+            ColumnType::Description(Vec::new())
+        );
     }
 
     #[test]
@@ -220,7 +226,7 @@ mod tests {
     fn test_column_type_as_key() {
         assert_eq!(ColumnType::Number.as_key(), "number");
         assert_eq!(ColumnType::Label.as_key(), "label");
-        assert_eq!(ColumnType::Description.as_key(), "desc");
+        assert_eq!(ColumnType::Description(Vec::new()).as_key(), "description:");
         assert_eq!(ColumnType::Item.as_key(), "item");
         assert_eq!(ColumnType::Qid.as_key(), "qid");
         assert_eq!(
@@ -289,8 +295,91 @@ mod tests {
     #[test]
     fn test_column_new_description_with_label() {
         let col = Column::new("description:Info").unwrap();
-        assert_eq!(col.obj(), &ColumnType::Description);
+        assert_eq!(col.obj(), &ColumnType::Description(Vec::new()));
         assert_eq!(col.label(), "Info");
         assert!(col.has_label);
+    }
+
+    #[test]
+    fn test_column_type_new_description_with_single_lang() {
+        assert_eq!(
+            ColumnType::new("description/de"),
+            ColumnType::Description(vec!["de".to_string()])
+        );
+        assert_eq!(
+            ColumnType::new("DESCRIPTION/FR"),
+            ColumnType::Description(vec!["fr".to_string()])
+        );
+        assert_eq!(
+            ColumnType::new("Description/en-GB"),
+            ColumnType::Description(vec!["en-gb".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_column_type_new_description_with_multiple_langs() {
+        assert_eq!(
+            ColumnType::new("description/de,en"),
+            ColumnType::Description(vec!["de".to_string(), "en".to_string()])
+        );
+        assert_eq!(
+            ColumnType::new("DESCRIPTION/fr,es,it"),
+            ColumnType::Description(vec!["fr".to_string(), "es".to_string(), "it".to_string()])
+        );
+        assert_eq!(
+            ColumnType::new("Description/en-GB,de-CH"),
+            ColumnType::Description(vec!["en-gb".to_string(), "de-ch".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_column_type_new_description_with_langs_and_spaces() {
+        assert_eq!(
+            ColumnType::new("description/de, en, fr"),
+            ColumnType::Description(vec!["de".to_string(), "en".to_string(), "fr".to_string()])
+        );
+        assert_eq!(
+            ColumnType::new("description/  zh  ,  ja  "),
+            ColumnType::Description(vec!["zh".to_string(), "ja".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_column_type_new_description_with_trailing_comma() {
+        assert_eq!(
+            ColumnType::new("description/de,en,"),
+            ColumnType::Description(vec!["de".to_string(), "en".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_column_type_new_description_with_empty_entries() {
+        assert_eq!(
+            ColumnType::new("description/de,,en"),
+            ColumnType::Description(vec!["de".to_string(), "en".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_column_new_description_with_lang_and_label() {
+        let col = Column::new("description/de,en:Info").unwrap();
+        assert_eq!(
+            col.obj(),
+            &ColumnType::Description(vec!["de".to_string(), "en".to_string()])
+        );
+        assert_eq!(col.label(), "Info");
+        assert!(col.has_label);
+    }
+
+    #[test]
+    fn test_column_type_description_as_key_with_langs() {
+        assert_eq!(
+            ColumnType::Description(vec!["de".to_string()]).as_key(),
+            "description:de"
+        );
+        assert_eq!(
+            ColumnType::Description(vec!["de".to_string(), "en".to_string()]).as_key(),
+            "description:de,en"
+        );
     }
 }
