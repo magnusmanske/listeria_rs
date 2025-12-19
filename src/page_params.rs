@@ -1,4 +1,6 @@
-use crate::{configuration::Configuration, ApiArc};
+//! Page-level parameter handling and API resolution.
+
+use crate::{ApiArc, configuration::Configuration};
 use anyhow::Result;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
@@ -21,7 +23,11 @@ pub struct PageParams {
 impl PageParams {
     pub async fn new(config: Arc<Configuration>, mw_api: ApiArc, page: String) -> Result<Self> {
         let api = mw_api.clone();
-        let wiki_name = api.get_site_info_string("general", "wikiid")?.to_string();
+        let wiki_name = if config.is_single_wiki() {
+            "wiki".to_string()
+        } else {
+            api.get_site_info_string("general", "wikiid")?.to_string()
+        };
         let ret = Self {
             wiki: wiki_name,
             page,
@@ -41,11 +47,11 @@ impl PageParams {
         Ok(ret)
     }
 
-    pub fn local_file_namespace_prefix(&self) -> &String {
+    pub fn local_file_namespace_prefix(&self) -> &str {
         &self.local_file_namespace_prefix
     }
 
-    pub fn simulate(&self) -> bool {
+    pub const fn simulate(&self) -> bool {
         self.simulate
     }
 
@@ -65,7 +71,7 @@ impl PageParams {
         self.config.clone()
     }
 
-    pub fn mw_api(&self) -> &ApiArc {
+    pub const fn mw_api(&self) -> &ApiArc {
         &self.mw_api
     }
 
@@ -73,15 +79,15 @@ impl PageParams {
         self.wb_api.clone()
     }
 
-    pub fn simulated_text(&self) -> &Option<String> {
+    pub const fn simulated_text(&self) -> &Option<String> {
         &self.simulated_text
     }
 
-    pub fn simulated_sparql_results(&self) -> &Option<String> {
+    pub const fn simulated_sparql_results(&self) -> &Option<String> {
         &self.simulated_sparql_results
     }
 
-    pub fn simulated_autodesc(&self) -> &Option<Vec<String>> {
+    pub const fn simulated_autodesc(&self) -> &Option<Vec<String>> {
         &self.simulated_autodesc
     }
 

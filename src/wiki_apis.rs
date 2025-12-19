@@ -1,21 +1,19 @@
-use crate::configuration::Configuration;
-use crate::database_pool::DatabasePool;
-use crate::wiki::Wiki;
-use crate::ApiArc;
-use anyhow::{anyhow, Result};
+//! MediaWiki API management and connection pooling for multiple wikis.
+
+use crate::{ApiArc, configuration::Configuration, database_pool::DatabasePool, wiki::Wiki};
+use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use log::info;
-use mysql_async::{from_row, prelude::*, Conn};
-use mysql_async::{Opts, OptsBuilder};
+use mysql_async::{Conn, Opts, OptsBuilder, from_row, prelude::*};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use wikimisc::mediawiki::api::Api;
-use wikimisc::mediawiki::title::Title;
-use wikimisc::site_matrix::SiteMatrix;
-use wikimisc::wikibase::entity::*;
-use wikimisc::wikibase::entity_container::EntityContainer;
+use wikimisc::{
+    mediawiki::{api::Api, title::Title},
+    site_matrix::SiteMatrix,
+    wikibase::{Entity, EntityTrait, entity_container::EntityContainer},
+};
 
 #[derive(Debug, Clone)]
 pub struct WikiApis {
@@ -58,33 +56,45 @@ impl WikiApis {
             .map(|ret| (*ret).clone())
     }
 
+    async fn wait_with_condition<F>(&self, mut condition: F, message: String)
+    where
+        F: FnMut() -> bool,
+    {
+        while condition() {
+            sleep(Duration::from_millis(100)).await;
+            println!("{message}");
+        }
+    }
+
     async fn wait_for_wiki_apis(&self, api: &ApiArc) {
         // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
         // See https://phabricator.wikimedia.org/T356160
         if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
-            while Arc::strong_count(api) >= *max {
-                sleep(Duration::from_millis(100)).await;
-                // warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because per-wiki limit {} was reached", max);
-                println!("WikiApis::wait_for_wiki_apis: sleeping because per-wiki limit {max} was reached");
-            }
+            let max = *max;
+            let api = Arc::clone(api);
+            self.wait_with_condition(
+                move || Arc::strong_count(&api) >= max,
+                format!("WikiApis::wait_for_wiki_apis: sleeping because per-wiki limit {max} was reached"),
+            )
+            .await;
         }
     }
 
     async fn wait_for_max_mw_apis_total(&self) {
         if let Some(max) = self.config.get_max_mw_apis_total() {
-            loop {
-                let current_strong_locks: usize = self
-                    .apis
-                    .iter()
-                    .map(|entry| Arc::strong_count(entry.value()))
-                    .sum();
-                if current_strong_locks < *max {
-                    break;
-                }
-                sleep(Duration::from_millis(100)).await;
-                // warn!(target: "lock", "WikiApis::get_or_create_wiki_api: sleeping because total limit {} was reached", max);
-                println!("WikiApis::wait_for_max_mw_apis_total: sleeping because total limit {max} was reached");
-            }
+            let max = *max;
+            self.wait_with_condition(
+                || {
+                    let current_strong_locks: usize = self
+                        .apis
+                        .iter()
+                        .map(|entry| Arc::strong_count(entry.value()))
+                        .sum();
+                    current_strong_locks >= max
+                },
+                format!("WikiApis::wait_for_max_mw_apis_total: sleeping because total limit {max} was reached"),
+            )
+            .await;
         }
     }
 
@@ -148,7 +158,7 @@ impl WikiApis {
         if new_wikis.is_empty() {
             return Ok(());
         }
-        let placeholders = self.placeholders(new_wikis.len(), "(?,'ACTIVE')");
+        let placeholders = Self::placeholders(new_wikis.len(), "(?,'ACTIVE')");
         let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
         println!("Adding {new_wikis:?}");
         self.pool
@@ -198,8 +208,10 @@ impl WikiApis {
         for chunk in new_pages.chunks(10000) {
             let chunk: Vec<String> = chunk.into();
             let placeholders =
-                self.placeholders(chunk.len(), &format!("({wiki_id},?,'WAITING','')"));
-            let sql = format!("INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}");
+                Self::placeholders(chunk.len(), &format!("({wiki_id},?,'WAITING','')"));
+            let sql = format!(
+                "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}"
+            );
             self.pool.get_conn().await?.exec_drop(sql, chunk).await?;
         }
         Ok(())
@@ -240,14 +252,14 @@ impl WikiApis {
         let wikis = self.get_all_wikis_in_database().await?;
         for (name, _wiki) in wikis {
             if let Err(e) = self.update_pages_on_wiki(&name).await {
-                println!("Problem with {name}: {e}")
+                println!("Problem with {name}: {e}");
             }
         }
         Ok(())
     }
 
     /// Returns a string with the given number of placeholders, separated by commas
-    fn placeholders(&self, num: usize, element: &str) -> String {
+    fn placeholders(num: usize, element: &str) -> String {
         let mut placeholders = Vec::with_capacity(num);
         placeholders.resize(num, element.to_string());
         placeholders.join(",")
@@ -304,22 +316,23 @@ impl WikiApis {
             .ok_or_else(|| anyhow!("Wiki {wiki} not known"))
     }
 
+    /// Helper method to extract a string value from MySQL configuration
+    fn get_mysql_config_string(&self, key: &str) -> Result<String> {
+        self.config
+            .mysql(key)
+            .as_str()
+            .ok_or_else(|| anyhow!("No MySQL {key} set"))
+            .map(|s| s.to_string())
+    }
+
     /// Returns the database connection settings for a given wiki
     fn get_mysql_user(&self) -> Result<String> {
-        self.config
-            .mysql("user")
-            .as_str()
-            .ok_or_else(|| anyhow!("No MySQL user set"))
-            .map(|s| s.to_string())
+        self.get_mysql_config_string("user")
     }
 
     /// Returns the MySQL password from the configuration
     fn get_mysql_password(&self) -> Result<String> {
-        self.config
-            .mysql("password")
-            .as_str()
-            .ok_or_else(|| anyhow!("No MySQL password set"))
-            .map(|s| s.to_string())
+        self.get_mysql_config_string("password")
     }
 
     /// Returns the database connection settings for a given wiki
@@ -330,7 +343,11 @@ impl WikiApis {
         let port: u16 = if host == "127.0.0.1" {
             3307
         } else {
-            self.config.mysql("port").as_u64().unwrap_or(3306) as u16
+            self.config
+                .mysql("port")
+                .as_u64()
+                .and_then(|u| u.try_into().ok())
+                .unwrap_or(3306)
         };
         let opts = OptsBuilder::default()
             .ip_or_hostname(host)
@@ -343,11 +360,13 @@ impl WikiApis {
     }
 
     /// Returns the server group for the database
-    fn get_db_server_group(&self) -> &str {
+    #[allow(clippy::unused_self)]
+    const fn get_db_server_group(&self) -> &str {
         ".web.db.svc.eqiad.wmflabs"
     }
 
     /// Adjusts the name of some wikis to work as a DB server name
+    #[must_use]
     pub fn fix_wiki_name(&self, wiki: &str) -> String {
         match wiki {
             "be-taraskwiki" | "be-x-oldwiki" | "be_taraskwiki" | "be_x_oldwiki" => "be_x_oldwiki",
@@ -384,11 +403,6 @@ impl WikiApis {
 mod tests {
     use super::*;
 
-    /* TESTING
-    ssh magnus@tools-login.wmflabs.org -L 3308:tools.db.svc.wikimedia.cloud:3306 -N &
-    ssh magnus@tools-login.wmflabs.org -L 3307:dewiki.web.db.svc.eqiad.wmflabs:3306 -N &
-    */
-
     #[tokio::test]
     async fn test_fix_wiki_name() {
         let config = Configuration::new_from_file("config.json").await.unwrap();
@@ -409,8 +423,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_placeholders() {
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let wa = WikiApis::new(Arc::new(config)).await.unwrap();
-        assert_eq!(wa.placeholders(3, "?"), "?,?,?");
+        assert_eq!(WikiApis::placeholders(3, "?"), "?,?,?");
     }
 }

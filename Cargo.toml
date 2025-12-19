@@ -1,6 +1,6 @@
 [package]
 name = "listeria"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
 edition = "2024"
 
@@ -8,7 +8,6 @@ edition = "2024"
 async-trait = "*"
 async-recursion = "*"
 regex = "^1"
-lazy_static = "^1"
 chrono = "*"
 config = "*"
 dashmap = "*"
@@ -27,5 +26,27 @@ tempfile = "*"
 anyhow = "*"
 reqwest = { version = "*", features = ["gzip", "deflate", "brotli"] }
 log = "*"
-toolforge = { version = "*", features = ["mysql"] }
 sysinfo = "*"
+clap = { version = "*", features = ["derive"] }
+axum = { version = "*", features = [
+	"http1",
+	"http2",
+	"tokio",
+	"json",
+	"macros",
+] }
+tower-http = { version = "*", features = ["full"] }
+html-escape = "*"
+
+[dev-dependencies]
+wiremock = "0.6"
+http = "1"
+
+[profile.release]
+lto = 'thin'
+panic = 'abort'
+codegen-units = 1
+
+[profile.bench]
+lto = 'thin'
+codegen-units = 1

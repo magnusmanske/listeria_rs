@@ -1,0 +1,41 @@
+# Build stage
+FROM rust:1.91 AS builder
+
+# Create app directory
+WORKDIR /usr/src/app
+
+# Copy Cargo.toml and Cargo.lock (if exists)
+COPY Cargo.toml Cargo.lock* ./
+
+# Copy source code
+COPY src ./src
+
+# Build the application in release mode
+RUN cargo build --release
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+# Install necessary runtime dependencies
+RUN apt-get update && \
+	apt-get install -y --no-install-recommends \
+	ca-certificates libcurl4 && \
+	rm -rf /var/lib/apt/lists/*
+
+# Create non-root user to run the application
+RUN useradd -m -u 1001 appuser
+
+# Copy the binary from builder stage
+COPY --from=builder /usr/src/app/target/release/main /usr/local/bin/listeria
+
+# Create directory for config file
+RUN mkdir -p /etc/app && chown appuser:appuser /etc/app
+
+# Switch to non-root user
+USER appuser
+
+# The config file will be mounted here at runtime
+VOLUME ["/etc/app"]
+
+# Expose port (adjust as needed for your application)
+EXPOSE 8080

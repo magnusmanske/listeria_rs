@@ -1,12 +1,11 @@
+//! Wrapper for entity container with caching and batch loading.
+
 use crate::listeria_list::ListeriaList;
-use crate::result_cell_part::LinkTarget;
-use crate::result_cell_part::PartWithReference;
-use crate::result_cell_part::ResultCellPart;
+use crate::result_cell_part::{LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart};
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{Result, anyhow};
 use foyer::{BlockEngineBuilder, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
-use rand::rng;
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
@@ -15,8 +14,9 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
+use wikimisc::wikibase::Entity;
+use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::Value;
-use wikimisc::wikibase::entity::*;
 use wikimisc::wikibase::snak::SnakDataType;
 
 const CACHE_CAPACITY_MB: usize = 64;
@@ -43,16 +43,12 @@ impl EntityContainerWrapper {
         };
         // Pre-cache test entities if testing
         if cfg!(test) {
-            // println!("Loading test entities from test_data/test_entities.json");
-            let file = File::open("test_data/test_entities.json")
-                .expect("Could not open file test_data/test_entities.json");
+            let file = File::open("test_data/test_entities.json")?;
             let reader = BufReader::new(file);
-            let test_items: serde_json::Value = serde_json::from_reader(reader)
-                .expect("Failed to parse JSON from test_data/test_entities.json");
-            for (_item, j) in test_items.as_object().unwrap() {
-                ret.set_entity_from_json(j).unwrap();
+            let test_items: serde_json::Value = serde_json::from_reader(reader)?;
+            for (_item, j) in test_items.as_object().ok_or(anyhow!("Not an object"))? {
+                ret.set_entity_from_json(j)?;
             }
-            // println!("Loaded");
         }
         Ok(ret)
     }
@@ -103,30 +99,29 @@ impl EntityContainerWrapper {
     }
 
     /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times
-    fn filter_ids(&self, ids: &[String]) -> Result<Vec<String>> {
-        let new_ids: Vec<String> = ids
+    fn filter_ids(&self, original_ids: &[String]) -> Result<Vec<String>> {
+        let new_ids: Vec<String> = original_ids
             .iter()
             .filter(|id| !self.entities.contains(*id))
             .map(|id| id.to_owned())
             .collect();
-        let ids = self
-            .unique_shuffle_entity_ids(&new_ids)
-            .map_err(|e| anyhow!("{e}"))?;
-        Ok(ids)
+        Self::unique_shuffle_entity_ids(&new_ids)
     }
 
-    fn unique_shuffle_entity_ids(&self, ids: &[String]) -> Result<Vec<String>> {
+    fn unique_shuffle_entity_ids(ids: &[String]) -> Result<Vec<String>> {
         let mut ids = ids.to_vec();
         ids.sort_unstable();
         ids.dedup();
-        ids.shuffle(&mut rng());
+        ids.shuffle(&mut rand::rng());
         Ok(ids)
     }
 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entity_count.load(Ordering::Relaxed)
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -167,32 +162,27 @@ impl EntityContainerWrapper {
     }
 
     pub async fn get_entity_label_with_fallback(&self, entity_id: &str, language: &str) -> String {
-        match self.get_entity(entity_id).await {
-            Some(entity) => {
-                match entity.label_in_locale(language).map(|s| s.to_string()) {
-                    Some(s) => s,
-                    None => {
-                        // Try the usual suspects
-                        for language in ["mul", "en", "de", "fr", "es", "it", "el", "nl"].iter() {
-                            if let Some(label) =
-                                entity.label_in_locale(language).map(|s| s.to_string())
-                            {
-                                return label;
-                            }
-                        }
-                        // Try any label, any language
-                        if let Some(entity) = self.get_entity(entity_id).await
-                            && let Some(label) = entity.labels().first()
-                        {
-                            return label.value().to_string();
-                        }
-                        // Fallback to item ID as label
-                        entity_id.to_string()
-                    }
-                }
-            }
-            None => entity_id.to_string(), // Fallback
+        let Some(entity) = self.get_entity(entity_id).await else {
+            return entity_id.to_string();
+        };
+
+        if let Some(label) = entity.label_in_locale(language) {
+            return label.to_string();
         }
+
+        for lang in ["mul", "en", "de", "fr", "es", "it", "el", "nl"] {
+            if let Some(label) = entity.label_in_locale(lang) {
+                return label.to_string();
+            }
+        }
+
+        if let Some(entity2) = self.get_entity(entity_id).await
+            && let Some(label) = entity2.labels().first()
+        {
+            return label.value().to_string();
+        }
+
+        entity_id.to_string()
     }
 
     pub async fn entity_to_local_link(
@@ -202,19 +192,23 @@ impl EntityContainerWrapper {
         language: &str,
     ) -> Option<ResultCellPart> {
         let entity = self.get_entity(item).await?;
-        let page = match entity.sitelinks() {
-            Some(sl) => sl
-                .iter()
-                .filter(|s| *s.site() == wiki)
-                .map(|s| s.title().to_string())
-                .next(),
-            None => None,
-        }?;
+        let page = entity
+            .sitelinks()
+            .as_ref()?
+            .iter()
+            .find(|s| *s.site() == wiki)
+            .map(|s| s.title().to_string())?;
+
         let label = self
             .get_local_entity_label(item, language)
             .await
-            .unwrap_or_else(|| page.clone());
-        Some(ResultCellPart::LocalLink((page, label, LinkTarget::Page)))
+            .unwrap_or_else(|| page.to_string());
+
+        Some(ResultCellPart::LocalLink(LocalLinkInfo::new(
+            page,
+            label,
+            LinkTarget::Page,
+        )))
     }
 
     pub async fn get_result_row(
@@ -236,16 +230,12 @@ impl EntityContainerWrapper {
     async fn use_local_links(&self, list: &ListeriaList, entity_id: &str) -> Option<()> {
         if LinksType::Local == *list.template_params().links() {
             let entity = self.get_entity(entity_id).await?;
-            let page = match entity.sitelinks() {
-                Some(sl) => sl
-                    .iter()
-                    .filter(|s| *s.site() == *list.wiki())
-                    .map(|s| s.title().to_string())
-                    .next(),
-                None => None,
-            };
-            page.as_ref()?; // return None if no page on this wiki
-        };
+            entity
+                .sitelinks()
+                .as_ref()?
+                .iter()
+                .find(|s| *s.site() == *list.wiki())?;
+        }
         Some(())
     }
 
@@ -256,10 +246,15 @@ impl EntityContainerWrapper {
             .filter_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
                 match data_value.value() {
-                    Value::StringValue(s) => {
-                        Some(s.to_owned().replace("$1", &urlencoding::decode(id).ok()?))
+                    Value::StringValue(s2) => {
+                        Some(s2.to_owned().replace("$1", &urlencoding::decode(id).ok()?))
                     }
-                    _ => None,
+                    Value::Coordinate(_coordinate) => None,
+                    Value::MonoLingual(_mono_lingual_text) => None,
+                    Value::Entity(_entity_value) => None,
+                    Value::EntitySchema(_entity_value) => None,
+                    Value::Quantity(_quantity_value) => None,
+                    Value::Time(_time_value) => None,
                 }
             })
             .next()
@@ -268,7 +263,6 @@ impl EntityContainerWrapper {
     pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         #[allow(clippy::collapsible_match)]
         match self.get_entity(prop).await {
-            /* trunk-ignore(clippy/collapsible_match) */
             Some(entity) => match entity {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),
@@ -280,15 +274,16 @@ impl EntityContainerWrapper {
         }
     }
 
+    #[must_use]
     pub fn gather_entities_and_external_properties(parts: &[PartWithReference]) -> Vec<String> {
-        let mut entities_to_load = vec![];
+        let mut entities_to_load = Vec::new();
         for part_with_reference in parts {
             match part_with_reference.part() {
-                ResultCellPart::Entity((item, true)) => {
-                    entities_to_load.push(item.to_owned());
+                ResultCellPart::Entity(entity_info) if entity_info.try_localize => {
+                    entities_to_load.push(entity_info.id.to_owned());
                 }
-                ResultCellPart::ExternalId((property, _id)) => {
-                    entities_to_load.push(property.to_owned());
+                ResultCellPart::ExternalId(ext_id_info) => {
+                    entities_to_load.push(ext_id_info.property.to_owned());
                 }
                 ResultCellPart::SnakList(v) => Self::gather_entities_and_external_properties(v)
                     .iter()

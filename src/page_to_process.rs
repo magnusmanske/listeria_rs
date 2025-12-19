@@ -1,3 +1,5 @@
+//! Represents a page queued for processing.
+
 use mysql_async::from_row;
 
 #[derive(Debug, Clone, Default)]
@@ -23,7 +25,7 @@ impl PageToProcess {
         Self::from_parts(parts)
     }
 
-    pub fn id(&self) -> u64 {
+    pub const fn id(&self) -> u64 {
         self.id
     }
 
