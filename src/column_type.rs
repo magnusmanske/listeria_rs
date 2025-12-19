@@ -72,7 +72,7 @@ impl ColumnType {
         if let Some(caps) = RE_DESCRIPTION_LANG.captures(s) {
             let langs_str = Self::extract_capture(&caps, 1, |t| t.to_lowercase());
             let langs: Vec<String> = langs_str
-                .split(',')
+                .split('/')
                 .map(|lang| lang.trim().to_string())
                 .filter(|lang| !lang.is_empty())
                 .collect();
