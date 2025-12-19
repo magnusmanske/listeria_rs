@@ -1,15 +1,19 @@
-use crate::column::ColumnType;
-use crate::listeria_list::*;
-use crate::result_cell::ResultCell;
-use crate::result_cell_part::ResultCellPart;
+//! Table rows containing cells with formatted data.
+
+use crate::{
+    column_type::ColumnType, listeria_list::ListeriaList, result_cell::ResultCell,
+    result_cell_part::ResultCellPart,
+};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::cmp::Ordering;
 use std::collections::HashSet;
-use wikimisc::sparql_table::SparqlTable;
-use wikimisc::wikibase::entity::EntityTrait;
-use wikimisc::wikibase::{Snak, SnakDataType};
+use std::sync::LazyLock;
+use wikimisc::{
+    sparql_table::SparqlTable,
+    wikibase::{Snak, SnakDataType, entity::EntityTrait},
+};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ResultRow {
@@ -28,35 +32,35 @@ impl ResultRow {
         }
     }
 
-    pub fn set_keep(&mut self, keep: bool) {
+    pub const fn set_keep(&mut self, keep: bool) {
         self.keep = keep;
     }
 
-    pub fn keep(&self) -> bool {
+    pub const fn keep(&self) -> bool {
         self.keep
     }
 
-    pub fn entity_id(&self) -> &String {
+    pub fn entity_id(&self) -> &str {
         &self.entity_id
     }
 
-    pub fn cells(&self) -> &Vec<ResultCell> {
+    pub const fn cells(&self) -> &Vec<ResultCell> {
         &self.cells
     }
 
-    pub fn cells_mut(&mut self) -> &mut Vec<ResultCell> {
+    pub const fn cells_mut(&mut self) -> &mut Vec<ResultCell> {
         &mut self.cells
     }
 
-    pub fn section(&self) -> usize {
+    pub const fn section(&self) -> usize {
         self.section
     }
 
-    pub fn set_section(&mut self, section: usize) {
+    pub const fn set_section(&mut self, section: usize) {
         self.section = section;
     }
 
-    pub fn sortkey(&self) -> &String {
+    pub fn sortkey(&self) -> &str {
         &self.sortkey
     }
 
@@ -70,9 +74,8 @@ impl ResultRow {
             if let Some(part) = cell.parts().first() {
                 let has_files = matches!(*part.part(), ResultCellPart::File(_));
                 if has_files {
-                    let mut parts = cell.parts().clone();
-                    parts.truncate(1);
-                    cell.set_parts(parts.to_vec());
+                    let first_part = part.clone();
+                    cell.set_parts(vec![first_part]);
                 }
             }
         });
@@ -108,22 +111,22 @@ impl ResultRow {
 
     /// Get the sortkey for the label of the entity
     pub async fn get_sortkey_label(&self, list: &ListeriaList) -> String {
-        match list.get_entity(self.entity_id()).await {
-            Some(_entity) => list.get_label_with_fallback(self.entity_id()).await,
-            None => "".to_string(),
+        if list.get_entity(self.entity_id()).await.is_some() {
+            list.get_label_with_fallback(self.entity_id()).await
+        } else {
+            String::new()
         }
     }
 
     /// Get the sortkey for the family name of the entity
     pub async fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
-        lazy_static! {
-            static ref RE_SR_JR: Regex =
-                Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse");
-            static ref RE_BRACES: Regex =
-                Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse");
-            static ref RE_LAST_FIRST: Regex =
-                Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse");
-        }
+        static RE_SR_JR: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse"));
+        static RE_BRACES: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new(r"\s+\(.+\)$").expect("RE_BRACES does not parse"));
+        static RE_LAST_FIRST: LazyLock<Regex> = LazyLock::new(|| {
+            Regex::new(r"^(?P<f>.+) (?P<l>\S+)$").expect("RE_LAST_FIRST does not parse")
+        });
         match page.get_entity(&self.entity_id).await {
             Some(entity) => match entity.label_in_locale(page.language()) {
                 Some(label) => {
@@ -138,7 +141,7 @@ impl ResultRow {
         }
     }
 
-    fn no_value(&self, datatype: &SnakDataType) -> String {
+    fn no_value(datatype: &SnakDataType) -> String {
         match *datatype {
             SnakDataType::Time => "no time",
             SnakDataType::MonolingualText => "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
@@ -164,10 +167,10 @@ impl ResultRow {
                     .next()
                 {
                     Some(snak) => self.get_sortkey_from_snak(snak, list).await,
-                    None => self.no_value(datatype),
+                    None => Self::no_value(datatype),
                 }
             }
-            None => self.no_value(datatype),
+            None => Self::no_value(datatype),
         }
     }
 
@@ -216,37 +219,27 @@ impl ResultRow {
     }
 
     fn compare_entity_ids(&self, other: &ResultRow) -> Ordering {
-        let id1 = self.entity_id[1..]
-            .parse::<usize>()
-            .ok()
-            .or(Some(0))
-            .unwrap_or(0);
-        let id2 = other.entity_id[1..]
-            .parse::<usize>()
-            .ok()
-            .or(Some(0))
-            .unwrap_or(0);
-        id1.partial_cmp(&id2).unwrap_or(Ordering::Equal)
+        let id1 = self.entity_id[1..].parse::<usize>().unwrap_or(0);
+        let id2 = other.entity_id[1..].parse::<usize>().unwrap_or(0);
+        id1.cmp(&id2)
     }
 
     pub fn compare_to(&self, other: &ResultRow, datatype: &SnakDataType) -> Ordering {
         match datatype {
             SnakDataType::Quantity => {
-                let va = self.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
-                let vb = other.sortkey.parse::<u64>().ok().or(Some(0)).unwrap_or(0);
+                let va = self.sortkey.parse::<u64>().unwrap_or(0);
+                let vb = other.sortkey.parse::<u64>().unwrap_or(0);
                 if va == 0 && vb == 0 {
                     self.compare_entity_ids(other)
                 } else {
-                    va.partial_cmp(&vb).unwrap_or(Ordering::Equal)
+                    va.cmp(&vb)
                 }
             }
             _ => {
                 if self.sortkey == other.sortkey {
                     self.compare_entity_ids(other)
                 } else {
-                    self.sortkey
-                        .partial_cmp(&other.sortkey)
-                        .unwrap_or(Ordering::Equal)
+                    self.sortkey.cmp(&other.sortkey)
                 }
             }
         }
@@ -254,16 +247,16 @@ impl ResultRow {
 
     /// Get the cells as tabbed data
     pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
-        let mut ret = vec![];
+        let mut ret = Vec::with_capacity(self.cells.len() + 1);
+        ret.push(json!(self.section));
         for (colnum, cell) in self.cells.iter().enumerate() {
             ret.push(cell.as_tabbed_data(list, rownum, colnum).await);
         }
-        ret.insert(0, json!(self.section));
         json!(ret)
     }
 
     /// Get the cells as wikitext
-    fn cells_as_wikitext(&self, list: &ListeriaList, cells: &[String]) -> String {
+    fn cells_as_wikitext(list: &ListeriaList, cells: &[String]) -> String {
         cells
             .iter()
             .enumerate()
@@ -284,7 +277,7 @@ impl ResultRow {
 
     /// Get the row as wikitext
     pub async fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize) -> String {
-        let mut cells: Vec<String> = vec![];
+        let mut cells = Vec::with_capacity(self.cells.len());
         for (colnum, cell) in self.cells.iter_mut().enumerate() {
             cells.push(cell.as_wikitext(list, rownum, colnum).await);
         }
@@ -292,7 +285,7 @@ impl ResultRow {
             Some(t) => format!(
                 "{{{{{}\n| {}\n}}}}",
                 t,
-                self.cells_as_wikitext(list, &cells)
+                Self::cells_as_wikitext(list, &cells)
             ),
             None => "|".to_string() + &cells.join("\n|"),
         }

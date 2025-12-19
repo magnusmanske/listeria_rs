@@ -1,3 +1,5 @@
+//! Wikidata reference handling and formatting.
+
 use crate::listeria_list::ListeriaList;
 use serde::{Deserialize, Serialize};
 use wikimisc::wikibase::Snak;
@@ -24,6 +26,7 @@ impl PartialEq for Reference {
 
 impl Reference {
     /// Creates a new reference from a snak array
+    #[must_use]
     pub fn new_from_snaks(snaks: &[Snak], language: &str) -> Option<Self> {
         let mut ret = Self {
             ..Default::default()
@@ -42,12 +45,13 @@ impl Reference {
         if ret.is_empty() { None } else { Some(ret) }
     }
 
-    pub fn stated_in(&self) -> &Option<String> {
+    #[must_use]
+    pub const fn stated_in(&self) -> &Option<String> {
         &self.stated_in
     }
 
     /// Returns true if the reference is empty
-    fn is_empty(&self) -> bool {
+    const fn is_empty(&self) -> bool {
         self.url.is_none() && self.stated_in.is_none()
     }
 
@@ -80,15 +84,13 @@ impl Reference {
 
             if use_cite_web && self.title.is_some() && self.url.is_some() {
                 s = self.render_cite_web(use_invoke, list).await;
-            } else if self.url.is_some() {
-                if let Some(x) = self.url.as_ref() {
-                    s += x;
-                }
+            } else if let Some(url) = &self.url {
+                s += url;
             } else if let Some(q) = &self.stated_in {
                 s += &list.get_item_link_with_fallback(q).await;
             }
 
-            self.md5 = format!("{:x}", md5::compute(s.clone()));
+            self.md5 = format!("{:x}", md5::compute(&s));
             self.wikitext_cache = Some(s);
         }
         "Error: Could not generate reference wikitext, too many iterations".to_string()
@@ -102,8 +104,8 @@ impl Reference {
         };
         let mut ret = format!(
             "{template}|url={}|title={}",
-            self.url.as_ref().unwrap_or(&String::new()),
-            self.title.as_ref().unwrap_or(&String::new())
+            self.url.as_deref().unwrap_or(""),
+            self.title.as_deref().unwrap_or("")
         );
         if let Some(stated_in) = &self.stated_in {
             ret += &format!(
@@ -133,25 +135,79 @@ impl Reference {
         // Timestamp/last access
         if let Some(dv) = snak.data_value()
             && let Value::Time(tv) = dv.value()
-            && let Some(pos) = tv.time().find('T')
+            && let Some(pos_t) = tv.time().find('T')
         {
-            let (date, _) = tv.time().split_at(pos);
+            let (date, _) = tv.time().split_at(pos_t);
             let mut date = date.replace('+', "").to_string();
-            if *tv.precision() >= 11 { // Day
-                // Keep
+
+            // Extract year for further processing
+            let year = if let Some(pos) = date.find('-') {
+                date.split_at(pos).0.parse::<i32>().ok()
+            } else {
+                date.parse::<i32>().ok()
+            };
+
+            if *tv.precision() >= 11 {
+                // Day precision - keep full date
             } else if *tv.precision() == 10 {
-                // Month
+                // Month precision - remove day
                 if let Some(pos) = date.rfind('-') {
                     date = date.split_at(pos).0.to_string();
                 }
-            } else if *tv.precision() <= 9 {
-                // Year etc TODO century etc
+            } else if *tv.precision() == 9 {
+                // Year precision - keep only year
+                if let Some(pos) = date.find('-') {
+                    date = date.split_at(pos).0.to_string();
+                }
+            } else if *tv.precision() == 8 {
+                // Decade precision (e.g., "1990s")
+                if let Some(y) = year {
+                    date = format!("{}0s", y / 10);
+                }
+            } else if *tv.precision() == 7 {
+                // Century precision (e.g., "20th century")
+                if let Some(y) = year {
+                    let century = if y > 0 {
+                        (y - 1) / 100 + 1
+                    } else {
+                        y / 100 - 1
+                    };
+                    date = format!("{} century", Self::ordinal_suffix(century));
+                }
+            } else if *tv.precision() == 6 {
+                // Millennium precision (e.g., "3rd millennium")
+                if let Some(y) = year {
+                    let millennium = if y > 0 {
+                        (y - 1) / 1000 + 1
+                    } else {
+                        y / 1000 - 1
+                    };
+                    date = format!("{} millennium", Self::ordinal_suffix(millennium));
+                }
+            } else {
+                // Lower precision - just use year
                 if let Some(pos) = date.find('-') {
                     date = date.split_at(pos).0.to_string();
                 }
             }
             ret.date = Some(date);
         }
+    }
+
+    /// Converts a number to its ordinal form (e.g., 1 -> "1st", 21 -> "21st")
+    fn ordinal_suffix(n: i32) -> String {
+        let abs_n = n.abs();
+        let suffix = if (abs_n % 100) >= 11 && (abs_n % 100) <= 13 {
+            "th"
+        } else {
+            match abs_n % 10 {
+                1 => "st",
+                2 => "nd",
+                3 => "rd",
+                _ => "th",
+            }
+        };
+        format!("{}{}", n, suffix)
     }
 
     /// Extracts the title from a snak
@@ -173,5 +229,184 @@ impl Reference {
         {
             ret.url = Some(url.to_owned());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_reference_default_is_empty() {
+        let reference = Reference::default();
+        assert!(reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_url_not_empty() {
+        let reference = Reference {
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert!(!reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_stated_in_not_empty() {
+        let reference = Reference {
+            stated_in: Some("Q123".to_string()),
+            ..Default::default()
+        };
+        assert!(!reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_only_title_is_empty() {
+        let reference = Reference {
+            title: Some("Test Title".to_string()),
+            ..Default::default()
+        };
+        assert!(reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_with_only_date_is_empty() {
+        let reference = Reference {
+            date: Some("2025-01-01".to_string()),
+            ..Default::default()
+        };
+        assert!(reference.is_empty());
+    }
+
+    #[test]
+    fn test_reference_equality_same_references() {
+        let ref1 = Reference {
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            date: Some("2025-01-01".to_string()),
+            stated_in: Some("Q123".to_string()),
+            md5: "abc123".to_string(),
+            wikitext_cache: Some("cached".to_string()),
+        };
+        let ref2 = Reference {
+            url: Some("https://example.com".to_string()),
+            title: Some("Example".to_string()),
+            date: Some("2025-01-01".to_string()),
+            stated_in: Some("Q123".to_string()),
+            md5: "different".to_string(), // MD5 ignored in equality
+            wikitext_cache: Some("also_different".to_string()), // Cache ignored in equality
+        };
+        assert_eq!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_reference_equality_different_url() {
+        let ref1 = Reference {
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            url: Some("https://different.com".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_reference_equality_different_title() {
+        let ref1 = Reference {
+            title: Some("Title 1".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            title: Some("Title 2".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_reference_equality_different_date() {
+        let ref1 = Reference {
+            date: Some("2025-01-01".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            date: Some("2025-01-02".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_reference_equality_different_stated_in() {
+        let ref1 = Reference {
+            stated_in: Some("Q123".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            stated_in: Some("Q456".to_string()),
+            url: Some("https://example.com".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
+    }
+
+    #[test]
+    fn test_stated_in_getter() {
+        let reference = Reference {
+            stated_in: Some("Q42".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(reference.stated_in(), &Some("Q42".to_string()));
+    }
+
+    #[test]
+    fn test_stated_in_getter_none() {
+        let reference = Reference::default();
+        assert_eq!(reference.stated_in(), &None);
+    }
+
+    #[test]
+    fn test_ordinal_suffix_basic() {
+        assert_eq!(Reference::ordinal_suffix(1), "1st");
+        assert_eq!(Reference::ordinal_suffix(2), "2nd");
+        assert_eq!(Reference::ordinal_suffix(3), "3rd");
+        assert_eq!(Reference::ordinal_suffix(4), "4th");
+        assert_eq!(Reference::ordinal_suffix(5), "5th");
+    }
+
+    #[test]
+    fn test_ordinal_suffix_teens() {
+        assert_eq!(Reference::ordinal_suffix(11), "11th");
+        assert_eq!(Reference::ordinal_suffix(12), "12th");
+        assert_eq!(Reference::ordinal_suffix(13), "13th");
+    }
+
+    #[test]
+    fn test_ordinal_suffix_twenties() {
+        assert_eq!(Reference::ordinal_suffix(21), "21st");
+        assert_eq!(Reference::ordinal_suffix(22), "22nd");
+        assert_eq!(Reference::ordinal_suffix(23), "23rd");
+        assert_eq!(Reference::ordinal_suffix(24), "24th");
+    }
+
+    #[test]
+    fn test_ordinal_suffix_hundreds() {
+        assert_eq!(Reference::ordinal_suffix(101), "101st");
+        assert_eq!(Reference::ordinal_suffix(111), "111th");
+        assert_eq!(Reference::ordinal_suffix(121), "121st");
+    }
+
+    #[test]
+    fn test_ordinal_suffix_negative() {
+        assert_eq!(Reference::ordinal_suffix(-1), "-1st");
+        assert_eq!(Reference::ordinal_suffix(-2), "-2nd");
+        assert_eq!(Reference::ordinal_suffix(-11), "-11th");
     }
 }

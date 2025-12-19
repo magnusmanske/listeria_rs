@@ -1,4 +1,6 @@
-use anyhow::{anyhow, Result};
+//! Template parsing and parameter extraction.
+
+use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
@@ -7,10 +9,10 @@ pub struct Template {
 }
 
 impl Template {
-    pub fn new_from_params(_title: String, text: String) -> Result<Self> {
+    pub fn new_from_params(text: &str) -> Result<Self> {
         let mut curly_braces = 0;
-        let mut parts: Vec<String> = vec![];
-        let mut part: Vec<char> = vec![];
+        let mut parts: Vec<String> = Vec::new();
+        let mut part: Vec<char> = Vec::new();
         let mut quoted = false;
         let mut quote_char: char = ' ';
         text.chars().for_each(|c| match c {
@@ -52,17 +54,17 @@ impl Template {
 
         let params: HashMap<String, String> = parts
             .iter()
-            .filter_map(|part| {
-                let pos = part.find('=')?;
-                let k = part.get(0..pos)?.trim().to_string();
-                let v = part.get(pos + 1..)?.trim().to_string();
+            .filter_map(|part_tmp| {
+                let pos = part_tmp.find('=')?;
+                let k = part_tmp.get(0..pos)?.trim().to_string();
+                let v = part_tmp.get(pos + 1..)?.trim().to_string();
                 Some((k, v))
             })
             .collect();
         Ok(Self { params })
     }
 
-    pub fn params(&self) -> &HashMap<String, String> {
+    pub const fn params(&self) -> &HashMap<String, String> {
         &self.params
     }
 
@@ -70,9 +72,17 @@ impl Template {
         self.params = self
             .params
             .iter()
-            .map(|(k, v)| (k.to_owned(), v.replace("{{!}}", "|")))
+            .map(|(k, v)| (k.clone(), v.replace("{{!}}", "|")))
             .collect();
         // TODO proper template replacement
+    }
+
+    /// Get a template parameter value by key (case-insensitive).
+    pub fn get_value(&self, key: &str) -> Option<String> {
+        self.params
+            .iter()
+            .find(|(k, _v)| k.eq_ignore_ascii_case(key))
+            .map(|(_k, v)| v.clone())
     }
 }
 
@@ -87,5 +97,97 @@ mod tests {
         };
         t.fix_values();
         assert_eq!(t.params.get("foo"), Some(&"bar|baz".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_simple() {
+        let t = Template::new_from_params("param1=value1|param2=value2").unwrap();
+        assert_eq!(t.params.get("param1"), Some(&"value1".to_string()));
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_with_spaces() {
+        let t = Template::new_from_params("  param1  =  value1  |  param2  =  value2  ").unwrap();
+        assert_eq!(t.params.get("param1"), Some(&"value1".to_string()));
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_nested_curly_braces() {
+        let t = Template::new_from_params("param1={{template|value}}|param2=value2").unwrap();
+        assert_eq!(
+            t.params.get("param1"),
+            Some(&"{{template|value}}".to_string())
+        );
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_quoted_pipe() {
+        let t = Template::new_from_params("param1=\"value|with|pipes\"|param2=value2").unwrap();
+        assert_eq!(
+            t.params.get("param1"),
+            Some(&"\"value|with|pipes\"".to_string())
+        );
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_single_quoted_pipe() {
+        let t = Template::new_from_params("param1='value|with|pipes'|param2=value2").unwrap();
+        assert_eq!(
+            t.params.get("param1"),
+            Some(&"'value|with|pipes'".to_string())
+        );
+        assert_eq!(t.params.get("param2"), Some(&"value2".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_unclosed_quote() {
+        let result = Template::new_from_params("param1=\"unclosed");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_new_from_params_empty() {
+        let t = Template::new_from_params("").unwrap();
+        assert_eq!(t.params.len(), 0);
+    }
+
+    #[test]
+    fn test_new_from_params_no_equals() {
+        let t = Template::new_from_params("value1|value2|param1=value3").unwrap();
+        // Parameters without '=' are ignored in the filter_map
+        assert_eq!(t.params.len(), 1);
+        assert_eq!(t.params.get("param1"), Some(&"value3".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_complex_nested() {
+        let t = Template::new_from_params(
+            "p1={{cite web|url=http://example.com|title=Test}}|p2=simple",
+        )
+        .unwrap();
+        assert_eq!(
+            t.params.get("p1"),
+            Some(&"{{cite web|url=http://example.com|title=Test}}".to_string())
+        );
+        assert_eq!(t.params.get("p2"), Some(&"simple".to_string()));
+    }
+
+    #[test]
+    fn test_fix_values_multiple_replacements() {
+        let mut t = Template {
+            params: HashMap::from([
+                ("p1".to_string(), "a{{!}}b{{!}}c".to_string()),
+                ("p2".to_string(), "no replacement".to_string()),
+                ("p3".to_string(), "{{!}}start".to_string()),
+            ]),
+        };
+        t.fix_values();
+        assert_eq!(t.params.get("p1"), Some(&"a|b|c".to_string()));
+        assert_eq!(t.params.get("p2"), Some(&"no replacement".to_string()));
+        assert_eq!(t.params.get("p3"), Some(&"|start".to_string()));
     }
 }

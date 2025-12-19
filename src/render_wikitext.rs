@@ -1,8 +1,11 @@
+//! Renders results as MediaWiki wikitext tables.
+
 use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
 use anyhow::Result;
 use async_trait::async_trait;
 
-pub struct RendererWikitext {}
+#[derive(Debug)]
+pub struct RendererWikitext;
 
 #[async_trait]
 impl Renderer for RendererWikitext {
@@ -40,7 +43,7 @@ impl Renderer for RendererWikitext {
         for element in page.elements() {
             let mut element = element.clone();
             if let Ok(s) = element.as_wikitext().await {
-                new_wikitext += &s
+                new_wikitext += &s;
             }
         }
         Ok(Some(new_wikitext))
@@ -55,7 +58,7 @@ impl RendererWikitext {
             wt += &Self::render_header(name);
         }
 
-        wt += &self.as_wikitext_table_header(list);
+        wt += &Self::as_wikitext_table_header(list);
 
         if list.get_row_template().is_none()
             && !list.skip_table()
@@ -65,44 +68,7 @@ impl RendererWikitext {
             wt += "|-\n";
         }
 
-        let mut row_entity_ids = vec![];
-        for rownum in 0..list.results().len() {
-            if let Some(row) = list.results().get(rownum)
-                && row.section() == section_id
-            {
-                row_entity_ids.push(row.entity_id().to_string());
-            }
-        }
-
-        // Rows
-        let mut current_sub_row = 0;
-        let mut rows = vec![];
-        for rownum in 0..list.results().len() {
-            if let Some(row) = list.results().get(rownum) {
-                let mut row = row.clone();
-                if row.section() == section_id {
-                    let wt = row.as_wikitext(list, current_sub_row).await;
-                    rows.push(wt);
-                    current_sub_row += 1;
-                }
-            }
-        }
-
-        if list.skip_table() {
-            wt += &rows.join("\n");
-        } else if list.template_params().wdedit() {
-            let x: Vec<String> = row_entity_ids
-                .iter()
-                .zip(rows.iter())
-                .map(|(entity_id, row)| match &list.header_template() {
-                    Some(_) => row.to_string(),
-                    None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row),
-                })
-                .collect();
-            wt += x.join("").trim();
-        } else {
-            wt += &rows.join("\n|-\n");
-        }
+        Self::process_rows(list, section_id, &mut wt).await;
 
         // End
         if !list.skip_table() {
@@ -112,7 +78,7 @@ impl RendererWikitext {
         wt
     }
 
-    fn as_wikitext_table_header(&self, list: &ListeriaList) -> String {
+    fn as_wikitext_table_header(list: &ListeriaList) -> String {
         let mut wt = String::new();
         match &list.header_template() {
             Some(t) => {
@@ -145,6 +111,47 @@ impl RendererWikitext {
             format!("\n\n\n== {name} ==\n")
         }
     }
+
+    async fn process_rows(list: &mut ListeriaList, section_id: usize, wt: &mut String) {
+        let mut row_entity_ids = Vec::new();
+        for rownum in 0..list.results().len() {
+            if let Some(row) = list.results().get(rownum)
+                && row.section() == section_id
+            {
+                row_entity_ids.push(row.entity_id().to_string());
+            }
+        }
+
+        // Rows
+        let mut current_sub_row = 0;
+        let mut rows = Vec::new();
+        for rownum in 0..list.results().len() {
+            if let Some(row) = list.results().get(rownum) {
+                let mut row = row.clone();
+                if row.section() == section_id {
+                    let wt_sub_row = row.as_wikitext(list, current_sub_row).await;
+                    rows.push(wt_sub_row);
+                    current_sub_row += 1;
+                }
+            }
+        }
+
+        if list.skip_table() {
+            *wt += &rows.join("\n");
+        } else if list.template_params().wdedit() {
+            let x: Vec<String> = row_entity_ids
+                .iter()
+                .zip(rows.iter())
+                .map(|(entity_id, row)| match &list.header_template() {
+                    Some(_) => row.to_string(),
+                    None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row),
+                })
+                .collect();
+            *wt += x.join("").trim();
+        } else {
+            *wt += &rows.join("\n|-\n");
+        }
+    }
 }
 
 #[cfg(test)]
@@ -156,5 +163,88 @@ mod tests {
         assert_eq!(RendererWikitext::render_header("foo"), "\n\n\n== foo ==\n");
         assert_eq!(RendererWikitext::render_header(""), "\n\n\n");
         assert_eq!(RendererWikitext::render_header("  "), "\n\n\n");
+    }
+
+    #[test]
+    fn test_render_header_with_special_chars() {
+        assert_eq!(
+            RendererWikitext::render_header("Test & Section"),
+            "\n\n\n== Test & Section ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_unicode() {
+        assert_eq!(
+            RendererWikitext::render_header("日本語"),
+            "\n\n\n== 日本語 ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_wikitext() {
+        assert_eq!(
+            RendererWikitext::render_header("Section [[link]]"),
+            "\n\n\n== Section [[link]] ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_tabs() {
+        assert_eq!(RendererWikitext::render_header("\t\t"), "\n\n\n");
+    }
+
+    #[test]
+    fn test_render_header_with_newlines() {
+        assert_eq!(
+            RendererWikitext::render_header("Multi\nLine"),
+            "\n\n\n== Multi\nLine ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_long_title() {
+        let long_title = "A".repeat(100);
+        assert_eq!(
+            RendererWikitext::render_header(&long_title),
+            format!("\n\n\n== {} ==\n", long_title)
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_leading_trailing_spaces() {
+        assert_eq!(
+            RendererWikitext::render_header("  Section  "),
+            "\n\n\n==   Section   ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_single_space() {
+        assert_eq!(RendererWikitext::render_header(" "), "\n\n\n");
+    }
+
+    #[test]
+    fn test_render_header_with_equals() {
+        assert_eq!(
+            RendererWikitext::render_header("A = B"),
+            "\n\n\n== A = B ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_brackets() {
+        assert_eq!(
+            RendererWikitext::render_header("Section {test}"),
+            "\n\n\n== Section {test} ==\n"
+        );
+    }
+
+    #[test]
+    fn test_render_header_with_pipes() {
+        assert_eq!(
+            RendererWikitext::render_header("A | B"),
+            "\n\n\n== A | B ==\n"
+        );
     }
 }

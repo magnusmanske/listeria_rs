@@ -1,13 +1,19 @@
+//! Bot configuration management.
+//!
+//! Handles loading and parsing configuration from JSON files, including API endpoints,
+//! template mappings, database settings, and operational parameters.
+
 use crate::database_pool::DatabasePool;
-use crate::*;
-use anyhow::{anyhow, Result};
+use crate::wiki::Wiki;
+use anyhow::{Result, anyhow};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
-use wiki::Wiki;
 use wikimisc::mediawiki::api::Api;
-use wikimisc::wikibase::entity_container::EntityContainer;
 use wikimisc::wikibase::EntityTrait;
+use wikimisc::wikibase::entity_container::EntityContainer;
 
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
@@ -16,6 +22,7 @@ pub enum NamespaceGroup {
 }
 
 impl NamespaceGroup {
+    #[must_use]
     pub fn can_edit_namespace(&self, nsid: i64) -> bool {
         match self {
             Self::All => false,
@@ -54,9 +61,18 @@ pub struct Configuration {
     max_sparql_attempts: u64,
     profiling: bool,
     wikis: HashMap<String, Wiki>,
+    is_single_wiki: bool, // Set single wiki mode
+    quiet: bool,
+    wiki_page_pattern: Option<String>, // For single wiki mode, the pattern for wiki pages
+    delay_after_page_check_sec: Option<u64>, // For single wiki mode, the delay after checking a page
+    query_endpoint: Option<String>,          // For single wiki mode, the SPARQL endpoint
+    status_server_port: Option<u16>,         // For single wiki mode, the port for the status server
+    sparql_prefix: Option<String>, // For single wiki mode, a prefix for all SPARQL queries
+    main_item_prefix: String,      // For single wiki mode, the prefix for items
 }
 
 impl Configuration {
+    /// Loads configuration from a JSON file.
     pub async fn new_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -64,7 +80,7 @@ impl Configuration {
         Self::new_from_json(j).await
     }
 
-    pub fn set_max_local_cached_entities(&mut self, max_local_cached_entities: usize) {
+    pub const fn set_max_local_cached_entities(&mut self, max_local_cached_entities: usize) {
         self.max_local_cached_entities = max_local_cached_entities;
     }
 
@@ -72,13 +88,21 @@ impl Configuration {
         self.wikis = wikis;
     }
 
+    #[must_use]
     pub fn get_wiki(&self, wiki: &str) -> Option<&Wiki> {
         self.wikis.get(wiki)
     }
 
+    /// Constructs a configuration from parsed JSON.
+    /// Sets up APIs, database connections, and template mappings.
     pub async fn new_from_json(j: Value) -> Result<Self> {
         let mut ret: Self = Self {
-            max_mw_apis_per_wiki: j["max_mw_apis_per_wiki"].as_u64().map(|u| u as usize),
+            max_mw_apis_per_wiki: j["max_mw_apis_per_wiki"]
+                .as_u64()
+                .and_then(|u| u.try_into().ok()),
+            is_single_wiki: j["template_start"].as_str().is_some()
+                && j["template_end"].as_str().is_some()
+                && j["apis"]["wiki"].as_str().is_some(),
             ..Default::default()
         };
         ret.new_from_json_misc(&j);
@@ -86,8 +110,19 @@ impl Configuration {
         ret.new_from_json_wikibase_apis(&j).await?;
         ret.new_from_json_namespace_blocks(&j)?;
         ret.new_from_json_start_end_tempate_mappings(&j).await?;
-        ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
+        if j["mysql"].as_object().is_some() {
+            ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
+        }
         Ok(ret)
+    }
+
+    #[must_use]
+    pub fn query_endpoint(&self) -> Option<String> {
+        self.query_endpoint.to_owned()
+    }
+
+    pub fn sparql_prefix(&self) -> Option<&str> {
+        self.sparql_prefix.as_deref()
     }
 
     fn new_from_json_namespace_blocks(&mut self, j: &Value) -> Result<()> {
@@ -111,8 +146,8 @@ impl Configuration {
                 if let Some(a) = v.as_array() {
                     let nsids: Vec<i64> = a
                         .iter()
-                        .filter_map(|v| v.as_u64())
-                        .map(|x| x as i64)
+                        .filter_map(|x| x.as_u64())
+                        .filter_map(|x| x.try_into().ok())
                         .collect();
                     self.namespace_blocks
                         .insert(k.to_string(), NamespaceGroup::List(nsids));
@@ -122,58 +157,61 @@ impl Configuration {
         Ok(())
     }
 
-    pub fn max_sparql_attempts(&self) -> u64 {
+    pub const fn max_sparql_attempts(&self) -> u64 {
         self.max_sparql_attempts
     }
 
-    pub fn max_sparql_simultaneous(&self) -> u64 {
+    pub const fn max_sparql_simultaneous(&self) -> u64 {
         self.max_sparql_simultaneous
     }
 
-    pub fn profiling(&self) -> bool {
+    pub const fn profiling(&self) -> bool {
         self.profiling
     }
 
-    pub fn set_profiling(&mut self, profiling: bool) {
+    pub const fn quiet(&self) -> bool {
+        self.quiet
+    }
+
+    pub const fn set_profiling(&mut self, profiling: bool) {
         self.profiling = profiling;
     }
 
-    pub fn pool(&self) -> &Arc<DatabasePool> {
-        match &self.pool {
-            Some(pool) => pool,
-            None => panic!("Configuration::pool(): pool not defined"),
-        }
+    /// Returns the database connection pool if configured.
+    pub fn pool(&self) -> Result<&Arc<DatabasePool>> {
+        self.pool
+            .as_ref()
+            .ok_or_else(|| anyhow!("Database pool not configured"))
     }
 
-    pub fn max_threads(&self) -> usize {
+    pub const fn max_threads(&self) -> usize {
         self.max_threads
     }
 
-    pub fn ms_delay_after_edit(&self) -> Option<u64> {
+    pub const fn ms_delay_after_edit(&self) -> Option<u64> {
         self.ms_delay_after_edit
     }
 
-    pub fn api_timeout(&self) -> Duration {
+    pub const fn api_timeout(&self) -> Duration {
         Duration::from_secs(self.api_timeout)
     }
 
-    pub fn oauth2_token(&self) -> &String {
+    pub fn oauth2_token(&self) -> &str {
         &self.oauth2_token
     }
 
     pub fn mysql(&self, key: &str) -> Value {
         match &self.mysql {
-            Some(mysql) => mysql[key].to_owned(),
+            Some(mysql) => mysql[key].clone(),
             None => Value::Null,
         }
     }
 
-    pub fn max_local_cached_entities(&self) -> usize {
+    pub const fn max_local_cached_entities(&self) -> usize {
         self.max_local_cached_entities
     }
 
     fn get_sitelink_mapping(
-        &self,
         entities: &EntityContainer,
         q: &str,
     ) -> Result<HashMap<String, String>> {
@@ -183,71 +221,73 @@ impl Configuration {
         match entity.sitelinks() {
             Some(sl) => Ok(sl
                 .iter()
-                .map(|s| (s.site().to_owned(), s.title().to_owned()))
+                .map(|s| (s.site().to_string(), s.title().to_string()))
                 .collect()),
             None => Err(anyhow!("No sitelink in {q}")),
         }
     }
 
-    pub fn check_for_shadow_images(&self, wiki: &String) -> bool {
-        self.shadow_images_check.contains(wiki)
+    pub fn check_for_shadow_images(&self, wiki: &str) -> bool {
+        self.shadow_images_check.iter().any(|w| w == wiki)
+    }
+
+    /// Helper method to extract template title from a template map
+    fn get_local_template_title(
+        template_map: &HashMap<String, String>,
+        wiki: &str,
+        template_type: &str,
+    ) -> Result<String> {
+        let template = template_map
+            .get(wiki)
+            .ok_or_else(|| anyhow!("Cannot find local {template_type} template"))?;
+
+        template
+            .split(':')
+            .next_back()
+            .map(|s| s.to_string())
+            .ok_or_else(|| anyhow!("Invalid template format"))
     }
 
     pub fn get_local_template_title_start(&self, wiki: &str) -> Result<String> {
-        let ret = self
-            .template_start_sites
-            .get(wiki)
-            .map(|s| s.to_string())
-            .ok_or_else(|| anyhow!("Cannot find local start template"))?;
-        match ret.split(':').next_back() {
-            Some(x) => Ok(x.to_string()),
-            None => Err(anyhow!("get_local_template_title_start: no match")),
-        }
+        Self::get_local_template_title(&self.template_start_sites, wiki, "start")
     }
 
-    pub fn get_max_mw_apis_per_wiki(&self) -> &Option<usize> {
+    pub fn main_item_prefix(&self) -> String {
+        self.main_item_prefix.to_owned()
+    }
+
+    pub const fn get_max_mw_apis_per_wiki(&self) -> &Option<usize> {
         &self.max_mw_apis_per_wiki
     }
 
-    pub fn get_max_mw_apis_total(&self) -> &Option<usize> {
+    pub const fn get_max_mw_apis_total(&self) -> &Option<usize> {
         &self.max_mw_apis_total
     }
 
     pub fn get_local_template_title_end(&self, wiki: &str) -> Result<String> {
-        let ret = self
-            .template_end_sites
-            .get(wiki)
-            .map(|s| s.to_string())
-            .ok_or_else(|| anyhow!("Cannot find local end template"))?;
-        match ret.split(':').next_back() {
-            Some(x) => Ok(x.to_string()),
-            None => Err(anyhow!("get_local_template_title_end: no match")),
-        }
+        Self::get_local_template_title(&self.template_end_sites, wiki, "end")
     }
 
+    /// Checks if editing is allowed in the given namespace on this wiki.
     pub fn can_edit_namespace(&self, wiki: &str, nsid: i64) -> bool {
-        match self.namespace_blocks.get(wiki) {
-            Some(nsg) => nsg.can_edit_namespace(nsid),
-            None => true, // Default
-        }
+        self.namespace_blocks
+            .get(wiki)
+            .map_or_else(|| true, |nsg| nsg.can_edit_namespace(nsid))
     }
 
     pub fn get_location_template(&self, wiki: &str) -> String {
-        match self.location_templates.get(wiki) {
-            Some(s) => s.to_owned(),
-            None => self
-                .location_templates
-                .get("default")
-                .map(|s| s.to_owned())
-                .unwrap_or_default(),
-        }
+        self.location_templates
+            .get(wiki)
+            .or_else(|| self.location_templates.get("default"))
+            .cloned()
+            .unwrap_or_default()
     }
 
     pub fn get_template_start_q(&self) -> String {
-        self.template_start_q.to_owned()
+        self.template_start_q.clone()
     }
 
-    pub fn prefer_preferred(&self) -> bool {
+    pub const fn prefer_preferred(&self) -> bool {
         self.prefer_preferred
     }
 
@@ -259,7 +299,7 @@ impl Configuration {
         self.default_thumbnail_size.unwrap_or(128)
     }
 
-    pub fn location_regions(&self) -> &Vec<String> {
+    pub const fn location_regions(&self) -> &Vec<String> {
         &self.location_regions
     }
 
@@ -284,6 +324,7 @@ impl Configuration {
         &self.default_api
     }
 
+    /// Returns the default Wikibase API client.
     pub fn get_default_wbapi(&self) -> Result<&Arc<Api>> {
         self.wb_apis
             .get(&self.default_api)
@@ -298,24 +339,52 @@ impl Configuration {
         &self.pattern_string_end
     }
 
+    pub const fn is_single_wiki(&self) -> bool {
+        self.is_single_wiki
+    }
+
+    pub const fn delay_after_page_check_sec(&self) -> Option<u64> {
+        self.delay_after_page_check_sec
+    }
+
+    pub const fn status_server_port(&self) -> Option<u16> {
+        self.status_server_port
+    }
+
+    pub fn wiki_page_pattern(&self) -> Option<String> {
+        self.wiki_page_pattern.clone()
+    }
+
     async fn new_from_json_start_end_tempate_mappings(&mut self, j: &Value) -> Result<()> {
-        let api = self.get_default_wbapi()?;
-        let q_start = match j["template_start_q"].as_str() {
-            Some(q) => q.to_string(),
-            None => return Err(anyhow!("No template_start_q in config")),
-        };
-        let q_end = match j["template_end_q"].as_str() {
-            Some(q) => q.to_string(), //ret.template_end_sites = ret.get_template(q)?,
-            None => return Err(anyhow!("No template_end_q in config")),
-        };
-        let to_load = vec![q_start.clone(), q_end.clone()];
-        let entity_container = EntityContainer::new();
-        if let Err(e) = entity_container.load_entities(api, &to_load).await {
-            return Err(anyhow!("Error loading entities: {e}"));
+        if let (Some(template_start), Some(template_end)) =
+            (j["template_start"].as_str(), j["template_end"].as_str())
+        {
+            self.template_start_sites
+                .insert("wiki".to_string(), template_start.replace('_', " "));
+            self.template_end_sites
+                .insert("wiki".to_string(), template_end.replace('_', " "));
+            return Ok(());
         }
 
-        self.template_start_sites = self.get_sitelink_mapping(&entity_container, &q_start)?;
-        self.template_end_sites = self.get_sitelink_mapping(&entity_container, &q_end)?;
+        let api = self.get_default_wbapi()?;
+        let q_start = j["template_start_q"]
+            .as_str()
+            .ok_or_else(|| anyhow!("No template_start_q in config"))?
+            .to_string();
+        let q_end = j["template_end_q"]
+            .as_str()
+            .ok_or_else(|| anyhow!("No template_end_q in config"))?
+            .to_string();
+
+        let to_load = vec![q_start.clone(), q_end.clone()];
+        let entity_container = EntityContainer::new();
+        entity_container
+            .load_entities(api, &to_load)
+            .await
+            .map_err(|e| anyhow!("Error loading entities: {e}"))?;
+
+        self.template_start_sites = Self::get_sitelink_mapping(&entity_container, &q_start)?;
+        self.template_end_sites = Self::get_sitelink_mapping(&entity_container, &q_end)?;
         self.template_start_q = q_start;
         Ok(())
     }
@@ -352,7 +421,7 @@ impl Configuration {
                         .expect("location_regions needs to be a string")
                         .to_string()
                 })
-                .collect()
+                .collect();
         }
 
         // Location template patterns
@@ -366,8 +435,11 @@ impl Configuration {
     }
 
     fn new_from_json_misc(&mut self, j: &Value) {
-        self.max_mw_apis_total = j["max_mw_apis_total"].as_u64().map(|u| u as usize);
+        self.max_mw_apis_total = j["max_mw_apis_total"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok());
         self.default_api = j["default_api"].as_str().unwrap_or_default().to_string();
+        self.query_endpoint = j["query_endpoint"].as_str().map(|s| s.to_string());
         self.default_language = j["default_language"]
             .as_str()
             .unwrap_or_default()
@@ -376,14 +448,27 @@ impl Configuration {
         self.max_sparql_simultaneous = j["max_sparql_simultaneous"].as_u64().unwrap_or(10);
         self.max_sparql_attempts = j["max_sparql_attempts"].as_u64().unwrap_or(5);
         self.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
-        self.max_local_cached_entities =
-            j["max_local_cached_entities"].as_u64().unwrap_or(5000) as usize;
-        self.max_concurrent_entry_queries =
-            j["max_concurrent_entry_queries"].as_u64().unwrap_or(5) as usize;
+        self.max_local_cached_entities = j["max_local_cached_entities"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(5000);
+        self.max_concurrent_entry_queries = j["max_concurrent_entry_queries"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(5);
         self.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
         self.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
-        self.max_threads = j["max_threads"].as_u64().unwrap_or(8) as usize;
+        self.delay_after_page_check_sec = j["delay_after_page_check_sec"].as_u64();
+        self.max_threads = j["max_threads"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(8);
+        self.status_server_port = j["status_server_port"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok());
         self.profiling = j["profiling"].as_bool().unwrap_or_default();
+        self.quiet = j["quiet"].as_bool().unwrap_or_default();
+        self.wiki_page_pattern = j["wiki_page_pattern"].as_str().map(|s| s.to_string());
         self.pattern_string_start = j["pattern_string_start"]
             .as_str()
             .unwrap_or(r#"\{\{(Wikidata[ _]list[^\|]*|"#)
@@ -392,6 +477,11 @@ impl Configuration {
             .as_str()
             .unwrap_or(r#"\{\{(Wikidata[ _]list[ _]end|"#)
             .to_string();
+        self.main_item_prefix = j["main_item_prefix"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
+        self.sparql_prefix = j["sparql_prefix"].as_str().map(|s| s.to_string());
         if let Some(sic) = j["shadow_images_check"].as_array() {
             self.shadow_images_check = sic
                 .iter()
@@ -400,7 +490,96 @@ impl Configuration {
                         .expect("shadow_images_check needs to be a string")
                         .to_string()
                 })
-                .collect()
+                .collect();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_namespace_group_all_blocks_all() {
+        let group = NamespaceGroup::All;
+        assert!(!group.can_edit_namespace(0)); // Main namespace
+        assert!(!group.can_edit_namespace(1)); // Talk
+        assert!(!group.can_edit_namespace(10)); // Template
+        assert!(!group.can_edit_namespace(-1)); // Special
+        assert!(!group.can_edit_namespace(100)); // Any custom namespace
+    }
+
+    #[test]
+    fn test_namespace_group_list_allows_unlisted() {
+        let group = NamespaceGroup::List(vec![1, 3, 5]);
+        assert!(group.can_edit_namespace(0)); // Not in list, positive
+        assert!(group.can_edit_namespace(2)); // Not in list, positive
+        assert!(group.can_edit_namespace(10)); // Not in list, positive
+    }
+
+    #[test]
+    fn test_namespace_group_list_blocks_listed() {
+        let group = NamespaceGroup::List(vec![1, 3, 5]);
+        assert!(!group.can_edit_namespace(1)); // In list
+        assert!(!group.can_edit_namespace(3)); // In list
+        assert!(!group.can_edit_namespace(5)); // In list
+    }
+
+    #[test]
+    fn test_namespace_group_list_blocks_negative() {
+        let group = NamespaceGroup::List(Vec::new());
+        assert!(!group.can_edit_namespace(-1)); // Negative always blocked
+        assert!(!group.can_edit_namespace(-2)); // Negative always blocked
+    }
+
+    #[test]
+    fn test_namespace_group_list_allows_zero() {
+        let group = NamespaceGroup::List(vec![1, 2, 3]);
+        assert!(group.can_edit_namespace(0)); // Main namespace, not in list
+    }
+
+    #[test]
+    fn test_namespace_group_empty_list_allows_all_positive() {
+        let group = NamespaceGroup::List(Vec::new());
+        assert!(group.can_edit_namespace(0));
+        assert!(group.can_edit_namespace(1));
+        assert!(group.can_edit_namespace(100));
+        assert!(!group.can_edit_namespace(-1)); // Still blocks negative
+    }
+
+    #[test]
+    fn test_namespace_group_list_with_duplicates() {
+        let group = NamespaceGroup::List(vec![1, 1, 2, 2, 3]);
+        assert!(!group.can_edit_namespace(1));
+        assert!(!group.can_edit_namespace(2));
+        assert!(!group.can_edit_namespace(3));
+        assert!(group.can_edit_namespace(4));
+    }
+
+    #[test]
+    fn test_namespace_group_list_large_numbers() {
+        let group = NamespaceGroup::List(vec![1000, 2000, 3000]);
+        assert!(!group.can_edit_namespace(1000));
+        assert!(!group.can_edit_namespace(2000));
+        assert!(group.can_edit_namespace(999));
+        assert!(group.can_edit_namespace(1001));
+    }
+
+    #[test]
+    fn test_namespace_group_list_with_zero() {
+        let group = NamespaceGroup::List(vec![0, 1, 2]);
+        assert!(!group.can_edit_namespace(0)); // 0 is in the list
+        assert!(!group.can_edit_namespace(1));
+        assert!(group.can_edit_namespace(3));
+    }
+
+    #[test]
+    fn test_namespace_group_list_negative_in_list() {
+        // Edge case: what if someone adds negative to the list?
+        let group = NamespaceGroup::List(vec![-1, 0, 1]);
+        assert!(!group.can_edit_namespace(-1)); // Negative always blocked
+        assert!(!group.can_edit_namespace(-2)); // Negative always blocked
+        assert!(!group.can_edit_namespace(0)); // 0 in list
+        assert!(!group.can_edit_namespace(1)); // 1 in list
     }
 }
