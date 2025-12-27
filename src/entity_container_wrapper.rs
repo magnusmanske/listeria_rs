@@ -19,7 +19,8 @@ use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::Value;
 use wikimisc::wikibase::snak::SnakDataType;
 
-const CACHE_CAPACITY_MB: usize = 64;
+const CACHE_CAPACITY_MB: usize = 512;
+const RAM_CAPACITY_MB: usize = 256;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
@@ -60,7 +61,7 @@ impl EntityContainerWrapper {
             .build()?;
 
         let hybrid: HybridCache<String, String> = HybridCacheBuilder::new()
-            .memory(64 * 1024 * 1024)
+            .memory(RAM_CAPACITY_MB * 1024 * 1024)
             .storage()
             .with_engine_config(BlockEngineBuilder::new(device))
             .with_compression(foyer::Compression::Lz4)
