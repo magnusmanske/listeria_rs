@@ -87,23 +87,7 @@ impl ListeriaBot for ListeriaBotWikidata {
         info!(target: "lock","Getting next page, without {ids}");
         const IGNORE_STATUS: &str = "'RUNNING','DELETED','TRANSLATION'";
 
-        // Tries to find a "priority" page
-        let sql_priority = format!(
-            "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
-            FROM pagestatus,wikis
-            WHERE priority=1
-            AND wikis.id=pagestatus.wiki
-            AND wikis.status='ACTIVE'
-            AND pagestatus.status NOT IN ({IGNORE_STATUS})
-            AND pagestatus.id NOT IN ({ids})
-            ORDER BY pagestatus.timestamp
-            LIMIT 1"
-        );
-        if let Some(page) = self.get_page_for_sql(&sql_priority).await {
-            self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
-                .await?;
-            info!(target: "lock","Found a priority page: {:?}",&page);
-            self.running.insert(page.id());
+        if let Some(page) = self.find_priority_page(&ids, IGNORE_STATUS).await? {
             return Ok(page);
         }
 
@@ -115,6 +99,7 @@ impl ListeriaBot for ListeriaBotWikidata {
             AND wikis.status='ACTIVE'
             AND pagestatus.status NOT IN ({IGNORE_STATUS})
             AND pagestatus.id NOT IN ({ids})
+            AND pagestatus.wiki NOT IN (SELECT DISTINCT ps.wiki FROM pagestatus ps WHERE ps.id IN ({ids}))
             ORDER BY pagestatus.timestamp
             LIMIT 1"
         );
@@ -243,5 +228,32 @@ impl ListeriaBotWikidata {
             .map_and_drop(from_row::<String>)
             .await?;
         Ok(())
+    }
+
+    async fn find_priority_page(
+        &self,
+        ids: &String,
+        ignore_status: &str,
+    ) -> Result<Option<PageToProcess>> {
+        let sql_priority = format!(
+            "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
+            FROM pagestatus,wikis
+            WHERE priority=1
+            AND wikis.id=pagestatus.wiki
+            AND wikis.status='ACTIVE'
+            AND pagestatus.status NOT IN ({ignore_status})
+            AND pagestatus.id NOT IN ({ids})
+            ORDER BY pagestatus.timestamp
+            LIMIT 1"
+        );
+        if let Some(page) = self.get_page_for_sql(&sql_priority).await {
+            self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
+                .await?;
+            info!(target: "lock","Found a priority page: {:?}",&page);
+            self.running.insert(page.id());
+            Ok(Some(page))
+        } else {
+            Ok(None)
+        }
     }
 }
