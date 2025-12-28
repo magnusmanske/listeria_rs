@@ -151,7 +151,7 @@ impl RendererTabbedData {
             .ok_or(anyhow!("Data page name too long"))?;
         let text = ::serde_json::to_string(&tabbed_data_json)?;
         let token = commons_api.get_edit_token().await?;
-        let params: HashMap<String, String> = vec![
+        let params: HashMap<String, String> = [
             ("action", "edit"),
             ("title", data_page.as_str()),
             ("summary", "Listeria test"),
