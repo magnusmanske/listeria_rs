@@ -99,7 +99,7 @@ impl ListeriaBot for ListeriaBotWikidata {
             AND wikis.status='ACTIVE'
             AND pagestatus.status NOT IN ({IGNORE_STATUS})
             AND pagestatus.id NOT IN ({ids})
-            AND pagestatus.wiki NOT IN (SELECT DISTINCT ps.wiki FROM pagestatus ps WHERE ps.id IN ({ids}))
+            /*AND pagestatus.wiki NOT IN (SELECT DISTINCT ps.wiki FROM pagestatus ps WHERE ps.id IN ({ids}))*/
             ORDER BY pagestatus.timestamp
             LIMIT 1"
         );
