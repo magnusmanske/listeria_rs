@@ -5,7 +5,7 @@ use crate::result_cell_part::{LinkTarget, LocalLinkInfo, PartWithReference, Resu
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{Result, anyhow};
-use foyer::{BlockEngineBuilder, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
+use foyer::{BlockEngineConfig, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
@@ -59,11 +59,12 @@ impl EntityContainerWrapper {
         let device = FsDeviceBuilder::new(dir.path())
             .with_capacity(CACHE_CAPACITY_MB * 1024 * 1024)
             .build()?;
+        let engine_config = BlockEngineConfig::new(device);
 
         let hybrid: HybridCache<String, String> = HybridCacheBuilder::new()
             .memory(RAM_CAPACITY)
             .storage()
-            .with_engine_config(BlockEngineBuilder::new(device))
+            .with_engine_config(engine_config)
             .with_compression(foyer::Compression::Lz4)
             .build()
             .await?;
