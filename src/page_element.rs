@@ -85,7 +85,11 @@ impl PageElement {
                 &match_end,
             )?,
             template_end: Self::extract_template_end_text(text, single_template, &match_end)?,
-            after: Self::extract_text_segment(text, match_end.end(), text.len())?,
+            after: if single_template {
+                Self::extract_text_segment(text, template_start_end_bytes, text.len())?
+            } else {
+                Self::extract_text_segment(text, match_end.end(), text.len())?
+            },
             list: ListeriaList::new(template, page.page_params()).await.ok()?,
             is_just_text: false,
         })
