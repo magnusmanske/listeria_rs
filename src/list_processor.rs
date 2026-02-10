@@ -291,12 +291,12 @@ impl ListProcessor {
         }
         list.profile("AFTER process_sort_results SORTKEYS");
 
-        let ret = Self::process_sort_results_finish(list, sortkeys, datatype);
+        let ret = Self::process_sort_results_finish(list, sortkeys, datatype).await;
         list.profile("AFTER process_sort_results_finish");
         ret
     }
 
-    fn process_sort_results_finish(
+    async fn process_sort_results_finish(
         list: &mut ListeriaList,
         sortkeys: Vec<String>,
         datatype: SnakDataType,
@@ -319,13 +319,19 @@ impl ListProcessor {
             "BEFORE process_sort_results_finish sort of {} items",
             list.results().len()
         ));
-        list.results_mut()
-            .sort_by(|a, b| a.compare_to(b, &datatype));
+        let descending = *list.template_params().sort_order() == SortOrder::Descending;
+        let mut results = std::mem::take(list.results_mut());
+        results = tokio::task::spawn_blocking(move || {
+            results.sort_by(|a, b| a.compare_to(b, &datatype));
+            if descending {
+                results.reverse();
+            }
+            results
+        })
+        .await
+        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?;
+        *list.results_mut() = results;
         list.profile("AFTER process_sort_results_finish sort");
-        if *list.template_params().sort_order() == SortOrder::Descending {
-            list.results_mut().reverse();
-        }
-        list.profile("AFTER process_sort_results_finish reverse");
 
         Ok(())
     }

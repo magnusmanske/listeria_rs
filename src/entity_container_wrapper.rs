@@ -45,9 +45,15 @@ impl EntityContainerWrapper {
         };
         // Pre-cache test entities if testing
         if cfg!(test) {
-            let file = File::open("test_data/test_entities.json")?;
-            let reader = BufReader::new(file);
-            let test_items: serde_json::Value = serde_json::from_reader(reader)?;
+            let test_items: serde_json::Value =
+                tokio::task::spawn_blocking(|| -> Result<serde_json::Value> {
+                    let file = File::open("test_data/test_entities.json")?;
+                    let reader = BufReader::new(file);
+                    let v = serde_json::from_reader(reader)?;
+                    Ok(v)
+                })
+                .await
+                .map_err(|e| anyhow!("spawn_blocking join error: {e}"))??;
             for (_item, j) in test_items.as_object().ok_or(anyhow!("Not an object"))? {
                 ret.set_entity_from_json(j)?;
             }
