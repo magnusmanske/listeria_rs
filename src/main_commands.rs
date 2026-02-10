@@ -60,10 +60,12 @@ impl MainCommands {
     }
 
     pub async fn load_test_entities(&mut self) -> Result<()> {
-        let mut items = Vec::new();
-        for line in read_to_string("test_data/entities.tab")?.lines() {
-            items.push(line.to_string());
-        }
+        let mut items = tokio::task::spawn_blocking(|| -> Result<Vec<String>> {
+            let content = read_to_string("test_data/entities.tab")?;
+            Ok(content.lines().map(|l| l.to_string()).collect())
+        })
+        .await
+        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))??;
         // These two can be missing for some reason?
         items.push("Q3".to_string());
         items.push("Q4".to_string());

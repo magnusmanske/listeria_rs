@@ -74,9 +74,15 @@ pub struct Configuration {
 impl Configuration {
     /// Loads configuration from a JSON file.
     pub async fn new_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let j = serde_json::from_reader(reader)?;
+        let path = path.as_ref().to_path_buf();
+        let j = tokio::task::spawn_blocking(move || -> Result<Value> {
+            let file = File::open(path)?;
+            let reader = BufReader::new(file);
+            let j = serde_json::from_reader(reader)?;
+            Ok(j)
+        })
+        .await
+        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))??;
         Self::new_from_json(j).await
     }
 
