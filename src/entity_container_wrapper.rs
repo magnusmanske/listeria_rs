@@ -16,6 +16,7 @@ use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table::SparqlTable;
 use wikimisc::wikibase::Entity;
 use wikimisc::wikibase::EntityTrait;
+use wikimisc::wikibase::StatementRank;
 use wikimisc::wikibase::Value;
 use wikimisc::wikibase::snak::SnakDataType;
 
@@ -243,7 +244,17 @@ impl EntityContainerWrapper {
 
     pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
         let pi = self.get_entity(prop).await?;
-        pi.claims_with_property("P1630")
+        let mut claims: Vec<_> = pi
+            .claims_with_property("P1630")
+            .iter()
+            .filter(|s| *s.rank() != StatementRank::Deprecated)
+            .cloned()
+            .collect();
+        let has_preferred = claims.iter().any(|s| *s.rank() == StatementRank::Preferred);
+        if has_preferred {
+            claims.retain(|s| *s.rank() == StatementRank::Preferred);
+        }
+        claims
             .iter()
             .filter_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
