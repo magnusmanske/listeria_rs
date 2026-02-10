@@ -473,7 +473,7 @@ impl Configuration {
             .as_str()
             .unwrap_or(r#"\{\{(Wikidata[ _]list[^\|]*|"#)
             .to_string();
-        self.pattern_string_end = j["pattern_string_start"]
+        self.pattern_string_end = j["pattern_string_end"]
             .as_str()
             .unwrap_or(r#"\{\{(Wikidata[ _]list[ _]end|"#)
             .to_string();
