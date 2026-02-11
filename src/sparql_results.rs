@@ -99,9 +99,13 @@ impl SparqlResults {
         let result = response.json::<SparqlApiResult>().await?;
         self.set_main_variable(&result);
 
-        let mut ret = SparqlTable::from_api_result(result)?;
-        ret.set_main_variable(self.sparql_main_variable());
-        Ok(ret)
+        let main_variable = self.sparql_main_variable();
+        tokio::task::spawn_blocking(move || -> Result<SparqlTable> {
+            let mut ret = SparqlTable::from_api_result(result)?;
+            ret.set_main_variable(main_variable);
+            Ok(ret)
+        })
+        .await?
     }
 
     fn set_main_variable(&mut self, result: &SparqlApiResult) {
