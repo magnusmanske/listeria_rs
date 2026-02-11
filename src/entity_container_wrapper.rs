@@ -158,9 +158,13 @@ impl EntityContainerWrapper {
             .await
             .ok()??
             .to_string();
-        let v: serde_json::Value = serde_json::from_str(&json_string).ok()?;
-        let entity = Entity::new_from_json(&v).ok()?;
-        Some(entity)
+        tokio::task::spawn_blocking(move || -> Option<Entity> {
+            let v = serde_json::from_str(&json_string).ok()?;
+            let entity = Entity::new_from_json(&v).ok()?;
+            Some(entity)
+        })
+        .await
+        .ok()?
     }
 
     pub async fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
