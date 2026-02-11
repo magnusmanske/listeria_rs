@@ -651,3 +651,82 @@ impl ListeriaList {
         Arc::clone(self.page_params.mw_api())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- first_letter_to_upper_case ---
+
+    #[test]
+    fn test_first_letter_to_upper_case_basic() {
+        assert_eq!(ListeriaList::first_letter_to_upper_case("hello"), "Hello");
+    }
+
+    #[test]
+    fn test_first_letter_to_upper_case_already_upper() {
+        assert_eq!(ListeriaList::first_letter_to_upper_case("Hello"), "Hello");
+    }
+
+    #[test]
+    fn test_first_letter_to_upper_case_single_char() {
+        assert_eq!(ListeriaList::first_letter_to_upper_case("h"), "H");
+    }
+
+    #[test]
+    fn test_first_letter_to_upper_case_empty() {
+        assert_eq!(ListeriaList::first_letter_to_upper_case(""), "");
+    }
+
+    #[test]
+    fn test_first_letter_to_upper_case_unicode() {
+        assert_eq!(ListeriaList::first_letter_to_upper_case("über"), "Über");
+    }
+
+    #[test]
+    fn test_first_letter_to_upper_case_number() {
+        assert_eq!(ListeriaList::first_letter_to_upper_case("123abc"), "123abc");
+    }
+
+    // --- normalize_page_title ---
+
+    #[test]
+    fn test_normalize_page_title_basic() {
+        assert_eq!(
+            ListeriaList::normalize_page_title("hello world"),
+            "Hello world"
+        );
+    }
+
+    #[test]
+    fn test_normalize_page_title_already_normalized() {
+        assert_eq!(
+            ListeriaList::normalize_page_title("Hello world"),
+            "Hello world"
+        );
+    }
+
+    #[test]
+    fn test_normalize_page_title_single_char() {
+        // Length < 2, returns as-is
+        assert_eq!(ListeriaList::normalize_page_title("h"), "h");
+    }
+
+    #[test]
+    fn test_normalize_page_title_empty() {
+        assert_eq!(ListeriaList::normalize_page_title(""), "");
+    }
+
+    #[test]
+    fn test_normalize_page_title_two_chars() {
+        assert_eq!(ListeriaList::normalize_page_title("ab"), "Ab");
+    }
+
+    #[test]
+    fn test_normalize_page_title_with_namespace() {
+        assert_eq!(
+            ListeriaList::normalize_page_title("category:test"),
+            "Category:test"
+        );
+    }
+}

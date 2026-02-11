@@ -570,5 +570,184 @@ mod tests {
         assert_ne!(LinkTarget::Page, LinkTarget::Category);
     }
 
+    // --- from_snak ---
+
+    #[test]
+    fn test_from_snak_entity() {
+        let snak = Snak::new_item("P31", "Q5");
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(
+            part,
+            ResultCellPart::Entity(EntityInfo::new("Q5".to_string(), true))
+        );
+    }
+
+    #[test]
+    fn test_from_snak_string() {
+        let snak = Snak::new_string("P1", "hello world");
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(part, ResultCellPart::Text("hello world".to_string()));
+    }
+
+    #[test]
+    fn test_from_snak_url() {
+        let snak = Snak::new_url("P856", "https://example.com");
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(
+            part,
+            ResultCellPart::Text("https://example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_from_snak_external_id() {
+        let snak = Snak::new_external_id("P213", "0000-0001-2345-6789");
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(
+            part,
+            ResultCellPart::ExternalId(ExternalIdInfo::new(
+                "P213".to_string(),
+                "0000-0001-2345-6789".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_from_snak_coordinate() {
+        let snak = Snak::new_coordinate("P625", 48.8566, 2.3522);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Location(loc) => {
+                assert!((loc.latitude - 48.8566).abs() < 0.0001);
+                assert!((loc.longitude - 2.3522).abs() < 0.0001);
+                assert!(loc.region.is_none());
+            }
+            other => panic!("Expected Location, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_from_snak_monolingual_text() {
+        let snak = Snak::new_monolingual_text("P1476", "en", "Hello World");
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(part, ResultCellPart::Text("Hello World:en".to_string()));
+    }
+
+    #[test]
+    fn test_from_snak_quantity() {
+        let snak = Snak::new_quantity("P1082", 42.0);
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(part, ResultCellPart::Text("42".to_string()));
+    }
+
+    #[test]
+    fn test_from_snak_no_value() {
+        let snak = Snak::new_no_value("P31", SnakDataType::WikibaseItem);
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(part, ResultCellPart::Text("No/unknown value".to_string()));
+    }
+
+    #[test]
+    fn test_from_snak_unknown_value() {
+        let snak = Snak::new_unknown_value("P31", SnakDataType::WikibaseItem);
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(part, ResultCellPart::Text("No/unknown value".to_string()));
+    }
+
+    // --- tabbed_string_safe edge cases ---
+
+    #[test]
+    fn test_tabbed_string_safe_long_string_truncated() {
+        let input = "a".repeat(500);
+        let result = ResultCellPart::tabbed_string_safe(input);
+        assert_eq!(result.len(), 380);
+    }
+
+    #[test]
+    fn test_tabbed_string_safe_exactly_380() {
+        let input = "b".repeat(380);
+        let result = ResultCellPart::tabbed_string_safe(input);
+        assert_eq!(result.len(), 380);
+    }
+
+    #[test]
+    fn test_tabbed_string_safe_empty() {
+        let result = ResultCellPart::tabbed_string_safe(String::new());
+        assert_eq!(result, "");
+    }
+
+    // --- from_sparql_value location ---
+
+    #[test]
+    fn test_from_sparql_value_location() {
+        let sparql_value = SparqlValue::Location(wikimisc::lat_lon::LatLon::new(51.5074, -0.1278));
+        let result = ResultCellPart::from_sparql_value(&sparql_value);
+        match result {
+            ResultCellPart::Location(loc) => {
+                assert!((loc.latitude - 51.5074).abs() < 0.0001);
+                assert!((loc.longitude - (-0.1278)).abs() < 0.0001);
+            }
+            other => panic!("Expected Location, got {:?}", other),
+        }
+    }
+
+    // --- EntityInfo / LocalLinkInfo / LocationInfo / ExternalIdInfo constructors ---
+
+    #[test]
+    fn test_entity_info_new() {
+        let info = EntityInfo::new("Q42".to_string(), true);
+        assert_eq!(info.id, "Q42");
+        assert!(info.try_localize);
+    }
+
+    #[test]
+    fn test_entity_info_no_localize() {
+        let info = EntityInfo::new("Q1".to_string(), false);
+        assert!(!info.try_localize);
+    }
+
+    #[test]
+    fn test_local_link_info_new() {
+        let info = LocalLinkInfo::new(
+            "Berlin".to_string(),
+            "Berlin label".to_string(),
+            LinkTarget::Page,
+        );
+        assert_eq!(info.page, "Berlin");
+        assert_eq!(info.label, "Berlin label");
+        assert_eq!(info.target, LinkTarget::Page);
+    }
+
+    #[test]
+    fn test_local_link_info_category() {
+        let info = LocalLinkInfo::new(
+            "Category:Cities".to_string(),
+            "Cities".to_string(),
+            LinkTarget::Category,
+        );
+        assert_eq!(info.target, LinkTarget::Category);
+    }
+
+    #[test]
+    fn test_location_info_new() {
+        let info = LocationInfo::new(48.8566, 2.3522, Some("FR-75".to_string()));
+        assert!((info.latitude - 48.8566).abs() < 0.0001);
+        assert!((info.longitude - 2.3522).abs() < 0.0001);
+        assert_eq!(info.region, Some("FR-75".to_string()));
+    }
+
+    #[test]
+    fn test_location_info_no_region() {
+        let info = LocationInfo::new(0.0, 0.0, None);
+        assert!(info.region.is_none());
+    }
+
+    #[test]
+    fn test_external_id_info_new() {
+        let info = ExternalIdInfo::new("P213".to_string(), "12345".to_string());
+        assert_eq!(info.property, "P213");
+        assert_eq!(info.id, "12345");
+    }
+
     // AutoDesc tests removed - complex Entity API dependency
 }

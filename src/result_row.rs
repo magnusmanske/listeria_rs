@@ -291,3 +291,295 @@ impl ResultRow {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::result_cell_part::{PartWithReference, ResultCellPart};
+    use std::cmp::Ordering;
+
+    // --- ResultRow basic construction and getters ---
+
+    #[test]
+    fn test_new_row() {
+        let row = ResultRow::new("Q42");
+        assert_eq!(row.entity_id(), "Q42");
+        assert!(row.cells().is_empty());
+        assert_eq!(row.section(), 0);
+        assert_eq!(row.sortkey(), "");
+        assert!(!row.keep());
+    }
+
+    #[test]
+    fn test_set_keep() {
+        let mut row = ResultRow::new("Q1");
+        assert!(!row.keep());
+        row.set_keep(true);
+        assert!(row.keep());
+        row.set_keep(false);
+        assert!(!row.keep());
+    }
+
+    #[test]
+    fn test_set_section() {
+        let mut row = ResultRow::new("Q1");
+        assert_eq!(row.section(), 0);
+        row.set_section(5);
+        assert_eq!(row.section(), 5);
+    }
+
+    #[test]
+    fn test_set_sortkey() {
+        let mut row = ResultRow::new("Q1");
+        row.set_sortkey("abc".to_string());
+        assert_eq!(row.sortkey(), "abc");
+    }
+
+    // --- no_value ---
+
+    #[test]
+    fn test_no_value_time() {
+        assert_eq!(ResultRow::no_value(&SnakDataType::Time), "no time");
+    }
+
+    #[test]
+    fn test_no_value_monolingual() {
+        let result = ResultRow::no_value(&SnakDataType::MonolingualText);
+        assert_eq!(result, "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz");
+    }
+
+    #[test]
+    fn test_no_value_string() {
+        assert_eq!(ResultRow::no_value(&SnakDataType::String), "");
+    }
+
+    #[test]
+    fn test_no_value_quantity() {
+        assert_eq!(ResultRow::no_value(&SnakDataType::Quantity), "");
+    }
+
+    #[test]
+    fn test_no_value_wikibase_item() {
+        assert_eq!(ResultRow::no_value(&SnakDataType::WikibaseItem), "");
+    }
+
+    // --- compare_entity_ids ---
+
+    #[test]
+    fn test_compare_entity_ids_less() {
+        let r1 = ResultRow::new("Q1");
+        let r2 = ResultRow::new("Q100");
+        assert_eq!(r1.compare_entity_ids(&r2), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_entity_ids_greater() {
+        let r1 = ResultRow::new("Q500");
+        let r2 = ResultRow::new("Q10");
+        assert_eq!(r1.compare_entity_ids(&r2), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_compare_entity_ids_equal() {
+        let r1 = ResultRow::new("Q42");
+        let r2 = ResultRow::new("Q42");
+        assert_eq!(r1.compare_entity_ids(&r2), Ordering::Equal);
+    }
+
+    // --- compare_to ---
+
+    #[test]
+    fn test_compare_to_string_different_keys() {
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("apple".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("banana".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::String), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_string_same_keys_falls_back_to_entity_id() {
+        let mut r1 = ResultRow::new("Q10");
+        r1.set_sortkey("same".to_string());
+        let mut r2 = ResultRow::new("Q20");
+        r2.set_sortkey("same".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::String), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_quantity() {
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("100".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("200".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_quantity_reverse() {
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("999".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("1".to_string());
+        assert_eq!(
+            r1.compare_to(&r2, &SnakDataType::Quantity),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn test_compare_to_quantity_both_zero_falls_back_to_entity_id() {
+        let mut r1 = ResultRow::new("Q5");
+        r1.set_sortkey("0".to_string());
+        let mut r2 = ResultRow::new("Q10");
+        r2.set_sortkey("0".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_quantity_unparseable_falls_back_to_entity_id() {
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("not_a_number".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("also_not".to_string());
+        // Both parse to 0, so falls back to entity id comparison
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
+    }
+
+    // --- remove_excess_files ---
+
+    fn make_cell_with_parts(parts: Vec<ResultCellPart>) -> ResultCell {
+        let pwrs: Vec<PartWithReference> = parts
+            .into_iter()
+            .map(|p| PartWithReference::new(p, None))
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "parts": serde_json::to_value(&pwrs).unwrap(),
+            "wdedit_class": null,
+            "deduplicate_parts": true
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn test_remove_excess_files_keeps_first_file() {
+        let mut row = ResultRow::new("Q1");
+        let cell = make_cell_with_parts(vec![
+            ResultCellPart::File("a.jpg".to_string()),
+            ResultCellPart::File("b.jpg".to_string()),
+            ResultCellPart::File("c.jpg".to_string()),
+        ]);
+        row.set_cells(vec![cell]);
+        row.remove_excess_files();
+        assert_eq!(row.cells()[0].parts().len(), 1);
+        assert_eq!(
+            row.cells()[0].parts()[0].part(),
+            &ResultCellPart::File("a.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn test_remove_excess_files_leaves_non_files_alone() {
+        let mut row = ResultRow::new("Q1");
+        let cell = make_cell_with_parts(vec![
+            ResultCellPart::Text("hello".to_string()),
+            ResultCellPart::Text("world".to_string()),
+        ]);
+        row.set_cells(vec![cell]);
+        row.remove_excess_files();
+        assert_eq!(row.cells()[0].parts().len(), 2);
+    }
+
+    #[test]
+    fn test_remove_excess_files_empty_cell() {
+        let mut row = ResultRow::new("Q1");
+        let cell = make_cell_with_parts(vec![]);
+        row.set_cells(vec![cell]);
+        row.remove_excess_files();
+        assert!(row.cells()[0].parts().is_empty());
+    }
+
+    // --- remove_shadow_files ---
+
+    #[test]
+    fn test_remove_shadow_files_removes_matching() {
+        let mut row = ResultRow::new("Q1");
+        let cell = make_cell_with_parts(vec![
+            ResultCellPart::File("shadow.jpg".to_string()),
+            ResultCellPart::File("good.jpg".to_string()),
+        ]);
+        row.set_cells(vec![cell]);
+        let shadow: HashSet<String> = ["shadow.jpg".to_string()].into();
+        row.remove_shadow_files(&shadow);
+        assert_eq!(row.cells()[0].parts().len(), 1);
+        assert_eq!(
+            row.cells()[0].parts()[0].part(),
+            &ResultCellPart::File("good.jpg".to_string())
+        );
+    }
+
+    #[test]
+    fn test_remove_shadow_files_preserves_non_files() {
+        let mut row = ResultRow::new("Q1");
+        let cell = make_cell_with_parts(vec![
+            ResultCellPart::Text("text".to_string()),
+            ResultCellPart::File("shadow.jpg".to_string()),
+        ]);
+        row.set_cells(vec![cell]);
+        let shadow: HashSet<String> = ["shadow.jpg".to_string()].into();
+        row.remove_shadow_files(&shadow);
+        assert_eq!(row.cells()[0].parts().len(), 1);
+        assert_eq!(
+            row.cells()[0].parts()[0].part(),
+            &ResultCellPart::Text("text".to_string())
+        );
+    }
+
+    #[test]
+    fn test_remove_shadow_files_empty_shadow_set() {
+        let mut row = ResultRow::new("Q1");
+        let cell = make_cell_with_parts(vec![ResultCellPart::File("keep.jpg".to_string())]);
+        row.set_cells(vec![cell]);
+        let shadow: HashSet<String> = HashSet::new();
+        row.remove_shadow_files(&shadow);
+        assert_eq!(row.cells()[0].parts().len(), 1);
+    }
+
+    // --- Default trait ---
+
+    #[test]
+    fn test_default_row() {
+        let row = ResultRow::default();
+        assert_eq!(row.entity_id(), "");
+        assert!(row.cells().is_empty());
+        assert_eq!(row.section(), 0);
+        assert_eq!(row.sortkey(), "");
+        assert!(!row.keep());
+    }
+
+    // --- Clone trait ---
+
+    #[test]
+    fn test_clone_row() {
+        let mut row = ResultRow::new("Q42");
+        row.set_sortkey("key".to_string());
+        row.set_section(3);
+        row.set_keep(true);
+        let cloned = row.clone();
+        assert_eq!(cloned.entity_id(), "Q42");
+        assert_eq!(cloned.sortkey(), "key");
+        assert_eq!(cloned.section(), 3);
+        assert!(cloned.keep());
+    }
+
+    // --- cells_mut ---
+
+    #[test]
+    fn test_cells_mut() {
+        let mut row = ResultRow::new("Q1");
+        row.set_cells(vec![make_cell_with_parts(vec![ResultCellPart::Number])]);
+        assert_eq!(row.cells().len(), 1);
+        row.cells_mut().clear();
+        assert!(row.cells().is_empty());
+    }
+}

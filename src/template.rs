@@ -190,4 +190,58 @@ mod tests {
         assert_eq!(t.params.get("p2"), Some(&"no replacement".to_string()));
         assert_eq!(t.params.get("p3"), Some(&"|start".to_string()));
     }
+
+    // --- get_value (case-insensitive lookup) ---
+
+    #[test]
+    fn test_get_value_exact_case() {
+        let t = Template::new_from_params("sort=P31|links=ALL").unwrap();
+        assert_eq!(t.get_value("sort"), Some("P31".to_string()));
+        assert_eq!(t.get_value("links"), Some("ALL".to_string()));
+    }
+
+    #[test]
+    fn test_get_value_case_insensitive() {
+        let t = Template::new_from_params("Sort=P31|LINKS=all").unwrap();
+        assert_eq!(t.get_value("sort"), Some("P31".to_string()));
+        assert_eq!(t.get_value("links"), Some("all".to_string()));
+        assert_eq!(t.get_value("SORT"), Some("P31".to_string()));
+    }
+
+    #[test]
+    fn test_get_value_missing_key() {
+        let t = Template::new_from_params("sort=P31").unwrap();
+        assert_eq!(t.get_value("missing"), None);
+    }
+
+    #[test]
+    fn test_get_value_empty_template() {
+        let t = Template::new_from_params("").unwrap();
+        assert_eq!(t.get_value("anything"), None);
+    }
+
+    #[test]
+    fn test_params_getter() {
+        let t = Template::new_from_params("a=1|b=2").unwrap();
+        assert_eq!(t.params().len(), 2);
+        assert_eq!(t.params().get("a"), Some(&"1".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_params_value_with_equals() {
+        // Values containing '=' should use the first '=' as the separator
+        let t = Template::new_from_params("url=http://example.com?a=1&b=2").unwrap();
+        assert_eq!(
+            t.params.get("url"),
+            Some(&"http://example.com?a=1&b=2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_new_from_params_duplicate_keys() {
+        // HashMap semantics: last one wins
+        let t = Template::new_from_params("key=first|key=second").unwrap();
+        // Due to HashMap collect, either value could win, but typically last
+        assert!(t.params.contains_key("key"));
+    }
 }
