@@ -409,4 +409,184 @@ mod tests {
         assert_eq!(Reference::ordinal_suffix(-2), "-2nd");
         assert_eq!(Reference::ordinal_suffix(-11), "-11th");
     }
+
+    #[test]
+    fn test_ordinal_suffix_zero() {
+        assert_eq!(Reference::ordinal_suffix(0), "0th");
+    }
+
+    // --- extract_reference_url ---
+
+    #[test]
+    fn test_extract_reference_url() {
+        let snak = Snak::new_string("P854", "https://example.com");
+        let mut reference = Reference::default();
+        Reference::extract_reference_url(&snak, &mut reference);
+        assert_eq!(reference.url, Some("https://example.com".to_string()));
+    }
+
+    #[test]
+    fn test_extract_reference_url_wrong_type() {
+        // new_item creates an entity value, not a string — should not set URL
+        let snak = Snak::new_item("P854", "Q42");
+        let mut reference = Reference::default();
+        Reference::extract_reference_url(&snak, &mut reference);
+        assert_eq!(reference.url, None);
+    }
+
+    // --- extract_stated_in ---
+
+    #[test]
+    fn test_extract_stated_in() {
+        let snak = Snak::new_item("P248", "Q36578");
+        let mut reference = Reference::default();
+        Reference::extract_stated_in(&snak, &mut reference);
+        assert_eq!(reference.stated_in, Some("Q36578".to_string()));
+    }
+
+    #[test]
+    fn test_extract_stated_in_wrong_type() {
+        let snak = Snak::new_string("P248", "not an item");
+        let mut reference = Reference::default();
+        Reference::extract_stated_in(&snak, &mut reference);
+        assert_eq!(reference.stated_in, None);
+    }
+
+    // --- extract_title ---
+
+    #[test]
+    fn test_extract_title_matching_language() {
+        // Note: Snak::new_monolingual_text passes (language, value) to
+        // MonoLingualText::new(text, language), so args are swapped internally.
+        // We pass ("Test Title", "en") so that text="Test Title", language="en".
+        let snak = Snak::new_monolingual_text("P1476", "Test Title", "en");
+        let mut reference = Reference::default();
+        Reference::extract_title(&snak, "en", &mut reference);
+        assert_eq!(reference.title, Some("Test Title".to_string()));
+    }
+
+    #[test]
+    fn test_extract_title_non_matching_language() {
+        let snak = Snak::new_monolingual_text("P1476", "Testtitel", "de");
+        let mut reference = Reference::default();
+        Reference::extract_title(&snak, "en", &mut reference);
+        assert_eq!(reference.title, None);
+    }
+
+    // --- extract_timestamp ---
+
+    #[test]
+    fn test_extract_timestamp_day_precision() {
+        let snak = Snak::new_time("P813", "+2025-06-15T00:00:00Z", 11);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("2025-06-15".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_month_precision() {
+        let snak = Snak::new_time("P813", "+2025-06-15T00:00:00Z", 10);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("2025-06".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_year_precision() {
+        let snak = Snak::new_time("P813", "+2025-06-15T00:00:00Z", 9);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("2025".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_decade_precision() {
+        let snak = Snak::new_time("P813", "+1990-01-01T00:00:00Z", 8);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("1990s".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_century_precision() {
+        let snak = Snak::new_time("P813", "+1900-01-01T00:00:00Z", 7);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("19th century".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_millennium_precision() {
+        let snak = Snak::new_time("P813", "+2000-01-01T00:00:00Z", 6);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("2nd millennium".to_string()));
+    }
+
+    // --- new_from_snaks ---
+
+    #[test]
+    fn test_new_from_snaks_with_url() {
+        let snaks = vec![Snak::new_string("P854", "https://example.com")];
+        let reference = Reference::new_from_snaks(&snaks, "en");
+        assert!(reference.is_some());
+        let reference = reference.unwrap();
+        assert_eq!(reference.url, Some("https://example.com".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_snaks_with_stated_in() {
+        let snaks = vec![Snak::new_item("P248", "Q36578")];
+        let reference = Reference::new_from_snaks(&snaks, "en");
+        assert!(reference.is_some());
+        let reference = reference.unwrap();
+        assert_eq!(reference.stated_in, Some("Q36578".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_snaks_empty() {
+        let snaks: Vec<Snak> = vec![];
+        let reference = Reference::new_from_snaks(&snaks, "en");
+        assert!(reference.is_none());
+    }
+
+    #[test]
+    fn test_new_from_snaks_irrelevant_properties() {
+        // P999 is not handled, so it should produce an empty (None) reference
+        let snaks = vec![Snak::new_string("P999", "irrelevant")];
+        let reference = Reference::new_from_snaks(&snaks, "en");
+        assert!(reference.is_none());
+    }
+
+    #[test]
+    fn test_new_from_snaks_multiple() {
+        let snaks = vec![
+            Snak::new_string("P854", "https://example.com"),
+            Snak::new_item("P248", "Q36578"),
+            Snak::new_monolingual_text("P1476", "Test Title", "en"),
+        ];
+        let reference = Reference::new_from_snaks(&snaks, "en");
+        assert!(reference.is_some());
+        let reference = reference.unwrap();
+        assert_eq!(reference.url, Some("https://example.com".to_string()));
+        assert_eq!(reference.stated_in, Some("Q36578".to_string()));
+        assert_eq!(reference.title, Some("Test Title".to_string()));
+    }
+
+    // --- serialization ---
+
+    #[test]
+    fn test_reference_serialize_deserialize() {
+        let reference = Reference {
+            url: Some("https://example.com".to_string()),
+            title: Some("Test".to_string()),
+            date: Some("2025-01-01".to_string()),
+            stated_in: Some("Q42".to_string()),
+            md5: "abc123".to_string(),
+            wikitext_cache: Some("cached".to_string()),
+        };
+        let json = serde_json::to_string(&reference).unwrap();
+        let deserialized: Reference = serde_json::from_str(&json).unwrap();
+        assert_eq!(reference, deserialized);
+    }
 }

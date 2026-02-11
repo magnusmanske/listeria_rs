@@ -457,6 +457,7 @@ impl ResultCell {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::result_cell_part::ExternalIdInfo;
 
     #[test]
     fn test_fix_wikitext_for_output() {
@@ -556,5 +557,151 @@ mod tests {
     fn test_fix_wikitext_for_output_ampersand_unchanged() {
         // Ampersand should NOT be escaped
         assert_eq!(ResultCell::fix_wikitext_for_output("a&b"), "a&b");
+    }
+
+    // --- get_sortkey ---
+
+    fn make_cell(parts: Vec<ResultCellPart>) -> ResultCell {
+        let pwrs: Vec<PartWithReference> = parts
+            .into_iter()
+            .map(|p| PartWithReference::new(p, None))
+            .collect();
+        serde_json::from_value(serde_json::json!({
+            "parts": serde_json::to_value(&pwrs).unwrap(),
+            "wdedit_class": null,
+            "deduplicate_parts": true
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn test_get_sortkey_entity() {
+        let cell = make_cell(vec![ResultCellPart::Entity(EntityInfo::new(
+            "Q42".to_string(),
+            true,
+        ))]);
+        assert_eq!(cell.get_sortkey(), "Q42");
+    }
+
+    #[test]
+    fn test_get_sortkey_local_link() {
+        let cell = make_cell(vec![ResultCellPart::LocalLink(LocalLinkInfo::new(
+            "Main Page".to_string(),
+            "Main".to_string(),
+            LinkTarget::Page,
+        ))]);
+        assert_eq!(cell.get_sortkey(), "Main Page");
+    }
+
+    #[test]
+    fn test_get_sortkey_time() {
+        let cell = make_cell(vec![ResultCellPart::Time(
+            "+2024-01-15T00:00:00Z".to_string(),
+        )]);
+        assert_eq!(cell.get_sortkey(), "+2024-01-15T00:00:00Z");
+    }
+
+    #[test]
+    fn test_get_sortkey_text() {
+        let cell = make_cell(vec![ResultCellPart::Text("hello world".to_string())]);
+        assert_eq!(cell.get_sortkey(), "hello world");
+    }
+
+    #[test]
+    fn test_get_sortkey_file() {
+        let cell = make_cell(vec![ResultCellPart::File("photo.jpg".to_string())]);
+        assert_eq!(cell.get_sortkey(), "photo.jpg");
+    }
+
+    #[test]
+    fn test_get_sortkey_uri() {
+        let cell = make_cell(vec![ResultCellPart::Uri("https://example.com".to_string())]);
+        assert_eq!(cell.get_sortkey(), "https://example.com");
+    }
+
+    #[test]
+    fn test_get_sortkey_external_id() {
+        let cell = make_cell(vec![ResultCellPart::ExternalId(ExternalIdInfo::new(
+            "P213".to_string(),
+            "12345".to_string(),
+        ))]);
+        assert_eq!(cell.get_sortkey(), "12345");
+    }
+
+    #[test]
+    fn test_get_sortkey_number_returns_empty() {
+        let cell = make_cell(vec![ResultCellPart::Number]);
+        assert_eq!(cell.get_sortkey(), "");
+    }
+
+    #[test]
+    fn test_get_sortkey_empty_parts() {
+        let cell = make_cell(vec![]);
+        assert_eq!(cell.get_sortkey(), "");
+    }
+
+    #[test]
+    fn test_get_sortkey_uses_first_part() {
+        let cell = make_cell(vec![
+            ResultCellPart::Text("first".to_string()),
+            ResultCellPart::Text("second".to_string()),
+        ]);
+        assert_eq!(cell.get_sortkey(), "first");
+    }
+
+    // --- do_deduplicate_parts ---
+
+    #[test]
+    fn test_deduplicate_parts_removes_duplicates() {
+        let parts = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "a".to_string(),
+            "c".to_string(),
+        ];
+        let result = ResultCell::do_deduplicate_parts(&parts);
+        assert_eq!(result, vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_deduplicate_parts_preserves_order() {
+        let parts = vec!["z".to_string(), "a".to_string(), "z".to_string()];
+        let result = ResultCell::do_deduplicate_parts(&parts);
+        assert_eq!(result, vec!["z", "a"]);
+    }
+
+    #[test]
+    fn test_deduplicate_parts_empty() {
+        let parts: Vec<String> = vec![];
+        let result = ResultCell::do_deduplicate_parts(&parts);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_deduplicate_parts_single() {
+        let parts = vec!["only".to_string()];
+        let result = ResultCell::do_deduplicate_parts(&parts);
+        assert_eq!(result, vec!["only"]);
+    }
+
+    #[test]
+    fn test_deduplicate_parts_all_same() {
+        let parts = vec!["x".to_string(), "x".to_string(), "x".to_string()];
+        let result = ResultCell::do_deduplicate_parts(&parts);
+        assert_eq!(result, vec!["x"]);
+    }
+
+    // --- set_parts / parts ---
+
+    #[test]
+    fn test_set_and_get_parts() {
+        let mut cell = make_cell(vec![]);
+        assert!(cell.parts().is_empty());
+        let new_parts = vec![
+            PartWithReference::new(ResultCellPart::Text("hello".to_string()), None),
+            PartWithReference::new(ResultCellPart::Number, None),
+        ];
+        cell.set_parts(new_parts);
+        assert_eq!(cell.parts().len(), 2);
     }
 }

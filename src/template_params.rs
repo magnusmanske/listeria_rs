@@ -562,4 +562,52 @@ mod tests {
         assert!(!params.one_row_per_item()); // Default is false in new()
         assert_eq!(params.sort_order(), &SortOrder::Ascending);
     }
+
+    #[test]
+    fn test_set_links() {
+        let mut params = TemplateParams::new();
+        assert_eq!(params.links(), &LinksType::All);
+        params.set_links(LinksType::Red);
+        assert_eq!(params.links(), &LinksType::Red);
+        params.set_links(LinksType::Text);
+        assert_eq!(params.links(), &LinksType::Text);
+    }
+
+    #[test]
+    fn test_section_type_property_with_whitespace() {
+        match SectionType::new_from_string_option(Some(&"  P31  ".to_string())) {
+            SectionType::Property(p) => assert_eq!(p, "P31"),
+            _ => panic!("Expected Property variant"),
+        }
+    }
+
+    #[test]
+    fn test_section_type_number_with_whitespace() {
+        match SectionType::new_from_string_option(Some(&"  42  ".to_string())) {
+            SectionType::Property(p) => assert_eq!(p, "P42"),
+            _ => panic!("Expected Property variant"),
+        }
+    }
+
+    #[test]
+    fn test_sort_mode_large_property_number() {
+        match SortMode::new(Some(&"P99999".to_string())) {
+            SortMode::Property(p) => assert_eq!(p, "P99999"),
+            _ => panic!("Expected Property variant"),
+        }
+    }
+
+    #[test]
+    fn test_template_params_default_is_default_trait() {
+        // Verify Default trait implementation matches new()
+        let from_new = TemplateParams::new();
+        let from_default = TemplateParams::default();
+        assert_eq!(from_new.links(), from_default.links());
+        assert_eq!(from_new.min_section(), from_default.min_section());
+        assert_eq!(from_new.skip_table(), from_default.skip_table());
+        assert_eq!(from_new.wdedit(), from_default.wdedit());
+        assert_eq!(from_new.one_row_per_item(), from_default.one_row_per_item());
+        assert_eq!(from_new.sort_order(), from_default.sort_order());
+        assert_eq!(from_new.references(), from_default.references());
+    }
 }
