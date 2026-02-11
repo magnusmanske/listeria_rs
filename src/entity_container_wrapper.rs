@@ -18,6 +18,7 @@ use wikimisc::wikibase::Entity;
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::StatementRank;
 use wikimisc::wikibase::Value;
+use wikimisc::wikibase::entity_container::EntityContainer;
 use wikimisc::wikibase::snak::SnakDataType;
 
 const CACHE_CAPACITY_MB: usize = 512;
@@ -93,15 +94,28 @@ impl EntityContainerWrapper {
     async fn load_entities_into_entity_cache(&self, api: &Api, ids: &[String]) -> Result<()> {
         let chunks = ids.chunks(500); // 500 is just some guess
         for chunk in chunks {
-            let entity_container = wikimisc::wikibase::entity_container::EntityContainer::new();
+            let entity_container = EntityContainer::new();
             if let Err(e) = entity_container.load_entities(api, &chunk.into()).await {
                 return Err(anyhow!("Error loading entities: {e}"));
             }
-            for entity_id in chunk {
-                if let Some(entity) = entity_container.get_entity(entity_id) {
-                    let json = entity.to_json();
-                    self.set_entity_from_json(&json)?;
-                }
+            self.store_entity_chunk(chunk, entity_container).await?;
+        }
+        Ok(())
+    }
+
+    async fn store_entity_chunk(
+        &self,
+        chunk: &[String],
+        entity_container: EntityContainer,
+    ) -> Result<()> {
+        for entity_id in chunk {
+            if let Some(entity) = entity_container.get_entity(entity_id) {
+                let self2 = self.clone();
+                tokio::task::spawn_blocking(move || -> Result<()> {
+                    let json: serde_json::Value = entity.to_json();
+                    self2.set_entity_from_json(&json)
+                })
+                .await??;
             }
         }
         Ok(())
@@ -152,13 +166,9 @@ impl EntityContainerWrapper {
         if cfg!(test) {
             println!("{entity_id}\tentity_loaded");
         }
-        let json_string = self
-            .entities
-            .get(&entity_id.to_string())
-            .await
-            .ok()??
-            .to_string();
+        let cache_entry = self.entities.get(&entity_id.to_string()).await.ok()??;
         tokio::task::spawn_blocking(move || -> Option<Entity> {
+            let json_string = cache_entry.to_string();
             let v = serde_json::from_str(&json_string).ok()?;
             let entity = Entity::new_from_json(&v).ok()?;
             Some(entity)
