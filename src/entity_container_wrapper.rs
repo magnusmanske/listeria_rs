@@ -98,33 +98,41 @@ impl EntityContainerWrapper {
             if let Err(e) = entity_container.load_entities(api, &chunk.into()).await {
                 return Err(anyhow!("Error loading entities: {e}"));
             }
-            self.store_entity_chunk(chunk, entity_container)?;
+            self.store_entity_chunk(chunk, entity_container).await?;
         }
         Ok(())
     }
 
-    fn store_entity_chunk(
+    async fn store_entity_chunk(
         &self,
         chunk: &[String],
         entity_container: EntityContainer,
     ) -> Result<()> {
-        for entity_id in chunk {
-            if let Some(entity) = entity_container.get_entity(entity_id) {
-                let json: serde_json::Value = entity.to_json();
-                self.set_entity_from_json(&json)?;
+        let self2 = self.clone();
+        let chunk = chunk.to_vec();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            for entity_id in &chunk {
+                if let Some(entity) = entity_container.get_entity(entity_id) {
+                    let json: serde_json::Value = entity.to_json();
+                    self2.set_entity_from_json(&json)?;
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        })
+        .await
+        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?
     }
 
     /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times
-    fn filter_ids(&self, original_ids: &[String]) -> Result<Vec<String>> {
+    async fn filter_ids(&self, original_ids: &[String]) -> Result<Vec<String>> {
         let new_ids: Vec<String> = original_ids
             .iter()
             .filter(|id| !self.entities.contains(*id))
             .map(|id| id.to_owned())
             .collect();
-        Self::unique_shuffle_entity_ids(&new_ids)
+        tokio::task::spawn_blocking(move || Self::unique_shuffle_entity_ids(&new_ids))
+            .await
+            .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?
     }
 
     fn unique_shuffle_entity_ids(ids: &[String]) -> Result<Vec<String>> {
@@ -147,7 +155,7 @@ impl EntityContainerWrapper {
 
     /// Loads the entities for the given IDs
     pub async fn load_entities(&self, api: &Api, ids: &[String]) -> Result<()> {
-        let ids = self.filter_ids(ids)?;
+        let ids = self.filter_ids(ids).await?;
         if ids.is_empty() {
             return Ok(());
         }
