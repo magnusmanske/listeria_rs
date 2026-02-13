@@ -31,7 +31,9 @@ impl Renderer for RendererTabbedData {
             }
         }
         ret["data"] = json!(ret_data);
-        Ok(format!("{ret}"))
+        tokio::task::spawn_blocking(move || format!("{ret}"))
+            .await
+            .map_err(|e| anyhow!("spawn_blocking join error: {e}"))
     }
 
     async fn get_new_wikitext(
@@ -40,32 +42,36 @@ impl Renderer for RendererTabbedData {
         _page: &ListeriaPage,
     ) -> Result<Option<String>> {
         // TODO use local template name
+        let wikitext = wikitext.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let (before, blob, end_template, after) =
+                RendererTabbedData::extract_template_parts(&wikitext)?;
 
-        let (before, blob, end_template, after) =
-            RendererTabbedData::extract_template_parts(wikitext)?;
+            let (start_template, rest) = match RendererTabbedData::separate_start_template(&blob) {
+                Some(parts) => parts,
+                None => return Err(anyhow!("Can't split start template")),
+            };
 
-        let (start_template, rest) = match RendererTabbedData::separate_start_template(&blob) {
-            Some(parts) => parts,
-            None => return Err(anyhow!("Can't split start template")),
-        };
+            let append = if end_template.is_empty() {
+                rest
+            } else {
+                after.to_string()
+            };
 
-        let append = if end_template.is_empty() {
-            rest
-        } else {
-            after.to_string()
-        };
+            let start_template = RendererTabbedData::process_template_marker(&start_template)?;
+            let new_wikitext =
+                RendererTabbedData::build_new_wikitext(&before, &start_template, &append);
 
-        let start_template = RendererTabbedData::process_template_marker(&start_template)?;
-        let new_wikitext =
-            RendererTabbedData::build_new_wikitext(&before, &start_template, &append);
+            // Compare to old wikitext
+            if wikitext == new_wikitext {
+                // All is as it should be
+                return Ok(None);
+            }
 
-        // Compare to old wikitext
-        if wikitext == new_wikitext {
-            // All is as it should be
-            return Ok(None);
-        }
-
-        Ok(Some(new_wikitext))
+            Ok(Some(new_wikitext))
+        })
+        .await
+        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?
     }
 }
 
@@ -149,7 +155,9 @@ impl RendererTabbedData {
         let data_page = self
             .tabbed_data_page_name(list)
             .ok_or(anyhow!("Data page name too long"))?;
-        let text = ::serde_json::to_string(&tabbed_data_json)?;
+        let text = tokio::task::spawn_blocking(move || ::serde_json::to_string(&tabbed_data_json))
+            .await
+            .map_err(|e| anyhow!("spawn_blocking join error: {e}"))??;
         let token = commons_api.get_edit_token().await?;
         let params: HashMap<String, String> = [
             ("action", "edit"),
