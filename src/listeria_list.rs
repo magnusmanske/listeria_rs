@@ -26,7 +26,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
-use wikimisc::sparql_table::SparqlTable;
+use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::{Entity, EntityTrait, SnakDataType, Statement, StatementRank};
 
 const AUTODESC_FALLBACK: &str = "FALLBACK";
@@ -37,7 +37,7 @@ pub struct ListeriaList {
     template: Template,
     columns: Vec<Column>,
     params: TemplateParams,
-    sparql_table: Arc<SparqlTable>,
+    sparql_table: Arc<SparqlTableVec>,
     ecw: EntityContainerWrapper,
     results: Vec<ResultRow>,
     shadow_files: HashSet<String>,
@@ -65,7 +65,7 @@ impl ListeriaList {
             template,
             columns: Vec::new(),
             params: TemplateParams::new(),
-            sparql_table: Arc::new(SparqlTable::new()),
+            sparql_table: Arc::new(SparqlTableVec::new()),
             ecw: EntityContainerWrapper::new().await?,
             results: Vec::new(),
             shadow_files: HashSet::new(),
@@ -157,11 +157,11 @@ impl ListeriaList {
         &self.reference_ids
     }
 
-    pub fn sparql_table(&self) -> &SparqlTable {
+    pub fn sparql_table(&self) -> &SparqlTableVec {
         &self.sparql_table
     }
 
-    pub const fn sparql_table_arc(&self) -> &Arc<SparqlTable> {
+    pub const fn sparql_table_arc(&self) -> &Arc<SparqlTableVec> {
         &self.sparql_table
     }
 

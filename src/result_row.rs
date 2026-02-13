@@ -11,7 +11,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 use wikimisc::{
-    sparql_table::SparqlTable,
+    sparql_table_vec::SparqlTableVec,
     wikibase::{Snak, SnakDataType, entity::EntityTrait},
 };
 
@@ -97,7 +97,7 @@ impl ResultRow {
         });
     }
 
-    pub async fn from_columns(&mut self, list: &ListeriaList, sparql_table: &SparqlTable) {
+    pub async fn from_columns(&mut self, list: &ListeriaList, sparql_table: &SparqlTableVec) {
         self.cells.clear();
         for column in list.columns().iter() {
             let x = ResultCell::new(list, &self.entity_id, sparql_table, column).await;
