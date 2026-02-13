@@ -14,7 +14,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wikimisc::{
-    sparql_table::SparqlTable,
+    sparql_table_vec::SparqlTableVec,
     wikibase::{Statement, entity::EntityTrait},
 };
 
@@ -33,7 +33,7 @@ impl ResultCell {
     pub async fn new(
         list: &ListeriaList,
         entity_id: &str,
-        sparql_table: &SparqlTable,
+        sparql_table: &SparqlTableVec,
         col: &Column,
     ) -> Self {
         let mut ret = Self {
@@ -379,7 +379,7 @@ impl ResultCell {
         }
     }
 
-    fn ct_field(varname: &str, sparql_table: &SparqlTable, ret: &mut ResultCell) {
+    fn ct_field(varname: &str, sparql_table: &SparqlTableVec, ret: &mut ResultCell) {
         let var_index = match sparql_table.get_var_index(varname) {
             Some(i) => i,
             None => return, // Nothing to do

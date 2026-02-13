@@ -4,7 +4,7 @@ use crate::{column_type::ColumnType, listeria_list::ListeriaList, result_row::Re
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::sync::Arc;
-use wikimisc::{sparql_table::SparqlTable, sparql_value::SparqlValue};
+use wikimisc::{sparql_table_vec::SparqlTableVec, sparql_value::SparqlValue};
 
 /// Handles the generation of result rows from SPARQL query results
 #[derive(Debug)]
@@ -36,7 +36,7 @@ impl ResultGenerator {
             };
             let v = row.get(var_index).map(|v| v.to_owned());
             if let Some(Some(SparqlValue::Entity(id))) = v {
-                let mut tmp_table = SparqlTable::from_table(list.sparql_table());
+                let mut tmp_table = SparqlTableVec::from_table(list.sparql_table());
                 tmp_table.push(row.to_owned());
                 if let Some(x) = list.ecw().get_result_row(&id, &tmp_table, list).await {
                     tmp_results.push(x);
@@ -117,14 +117,14 @@ impl ResultGenerator {
     }
 
     async fn get_tmp_rows(
-        sparql_table: &Arc<SparqlTable>,
+        sparql_table: &Arc<SparqlTableVec>,
         id2rows: &HashMap<String, Vec<usize>>,
         id: &String,
-    ) -> Result<SparqlTable> {
+    ) -> Result<SparqlTableVec> {
         let sparql_table = sparql_table.clone();
         let row_ids = id2rows.get(id).map(|v| v.to_owned()).unwrap_or_default();
         tokio::task::spawn_blocking(move || {
-            let mut tmp_rows = SparqlTable::from_table(&sparql_table);
+            let mut tmp_rows = SparqlTableVec::from_table(&sparql_table);
             for row_id in row_ids {
                 if let Some(row) = sparql_table.get(row_id) {
                     tmp_rows.push(row);

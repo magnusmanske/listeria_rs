@@ -7,7 +7,10 @@ use std::{
     sync::{Arc, LazyLock},
 };
 use tokio::sync::Semaphore;
-use wikimisc::{mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable};
+use wikimisc::{
+    mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable,
+    sparql_table_vec::SparqlTableVec,
+};
 
 static SPARQL_REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(3));
 // TODO set from self.page_params.config().max_sparql_simultaneous()
@@ -45,7 +48,7 @@ impl SparqlResults {
     }
 
     /// Executes a SPARQL query with template expansion and retry logic.
-    pub async fn run_query(&mut self, mut sparql: String) -> Result<SparqlTable> {
+    pub async fn run_query(&mut self, mut sparql: String) -> Result<SparqlTableVec> {
         self.expand_sparql_templates(&mut sparql).await?;
 
         // Return simulated results
@@ -66,7 +69,7 @@ impl SparqlResults {
         Ok(())
     }
 
-    async fn run_sparql_query(&mut self, sparql: &str) -> Result<SparqlTable> {
+    async fn run_sparql_query(&mut self, sparql: &str) -> Result<SparqlTableVec> {
         let wikibase_key = &self.wikibase_key;
         let api = match self.page_params.config().get_wbapi(wikibase_key) {
             Some(api) => api.clone(),
@@ -80,7 +83,7 @@ impl SparqlResults {
         &mut self,
         wb_api_sparql: &Api,
         sparql: &str,
-    ) -> Result<SparqlTable> {
+    ) -> Result<SparqlTableVec> {
         let query_api_url = self.get_sparql_endpoint(wb_api_sparql);
         let sparql = match self.page_params.config().sparql_prefix() {
             Some(prefix) => format!("{}\n{}", prefix, sparql),
@@ -100,8 +103,8 @@ impl SparqlResults {
         self.set_main_variable(&result);
 
         let main_variable = self.sparql_main_variable();
-        tokio::task::spawn_blocking(move || -> Result<SparqlTable> {
-            let mut ret = SparqlTable::from_api_result(result)?;
+        tokio::task::spawn_blocking(move || -> Result<SparqlTableVec> {
+            let mut ret = SparqlTableVec::from_api_result(result)?;
             ret.set_main_variable(main_variable);
             Ok(ret)
         })

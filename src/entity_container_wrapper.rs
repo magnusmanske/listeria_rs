@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use wikimisc::mediawiki::api::Api;
-use wikimisc::sparql_table::SparqlTable;
+use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::Entity;
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::StatementRank;
@@ -237,7 +237,7 @@ impl EntityContainerWrapper {
     pub async fn get_result_row(
         &self,
         entity_id: &str,
-        sparql_table: &SparqlTable,
+        sparql_table: &SparqlTableVec,
         list: &ListeriaList,
     ) -> Option<ResultRow> {
         if sparql_table.is_empty() {
