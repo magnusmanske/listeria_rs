@@ -67,7 +67,7 @@ impl ListeriaPage {
     }
 
     /// Verifies that the page is in an editable namespace.
-    pub async fn check_namespace(&self) -> Result<()> {
+    pub fn check_namespace(&self) -> Result<()> {
         let api = self.page_params.mw_api();
         let title = wikimisc::mediawiki::title::Title::new_from_full(self.page_params.page(), api);
         if self
@@ -87,7 +87,6 @@ impl ListeriaPage {
 
     pub async fn run(&mut self) -> Result<(), WikiPageResult> {
         self.check_namespace()
-            .await
             .map_err(|e| self.fail(&e.to_string()))?;
         self.elements = PageOperations::load_page(self).await?;
 

@@ -558,7 +558,7 @@ impl ListProcessor {
         }
     }
 
-    pub async fn fix_local_links(list: &mut ListeriaList) -> Result<()> {
+    pub fn fix_local_links(list: &mut ListeriaList) -> Result<()> {
         let mw_api = list.mw_api();
         for row in list.results_mut().iter_mut() {
             for cell in row.cells_mut().iter_mut() {
@@ -797,7 +797,7 @@ mod tests {
     #[tokio::test]
     async fn test_fix_local_links_with_empty_results() {
         let mut list = create_test_list().await;
-        let result = ListProcessor::fix_local_links(&mut list).await;
+        let result = ListProcessor::fix_local_links(&mut list);
         assert!(result.is_ok());
     }
 
