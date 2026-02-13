@@ -3,6 +3,7 @@
 use crate::{column_type::ColumnType, listeria_list::ListeriaList, result_row::ResultRow};
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
+use std::sync::Arc;
 use wikimisc::{sparql_table::SparqlTable, sparql_value::SparqlValue};
 
 /// Handles the generation of result rows from SPARQL query results
@@ -60,14 +61,9 @@ impl ResultGenerator {
                 id2rows.entry(id.to_string()).or_default().push(row_id);
             };
         }
+        let sparql_table = list.sparql_table_arc().clone();
         for id in &sparql_row_ids {
-            let mut tmp_rows = SparqlTable::from_table(list.sparql_table());
-            let row_ids = id2rows.get(id).map(|v| v.to_owned()).unwrap_or_default();
-            for row_id in row_ids {
-                if let Some(row) = list.sparql_table().get(row_id) {
-                    tmp_rows.push(row);
-                }
-            }
+            let tmp_rows = Self::get_tmp_rows(&sparql_table, &id2rows, id).await?;
             if let Some(row) = list.ecw().get_result_row(id, &tmp_rows, list).await {
                 tmp_results.push(row);
             }
@@ -118,6 +114,26 @@ impl ResultGenerator {
         list.sparql_table()
             .main_column()
             .ok_or_else(|| anyhow!("Could not find SPARQL variable in results"))
+    }
+
+    async fn get_tmp_rows(
+        sparql_table: &Arc<SparqlTable>,
+        id2rows: &HashMap<String, Vec<usize>>,
+        id: &String,
+    ) -> Result<SparqlTable> {
+        let sparql_table = sparql_table.clone();
+        let row_ids = id2rows.get(id).map(|v| v.to_owned()).unwrap_or_default();
+        tokio::task::spawn_blocking(move || {
+            let mut tmp_rows = SparqlTable::from_table(&sparql_table);
+            for row_id in row_ids {
+                if let Some(row) = sparql_table.get(row_id) {
+                    tmp_rows.push(row);
+                }
+            }
+            tmp_rows
+        })
+        .await
+        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))
     }
 }
 

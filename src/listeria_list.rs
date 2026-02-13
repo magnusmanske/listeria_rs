@@ -37,7 +37,7 @@ pub struct ListeriaList {
     template: Template,
     columns: Vec<Column>,
     params: TemplateParams,
-    sparql_table: SparqlTable,
+    sparql_table: Arc<SparqlTable>,
     ecw: EntityContainerWrapper,
     results: Vec<ResultRow>,
     shadow_files: HashSet<String>,
@@ -65,7 +65,7 @@ impl ListeriaList {
             template,
             columns: Vec::new(),
             params: TemplateParams::new(),
-            sparql_table: SparqlTable::new(),
+            sparql_table: Arc::new(SparqlTable::new()),
             ecw: EntityContainerWrapper::new().await?,
             results: Vec::new(),
             shadow_files: HashSet::new(),
@@ -157,7 +157,11 @@ impl ListeriaList {
         &self.reference_ids
     }
 
-    pub const fn sparql_table(&self) -> &SparqlTable {
+    pub fn sparql_table(&self) -> &SparqlTable {
+        &self.sparql_table
+    }
+
+    pub const fn sparql_table_arc(&self) -> &Arc<SparqlTable> {
         &self.sparql_table
     }
 
@@ -315,9 +319,9 @@ impl ListeriaList {
         {
             sparql_results = sparql_results.with_query_endpoint(endpoint);
         }
-        self.sparql_table = sparql_results.run_query(sparql).await?;
-        self.sparql_table
-            .set_main_variable(sparql_results.sparql_main_variable());
+        let mut sparql_table = sparql_results.run_query(sparql).await?;
+        sparql_table.set_main_variable(sparql_results.sparql_main_variable());
+        self.sparql_table = Arc::new(sparql_table);
         Ok(())
     }
 
