@@ -444,13 +444,14 @@ impl ResultCell {
     }
 
     fn do_deduplicate_parts(parts: &[String]) -> Vec<String> {
-        let mut parts2 = Vec::new();
+        let mut seen = std::collections::HashSet::with_capacity(parts.len());
+        let mut result = Vec::with_capacity(parts.len());
         for part in parts {
-            if !parts2.contains(part) {
-                parts2.push(part.to_owned());
+            if seen.insert(part) {
+                result.push(part.to_owned());
             }
         }
-        parts2
+        result
     }
 }
 

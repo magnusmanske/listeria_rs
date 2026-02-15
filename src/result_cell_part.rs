@@ -7,9 +7,7 @@ use crate::reference::Reference;
 use crate::template_params::LinksType;
 use async_recursion::async_recursion;
 use era_date::{Era, Precision};
-use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::sync::LazyLock;
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
 use wikimisc::wikibase::{Entity, Snak, SnakDataType, TimeValue, Value};
@@ -247,15 +245,27 @@ impl ResultCellPart {
     }
 
     pub fn reduce_time(v: &TimeValue) -> Option<String> {
-        static RE_DATE: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r#"^\+?(-?\d+)-(\d{1,2})-(\d{1,2})T"#).expect("RE_DATE does not parse")
-        });
-        let s = v.time().to_string();
-        let caps = RE_DATE.captures(&s)?;
+        let s = v.time();
+        // Parse format: +?(-?\d+)-(\d{1,2})-(\d{1,2})T...
+        let s = s.strip_prefix('+').unwrap_or(s);
 
-        let year = caps.get(1)?.as_str().parse::<i32>().ok()?;
-        let month = caps.get(2)?.as_str().parse::<u8>().ok()?;
-        let day = caps.get(3)?.as_str().parse::<u8>().ok()?;
+        let t_pos = s.find('T')?;
+        let date_part = &s[..t_pos];
+
+        // Split on '-' but handle negative years (leading '-')
+        let (year_str, rest) = if let Some(after_sign) = date_part.strip_prefix('-') {
+            // Negative year: find the next '-' after the leading '-'
+            let dash = after_sign.find('-')?;
+            (&date_part[..dash + 1], &after_sign[dash + 1..])
+        } else {
+            let dash = date_part.find('-')?;
+            (&date_part[..dash], &date_part[dash + 1..])
+        };
+
+        let year = year_str.parse::<i32>().ok()?;
+        let (month_str, day_str) = rest.split_once('-')?;
+        let month = month_str.parse::<u8>().ok()?;
+        let day = day_str.parse::<u8>().ok()?;
         let precision_val: u8 = (*v.precision()).try_into().ok()?;
         let precision = Precision::try_from(precision_val).ok()?;
 
@@ -263,14 +273,13 @@ impl ResultCellPart {
     }
 
     fn tabbed_string_safe(s: String) -> String {
-        let ret = s.replace(['\n', '\t'], " ");
+        let mut ret = s.replace(['\n', '\t'], " ");
 
         // limit string to ~400 chars Max
         if ret.len() >= 380 {
-            ret[0..380].to_string()
-        } else {
-            ret
+            ret.truncate(380);
         }
+        ret
     }
 
     async fn as_wikitext_entity(

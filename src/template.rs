@@ -10,44 +10,45 @@ pub struct Template {
 
 impl Template {
     pub fn new_from_params(text: &str) -> Result<Self> {
-        let mut curly_braces = 0;
+        let mut curly_braces: i32 = 0;
         let mut parts: Vec<String> = Vec::new();
-        let mut part: Vec<char> = Vec::new();
+        let mut part = String::new();
         let mut quoted = false;
         let mut quote_char: char = ' ';
-        text.chars().for_each(|c| match c {
-            '\'' | '"' => {
-                if quoted {
-                    if quote_char == c {
-                        quoted = false;
+        for c in text.chars() {
+            match c {
+                '\'' | '"' => {
+                    if quoted {
+                        if quote_char == c {
+                            quoted = false;
+                        }
+                    } else {
+                        quoted = true;
+                        quote_char = c;
                     }
-                } else {
-                    quoted = true;
-                    quote_char = c;
+                    part.push(c);
                 }
-                part.push(c);
-            }
-            '{' => {
-                curly_braces += 1;
-                part.push(c);
-            }
-            '}' => {
-                curly_braces -= 1;
-                part.push(c);
-            }
-            '|' => {
-                if curly_braces == 0 && !quoted {
-                    parts.push(part.iter().collect());
-                    part.clear();
-                } else {
+                '{' => {
+                    curly_braces += 1;
+                    part.push(c);
+                }
+                '}' => {
+                    curly_braces -= 1;
+                    part.push(c);
+                }
+                '|' => {
+                    if curly_braces == 0 && !quoted {
+                        parts.push(std::mem::take(&mut part));
+                    } else {
+                        part.push(c);
+                    }
+                }
+                _ => {
                     part.push(c);
                 }
             }
-            _ => {
-                part.push(c);
-            }
-        });
-        parts.push(part.into_iter().collect());
+        }
+        parts.push(part);
         if quoted {
             return Err(anyhow!("Unclosed quote: {quote_char}"));
         }
