@@ -216,15 +216,19 @@ impl ListProcessor {
     }
 
     async fn get_labels_for_entity_ids(list: &mut ListeriaList, ids: Vec<String>) -> Vec<String> {
-        let mut labels = Vec::with_capacity(ids.len());
+        let ecw = list.ecw().clone();
+        let language = list.language().to_string();
+        let mut futures = Vec::with_capacity(ids.len());
         for id in ids {
-            if let Some(e) = list.get_entity(&id).await
-                && let Some(l) = e.label_in_locale(list.language())
-            {
-                labels.push(l.to_string());
-            }
+            let ecw = ecw.clone();
+            let language = language.clone();
+            futures.push(async move {
+                ecw.get_entity(&id)
+                    .await
+                    .and_then(|e| e.label_in_locale(&language).map(|l| l.to_string()))
+            });
         }
-
+        let mut labels: Vec<String> = join_all(futures).await.into_iter().flatten().collect();
         labels.sort();
         labels.dedup();
         labels
@@ -674,18 +678,21 @@ impl ListProcessor {
         let wiki = list.wiki().to_string();
         let ecw = list.ecw().clone();
 
-        // First pass: collect entity IDs and check sitelinks
-        let mut keep_flags = Vec::new();
+        let mut futures = Vec::with_capacity(list.results().len());
         for row in list.results().iter() {
-            let keep = ecw.get_entity(row.entity_id()).await.is_some_and(|entity| {
-                entity
-                    .sitelinks()
-                    .as_ref()
-                    .map_or_else(|| true, |sl| !sl.iter().any(|s| *s.site() == wiki))
+            let ecw = ecw.clone();
+            let wiki = wiki.clone();
+            let entity_id = row.entity_id().to_string();
+            futures.push(async move {
+                ecw.get_entity(&entity_id).await.is_some_and(|entity| {
+                    entity
+                        .sitelinks()
+                        .as_ref()
+                        .map_or_else(|| true, |sl| !sl.iter().any(|s| *s.site() == wiki))
+                })
             });
-            keep_flags.push(keep);
         }
-        keep_flags
+        join_all(futures).await
     }
 
     fn process_regions_get_entity_ids(list: &mut ListeriaList) -> HashSet<String> {

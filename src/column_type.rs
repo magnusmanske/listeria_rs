@@ -1,8 +1,5 @@
 //! Column types for result tables.
 
-use regex::{Regex, RegexBuilder};
-use std::sync::LazyLock;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum ColumnType {
     Number,
@@ -20,48 +17,55 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
-    /// Helper method to extract and transform a capture group
-    fn extract_capture<F>(caps: &regex::Captures, index: usize, transform: F) -> String
-    where
-        F: Fn(&str) -> String,
-    {
-        caps.get(index)
-            .map(|m| transform(m.as_str()))
-            .unwrap_or_default()
+    /// Check if a string matches `[PpQq]\d+` pattern and return the uppercase form.
+    fn parse_pq_id(s: &str, prefix: u8) -> Option<String> {
+        let bytes = s.as_bytes();
+        if bytes.is_empty() {
+            return None;
+        }
+        let first = bytes[0];
+        if first != prefix && first != (prefix ^ 0x20) {
+            return None;
+        }
+        if bytes.len() < 2 {
+            return None;
+        }
+        if bytes[1..].iter().all(|b| b.is_ascii_digit()) {
+            Some(s.to_uppercase())
+        } else {
+            None
+        }
+    }
+
+    /// Try to parse a slash-separated compound like "P31/P580" or "P39/Q41582/P580"
+    /// from already-trimmed parts.
+    fn parse_slash_compound(s: &str) -> Option<Self> {
+        let trimmed = s.trim();
+        // Split on '/' and trim each part
+        let parts: Vec<&str> = trimmed.split('/').map(|p| p.trim()).collect();
+        match parts.len() {
+            2 => {
+                let p1 = Self::parse_pq_id(parts[0], b'P')?;
+                let p2 = Self::parse_pq_id(parts[1], b'P')?;
+                Some(ColumnType::PropertyQualifier((p1, p2)))
+            }
+            3 => {
+                let p1 = Self::parse_pq_id(parts[0], b'P')?;
+                let q1 = Self::parse_pq_id(parts[1], b'Q')?;
+                let p2 = Self::parse_pq_id(parts[2], b'P')?;
+                Some(ColumnType::PropertyQualifierValue((p1, q1, p2)))
+            }
+            _ => None,
+        }
     }
 
     #[must_use]
     pub fn new(s: &str) -> Self {
-        static RE_LABEL_LANG: LazyLock<Regex> = LazyLock::new(|| {
-            RegexBuilder::new(r#"^label/(.+)$"#)
-                .case_insensitive(true)
-                .build()
-                .expect("RE_LABEL_LANG does not parse")
-        });
-        static RE_ALIAS_LANG: LazyLock<Regex> = LazyLock::new(|| {
-            RegexBuilder::new(r#"^alias/(.+)$"#)
-                .case_insensitive(true)
-                .build()
-                .expect("RE_ALIAS_LANG does not parse")
-        });
-        static RE_DESCRIPTION_LANG: LazyLock<Regex> = LazyLock::new(|| {
-            RegexBuilder::new(r#"^description/(.+)$"#)
-                .case_insensitive(true)
-                .build()
-                .expect("RE_DESCRIPTION_LANG does not parse")
-        });
-        static RE_PROPERTY: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r#"^([Pp]\d+)$"#).expect("RE_PROPERTY does not parse"));
-        static RE_PROP_QUAL: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Pp]\d+)\s*$"#).expect("RE_PROP_QUAL does not parse")
-        });
-        static RE_PROP_QUAL_VAL: LazyLock<Regex> = LazyLock::new(|| {
-            Regex::new(r#"^\s*([Pp]\d+)\s*/\s*([Qq]\d+)\s*/\s*([Pp]\d+)\s*$"#)
-                .expect("RE_PROP_QUAL_VAL does not parse")
-        });
-        static RE_FIELD: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r#"^\?(.+)$"#).expect("RE_FIELD does not parse"));
-        match s.to_lowercase().as_str() {
+        let lower = s.to_lowercase();
+        let lower_trimmed = lower.trim();
+
+        // Fast path: exact keyword matches
+        match lower_trimmed {
             "number" => return ColumnType::Number,
             "label" => return ColumnType::Label,
             "description" => return ColumnType::Description(Vec::new()),
@@ -69,40 +73,49 @@ impl ColumnType {
             "qid" => return ColumnType::Qid,
             _ => {}
         }
-        if let Some(caps) = RE_DESCRIPTION_LANG.captures(s) {
-            let langs_str = Self::extract_capture(&caps, 1, |t| t.to_lowercase());
-            let langs: Vec<String> = langs_str
+
+        // Check for "description/..." (case-insensitive, already lowered)
+        if let Some(rest) = lower_trimmed.strip_prefix("description/") {
+            let langs: Vec<String> = rest
                 .split('/')
                 .map(|lang| lang.trim().to_string())
                 .filter(|lang| !lang.is_empty())
                 .collect();
             return ColumnType::Description(langs);
         }
-        if let Some(caps) = RE_LABEL_LANG.captures(s) {
-            return ColumnType::LabelLang(Self::extract_capture(&caps, 1, |t| t.to_lowercase()));
+
+        // Check for "label/..." (case-insensitive)
+        if let Some(rest) = lower_trimmed.strip_prefix("label/") {
+            return ColumnType::LabelLang(rest.to_string());
         }
-        if let Some(caps) = RE_ALIAS_LANG.captures(s) {
-            return ColumnType::AliasLang(Self::extract_capture(&caps, 1, |t| t.to_lowercase()));
+
+        // Check for "alias/..." (case-insensitive)
+        if let Some(rest) = lower_trimmed.strip_prefix("alias/") {
+            return ColumnType::AliasLang(rest.to_string());
         }
-        if let Some(caps) = RE_PROPERTY.captures(s) {
-            return ColumnType::Property(Self::extract_capture(&caps, 1, |t| t.to_uppercase()));
+
+        // From here on, work with the original string (preserving case for P/Q ids)
+        let trimmed = s.trim();
+
+        // Check for simple property: P\d+
+        if let Some(p) = Self::parse_pq_id(trimmed, b'P') {
+            return ColumnType::Property(p);
         }
-        if let Some(caps) = RE_PROP_QUAL.captures(s) {
-            return ColumnType::PropertyQualifier((
-                Self::extract_capture(&caps, 1, |t| t.to_uppercase()),
-                Self::extract_capture(&caps, 2, |t| t.to_uppercase()),
-            ));
+
+        // Check for compound (contains '/'):  P/P or P/Q/P
+        if trimmed.contains('/')
+            && let Some(ct) = Self::parse_slash_compound(trimmed)
+        {
+            return ct;
         }
-        if let Some(caps) = RE_PROP_QUAL_VAL.captures(s) {
-            return ColumnType::PropertyQualifierValue((
-                Self::extract_capture(&caps, 1, |t| t.to_uppercase()),
-                Self::extract_capture(&caps, 2, |t| t.to_uppercase()),
-                Self::extract_capture(&caps, 3, |t| t.to_uppercase()),
-            ));
+
+        // Check for field: ?...
+        if let Some(rest) = trimmed.strip_prefix('?')
+            && !rest.is_empty()
+        {
+            return ColumnType::Field(rest.to_uppercase());
         }
-        if let Some(caps) = RE_FIELD.captures(s) {
-            return ColumnType::Field(Self::extract_capture(&caps, 1, |t| t.to_uppercase()));
-        }
+
         ColumnType::Unknown
     }
 
@@ -117,9 +130,19 @@ impl ColumnType {
             Self::LabelLang(l) => format!("language:{l}"),
             Self::AliasLang(l) => format!("alias:{l}"),
             Self::Property(p) => p.to_lowercase(),
-            Self::PropertyQualifier((p, q)) => p.to_lowercase() + "_" + &q.to_lowercase(),
+            Self::PropertyQualifier((p, q)) => {
+                let mut key = p.to_lowercase();
+                key.push('_');
+                key.push_str(&q.to_lowercase());
+                key
+            }
             Self::PropertyQualifierValue((p, q, v)) => {
-                p.to_lowercase() + "_" + &q.to_lowercase() + "_" + &v.to_lowercase()
+                let mut key = p.to_lowercase();
+                key.push('_');
+                key.push_str(&q.to_lowercase());
+                key.push('_');
+                key.push_str(&v.to_lowercase());
+                key
             }
             Self::Field(f) => f.to_lowercase(),
             Self::Unknown => "unknown".to_string(),
