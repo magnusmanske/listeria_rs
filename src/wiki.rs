@@ -3,7 +3,7 @@
 use anyhow::{Result, anyhow};
 use mysql_async::{Conn, from_row, prelude::*};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WikiStatus {
     Active,
     Ignored,

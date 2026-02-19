@@ -164,7 +164,7 @@ impl EntityContainerWrapper {
             return Ok(());
         }
         if cfg!(test) {
-            println!("ATTENTION: Trying to load items {ids:?}");
+            log::warn!("ATTENTION: Trying to load items {ids:?}");
         }
 
         self.load_entities_into_entity_cache(api, &ids).await

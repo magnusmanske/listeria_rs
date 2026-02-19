@@ -4,7 +4,7 @@ use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::
 use anyhow::Result;
 use async_trait::async_trait;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RendererWikitext;
 
 #[async_trait]

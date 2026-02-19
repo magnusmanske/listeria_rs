@@ -8,7 +8,7 @@ use serde_json::Value;
 use std::collections::HashMap;
 use wikimisc::mediawiki::Api;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct RendererTabbedData;
 
 #[async_trait]

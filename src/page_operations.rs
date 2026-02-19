@@ -5,7 +5,7 @@ use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 
 /// Handles page loading, saving, and update operations for ListeriaPage
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct PageOperations;
 
 impl PageOperations {

@@ -22,7 +22,7 @@ use wikimisc::wikibase::{EntityTrait, SnakDataType};
 const MAX_CONCURRENT_REDLINKS_REQUESTS: usize = 5;
 
 /// Handles the processing of result data for ListeriaList
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ListProcessor;
 
 impl ListProcessor {
