@@ -82,7 +82,7 @@ impl ListeriaList {
     }
 
     async fn log2db(&self, ms: i64, timestamp: &str, msg: &str) -> Result<()> {
-        let sql = "REPLACE INTO list_log (wiki, page, timestamp, diff_ms, message) VALUES (?, ?, ?, ?, ?)";
+        let sql = "REPLACE INTO list_log (wiki, page, timestamp, diff_ms, message) VALUES (:wiki, :page, :timestamp, :ms, :msg)";
         let wiki = self.page_params.wiki();
         let page = self.page_params.page();
         self.page_params
