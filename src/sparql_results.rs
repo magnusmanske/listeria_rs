@@ -4,16 +4,16 @@ use crate::page_params::PageParams;
 use anyhow::{Result, anyhow};
 use std::{
     collections::HashMap,
-    sync::{Arc, LazyLock},
+    sync::{Arc, OnceLock},
 };
 use tokio::sync::Semaphore;
 use wikimisc::{
-    mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table::SparqlTable,
-    sparql_table_vec::SparqlTableVec,
+    mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table_vec::SparqlTableVec,
 };
 
-static SPARQL_REQUEST_SEMAPHORE: LazyLock<Semaphore> = LazyLock::new(|| Semaphore::new(3));
-// TODO set from self.page_params.config().max_sparql_simultaneous()
+/// Limits the number of concurrent SPARQL requests.
+/// Initialised on first use from `Configuration::max_sparql_simultaneous`.
+static SPARQL_REQUEST_SEMAPHORE: OnceLock<Semaphore> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct SparqlResults {
@@ -51,22 +51,26 @@ impl SparqlResults {
     pub async fn run_query(&mut self, mut sparql: String) -> Result<SparqlTableVec> {
         self.expand_sparql_templates(&mut sparql).await?;
 
-        // Return simulated results
-        if self.simulate {
-            self.precache_simulated_query()?;
+        // Return simulated results early, skipping the real SPARQL endpoint.
+        if self.simulate
+            && let Some(table) = self.build_simulated_table()?
+        {
+            return Ok(table);
         }
         self.run_sparql_query(&sparql).await
     }
 
-    fn precache_simulated_query(&mut self) -> Result<()> {
-        if let Some(json_text) = self.page_params.simulated_sparql_results() {
-            let result: SparqlApiResult = serde_json::from_str(json_text)?;
-            self.set_main_variable(&result);
-
-            let mut ret = SparqlTable::from_api_result(result)?;
-            ret.set_main_variable(self.sparql_main_variable());
+    /// Builds a `SparqlTableVec` from the simulated SPARQL results stored in
+    /// `page_params`, returning `None` when no simulated results are configured.
+    fn build_simulated_table(&mut self) -> Result<Option<SparqlTableVec>> {
+        let Some(json_text) = self.page_params.simulated_sparql_results() else {
+            return Ok(None);
         };
-        Ok(())
+        let result: SparqlApiResult = serde_json::from_str(json_text)?;
+        self.set_main_variable(&result);
+        let mut table = SparqlTableVec::from_api_result(result)?;
+        table.set_main_variable(self.sparql_main_variable());
+        Ok(Some(table))
     }
 
     async fn run_sparql_query(&mut self, sparql: &str) -> Result<SparqlTableVec> {
@@ -75,7 +79,9 @@ impl SparqlResults {
             Some(api) => api.clone(),
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
         };
-        let _permit = SPARQL_REQUEST_SEMAPHORE.acquire().await?;
+        let max = self.page_params.config().max_sparql_simultaneous() as usize;
+        let semaphore = SPARQL_REQUEST_SEMAPHORE.get_or_init(|| Semaphore::new(max));
+        let _permit = semaphore.acquire().await?;
         self.run_sparql_query_stream(&api, sparql).await
     }
 
@@ -284,7 +290,7 @@ mod tests {
         }"#;
 
         let result: SparqlApiResult = serde_json::from_str(json).unwrap();
-        let table = SparqlTable::from_api_result(result);
+        let table = SparqlTableVec::from_api_result(result);
 
         assert!(table.is_ok());
     }
@@ -313,7 +319,7 @@ mod tests {
         }"#;
 
         let result: SparqlApiResult = serde_json::from_str(json).unwrap();
-        let table = SparqlTable::from_api_result(result);
+        let table = SparqlTableVec::from_api_result(result);
 
         assert!(table.is_ok());
     }
@@ -348,5 +354,77 @@ mod tests {
         }"#;
         let result2: Result<SparqlApiResult, _> = serde_json::from_str(json_multi);
         assert!(result2.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_build_simulated_table_with_valid_json() {
+        use crate::configuration::Configuration;
+        use crate::page_params::PageParams;
+        use std::sync::Arc;
+        use wikimisc::mediawiki::api::Api;
+
+        let api = Api::new("https://www.wikidata.org/w/api.php")
+            .await
+            .unwrap();
+        let api = Arc::new(api);
+        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
+        let mut page_params = PageParams::new(config, api, "Test".to_string())
+            .await
+            .unwrap();
+
+        let sparql_json = r#"{
+            "head": { "vars": ["item"] },
+            "results": {
+                "bindings": [
+                    { "item": { "type": "uri", "value": "http://www.wikidata.org/entity/Q42" } }
+                ]
+            }
+        }"#;
+        page_params.set_simulation(None, Some(sparql_json.to_string()), None);
+
+        let page_params = Arc::new(page_params);
+        let mut sparql_results = SparqlResults::new(page_params, "wikidata");
+        sparql_results.set_simulate(true);
+
+        let result = sparql_results.build_simulated_table().unwrap();
+        assert!(
+            result.is_some(),
+            "Expected Some(table) when simulated SPARQL results are set"
+        );
+        let table = result.unwrap();
+        assert_eq!(table.len(), 1, "Expected one row in the simulated table");
+        assert_eq!(
+            sparql_results.sparql_main_variable(),
+            Some("item".to_string()),
+            "Expected main variable to be 'item'"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_build_simulated_table_returns_none_when_no_results_configured() {
+        use crate::configuration::Configuration;
+        use crate::page_params::PageParams;
+        use std::sync::Arc;
+        use wikimisc::mediawiki::api::Api;
+
+        let api = Api::new("https://www.wikidata.org/w/api.php")
+            .await
+            .unwrap();
+        let api = Arc::new(api);
+        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
+        let page_params = PageParams::new(config, api, "Test".to_string())
+            .await
+            .unwrap();
+        let page_params = Arc::new(page_params);
+
+        // No simulated SPARQL results set
+        let mut sparql_results = SparqlResults::new(page_params, "wikidata");
+        sparql_results.set_simulate(true);
+
+        let result = sparql_results.build_simulated_table().unwrap();
+        assert!(
+            result.is_none(),
+            "Expected None when no simulated SPARQL results are configured"
+        );
     }
 }

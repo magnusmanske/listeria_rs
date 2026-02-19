@@ -88,7 +88,7 @@ impl ListeriaList {
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
             let time_diff = diff.num_milliseconds();
             let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
-            println!("{timestamp} {section}: {msg} [{time_diff}ms]");
+            log::debug!("{timestamp} {section}: {msg} [{time_diff}ms]");
         }
     }
 

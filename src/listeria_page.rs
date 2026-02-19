@@ -23,7 +23,6 @@ links IMPLEMENT fully?
 #[derive(Debug, Clone)]
 pub struct ListeriaPage {
     page_params: Arc<PageParams>,
-    data_has_changed: bool,
     elements: Vec<PageElement>,
 }
 
@@ -33,7 +32,6 @@ impl ListeriaPage {
         let page_params = Arc::new(page_params);
         Ok(Self {
             page_params,
-            data_has_changed: false,
             elements: Vec::new(),
         })
     }
@@ -144,11 +142,7 @@ impl ListeriaPage {
                 }
             }
             None => {
-                if self.data_has_changed {
-                    PageOperations::purge_page(self)
-                        .await
-                        .map_err(|e| self.fail(&e.to_string()))?;
-                }
+                // get_new_wikitext returned None: nothing to update.
             }
         }
 
