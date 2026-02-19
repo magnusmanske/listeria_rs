@@ -23,6 +23,13 @@ pub struct ListeriaBotWikidata {
     running: DashSet<u64>,
 }
 
+impl ListeriaBotWikidata {
+    pub async fn clear_log_table(&self) -> Result<()> {
+        let sql = "TRUNCATE `list_log`";
+        self.run_sql(sql).await
+    }
+}
+
 impl ListeriaBot for ListeriaBotWikidata {
     async fn new(config_file: &str) -> Result<Self> {
         let config = Arc::new(Configuration::new_from_file(config_file).await?);

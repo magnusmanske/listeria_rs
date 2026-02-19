@@ -72,7 +72,8 @@ impl ListProcessor {
         list.profile(&format!(
             "ListProcessor::process_remove_shadow_files running {} futures",
             futures.len()
-        ));
+        ))
+        .await;
 
         join_all(futures)
             .await
@@ -259,7 +260,7 @@ impl ListProcessor {
         let sortkeys: Vec<String>;
         // Default
         let mut datatype = SnakDataType::String;
-        list.profile("BEFORE process_sort_results SORTKEYS");
+        list.profile("BEFORE process_sort_results SORTKEYS").await;
         match list.template_params().sort() {
             SortMode::Label => {
                 list.load_row_entities().await?;
@@ -293,10 +294,10 @@ impl ListProcessor {
             }
             SortMode::None => return Ok(()),
         }
-        list.profile("AFTER process_sort_results SORTKEYS");
+        list.profile("AFTER process_sort_results SORTKEYS").await;
 
         let ret = Self::process_sort_results_finish(list, sortkeys, datatype).await;
-        list.profile("AFTER process_sort_results_finish");
+        list.profile("AFTER process_sort_results_finish").await;
         ret
     }
 
@@ -322,7 +323,8 @@ impl ListProcessor {
         list.profile(&format!(
             "BEFORE process_sort_results_finish sort of {} items",
             list.results().len()
-        ));
+        ))
+        .await;
         let descending = *list.template_params().sort_order() == SortOrder::Descending;
         let mut results = std::mem::take(list.results_mut());
         results = tokio::task::spawn_blocking(move || {
@@ -335,7 +337,7 @@ impl ListProcessor {
         .await
         .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?;
         *list.results_mut() = results;
-        list.profile("AFTER process_sort_results_finish sort");
+        list.profile("AFTER process_sort_results_finish sort").await;
 
         Ok(())
     }
@@ -349,13 +351,13 @@ impl ListProcessor {
         for row in list.results().iter() {
             section_names_q.push(row.get_sortkey_prop(section_property, list, datatype).await);
         }
-        list.profile("AFTER list::process_assign_sections 2");
+        list.profile("AFTER list::process_assign_sections 2").await;
 
         // Make sure section name items are loaded
         list.ecw()
             .load_entities(list.wb_api(), &section_names_q)
             .await?;
-        list.profile("AFTER list::process_assign_sections 3a");
+        list.profile("AFTER list::process_assign_sections 3a").await;
 
         let mut section_names = Vec::with_capacity(section_names_q.len());
         for q in section_names_q {
@@ -408,7 +410,7 @@ impl ListProcessor {
     }
 
     pub async fn process_assign_sections(list: &mut ListeriaList) -> Result<()> {
-        list.profile("BEFORE list::process_assign_sections");
+        list.profile("BEFORE list::process_assign_sections").await;
 
         // TODO all SectionType options
         let section_property = match list.template_params().section() {
@@ -424,26 +426,26 @@ impl ListProcessor {
             .ecw()
             .get_datatype_for_property(&section_property)
             .await;
-        list.profile("AFTER list::process_assign_sections 1");
+        list.profile("AFTER list::process_assign_sections 1").await;
 
         let section_names =
             Self::get_section_names_for_rows(list, &section_property, &datatype).await?;
 
         let section_count = Self::build_section_count(&section_names);
-        list.profile("AFTER list::process_assign_sections 4");
+        list.profile("AFTER list::process_assign_sections 4").await;
 
         let valid_section_names =
             Self::build_valid_section_names(section_count, list.template_params().min_section());
-        list.profile("AFTER list::process_assign_sections 6");
+        list.profile("AFTER list::process_assign_sections 6").await;
 
         let (name2id, id2name, misc_id) = Self::create_section_mappings(valid_section_names);
-        list.profile("AFTER list::process_assign_sections 7");
+        list.profile("AFTER list::process_assign_sections 7").await;
 
         *list.section_id_to_name_mut() = id2name;
-        list.profile("AFTER list::process_assign_sections 8");
+        list.profile("AFTER list::process_assign_sections 8").await;
 
         Self::assign_row_section_ids(list, section_names, name2id, misc_id)?;
-        list.profile("AFTER list::process_assign_sections 9");
+        list.profile("AFTER list::process_assign_sections 9").await;
 
         Ok(())
     }

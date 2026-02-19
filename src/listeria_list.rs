@@ -21,6 +21,8 @@ use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
 use chrono::DateTime;
 use chrono::Utc;
+use mysql_async::params;
+use mysql_async::prelude::Queryable;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -79,7 +81,22 @@ impl ListeriaList {
         })
     }
 
-    pub fn profile(&mut self, msg: &str) {
+    async fn log2db(&self, ms: i64, timestamp: &str, msg: &str) -> Result<()> {
+        let sql =
+            "INSERT INTO list_log (wiki, page, timestamp, diff_ms, message) VALUES (?, ?, ?, ?, ?)";
+        let wiki = self.page_params.wiki();
+        let page = self.page_params.page();
+        self.page_params
+            .config()
+            .pool()?
+            .get_conn()
+            .await?
+            .exec_drop(sql, params! {wiki, page, timestamp, ms, msg})
+            .await?;
+        Ok(())
+    }
+
+    pub async fn profile(&mut self, msg: &str) {
         if self.profiling {
             let now = Utc::now();
             let last = self.last_timestamp;
@@ -87,25 +104,28 @@ impl ListeriaList {
             let diff = now - last;
             let timestamp = now.format("%Y%m%d%H%M%S").to_string();
             let time_diff = diff.num_milliseconds();
-            let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
-            log::debug!("{timestamp} {section}: {msg} [{time_diff}ms]");
+
+            let _ = self.log2db(time_diff, &timestamp, msg).await;
+
+            // let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
+            // log::debug!("{timestamp} {section}: {msg} [{time_diff}ms]");
         }
     }
 
     /// Main processing pipeline: parses template, runs SPARQL query, and generates results.
     pub async fn process(&mut self) -> Result<()> {
-        self.profile("START list::process");
+        self.profile("START list::process").await;
         self.process_template()?;
-        self.profile("AFTER list::process process_template");
+        self.profile("AFTER list::process process_template").await;
         self.run_query().await?;
-        self.profile("AFTER list::process run_query");
+        self.profile("AFTER list::process run_query").await;
         self.load_entities().await?;
-        self.profile("AFTER list::process load_entities");
+        self.profile("AFTER list::process load_entities").await;
         ResultGenerator::generate_results(self).await?;
-        self.profile("AFTER list::process generate_results");
+        self.profile("AFTER list::process generate_results").await;
         self.process_results().await?;
-        self.profile("AFTER list::process process_results");
-        self.profile("END list::process");
+        self.profile("AFTER list::process process_results").await;
+        self.profile("END list::process").await;
         Ok(())
     }
 
@@ -403,32 +423,44 @@ impl ListeriaList {
     }
 
     pub async fn process_results(&mut self) -> Result<()> {
-        self.profile("START list::process_results");
+        self.profile("START list::process_results").await;
         self.gather_and_load_items().await?;
-        self.profile("AFTER list::process_results gather_and_load_items");
+        self.profile("AFTER list::process_results gather_and_load_items")
+            .await;
         ListProcessor::fill_autodesc(self).await?;
-        self.profile("AFTER list::process_results fill_autodesc");
+        self.profile("AFTER list::process_results fill_autodesc")
+            .await;
         ListProcessor::process_redlinks_only(self).await?;
-        self.profile("AFTER list::process_results process_redlinks_only");
+        self.profile("AFTER list::process_results process_redlinks_only")
+            .await;
         ListProcessor::process_items_to_local_links(self).await?;
-        self.profile("AFTER list::process_results process_items_to_local_links");
+        self.profile("AFTER list::process_results process_items_to_local_links")
+            .await;
         ListProcessor::process_redlinks(self).await?;
-        self.profile("AFTER list::process_results process_redlinks");
+        self.profile("AFTER list::process_results process_redlinks")
+            .await;
         ListProcessor::process_remove_shadow_files(self).await?;
-        self.profile("AFTER list::process_results process_remove_shadow_files");
+        self.profile("AFTER list::process_results process_remove_shadow_files")
+            .await;
         ListProcessor::process_excess_files(self)?;
-        self.profile("AFTER list::process_results process_excess_files");
+        self.profile("AFTER list::process_results process_excess_files")
+            .await;
         ListProcessor::process_reference_items(self).await?;
-        self.profile("AFTER list::process_results process_reference_items");
+        self.profile("AFTER list::process_results process_reference_items")
+            .await;
         ListProcessor::process_sort_results(self).await?;
-        self.profile("AFTER list::process_results process_sort_results");
+        self.profile("AFTER list::process_results process_sort_results")
+            .await;
         ListProcessor::process_assign_sections(self).await?;
-        self.profile("AFTER list::process_results process_assign_sections");
+        self.profile("AFTER list::process_results process_assign_sections")
+            .await;
         ListProcessor::process_regions(self).await?;
-        self.profile("AFTER list::process_results process_regions");
+        self.profile("AFTER list::process_results process_regions")
+            .await;
         ListProcessor::fix_local_links(self)?;
-        self.profile("AFTER list::process_results fix_local_links");
-        self.profile("END list::process_results");
+        self.profile("AFTER list::process_results fix_local_links")
+            .await;
+        self.profile("END list::process_results").await;
         Ok(())
     }
 
