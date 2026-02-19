@@ -36,10 +36,18 @@ impl ListProcessor {
                 Some(row) => row,
                 None => continue,
             };
+
+            let mut futures = vec![];
             for cell in row.cells_mut().iter_mut() {
-                ResultCell::localize_item_links_in_parts(cell.parts_mut(), &ecw, &wiki, &language)
-                    .await;
+                let future = ResultCell::localize_item_links_in_parts(
+                    cell.parts_mut(),
+                    &ecw,
+                    &wiki,
+                    &language,
+                );
+                futures.push(future);
             }
+            futures::future::join_all(futures).await;
         }
         Ok(())
     }
@@ -432,20 +440,20 @@ impl ListProcessor {
             Self::get_section_names_for_rows(list, &section_property, &datatype).await?;
 
         let section_count = Self::build_section_count(&section_names);
-        list.profile("AFTER list::process_assign_sections 4").await;
+        list.profile("AFTER list::process_assign_sections 4");
 
         let valid_section_names =
             Self::build_valid_section_names(section_count, list.template_params().min_section());
-        list.profile("AFTER list::process_assign_sections 6").await;
+        list.profile("AFTER list::process_assign_sections 6");
 
         let (name2id, id2name, misc_id) = Self::create_section_mappings(valid_section_names);
-        list.profile("AFTER list::process_assign_sections 7").await;
+        list.profile("AFTER list::process_assign_sections 7");
 
         *list.section_id_to_name_mut() = id2name;
-        list.profile("AFTER list::process_assign_sections 8").await;
+        list.profile("AFTER list::process_assign_sections 8");
 
         Self::assign_row_section_ids(list, section_names, name2id, misc_id)?;
-        list.profile("AFTER list::process_assign_sections 9").await;
+        list.profile("AFTER list::process_assign_sections 9");
 
         Ok(())
     }
