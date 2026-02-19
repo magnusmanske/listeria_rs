@@ -82,8 +82,7 @@ impl ListeriaList {
     }
 
     async fn log2db(&self, ms: i64, timestamp: &str, msg: &str) -> Result<()> {
-        let sql =
-            "INSERT INTO list_log (wiki, page, timestamp, diff_ms, message) VALUES (?, ?, ?, ?, ?)";
+        let sql = "REPLACE INTO list_log (wiki, page, timestamp, diff_ms, message) VALUES (?, ?, ?, ?, ?)";
         let wiki = self.page_params.wiki();
         let page = self.page_params.page();
         self.page_params
@@ -107,8 +106,8 @@ impl ListeriaList {
 
             let _ = self.log2db(time_diff, &timestamp, msg).await;
 
-            // let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
-            // log::debug!("{timestamp} {section}: {msg} [{time_diff}ms]");
+            let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
+            log::debug!("{timestamp} {section}: {msg} [{time_diff}ms]");
         }
     }
 
