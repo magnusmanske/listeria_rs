@@ -33,22 +33,16 @@ impl MainCommands {
         let mut page = ListeriaPage::new(self.config.clone(), mw_api, page_title.into()).await?;
         page.run().await.map_err(|e| anyhow!("{e:?}"))?;
 
-        if false {
-            // FOR TESTING
-            println!("{}", page.as_wikitext().await?[0]);
-            Ok("OK".to_string())
-        } else {
-            Ok(
-                match page
-                    .update_source_page()
-                    .await
-                    .map_err(|e| anyhow!("{e:?}"))?
-                {
-                    true => format!("{page_title} edited"),
-                    false => format!("{page_title} not edited"),
-                },
-            )
-        }
+        Ok(
+            match page
+                .update_source_page()
+                .await
+                .map_err(|e| anyhow!("{e:?}"))?
+            {
+                true => format!("{page_title} edited"),
+                false => format!("{page_title} not edited"),
+            },
+        )
     }
 
     /// Updates the wiki list in the database and processes all queued pages.
@@ -101,7 +95,7 @@ impl MainCommands {
             Ok(m) => format!("OK: {m}"),
             Err(e) => format!("ERROR: {e}"),
         };
-        println!("{message}");
+        log::info!("{message}");
         Ok(())
     }
 
@@ -109,7 +103,7 @@ impl MainCommands {
         let config = Arc::new((*self.config).clone());
         let bot = ListeriaBotWikidata::new_from_config(config).await?;
         let max_threads = bot.config().max_threads();
-        println!("Starting {max_threads} bots");
+        log::info!("Starting {max_threads} bots");
         let _ = bot.reset_running().await;
         let _ = bot.clear_deleted().await;
         let bot = Arc::new(bot);
@@ -121,13 +115,13 @@ impl MainCommands {
             let page = match bot.prepare_next_single_page().await {
                 Ok(page) => page,
                 Err(e) => {
-                    eprintln!("Trying to get next page to process: {e}");
+                    log::warn!("Trying to get next page to process: {e}");
                     continue;
                 }
             };
 
             let permit = THREADS_SEMAPHORE.acquire().await?;
-            println!(
+            log::info!(
                 "Starting new bot, {} running, {} available",
                 max_threads - THREADS_SEMAPHORE.available_permits(),
                 THREADS_SEMAPHORE.available_permits()
@@ -138,7 +132,7 @@ impl MainCommands {
                 let pagestatus_id = page.id();
                 let start_time = Instant::now();
                 if let Err(e) = bot.run_single_bot(page).await {
-                    eprintln!("Bot run failed: {e}");
+                    log::error!("Bot run failed: {e}");
                 }
                 let end_time = Instant::now();
                 let diff = (end_time - start_time).as_secs();
@@ -159,7 +153,7 @@ impl MainCommands {
             let state_clone = state.clone();
             tokio::spawn(async move {
                 if let Err(e) = StatusServer::run(port, state_clone).await {
-                    eprintln!("Status server error: {e}");
+                    log::error!("Status server error: {e}");
                 }
             });
         }
@@ -173,12 +167,12 @@ impl MainCommands {
                 Err(_error) => {
                     if once {
                         if !bot.config().quiet() {
-                            println!("All pages processed");
+                            log::info!("All pages processed");
                         }
                         return Ok(());
                     }
                     if !bot.config().quiet() {
-                        println!("All pages processed, restarting from beginning");
+                        log::info!("All pages processed, restarting from beginning");
                     }
                     continue;
                 }

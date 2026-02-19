@@ -173,7 +173,7 @@ impl StatusServer {
 
         let address = [0, 0, 0, 0];
         let addr = SocketAddr::from((address, port));
-        println!("listening on http://{}", addr);
+        log::info!("listening on http://{}", addr);
         let listener = tokio::net::TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
         Ok(())

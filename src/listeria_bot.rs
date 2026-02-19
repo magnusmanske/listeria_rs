@@ -37,25 +37,24 @@ pub trait ListeriaBot {
             return;
         }
         let sys = System::new_all();
-        // println!("Uptime: {:?}", System::uptime());
-        println!(
+        log::info!(
             "Memory: total {}, free {}, used {} MB",
             sys.total_memory() / 1024,
             sys.free_memory() / 1024,
             sys.used_memory() / 1024
         );
-        println!(
+        log::info!(
             "Swap: total: {}, free {}, used:{} MB",
             sys.total_swap() / 1024,
             sys.free_swap() / 1024,
             sys.used_swap() / 1024
         );
-        println!(
+        log::info!(
             "Processes: {}, CPUs: {}",
             sys.processes().len(),
             sys.cpus().len()
         );
-        println!(
+        log::info!(
             "CPU usage: {}%, Load average: {:?}",
             sys.global_cpu_usage(),
             System::load_average()

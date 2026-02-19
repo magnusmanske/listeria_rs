@@ -28,21 +28,24 @@ const RAM_CAPACITY: usize = 1500;
 pub struct EntityContainerWrapper {
     entities: HybridCache<String, String>,
     entity_count: Arc<AtomicUsize>,
+    _temp_dir: Arc<tempfile::TempDir>,
 }
 
 impl std::fmt::Debug for EntityContainerWrapper {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("EntityContainerWrapper")
             .field("entities", &self.entities)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
 impl EntityContainerWrapper {
     pub async fn new() -> Result<Self> {
+        let (entities, temp_dir) = Self::create_entity_container().await?;
         let ret = Self {
-            entities: Self::create_entity_container().await?,
+            entities,
             entity_count: Arc::new(AtomicUsize::new(0)),
+            _temp_dir: Arc::new(temp_dir),
         };
         // Pre-cache test entities if testing
         if cfg!(test) {
@@ -62,7 +65,8 @@ impl EntityContainerWrapper {
         Ok(ret)
     }
 
-    pub async fn create_entity_container() -> Result<HybridCache<String, String>> {
+    pub async fn create_entity_container()
+    -> Result<(HybridCache<String, String>, tempfile::TempDir)> {
         let dir = tempfile::tempdir()?;
         let device = FsDeviceBuilder::new(dir.path())
             .with_capacity(CACHE_CAPACITY_MB * 1024 * 1024)
@@ -76,7 +80,7 @@ impl EntityContainerWrapper {
             .with_compression(foyer::Compression::Lz4)
             .build()
             .await?;
-        Ok(hybrid)
+        Ok((hybrid, dir))
     }
 
     pub fn set_entity_from_json(&self, json: &serde_json::Value) -> Result<()> {

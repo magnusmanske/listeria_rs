@@ -120,7 +120,7 @@ impl PageOperations {
 
     pub async fn purge_page(page: &ListeriaPage) -> Result<()> {
         if page.page_params().simulate() {
-            println!(
+            log::info!(
                 "SIMULATING: purging [[{}]] on {}",
                 page.page_params().page(),
                 page.page_params().wiki()

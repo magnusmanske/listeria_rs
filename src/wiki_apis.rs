@@ -60,9 +60,11 @@ impl WikiApis {
     where
         F: FnMut() -> bool,
     {
-        while condition() {
-            sleep(Duration::from_millis(100)).await;
-            println!("{message}");
+        if condition() {
+            log::warn!("{message}");
+            while condition() {
+                sleep(Duration::from_millis(100)).await;
+            }
         }
     }
 
@@ -160,7 +162,7 @@ impl WikiApis {
         }
         let placeholders = Self::placeholders(new_wikis.len(), "(?,'ACTIVE')");
         let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
-        println!("Adding {new_wikis:?}");
+        log::info!("Adding {new_wikis:?}");
         self.pool
             .get_conn()
             .await?
@@ -204,7 +206,7 @@ impl WikiApis {
             return Ok(());
         }
         let wiki_id = self.get_wiki_id(wiki).await?;
-        println!("Adding {} pages for {wiki}", new_pages.len());
+        log::info!("Adding {} pages for {wiki}", new_pages.len());
         for chunk in new_pages.chunks(10000) {
             let chunk: Vec<String> = chunk.into();
             let placeholders =
@@ -252,7 +254,7 @@ impl WikiApis {
         let wikis = self.get_all_wikis_in_database().await?;
         for (name, _wiki) in wikis {
             if let Err(e) = self.update_pages_on_wiki(&name).await {
-                println!("Problem with {name}: {e}");
+                log::warn!("Problem with {name}: {e}");
             }
         }
         Ok(())

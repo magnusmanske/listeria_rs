@@ -2,7 +2,7 @@
 
 use crate::{column_type::ColumnType, listeria_list::ListeriaList, result_row::ResultRow};
 use anyhow::{Result, anyhow};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use wikimisc::{sparql_table_vec::SparqlTableVec, sparql_value::SparqlValue};
 
 /// Handles the generation of result rows from SPARQL query results
@@ -80,13 +80,15 @@ impl ResultGenerator {
             }
         }
 
-        // Can't sort/dedup, need to preserve original order!
-        let mut ids: Vec<String> = Vec::new();
-        ids_tmp.iter().for_each(|id| {
-            if !ids.contains(id) {
-                ids.push(id.to_string());
+        // Can't sort/dedup, need to preserve insertion order.
+        // Use a HashSet for O(1) membership checks instead of O(n) Vec::contains.
+        let mut seen: HashSet<&str> = HashSet::with_capacity(ids_tmp.len());
+        let mut ids: Vec<String> = Vec::with_capacity(ids_tmp.len());
+        for id in &ids_tmp {
+            if seen.insert(id.as_str()) {
+                ids.push(id.clone());
             }
-        });
+        }
 
         // Column headers
         list.columns().iter().for_each(|c| match c.obj() {
@@ -203,5 +205,62 @@ mod tests {
     fn test_result_generator_is_debug() {
         // Verify that ResultGenerator implements Debug
         let _ = format!("{:?}", ResultGenerator);
+    }
+
+    #[test]
+    fn test_deduplication_preserves_order_and_removes_duplicates() {
+        // Simulate the deduplication logic used in get_ids_from_sparql_rows
+        // to verify O(n) HashSet approach behaves correctly.
+        use std::collections::HashSet;
+
+        let ids_tmp: Vec<String> = vec![
+            "Q3".to_string(),
+            "Q1".to_string(),
+            "Q2".to_string(),
+            "Q1".to_string(), // duplicate
+            "Q3".to_string(), // duplicate
+            "Q4".to_string(),
+        ];
+
+        let mut seen: HashSet<&str> = HashSet::with_capacity(ids_tmp.len());
+        let mut ids: Vec<String> = Vec::with_capacity(ids_tmp.len());
+        for id in &ids_tmp {
+            if seen.insert(id.as_str()) {
+                ids.push(id.clone());
+            }
+        }
+
+        assert_eq!(ids, vec!["Q3", "Q1", "Q2", "Q4"]);
+        assert_eq!(ids.len(), 4, "Duplicates should be removed");
+    }
+
+    #[test]
+    fn test_deduplication_empty_input() {
+        use std::collections::HashSet;
+
+        let ids_tmp: Vec<String> = vec![];
+        let mut seen: HashSet<&str> = HashSet::with_capacity(ids_tmp.len());
+        let mut ids: Vec<String> = Vec::with_capacity(ids_tmp.len());
+        for id in &ids_tmp {
+            if seen.insert(id.as_str()) {
+                ids.push(id.clone());
+            }
+        }
+        assert!(ids.is_empty());
+    }
+
+    #[test]
+    fn test_deduplication_all_unique() {
+        use std::collections::HashSet;
+
+        let ids_tmp: Vec<String> = vec!["Q1".to_string(), "Q2".to_string(), "Q3".to_string()];
+        let mut seen: HashSet<&str> = HashSet::with_capacity(ids_tmp.len());
+        let mut ids: Vec<String> = Vec::with_capacity(ids_tmp.len());
+        for id in &ids_tmp {
+            if seen.insert(id.as_str()) {
+                ids.push(id.clone());
+            }
+        }
+        assert_eq!(ids, vec!["Q1", "Q2", "Q3"]);
     }
 }

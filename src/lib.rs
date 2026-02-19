@@ -90,4 +90,4 @@ use wikimisc::mediawiki::api::Api;
 
 type ApiArc = Arc<Api>;
 
-pub const LISTERIA_USER_AGENT: &str = "User-Agent: ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
+pub const LISTERIA_USER_AGENT: &str = "ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
