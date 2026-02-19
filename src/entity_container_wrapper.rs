@@ -180,11 +180,8 @@ impl EntityContainerWrapper {
         Entity::new_from_json(&v).ok()
     }
 
-    pub async fn get_local_entity_label(&self, entity_id: &str, language: &str) -> Option<String> {
-        self.get_entity(entity_id)
-            .await?
-            .label_in_locale(language)
-            .map(|s| s.to_string())
+    pub async fn get_local_entity_label(&self, entity: &Entity, language: &str) -> Option<String> {
+        entity.label_in_locale(language).map(|s| s.to_string())
     }
 
     pub async fn get_entity_label_with_fallback(&self, entity_id: &str, language: &str) -> String {
@@ -226,7 +223,7 @@ impl EntityContainerWrapper {
             .map(|s| s.title().to_string())?;
 
         let label = self
-            .get_local_entity_label(item, language)
+            .get_local_entity_label(&entity, language)
             .await
             .unwrap_or_else(|| page.to_string());
 
