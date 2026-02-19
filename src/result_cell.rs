@@ -163,12 +163,14 @@ impl ResultCell {
         wiki: &str,
         language: &str,
     ) {
+        let mut futures = vec![];
         for part_with_reference in parts.iter_mut() {
-            part_with_reference
+            let future = part_with_reference
                 .part_mut()
-                .localize_item_links(ecw, wiki, language)
-                .await;
+                .localize_item_links(ecw, wiki, language);
+            futures.push(future);
         }
+        futures::future::join_all(futures).await;
     }
 
     pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
