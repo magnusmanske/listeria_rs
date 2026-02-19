@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use wikimisc::{sparql_table_vec::SparqlTableVec, sparql_value::SparqlValue};
 
 /// Handles the generation of result rows from SPARQL query results
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct ResultGenerator;
 
 impl ResultGenerator {

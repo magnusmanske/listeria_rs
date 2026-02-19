@@ -4,7 +4,7 @@ use crate::{configuration::Configuration, template::Template};
 use regex::Regex;
 use std::sync::LazyLock;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LinksType {
     All,
     Local,
@@ -63,7 +63,7 @@ impl SortMode {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SortOrder {
     Ascending,
     Descending,
@@ -85,7 +85,7 @@ impl SortOrder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ReferencesParameter {
     None,
     All,

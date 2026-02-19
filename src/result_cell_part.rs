@@ -87,7 +87,7 @@ impl AutoDesc {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum LinkTarget {
     Page,
     Category,

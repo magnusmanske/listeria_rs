@@ -46,7 +46,7 @@ impl ServerStatistics {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct StatusServer;
 
 impl StatusServer {
