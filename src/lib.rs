@@ -65,6 +65,7 @@ pub mod listeria_bot_wikidata;
 pub mod listeria_list;
 pub mod listeria_page;
 pub mod main_commands;
+pub mod my_entity;
 pub mod page_element;
 pub mod page_operations;
 pub mod page_params;

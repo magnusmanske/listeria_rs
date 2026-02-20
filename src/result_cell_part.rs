@@ -3,6 +3,7 @@
 use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::listeria_list::ListeriaList;
+use crate::my_entity::MyEntity;
 use crate::reference::Reference;
 use crate::template_params::LinksType;
 use async_recursion::async_recursion;
@@ -11,7 +12,7 @@ use log::warn;
 use serde::{Deserialize, Serialize};
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
-use wikimisc::wikibase::{Entity, Snak, SnakDataType, TimeValue, Value};
+use wikimisc::wikibase::{Snak, SnakDataType, TimeValue, Value};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PartWithReference {
@@ -72,7 +73,7 @@ impl PartialEq for AutoDesc {
 }
 
 impl AutoDesc {
-    pub fn new(entity: &Entity) -> Self {
+    pub fn new(entity: &MyEntity) -> Self {
         Self {
             entity_id: entity.id().to_owned(),
             desc: None,
