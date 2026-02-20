@@ -5,6 +5,7 @@ use crate::{
     column_type::ColumnType,
     entity_container_wrapper::EntityContainerWrapper,
     listeria_list::ListeriaList,
+    my_entity::MyEntity,
     reference::Reference,
     result_cell_part::{
         AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart,
@@ -220,7 +221,7 @@ impl ResultCell {
     }
 
     fn ct_label(
-        entity: Option<wikimisc::wikibase::Entity>,
+        entity: Option<MyEntity>,
         ret: &mut ResultCell,
         list: &ListeriaList,
         entity_id: &str,
@@ -263,11 +264,7 @@ impl ResultCell {
         }
     }
 
-    fn ct_alias_lang(
-        entity: &Option<wikimisc::wikibase::Entity>,
-        language: &String,
-        ret: &mut ResultCell,
-    ) {
+    fn ct_alias_lang(entity: &Option<MyEntity>, language: &String, ret: &mut ResultCell) {
         if let Some(e) = entity {
             let mut aliases: Vec<String> = e
                 .aliases()
@@ -286,7 +283,7 @@ impl ResultCell {
     }
 
     fn ct_label_lang(
-        entity: &Option<wikimisc::wikibase::Entity>,
+        entity: &Option<MyEntity>,
         language: &str,
         ret: &mut ResultCell,
         list: &ListeriaList,
@@ -312,7 +309,7 @@ impl ResultCell {
     }
 
     fn ct_pqv(
-        entity: &Option<wikimisc::wikibase::Entity>,
+        entity: &Option<MyEntity>,
         list: &ListeriaList,
         p1: &str,
         ret: &mut ResultCell,
@@ -334,7 +331,7 @@ impl ResultCell {
     }
 
     fn ct_pq(
-        entity: &Option<wikimisc::wikibase::Entity>,
+        entity: &Option<MyEntity>,
         list: &ListeriaList,
         p1: &str,
         ret: &mut ResultCell,
@@ -355,7 +352,7 @@ impl ResultCell {
     }
 
     fn ct_property(
-        entity: &Option<wikimisc::wikibase::Entity>,
+        entity: &Option<MyEntity>,
         ret: &mut ResultCell,
         list: &ListeriaList,
         property: &str,
@@ -398,7 +395,7 @@ impl ResultCell {
     }
 
     fn ct_description(
-        entity: &Option<wikimisc::wikibase::Entity>,
+        entity: &Option<MyEntity>,
         list: &ListeriaList,
         ret: &mut ResultCell,
         langs: &[String],

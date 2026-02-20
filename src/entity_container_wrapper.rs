@@ -1,6 +1,7 @@
 //! Wrapper for entity container with caching and batch loading.
 
 use crate::listeria_list::ListeriaList;
+use crate::my_entity::MyEntity;
 use crate::result_cell_part::{LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart};
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
@@ -26,7 +27,7 @@ const RAM_CAPACITY: usize = 1500;
 
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
-    entities: HybridCache<String, String>,
+    entities: HybridCache<String, MyEntity>,
     entity_count: Arc<AtomicUsize>,
     _temp_dir: Arc<tempfile::TempDir>,
 }
@@ -66,14 +67,14 @@ impl EntityContainerWrapper {
     }
 
     pub async fn create_entity_container()
-    -> Result<(HybridCache<String, String>, tempfile::TempDir)> {
+    -> Result<(HybridCache<String, MyEntity>, tempfile::TempDir)> {
         let dir = tempfile::tempdir()?;
         let device = FsDeviceBuilder::new(dir.path())
             .with_capacity(CACHE_CAPACITY_MB * 1024 * 1024)
             .build()?;
         let engine_config = BlockEngineConfig::new(device);
 
-        let hybrid: HybridCache<String, String> = HybridCacheBuilder::new()
+        let hybrid: HybridCache<String, MyEntity> = HybridCacheBuilder::new()
             .memory(RAM_CAPACITY)
             .storage()
             .with_engine_config(engine_config)
@@ -87,11 +88,13 @@ impl EntityContainerWrapper {
         let q = json["id"]
             .as_str()
             .ok_or_else(|| anyhow!("Missing 'id' field"))?;
-        let json_string = json.to_string();
+        // let json_string = json.to_string();
         if !self.entities.contains(q) {
             self.entity_count.fetch_add(1, Ordering::Relaxed);
         }
-        self.entities.insert(q.to_string(), json_string);
+        let entity = Entity::new_from_json(json)?;
+        self.entities.insert(q.to_string(), entity.into());
+        // self.entities.insert(q.to_string(), json_string);
         Ok(())
     }
 
@@ -170,17 +173,20 @@ impl EntityContainerWrapper {
         self.load_entities_into_entity_cache(api, &ids).await
     }
 
-    pub async fn get_entity(&self, entity_id: &str) -> Option<Entity> {
+    pub async fn get_entity(&self, entity_id: &str) -> Option<MyEntity> {
         if cfg!(test) {
             println!("{entity_id}\tentity_loaded");
         }
         let cache_entry = self.entities.get(&entity_id.to_string()).await.ok()??;
-        let json_string = cache_entry.to_string();
-        let v = serde_json::from_str(&json_string).ok()?;
-        Entity::new_from_json(&v).ok()
+        let ret = cache_entry.value();
+        Some(ret.to_owned()) // TODO FIXME
     }
 
-    pub async fn get_local_entity_label(&self, entity: &Entity, language: &str) -> Option<String> {
+    pub async fn get_local_entity_label(
+        &self,
+        entity: &MyEntity,
+        language: &str,
+    ) -> Option<String> {
         entity.label_in_locale(language).map(|s| s.to_string())
     }
 
@@ -214,7 +220,7 @@ impl EntityContainerWrapper {
         wiki: &str,
         language: &str,
     ) -> Option<ResultCellPart> {
-        let entity = self.get_entity(item).await?;
+        let entity: MyEntity = self.get_entity(item).await?;
         let page = entity
             .sitelinks()
             .as_ref()?
@@ -252,7 +258,7 @@ impl EntityContainerWrapper {
 
     async fn use_local_links(&self, list: &ListeriaList, entity_id: &str) -> Option<()> {
         if LinksType::Local == *list.template_params().links() {
-            let entity = self.get_entity(entity_id).await?;
+            let entity: MyEntity = self.get_entity(entity_id).await?;
             entity
                 .sitelinks()
                 .as_ref()?
@@ -263,7 +269,7 @@ impl EntityContainerWrapper {
     }
 
     pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
-        let pi = self.get_entity(prop).await?;
+        let pi: MyEntity = self.get_entity(prop).await?;
         let mut claims: Vec<_> = pi
             .claims_with_property("P1630")
             .iter()
@@ -296,7 +302,7 @@ impl EntityContainerWrapper {
     pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         #[allow(clippy::collapsible_match)]
         match self.get_entity(prop).await {
-            Some(entity) => match entity {
+            Some(entity) => match entity.0 {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),
                     None => SnakDataType::String,
@@ -344,7 +350,7 @@ mod tests {
             .collect();
         ecw.load_entities(&api, &ids).await.unwrap();
 
-        let e2 = ecw.get_entity("Q2").await.unwrap();
+        let e2: MyEntity = ecw.get_entity("Q2").await.unwrap();
         assert_eq!(e2.id(), "Q2");
     }
 }

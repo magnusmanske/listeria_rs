@@ -6,6 +6,7 @@ use crate::column::Column;
 use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::list_processor::ListProcessor;
+use crate::my_entity::MyEntity;
 use crate::page_params::PageParams;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_generator::ResultGenerator;
@@ -29,7 +30,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table_vec::SparqlTableVec;
-use wikimisc::wikibase::{Entity, EntityTrait, SnakDataType, Statement, StatementRank};
+use wikimisc::wikibase::{EntityTrait, SnakDataType, Statement, StatementRank};
 
 const AUTODESC_FALLBACK: &str = "FALLBACK";
 
@@ -383,7 +384,7 @@ impl ListeriaList {
         self.columns = columns;
     }
 
-    pub async fn get_autodesc_description(&self, e: &Entity) -> Result<String> {
+    pub async fn get_autodesc_description(&self, e: &MyEntity) -> Result<String> {
         if self.params.autodesc() != Some(AUTODESC_FALLBACK.to_string()) {
             return Err(anyhow!("Not used"));
         }
@@ -467,7 +468,7 @@ impl ListeriaList {
         self.params.links()
     }
 
-    pub async fn get_entity(&self, entity_id: &str) -> Option<wikimisc::wikibase::Entity> {
+    pub async fn get_entity(&self, entity_id: &str) -> Option<MyEntity> {
         self.ecw.get_entity(entity_id).await
     }
 
@@ -648,11 +649,7 @@ impl ListeriaList {
         )
     }
 
-    pub fn get_filtered_claims(
-        &self,
-        e: &wikimisc::wikibase::entity::Entity,
-        property: &str,
-    ) -> Vec<Statement> {
+    pub fn get_filtered_claims(&self, e: &MyEntity, property: &str) -> Vec<Statement> {
         let mut ret: Vec<Statement> = e
             .claims_with_property(property)
             .iter()
