@@ -7,6 +7,7 @@ use crate::reference::Reference;
 use crate::template_params::LinksType;
 use async_recursion::async_recursion;
 use era_date::{Era, Precision};
+use log::warn;
 use serde::{Deserialize, Serialize};
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
@@ -185,7 +186,33 @@ impl ResultCellPart {
         }
     }
 
-    #[async_recursion]
+    async fn localize_snak_list(
+        ecw: &EntityContainerWrapper,
+        wiki: &str,
+        language: &str,
+        v: &mut [PartWithReference],
+    ) {
+        for part_with_reference in v.iter_mut() {
+            let result_cell_part = &mut part_with_reference.part;
+            match result_cell_part {
+                ResultCellPart::Entity(entity_info) if entity_info.try_localize => {
+                    if let Some(ll) = ecw
+                        .entity_to_local_link(&entity_info.id, wiki, language)
+                        .await
+                    {
+                        *result_cell_part = ll;
+                    }
+                }
+                _ => {
+                    warn!(
+                        "localize_snak_list: Failed to localize item links for {:?}",
+                        result_cell_part
+                    );
+                }
+            }
+        }
+    }
+
     pub async fn localize_item_links(
         &mut self,
         ecw: &EntityContainerWrapper,
@@ -202,14 +229,14 @@ impl ResultCellPart {
                 };
             }
             ResultCellPart::SnakList(v) => {
-                for part_with_reference in v.iter_mut() {
-                    part_with_reference
-                        .part
-                        .localize_item_links(ecw, wiki, language)
-                        .await;
-                }
+                Self::localize_snak_list(ecw, wiki, language, v).await;
             }
-            _ => {}
+            _ => {
+                warn!(
+                    "localize_item_links: Failed to localize item links for {:?}",
+                    self
+                );
+            }
         }
     }
 
