@@ -31,24 +31,12 @@ impl ListProcessor {
         let language = list.language().to_owned();
         let ecw = list.ecw().clone();
 
-        for row_id in 0..list.results().len() {
-            let row = match list.results_mut().get_mut(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
-
-            let mut futures = vec![];
-            for cell in row.cells_mut().iter_mut() {
-                let future = ResultCell::localize_item_links_in_parts(
-                    cell.parts_mut(),
-                    &ecw,
-                    &wiki,
-                    &language,
-                );
-                futures.push(future);
-            }
-            futures::future::join_all(futures).await;
-        }
+        let futures: Vec<_> = list
+            .results_mut()
+            .iter_mut()
+            .map(|row| Self::process_items_to_local_links_row(&wiki, &language, &ecw, row))
+            .collect();
+        join_all(futures).await;
         Ok(())
     }
 
@@ -328,11 +316,8 @@ impl ListProcessor {
             };
         }
 
-        list.profile(&format!(
-            "BEFORE process_sort_results_finish sort of {} items",
-            list.results().len()
-        ))
-        .await;
+        list.profile("BEFORE process_sort_results_finish sort of items")
+            .await;
         let descending = *list.template_params().sort_order() == SortOrder::Descending;
         let mut results = std::mem::take(list.results_mut());
         results = tokio::task::spawn_blocking(move || {
@@ -736,6 +721,22 @@ impl ListProcessor {
         for (row, keep) in list.results_mut().iter_mut().zip(keep_flags) {
             row.set_keep(keep);
         }
+    }
+
+    async fn process_items_to_local_links_row(
+        wiki: &str,
+        language: &str,
+        ecw: &crate::entity_container_wrapper::EntityContainerWrapper,
+        row: &mut crate::result_row::ResultRow,
+    ) {
+        let futures: Vec<_> = row
+            .cells_mut()
+            .iter_mut()
+            .map(|cell| {
+                ResultCell::localize_item_links_in_parts(cell.parts_mut(), ecw, wiki, language)
+            })
+            .collect();
+        futures::future::join_all(futures).await;
     }
 }
 
