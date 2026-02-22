@@ -3,6 +3,7 @@
 use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
 use anyhow::Result;
 use async_trait::async_trait;
+use futures::future::join_all;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RendererWikitext;
@@ -114,27 +115,27 @@ impl RendererWikitext {
 
     async fn process_rows(list: &mut ListeriaList, section_id: usize, wt: &mut String) {
         let mut row_entity_ids = Vec::new();
+        // Collect (cloned row, sub-row index) pairs for this section
+        let mut section_rows: Vec<(crate::result_row::ResultRow, usize)> = Vec::new();
+        let mut current_sub_row = 0;
         for rownum in 0..list.results().len() {
             if let Some(row) = list.results().get(rownum)
                 && row.section() == section_id
             {
                 row_entity_ids.push(row.entity_id().to_string());
+                section_rows.push((row.clone(), current_sub_row));
+                current_sub_row += 1;
             }
         }
 
-        // Rows
-        let mut current_sub_row = 0;
-        let mut rows = Vec::new();
-        for rownum in 0..list.results().len() {
-            if let Some(row) = list.results().get(rownum) {
-                let mut row = row.clone();
-                if row.section() == section_id {
-                    let wt_sub_row = row.as_wikitext(list, current_sub_row).await;
-                    rows.push(wt_sub_row);
-                    current_sub_row += 1;
-                }
-            }
-        }
+        // Render all rows for this section in parallel.
+        // as_wikitext takes &self so multiple rows can be driven concurrently.
+        let list_ref: &ListeriaList = list;
+        let futures: Vec<_> = section_rows
+            .iter()
+            .map(|(row, sub_row)| row.as_wikitext(list_ref, *sub_row))
+            .collect();
+        let rows = join_all(futures).await;
 
         if list.skip_table() {
             *wt += &rows.join("\n");

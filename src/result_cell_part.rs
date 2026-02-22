@@ -8,6 +8,7 @@ use crate::reference::Reference;
 use crate::template_params::LinksType;
 use async_recursion::async_recursion;
 use era_date::{Era, Precision};
+use futures::future::join_all;
 use log::warn;
 use serde::{Deserialize, Serialize};
 use wikimisc::sparql_value::SparqlValue;
@@ -40,19 +41,14 @@ impl PartWithReference {
         &mut self.part
     }
 
-    pub async fn as_wikitext(
-        &mut self,
-        list: &ListeriaList,
-        rownum: usize,
-        colnum: usize,
-    ) -> String {
+    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         let wikitext_part = self.part.as_wikitext(list, rownum, colnum).await;
-        let wikitext_reference = if let Some(references) = &mut self.references {
-            let mut parts = Vec::new();
-            for reference in references {
-                parts.push(reference.as_reference(list).await);
-            }
-            parts.join("")
+        let wikitext_reference = if let Some(references) = &self.references {
+            let futures: Vec<_> = references
+                .iter()
+                .map(|reference| reference.as_reference(list))
+                .collect();
+            join_all(futures).await.join("")
         } else {
             String::new()
         };
@@ -425,11 +421,11 @@ impl ResultCellPart {
         rownum: usize,
         colnum: usize,
     ) -> String {
-        let mut ret = Vec::with_capacity(v.len());
-        for rcp in v {
-            ret.push(rcp.part.as_wikitext(list, rownum, colnum).await);
-        }
-        ret.join(" — ")
+        let futures: Vec<_> = v
+            .iter()
+            .map(|rcp| rcp.part.as_wikitext(list, rownum, colnum))
+            .collect();
+        join_all(futures).await.join(" — ")
     }
 
     #[async_recursion]

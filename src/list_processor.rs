@@ -16,6 +16,7 @@ use futures::future::join_all;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::{EntityTrait, SnakDataType};
 
@@ -214,17 +215,20 @@ impl ListProcessor {
 
     async fn get_labels_for_entity_ids(list: &mut ListeriaList, ids: Vec<String>) -> Vec<String> {
         let ecw = list.ecw().clone();
-        let language = list.language().to_string();
-        let mut futures = Vec::with_capacity(ids.len());
-        for id in ids {
-            let ecw = ecw.clone();
-            let language = language.clone();
-            futures.push(async move {
-                ecw.get_entity(&id)
-                    .await
-                    .and_then(|e| e.label_in_locale(&language).map(|l| l.to_string()))
-            });
-        }
+        // Arc<str>: one allocation shared across all futures instead of N String clones
+        let language: Arc<str> = list.language().into();
+        let futures: Vec<_> = ids
+            .into_iter()
+            .map(|id| {
+                let ecw = ecw.clone();
+                let language = Arc::clone(&language);
+                async move {
+                    ecw.get_entity(&id)
+                        .await
+                        .and_then(|e| e.label_in_locale(&language).map(|l| l.to_string()))
+                }
+            })
+            .collect();
         let mut labels: Vec<String> = join_all(futures).await.into_iter().flatten().collect();
         labels.sort();
         labels.dedup();
@@ -648,11 +652,13 @@ impl ListProcessor {
         list: &mut ListeriaList,
         entity_ids: Vec<String>,
     ) -> Result<HashMap<String, String>> {
+        if entity_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+        // Batch-load all entities at once instead of one HTTP round-trip per entity
+        list.ecw().load_entities(list.wb_api(), &entity_ids).await?;
         let mut autodescs = HashMap::new();
         for entity_id in entity_ids {
-            list.ecw()
-                .load_entities(list.wb_api(), std::slice::from_ref(&entity_id))
-                .await?;
             if let Some(entity) = list.ecw().get_entity(&entity_id).await
                 && let Ok(desc) = list.get_autodesc_description(&entity).await
             {
@@ -663,23 +669,27 @@ impl ListProcessor {
     }
 
     async fn find_keep_flags(list: &mut ListeriaList) -> Vec<bool> {
-        let wiki = list.wiki().to_string();
+        // Arc<str>: one allocation shared across all futures instead of N String clones
+        let wiki: Arc<str> = list.wiki().into();
         let ecw = list.ecw().clone();
 
-        let mut futures = Vec::with_capacity(list.results().len());
-        for row in list.results().iter() {
-            let ecw = ecw.clone();
-            let wiki = wiki.clone();
-            let entity_id = row.entity_id().to_string();
-            futures.push(async move {
-                ecw.get_entity(&entity_id).await.is_some_and(|entity| {
-                    entity
-                        .sitelinks()
-                        .as_ref()
-                        .map_or_else(|| true, |sl| !sl.iter().any(|s| *s.site() == wiki))
-                })
-            });
-        }
+        let futures: Vec<_> = list
+            .results()
+            .iter()
+            .map(|row| {
+                let ecw = ecw.clone();
+                let wiki = Arc::clone(&wiki);
+                let entity_id = row.entity_id().to_string();
+                async move {
+                    ecw.get_entity(&entity_id).await.is_some_and(|entity| {
+                        entity
+                            .sitelinks()
+                            .as_ref()
+                            .map_or_else(|| true, |sl| !sl.iter().any(|s| *s.site() == *wiki))
+                    })
+                }
+            })
+            .collect();
         join_all(futures).await
     }
 

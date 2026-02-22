@@ -547,9 +547,9 @@ impl ListeriaList {
         let mut entities_to_load: Vec<String> = Vec::new();
         for (_row_id, row) in self.results_iter() {
             for cell in row.cells() {
-                EntityContainerWrapper::gather_entities_and_external_properties(cell.parts())
-                    .iter()
-                    .for_each(|entity_id| entities_to_load.push(entity_id.to_string()));
+                entities_to_load.extend(
+                    EntityContainerWrapper::gather_entities_and_external_properties(cell.parts()),
+                );
             }
         }
         if let SortMode::Property(prop) = self.params.sort() {

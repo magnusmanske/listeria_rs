@@ -325,9 +325,9 @@ impl EntityContainerWrapper {
                 ResultCellPart::ExternalId(ext_id_info) => {
                     entities_to_load.push(ext_id_info.property.to_owned());
                 }
-                ResultCellPart::SnakList(v) => Self::gather_entities_and_external_properties(v)
-                    .iter()
-                    .for_each(|entity_id| entities_to_load.push(entity_id.to_string())),
+                ResultCellPart::SnakList(v) => {
+                    entities_to_load.extend(Self::gather_entities_and_external_properties(v));
+                }
                 _ => {}
             }
         }

@@ -1,6 +1,7 @@
 //! Wikidata reference handling and formatting.
 
 use crate::listeria_list::ListeriaList;
+
 use serde::{Deserialize, Serialize};
 use wikimisc::wikibase::Snak;
 use wikimisc::wikibase::Value;
@@ -11,8 +12,6 @@ pub struct Reference {
     title: Option<String>,
     date: Option<String>,
     stated_in: Option<String>, // Item
-    md5: String,
-    wikitext_cache: Option<String>,
 }
 
 impl PartialEq for Reference {
@@ -55,45 +54,37 @@ impl Reference {
         self.url.is_none() && self.stated_in.is_none()
     }
 
-    /// Returns the reference as a wikitext string
-    pub async fn as_reference(&mut self, list: &ListeriaList) -> String {
-        let wikitext = self.as_wikitext(list).await;
-        let has_md5 = list.reference_ids().get(&self.md5).is_some();
-
+    /// Returns the reference as a wikitext string.
+    pub async fn as_reference(&self, list: &ListeriaList) -> String {
+        let (wikitext, md5) = self.compute_wikitext(list).await;
+        let has_md5 = list.reference_ids().get(&md5).is_some();
         if has_md5 {
-            format!("<ref name=\"ref_{}\" />", &self.md5)
+            format!("<ref name=\"ref_{md5}\" />")
         } else {
-            format!("<ref name=\"ref_{}\">{}</ref>", &self.md5, &wikitext)
+            format!("<ref name=\"ref_{md5}\">{wikitext}</ref>")
         }
     }
 
-    /// Returns the wikitext representation of the reference
-    async fn as_wikitext(&mut self, list: &ListeriaList) -> String {
-        let mut iterations_left: usize = 100; // Paranoia
-        while iterations_left > 0 {
-            iterations_left -= 1;
-            if let Some(s) = &self.wikitext_cache {
-                return s.to_string();
-            }
-            let mut s = String::new();
+    /// Computes the wikitext and its MD5 hash for this reference.
+    /// Returns `(wikitext, md5)`. Results are not cached; callers run this once per render.
+    async fn compute_wikitext(&self, list: &ListeriaList) -> (String, String) {
+        let mut s = String::new();
 
-            let (use_invoke, use_cite_web) = match list.get_wiki() {
-                Some(wiki) => (wiki.use_invoke(), wiki.use_cite_web()),
-                None => (true, true), // Fallback for unknown wiki, should be fixed manually in DB
-            };
+        let (use_invoke, use_cite_web) = match list.get_wiki() {
+            Some(wiki) => (wiki.use_invoke(), wiki.use_cite_web()),
+            None => (true, true), // Fallback for unknown wiki, should be fixed manually in DB
+        };
 
-            if use_cite_web && self.title.is_some() && self.url.is_some() {
-                s = self.render_cite_web(use_invoke, list).await;
-            } else if let Some(url) = &self.url {
-                s += url;
-            } else if let Some(q) = &self.stated_in {
-                s += &list.get_item_link_with_fallback(q).await;
-            }
-
-            self.md5 = format!("{:x}", md5::compute(&s));
-            self.wikitext_cache = Some(s);
+        if use_cite_web && self.title.is_some() && self.url.is_some() {
+            s = self.render_cite_web(use_invoke, list).await;
+        } else if let Some(url) = &self.url {
+            s += url;
+        } else if let Some(q) = &self.stated_in {
+            s += &list.get_item_link_with_fallback(q).await;
         }
-        "Error: Could not generate reference wikitext, too many iterations".to_string()
+
+        let md5 = format!("{:x}", md5::compute(&s));
+        (s, md5)
     }
 
     async fn render_cite_web(&self, use_invoke: bool, list: &ListeriaList) -> String {
@@ -285,16 +276,12 @@ mod tests {
             title: Some("Example".to_string()),
             date: Some("2025-01-01".to_string()),
             stated_in: Some("Q123".to_string()),
-            md5: "abc123".to_string(),
-            wikitext_cache: Some("cached".to_string()),
         };
         let ref2 = Reference {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             date: Some("2025-01-01".to_string()),
             stated_in: Some("Q123".to_string()),
-            md5: "different".to_string(), // MD5 ignored in equality
-            wikitext_cache: Some("also_different".to_string()), // Cache ignored in equality
         };
         assert_eq!(ref1, ref2);
     }
@@ -582,8 +569,6 @@ mod tests {
             title: Some("Test".to_string()),
             date: Some("2025-01-01".to_string()),
             stated_in: Some("Q42".to_string()),
-            md5: "abc123".to_string(),
-            wikitext_cache: Some("cached".to_string()),
         };
         let json = serde_json::to_string(&reference).unwrap();
         let deserialized: Reference = serde_json::from_str(&json).unwrap();
