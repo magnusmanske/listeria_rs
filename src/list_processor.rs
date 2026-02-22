@@ -687,26 +687,17 @@ impl ListProcessor {
         list: &mut ListeriaList,
         entity_ids: HashSet<String>,
     ) -> HashMap<String, String> {
-        // let mut entity_id2region = HashMap::new();
         let futures: Vec<_> = entity_ids
             .iter()
             .map(|entity_id| Self::get_region_for_entity_id(list, entity_id))
             .collect();
-        let results = join_all(futures).await;
-        let entity_id2region: HashMap<String, String> = results
+        join_all(futures)
+            .await
             .iter()
             .zip(entity_ids.iter())
             .filter(|(region, _entity_id)| region.is_some())
             .map(|(region, entity_id)| (entity_id.to_owned(), region.to_owned().unwrap()))
-            .collect();
-        // let entity_id2region = entityid_region;
-
-        // for entity_id in entity_ids {
-        //     if let Some(region) = Self::get_region_for_entity_id(list, &entity_id).await {
-        //         entity_id2region.insert(entity_id, region);
-        //     }
-        // }
-        entity_id2region
+            .collect()
     }
 
     fn set_keep_flags(list: &mut ListeriaList, keep_flags: Vec<bool>) {
