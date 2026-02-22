@@ -96,6 +96,27 @@ impl ListeriaList {
         Ok(())
     }
 
+    pub fn do_get_regions(&self) -> bool {
+        self.page_params()
+            .config()
+            .location_regions()
+            .contains(&self.wiki().to_string())
+    }
+
+    pub fn process_regions_get_entity_ids(&mut self) -> HashSet<String> {
+        let mut entity_ids = HashSet::new();
+        for row in self.results().iter() {
+            row.cells().iter().for_each(|cell| {
+                cell.parts().iter().for_each(|part| {
+                    if let ResultCellPart::Location(_loc_info) = part.part() {
+                        entity_ids.insert(row.entity_id().to_string());
+                    }
+                });
+            });
+        }
+        entity_ids
+    }
+
     pub async fn profile(&mut self, msg: &str) {
         if self.profiling {
             let now = Utc::now();
