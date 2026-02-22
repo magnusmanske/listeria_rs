@@ -488,20 +488,13 @@ impl ListProcessor {
         }
     }
 
-    fn do_get_regions(list: &ListeriaList) -> bool {
-        list.page_params()
-            .config()
-            .location_regions()
-            .contains(&list.wiki().to_string())
-    }
-
     pub async fn process_regions(list: &mut ListeriaList) -> Result<()> {
-        if !Self::do_get_regions(list) {
+        if !list.do_get_regions() {
             return Ok(());
         }
 
-        let entity_ids = Self::process_regions_get_entity_ids(list);
-        let entity_id2region = Self::process_regions_get_eneity_id2region(list, entity_ids).await;
+        let entity_ids = list.process_regions_get_entity_ids();
+        let entity_id2region = Self::process_regions_get_entity_id2region(list, entity_ids).await;
 
         for row in list.results_mut().iter_mut() {
             let the_region = match entity_id2region.get(row.entity_id()) {
@@ -690,30 +683,29 @@ impl ListProcessor {
         join_all(futures).await
     }
 
-    fn process_regions_get_entity_ids(list: &mut ListeriaList) -> HashSet<String> {
-        let mut entity_ids = HashSet::new();
-        for row in list.results().iter() {
-            row.cells().iter().for_each(|cell| {
-                cell.parts().iter().for_each(|part| {
-                    if let ResultCellPart::Location(_loc_info) = part.part() {
-                        entity_ids.insert(row.entity_id().to_string());
-                    }
-                });
-            });
-        }
-        entity_ids
-    }
-
-    async fn process_regions_get_eneity_id2region(
+    async fn process_regions_get_entity_id2region(
         list: &mut ListeriaList,
         entity_ids: HashSet<String>,
     ) -> HashMap<String, String> {
-        let mut entity_id2region = HashMap::new();
-        for entity_id in entity_ids {
-            if let Some(region) = Self::get_region_for_entity_id(list, &entity_id).await {
-                entity_id2region.insert(entity_id, region);
-            }
-        }
+        // let mut entity_id2region = HashMap::new();
+        let futures: Vec<_> = entity_ids
+            .iter()
+            .map(|entity_id| Self::get_region_for_entity_id(list, entity_id))
+            .collect();
+        let results = join_all(futures).await;
+        let entity_id2region: HashMap<String, String> = results
+            .iter()
+            .zip(entity_ids.iter())
+            .filter(|(region, _entity_id)| region.is_some())
+            .map(|(region, entity_id)| (entity_id.to_owned(), region.to_owned().unwrap()))
+            .collect();
+        // let entity_id2region = entityid_region;
+
+        // for entity_id in entity_ids {
+        //     if let Some(region) = Self::get_region_for_entity_id(list, &entity_id).await {
+        //         entity_id2region.insert(entity_id, region);
+        //     }
+        // }
         entity_id2region
     }
 
