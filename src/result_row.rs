@@ -4,6 +4,7 @@ use crate::{
     column_type::ColumnType, listeria_list::ListeriaList, result_cell::ResultCell,
     result_cell_part::ResultCellPart,
 };
+use futures::future::join_all;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -98,11 +99,14 @@ impl ResultRow {
     }
 
     pub async fn from_columns(&mut self, list: &ListeriaList, sparql_table: &SparqlTableVec) {
-        self.cells.clear();
-        for column in list.columns().iter() {
-            let x = ResultCell::new(list, &self.entity_id, sparql_table, column).await;
-            self.cells.push(x);
-        }
+        // Clone entity_id so futures can borrow it without conflicting with &mut self
+        let entity_id = self.entity_id.clone();
+        let futures: Vec<_> = list
+            .columns()
+            .iter()
+            .map(|column| ResultCell::new(list, &entity_id, sparql_table, column))
+            .collect();
+        self.cells = join_all(futures).await;
     }
 
     pub fn set_sortkey(&mut self, sortkey: String) {
@@ -276,11 +280,14 @@ impl ResultRow {
     }
 
     /// Get the row as wikitext
-    pub async fn as_wikitext(&mut self, list: &ListeriaList, rownum: usize) -> String {
-        let mut cells = Vec::with_capacity(self.cells.len());
-        for (colnum, cell) in self.cells.iter_mut().enumerate() {
-            cells.push(cell.as_wikitext(list, rownum, colnum).await);
-        }
+    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
+        let futures: Vec<_> = self
+            .cells
+            .iter()
+            .enumerate()
+            .map(|(colnum, cell)| cell.as_wikitext(list, rownum, colnum))
+            .collect();
+        let cells = join_all(futures).await;
         match list.get_row_template() {
             Some(t) => format!(
                 "{{{{{}\n| {}\n}}}}",

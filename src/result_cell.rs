@@ -11,6 +11,7 @@ use crate::{
     },
     template_params::ReferencesParameter,
 };
+use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wikimisc::{
@@ -187,23 +188,20 @@ impl ResultCell {
         json!(ret.join("<br/>"))
     }
 
-    pub async fn as_wikitext(
-        &mut self,
-        list: &ListeriaList,
-        rownum: usize,
-        colnum: usize,
-    ) -> String {
-        let mut parts = Vec::with_capacity(self.parts.len());
-        for part_with_reference in &mut self.parts {
-            parts.push(part_with_reference.as_wikitext(list, rownum, colnum).await);
-        }
+    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+        let futures: Vec<_> = self
+            .parts
+            .iter()
+            .map(|part| part.as_wikitext(list, rownum, colnum))
+            .collect();
+        let mut parts = join_all(futures).await;
         if self.deduplicate_parts {
             parts = Self::do_deduplicate_parts(&parts);
         }
         self.get_cell_class(list) + &parts.join("<br/>")
     }
 
-    fn get_cell_class(&mut self, list: &ListeriaList) -> String {
+    fn get_cell_class(&self, list: &ListeriaList) -> String {
         if list.template_params().wdedit()
             && list.header_template().is_none()
             && let Some(class) = &self.wdedit_class
