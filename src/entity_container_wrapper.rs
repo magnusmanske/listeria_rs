@@ -2,6 +2,9 @@
 
 use crate::listeria_list::ListeriaList;
 use crate::my_entity::MyEntity;
+
+/// A handle to a cached [`MyEntity`] entry; derefs transparently to [`MyEntity`].
+pub type EntityEntry = foyer::HybridCacheEntry<String, MyEntity>;
 use crate::result_cell_part::{LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart};
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
@@ -173,13 +176,11 @@ impl EntityContainerWrapper {
         self.load_entities_into_entity_cache(api, &ids).await
     }
 
-    pub async fn get_entity(&self, entity_id: &str) -> Option<MyEntity> {
+    pub async fn get_entity(&self, entity_id: &str) -> Option<EntityEntry> {
         if cfg!(test) {
             println!("{entity_id}\tentity_loaded");
         }
-        let cache_entry = self.entities.get(&entity_id.to_string()).await.ok()??;
-        let ret = cache_entry.value();
-        Some(ret.to_owned()) // TODO FIXME
+        self.entities.get(&entity_id.to_string()).await.ok()?
     }
 
     pub async fn get_local_entity_label(
@@ -220,7 +221,7 @@ impl EntityContainerWrapper {
         wiki: &str,
         language: &str,
     ) -> Option<ResultCellPart> {
-        let entity: MyEntity = self.get_entity(item).await?;
+        let entity = self.get_entity(item).await?;
         let page = entity
             .sitelinks()
             .as_ref()?
@@ -258,7 +259,7 @@ impl EntityContainerWrapper {
 
     async fn use_local_links(&self, list: &ListeriaList, entity_id: &str) -> Option<()> {
         if LinksType::Local == *list.template_params().links() {
-            let entity: MyEntity = self.get_entity(entity_id).await?;
+            let entity = self.get_entity(entity_id).await?;
             entity
                 .sitelinks()
                 .as_ref()?
@@ -269,7 +270,7 @@ impl EntityContainerWrapper {
     }
 
     pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
-        let pi: MyEntity = self.get_entity(prop).await?;
+        let pi = self.get_entity(prop).await?;
         let mut claims: Vec<_> = pi
             .claims_with_property("P1630")
             .iter()
@@ -302,7 +303,7 @@ impl EntityContainerWrapper {
     pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         #[allow(clippy::collapsible_match)]
         match self.get_entity(prop).await {
-            Some(entity) => match entity.0 {
+            Some(entity) => match &entity.0 {
                 Entity::Property(p) => match p.datatype() {
                     Some(t) => t.to_owned(),
                     None => SnakDataType::String,
@@ -350,7 +351,7 @@ mod tests {
             .collect();
         ecw.load_entities(&api, &ids).await.unwrap();
 
-        let e2: MyEntity = ecw.get_entity("Q2").await.unwrap();
+        let e2 = ecw.get_entity("Q2").await.unwrap();
         assert_eq!(e2.id(), "Q2");
     }
 }
