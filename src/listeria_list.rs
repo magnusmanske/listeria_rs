@@ -4,7 +4,7 @@
 
 use crate::column::Column;
 use crate::column_type::ColumnType;
-use crate::entity_container_wrapper::EntityContainerWrapper;
+use crate::entity_container_wrapper::{EntityContainerWrapper, EntityEntry};
 use crate::list_processor::ListProcessor;
 use crate::my_entity::MyEntity;
 use crate::page_params::PageParams;
@@ -468,7 +468,7 @@ impl ListeriaList {
         self.params.links()
     }
 
-    pub async fn get_entity(&self, entity_id: &str) -> Option<MyEntity> {
+    pub async fn get_entity(&self, entity_id: &str) -> Option<EntityEntry> {
         self.ecw.get_entity(entity_id).await
     }
 
