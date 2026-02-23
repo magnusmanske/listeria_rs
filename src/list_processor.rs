@@ -350,6 +350,9 @@ impl ListProcessor {
         }
         list.profile("AFTER list::process_assign_sections 2").await;
 
+        section_names_q.sort();
+        section_names_q.dedup();
+
         // Make sure section name items are loaded
         list.ecw()
             .load_entities(list.wb_api(), &section_names_q)
