@@ -344,21 +344,23 @@ impl ListProcessor {
         section_property: &str,
         datatype: &SnakDataType,
     ) -> Result<Vec<String>> {
-        let mut section_names_q = Vec::with_capacity(list.results().len());
+        // Build per-row section Q IDs (one entry per row)
+        let mut section_names_q: Vec<String> = Vec::with_capacity(list.results().len());
         for row in list.results().iter() {
             section_names_q.push(row.get_sortkey_prop(section_property, list, datatype).await);
         }
         list.profile("AFTER list::process_assign_sections 2").await;
 
-        section_names_q.sort();
-        section_names_q.dedup();
+        // Create a deduplicated copy solely for efficient entity loading
+        let mut unique_q = section_names_q.clone();
+        unique_q.sort();
+        unique_q.dedup();
 
         // Make sure section name items are loaded
-        list.ecw()
-            .load_entities(list.wb_api(), &section_names_q)
-            .await?;
+        list.ecw().load_entities(list.wb_api(), &unique_q).await?;
         list.profile("AFTER list::process_assign_sections 3a").await;
 
+        // Convert per-row Q IDs to labels (preserving one label per row)
         let mut section_names = Vec::with_capacity(section_names_q.len());
         for q in section_names_q {
             let label = list.get_label_with_fallback(&q).await;
