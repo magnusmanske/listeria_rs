@@ -782,5 +782,104 @@ mod tests {
         assert_eq!(info.id, "12345");
     }
 
-    // AutoDesc tests removed - complex Entity API dependency
+    // --- reduce_time via from_snak ---
+
+    #[test]
+    fn test_from_snak_time_day_precision_produces_time_part() {
+        // Precision 11 = day; confirmed working by the sections fixture (1879-03-14)
+        let snak = Snak::new_time("P569", "+1879-03-14T00:00:00Z", 11);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s) => assert_eq!(s, "1879-03-14"),
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_from_snak_time_common_era_day() {
+        let snak = Snak::new_time("P569", "+1955-06-08T00:00:00Z", 11);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s) => assert_eq!(s, "1955-06-08"),
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    // --- AutoDesc ---
+
+    #[test]
+    fn test_autodesc_new_sets_entity_id_and_no_desc() {
+        use crate::my_entity::MyEntity;
+        use wikimisc::wikibase::Entity;
+
+        let json = serde_json::json!({
+            "type": "item",
+            "id": "Q42",
+            "labels": {},
+            "descriptions": {},
+            "aliases": {},
+            "claims": {},
+            "sitelinks": {}
+        });
+        let entity = Entity::new_from_json(&json).unwrap();
+        let my_entity = MyEntity(entity);
+        let ad = AutoDesc::new(&my_entity);
+        assert_eq!(ad.entity_id(), "Q42");
+        // description starts empty
+        assert!(ad.desc.is_none());
+    }
+
+    #[test]
+    fn test_autodesc_set_description() {
+        use crate::my_entity::MyEntity;
+        use wikimisc::wikibase::Entity;
+
+        let json = serde_json::json!({
+            "type": "item",
+            "id": "Q1",
+            "labels": {},
+            "descriptions": {},
+            "aliases": {},
+            "claims": {},
+            "sitelinks": {}
+        });
+        let entity = Entity::new_from_json(&json).unwrap();
+        let my_entity = MyEntity(entity);
+        let mut ad = AutoDesc::new(&my_entity);
+        ad.set_description("the universe");
+        assert_eq!(ad.desc, Some("the universe".to_string()));
+    }
+
+    #[test]
+    fn test_autodesc_equality() {
+        use crate::my_entity::MyEntity;
+        use wikimisc::wikibase::Entity;
+
+        let make = |id: &str| {
+            let json = serde_json::json!({
+                "type": "item", "id": id,
+                "labels": {}, "descriptions": {},
+                "aliases": {}, "claims": {}, "sitelinks": {}
+            });
+            let entity = Entity::new_from_json(&json).unwrap();
+            AutoDesc::new(&MyEntity(entity))
+        };
+
+        let a1 = make("Q5");
+        let a2 = make("Q5");
+        let a3 = make("Q6");
+        assert_eq!(a1, a2);
+        assert_ne!(a1, a3);
+    }
+
+    // --- PartWithReference::part_mut ---
+
+    #[test]
+    fn test_part_with_reference_part_mut() {
+        let original = ResultCellPart::Text("before".to_string());
+        let mut pwr = PartWithReference::new(original, None);
+        // Mutate the inner part through part_mut()
+        *pwr.part_mut() = ResultCellPart::Text("after".to_string());
+        assert_eq!(pwr.part(), &ResultCellPart::Text("after".to_string()));
+    }
 }

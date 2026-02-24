@@ -131,8 +131,15 @@ impl Reference {
             let (date, _) = tv.time().split_at(pos_t);
             let mut date = date.replace('+', "").to_string();
 
-            // Extract year for further processing
-            let year = if let Some(pos) = date.find('-') {
+            // Extract year for further processing.
+            // Handle negative years (e.g. "-0099-01-01") by skipping the leading '-'.
+            let year = if let Some(rest) = date.strip_prefix('-') {
+                if let Some(pos) = rest.find('-') {
+                    format!("-{}", &rest[..pos]).parse::<i32>().ok()
+                } else {
+                    format!("-{rest}").parse::<i32>().ok()
+                }
+            } else if let Some(pos) = date.find('-') {
                 date.split_at(pos).0.parse::<i32>().ok()
             } else {
                 date.parse::<i32>().ok()
@@ -146,8 +153,13 @@ impl Reference {
                     date = date.split_at(pos).0.to_string();
                 }
             } else if *tv.precision() == 9 {
-                // Year precision - keep only year
-                if let Some(pos) = date.find('-') {
+                // Year precision - keep only year (handle negative years)
+                if date.starts_with('-') {
+                    let date_rest = &date[1..];
+                    if let Some(pos) = date_rest.find('-') {
+                        date = format!("-{}", &date_rest[..pos]);
+                    }
+                } else if let Some(pos) = date.find('-') {
                     date = date.split_at(pos).0.to_string();
                 }
             } else if *tv.precision() == 8 {
@@ -176,8 +188,13 @@ impl Reference {
                     date = format!("{} millennium", Self::ordinal_suffix(millennium));
                 }
             } else {
-                // Lower precision - just use year
-                if let Some(pos) = date.find('-') {
+                // Lower precision - just use year (handle negative years)
+                if date.starts_with('-') {
+                    let date_rest = &date[1..];
+                    if let Some(pos) = date_rest.find('-') {
+                        date = format!("-{}", &date_rest[..pos]);
+                    }
+                } else if let Some(pos) = date.find('-') {
                     date = date.split_at(pos).0.to_string();
                 }
             }
@@ -558,6 +575,84 @@ mod tests {
         assert_eq!(reference.url, Some("https://example.com".to_string()));
         assert_eq!(reference.stated_in, Some("Q36578".to_string()));
         assert_eq!(reference.title, Some("Test Title".to_string()));
+    }
+
+    // --- extract_timestamp edge cases ---
+
+    #[test]
+    fn test_extract_timestamp_precision_below_six_extracts_year() {
+        // Precision 5 (or lower) hits the final else branch → year only
+        let snak = Snak::new_time("P813", "+1234-06-15T00:00:00Z", 5);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("1234".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_precision_zero_extracts_year() {
+        let snak = Snak::new_time("P813", "+2000-01-01T00:00:00Z", 0);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("2000".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_negative_year_century() {
+        // Year -99 → century = -99/100 - 1 = -1, ordinal_suffix(-1) = "-1st"
+        let snak = Snak::new_time("P813", "-0099-01-01T00:00:00Z", 7);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("-1st century".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_negative_year_millennium() {
+        // Year -999 → millennium = -999/1000 - 1 = -1, ordinal_suffix(-1) = "-1st"
+        let snak = Snak::new_time("P813", "-0999-01-01T00:00:00Z", 6);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("-1st millennium".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_decade_boundary() {
+        // Year 1980 → 1980s (1980/10 = 198, 198*10 = 1980 → "1980s")
+        let snak = Snak::new_time("P813", "+1980-06-01T00:00:00Z", 8);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("1980s".to_string()));
+    }
+
+    // --- new_from_snaks edge cases ---
+
+    #[test]
+    fn test_new_from_snaks_with_only_title_returns_none() {
+        // Title alone (no URL, no stated_in) → is_empty() = true → None
+        let snaks = vec![Snak::new_monolingual_text("P1476", "Some Title", "en")];
+        let reference = Reference::new_from_snaks(&snaks, "en");
+        assert!(reference.is_none());
+    }
+
+    #[test]
+    fn test_new_from_snaks_with_only_date_returns_none() {
+        // Date alone (no URL, no stated_in) → is_empty() = true → None
+        let snaks = vec![Snak::new_time("P813", "+2024-01-01T00:00:00Z", 11)];
+        let reference = Reference::new_from_snaks(&snaks, "en");
+        assert!(reference.is_none());
+    }
+
+    #[test]
+    fn test_new_from_snaks_url_and_date_returns_some() {
+        // URL + date → is_empty() = false (URL present) → Some
+        let snaks = vec![
+            Snak::new_string("P854", "https://example.com"),
+            Snak::new_time("P813", "+2024-06-01T00:00:00Z", 11),
+        ];
+        let reference = Reference::new_from_snaks(&snaks, "en");
+        assert!(reference.is_some());
+        let reference = reference.unwrap();
+        assert_eq!(reference.url, Some("https://example.com".to_string()));
+        assert_eq!(reference.date, Some("2024-06-01".to_string()));
     }
 
     // --- serialization ---
