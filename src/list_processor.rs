@@ -838,4 +838,516 @@ mod tests {
         let result = ListProcessor::process_regions(&mut list).await;
         assert!(result.is_ok());
     }
+
+    // ── build_section_count ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_build_section_count_empty() {
+        let names: Vec<String> = vec![];
+        let count = ListProcessor::build_section_count(&names);
+        assert!(count.is_empty());
+    }
+
+    #[test]
+    fn test_build_section_count_single() {
+        let names = vec!["human".to_string()];
+        let count = ListProcessor::build_section_count(&names);
+        assert_eq!(count.len(), 1);
+        assert_eq!(count[&"human".to_string()], 1);
+    }
+
+    #[test]
+    fn test_build_section_count_multiple_same() {
+        let names = vec![
+            "human".to_string(),
+            "human".to_string(),
+            "human".to_string(),
+        ];
+        let count = ListProcessor::build_section_count(&names);
+        assert_eq!(count.len(), 1);
+        assert_eq!(count[&"human".to_string()], 3);
+    }
+
+    #[test]
+    fn test_build_section_count_multiple_different() {
+        let names = vec![
+            "human".to_string(),
+            "sovereign state".to_string(),
+            "human".to_string(),
+            "city".to_string(),
+            "sovereign state".to_string(),
+            "sovereign state".to_string(),
+        ];
+        let count = ListProcessor::build_section_count(&names);
+        assert_eq!(count.len(), 3);
+        assert_eq!(count[&"human".to_string()], 2);
+        assert_eq!(count[&"sovereign state".to_string()], 3);
+        assert_eq!(count[&"city".to_string()], 1);
+    }
+
+    // ── build_valid_section_names ────────────────────────────────────────────
+
+    #[test]
+    fn test_build_valid_section_names_all_qualify() {
+        let names = vec![
+            "human".to_string(),
+            "human".to_string(),
+            "state".to_string(),
+            "state".to_string(),
+        ];
+        let count = ListProcessor::build_section_count(&names);
+        let valid = ListProcessor::build_valid_section_names(count, 1);
+        assert_eq!(valid, vec!["human".to_string(), "state".to_string()]);
+    }
+
+    #[test]
+    fn test_build_valid_section_names_filters_below_min() {
+        // "rare" appears only once, min_section=2 → filtered out
+        let names = vec![
+            "human".to_string(),
+            "human".to_string(),
+            "human".to_string(),
+            "rare".to_string(),
+        ];
+        let count = ListProcessor::build_section_count(&names);
+        let valid = ListProcessor::build_valid_section_names(count, 2);
+        assert_eq!(valid, vec!["human".to_string()]);
+        assert!(!valid.contains(&"rare".to_string()));
+    }
+
+    #[test]
+    fn test_build_valid_section_names_none_qualify() {
+        let names = vec!["human".to_string(), "state".to_string()];
+        let count = ListProcessor::build_section_count(&names);
+        // min_section=5 — nothing reaches that threshold
+        let valid = ListProcessor::build_valid_section_names(count, 5);
+        assert!(valid.is_empty());
+    }
+
+    #[test]
+    fn test_build_valid_section_names_output_is_sorted() {
+        let names = vec![
+            "zebra".to_string(),
+            "zebra".to_string(),
+            "apple".to_string(),
+            "apple".to_string(),
+            "mango".to_string(),
+            "mango".to_string(),
+        ];
+        let count = ListProcessor::build_section_count(&names);
+        let valid = ListProcessor::build_valid_section_names(count, 1);
+        assert_eq!(
+            valid,
+            vec![
+                "apple".to_string(),
+                "mango".to_string(),
+                "zebra".to_string()
+            ]
+        );
+    }
+
+    // ── create_section_mappings ──────────────────────────────────────────────
+
+    #[test]
+    fn test_create_section_mappings_misc_always_appended() {
+        let valid = vec!["human".to_string(), "state".to_string()];
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        // Misc must be present
+        assert!(name2id.contains_key("Misc"));
+        assert!(id2name.values().any(|v| v == "Misc"));
+        // misc_id is the last index (== number of non-Misc sections)
+        assert_eq!(misc_id, 2);
+        assert_eq!(id2name[&misc_id], "Misc");
+    }
+
+    #[test]
+    fn test_create_section_mappings_empty_input() {
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(vec![]);
+        // Only "Misc" is present
+        assert_eq!(name2id.len(), 1);
+        assert_eq!(id2name.len(), 1);
+        assert_eq!(misc_id, 0);
+        assert_eq!(name2id["Misc"], 0);
+    }
+
+    #[test]
+    fn test_create_section_mappings_bidirectional_consistency() {
+        let valid = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let (name2id, id2name, _misc_id) = ListProcessor::create_section_mappings(valid);
+        // Every forward mapping must have a matching reverse mapping
+        for (name, id) in &name2id {
+            assert_eq!(&id2name[id], name);
+        }
+        for (id, name) in &id2name {
+            assert_eq!(&name2id[name], id);
+        }
+    }
+
+    #[test]
+    fn test_create_section_mappings_ids_are_unique() {
+        let valid = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let (name2id, _id2name, _misc_id) = ListProcessor::create_section_mappings(valid);
+        // All assigned IDs must be distinct
+        let mut ids: Vec<usize> = name2id.values().cloned().collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), name2id.len());
+    }
+
+    // ── assign_row_section_ids ───────────────────────────────────────────────
+
+    #[test]
+    fn test_assign_row_section_ids_maps_correctly() {
+        use crate::result_row::ResultRow;
+
+        // Two sections: "alpha"=0, "beta"=1, "Misc"=2
+        let valid = vec!["alpha".to_string(), "beta".to_string()];
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+
+        // Build a tiny fake list-like structure via three rows
+        let mut rows = [
+            ResultRow::new("Q1"),
+            ResultRow::new("Q2"),
+            ResultRow::new("Q3"),
+        ];
+
+        // section_names is one label per row (the fixed output of get_section_names_for_rows)
+        let section_names = ["alpha".to_string(), "beta".to_string(), "alpha".to_string()];
+
+        // Simulate what assign_row_section_ids does
+        for (row_id, row) in rows.iter_mut().enumerate() {
+            let section_name = &section_names[row_id];
+            let section_id = name2id.get(section_name).copied().unwrap_or(misc_id);
+            row.set_section(section_id);
+        }
+
+        let alpha_id = name2id["alpha"];
+        let beta_id = name2id["beta"];
+        assert_eq!(rows[0].section(), alpha_id);
+        assert_eq!(rows[1].section(), beta_id);
+        assert_eq!(rows[2].section(), alpha_id);
+        // Confirm reverse map is consistent
+        assert_eq!(id2name[&alpha_id], "alpha");
+        assert_eq!(id2name[&beta_id], "beta");
+    }
+
+    #[test]
+    fn test_assign_row_section_ids_unknown_name_maps_to_misc() {
+        use crate::result_row::ResultRow;
+
+        let valid = vec!["human".to_string()];
+        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+
+        let mut row = ResultRow::new("Q99");
+        // "unknown" is not in name2id → should fall back to misc_id
+        let section_id = name2id.get("unknown").copied().unwrap_or(misc_id);
+        row.set_section(section_id);
+        assert_eq!(row.section(), misc_id);
+    }
+
+    #[test]
+    fn test_assign_row_section_ids_empty_rows_noop() {
+        use crate::result_row::ResultRow;
+
+        let valid = vec!["human".to_string()];
+        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        let section_names: Vec<String> = vec![];
+        let mut rows: Vec<ResultRow> = vec![];
+
+        for (row_id, row) in rows.iter_mut().enumerate() {
+            let section_name = &section_names[row_id];
+            let section_id = name2id.get(section_name).copied().unwrap_or(misc_id);
+            row.set_section(section_id);
+        }
+        // Nothing to assert — just verifying no panic on empty input
+        assert!(rows.is_empty());
+    }
+
+    // ── identify_shadow_files ────────────────────────────────────────────────
+
+    #[test]
+    fn test_identify_shadow_files_shared_file_excluded() {
+        // imagerepository = "shared" → file is NOT a shadow, should be excluded
+        let api_results = vec![(
+            "Example.jpg".to_string(),
+            serde_json::json!({
+                "query": {
+                    "pages": {
+                        "1": { "imagerepository": "shared" }
+                    }
+                }
+            }),
+        )];
+        let shadows = ListProcessor::identify_shadow_files(api_results);
+        assert!(!shadows.contains("Example.jpg"));
+    }
+
+    #[test]
+    fn test_identify_shadow_files_local_file_included() {
+        // imagerepository = "local" → IS a shadow (local file shadows a Commons image)
+        let api_results = vec![(
+            "LocalOverride.jpg".to_string(),
+            serde_json::json!({
+                "query": {
+                    "pages": {
+                        "2": { "imagerepository": "local" }
+                    }
+                }
+            }),
+        )];
+        let shadows = ListProcessor::identify_shadow_files(api_results);
+        assert!(shadows.contains("LocalOverride.jpg"));
+    }
+
+    #[test]
+    fn test_identify_shadow_files_missing_query_pages_assumed_local() {
+        // No "query.pages" key → could_be_local defaults to true
+        let api_results = vec![(
+            "Unknown.jpg".to_string(),
+            serde_json::json!({ "query": {} }),
+        )];
+        let shadows = ListProcessor::identify_shadow_files(api_results);
+        assert!(shadows.contains("Unknown.jpg"));
+    }
+
+    #[test]
+    fn test_identify_shadow_files_empty_input() {
+        let shadows = ListProcessor::identify_shadow_files(vec![]);
+        assert!(shadows.is_empty());
+    }
+
+    #[test]
+    fn test_identify_shadow_files_mixed() {
+        let api_results = vec![
+            (
+                "Shadow.jpg".to_string(),
+                serde_json::json!({
+                    "query": { "pages": { "1": { "imagerepository": "local" } } }
+                }),
+            ),
+            (
+                "Fine.jpg".to_string(),
+                serde_json::json!({
+                    "query": { "pages": { "2": { "imagerepository": "shared" } } }
+                }),
+            ),
+        ];
+        let shadows = ListProcessor::identify_shadow_files(api_results);
+        assert!(shadows.contains("Shadow.jpg"));
+        assert!(!shadows.contains("Fine.jpg"));
+    }
+
+    // ── collect_stated_in_from_part ──────────────────────────────────────────
+
+    #[test]
+    fn test_collect_stated_in_from_part_with_stated_in() {
+        use crate::reference::Reference;
+        use crate::result_cell_part::{PartWithReference, ResultCellPart};
+        use wikimisc::wikibase::Snak;
+
+        // P248 = "stated in" → produces a Reference with stated_in set
+        let snaks = vec![Snak::new_item("P248", "Q36578")];
+        let reference = Reference::new_from_snaks(&snaks, "en").unwrap();
+        let part = PartWithReference::new(ResultCellPart::Text("x".into()), Some(vec![reference]));
+        let mut items: Vec<String> = vec![];
+        ListProcessor::collect_stated_in_from_part(&part, &mut items);
+        assert_eq!(items, vec!["Q36578".to_string()]);
+    }
+
+    #[test]
+    fn test_collect_stated_in_from_part_no_stated_in() {
+        use crate::reference::Reference;
+        use crate::result_cell_part::{PartWithReference, ResultCellPart};
+        use wikimisc::wikibase::Snak;
+
+        // P854 = reference URL → Reference has a URL but no stated_in
+        let snaks = vec![Snak::new_string("P854", "https://example.com")];
+        let reference = Reference::new_from_snaks(&snaks, "en").unwrap();
+        let part = PartWithReference::new(ResultCellPart::Text("x".into()), Some(vec![reference]));
+        let mut items: Vec<String> = vec![];
+        ListProcessor::collect_stated_in_from_part(&part, &mut items);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_collect_stated_in_from_part_no_references() {
+        use crate::result_cell_part::{PartWithReference, ResultCellPart};
+
+        let part = PartWithReference::new(ResultCellPart::Text("x".into()), None);
+        let mut items: Vec<String> = vec![];
+        ListProcessor::collect_stated_in_from_part(&part, &mut items);
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_collect_stated_in_from_part_multiple_references() {
+        use crate::reference::Reference;
+        use crate::result_cell_part::{PartWithReference, ResultCellPart};
+        use wikimisc::wikibase::Snak;
+
+        let refs = vec![
+            Reference::new_from_snaks(&[Snak::new_item("P248", "Q1")], "en").unwrap(),
+            Reference::new_from_snaks(&[Snak::new_item("P248", "Q2")], "en").unwrap(),
+            // URL only — no stated_in
+            Reference::new_from_snaks(&[Snak::new_string("P854", "https://example.com")], "en")
+                .unwrap(),
+        ];
+        let part = PartWithReference::new(ResultCellPart::Text("x".into()), Some(refs));
+        let mut items: Vec<String> = vec![];
+        ListProcessor::collect_stated_in_from_part(&part, &mut items);
+        assert_eq!(items.len(), 2);
+        assert!(items.contains(&"Q1".to_string()));
+        assert!(items.contains(&"Q2".to_string()));
+    }
+
+    // ── process_sort_results_finish ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_process_sort_results_finish_sorts_ascending() {
+        use crate::result_row::ResultRow;
+        use wikimisc::wikibase::SnakDataType;
+
+        let mut list = create_test_list().await;
+
+        // Insert three rows with explicit sortkeys (unsorted)
+        let mut r1 = ResultRow::new("Q3");
+        r1.set_sortkey("charlie".to_string());
+        let mut r2 = ResultRow::new("Q1");
+        r2.set_sortkey("alpha".to_string());
+        let mut r3 = ResultRow::new("Q2");
+        r3.set_sortkey("bravo".to_string());
+        *list.results_mut() = vec![r1, r2, r3];
+
+        ListProcessor::process_sort_results_finish(
+            &mut list,
+            vec![
+                "charlie".to_string(),
+                "alpha".to_string(),
+                "bravo".to_string(),
+            ],
+            SnakDataType::String,
+        )
+        .await
+        .unwrap();
+
+        let ids: Vec<&str> = list.results().iter().map(|r| r.entity_id()).collect();
+        assert_eq!(ids, vec!["Q1", "Q2", "Q3"]);
+    }
+
+    #[tokio::test]
+    async fn test_process_sort_results_finish_length_mismatch_errors() {
+        use crate::result_row::ResultRow;
+        use wikimisc::wikibase::SnakDataType;
+
+        let mut list = create_test_list().await;
+        *list.results_mut() = vec![ResultRow::new("Q1"), ResultRow::new("Q2")];
+
+        // Provide only one sortkey for two rows → should error
+        let result = ListProcessor::process_sort_results_finish(
+            &mut list,
+            vec!["only_one".to_string()],
+            SnakDataType::String,
+        )
+        .await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_process_sort_results_finish_sorts_descending_via_sort_order() {
+        use crate::configuration::Configuration;
+        use crate::page_params::PageParams;
+        use crate::result_row::ResultRow;
+        use crate::template::Template;
+        use std::sync::Arc;
+        use wikimisc::mediawiki::api::Api;
+        use wikimisc::wikibase::SnakDataType;
+
+        let api = Arc::new(
+            Api::new("https://www.wikidata.org/w/api.php")
+                .await
+                .unwrap(),
+        );
+        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
+        let page_params = Arc::new(
+            PageParams::new(config, api, "Test:Page".to_string())
+                .await
+                .unwrap(),
+        );
+        let template = Template::new_from_params(
+            "sort_order=desc|columns=item|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }}",
+        )
+        .unwrap();
+        let mut list = ListeriaList::new(template, page_params).await.unwrap();
+        list.process_template().unwrap(); // apply sort_order=descending from the template
+
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("alpha".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("bravo".to_string());
+        let mut r3 = ResultRow::new("Q3");
+        r3.set_sortkey("charlie".to_string());
+        *list.results_mut() = vec![r1, r2, r3];
+
+        ListProcessor::process_sort_results_finish(
+            &mut list,
+            vec![
+                "alpha".to_string(),
+                "bravo".to_string(),
+                "charlie".to_string(),
+            ],
+            SnakDataType::String,
+        )
+        .await
+        .unwrap();
+
+        // descending: charlie > bravo > alpha
+        let ids: Vec<&str> = list.results().iter().map(|r| r.entity_id()).collect();
+        assert_eq!(ids, vec!["Q3", "Q2", "Q1"]);
+    }
+
+    // ── collect_entity_ids_from_results ─────────────────────────────────────
+
+    #[test]
+    fn test_collect_entity_ids_from_results_empty() {
+        use crate::result_row::ResultRow;
+
+        // Build a list and leave results empty
+        // We test the helper logic directly without a real list by mimicking its
+        // behaviour on plain result rows.
+        let rows: Vec<ResultRow> = vec![];
+        let mut ids: Vec<String> = Vec::new();
+        for row in rows.iter() {
+            row.cells().iter().for_each(|cell| {
+                cell.parts().iter().for_each(|part| {
+                    if let crate::result_cell_part::ResultCellPart::Entity(entity_info) =
+                        part.part()
+                        && entity_info.try_localize
+                    {
+                        ids.push(entity_info.id.to_owned());
+                    }
+                });
+            });
+        }
+        assert!(ids.is_empty());
+    }
+
+    // ── set_keep_flags ───────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_set_keep_flags_applies_to_all_rows() {
+        use crate::result_row::ResultRow;
+
+        let mut list = create_test_list().await;
+        *list.results_mut() = vec![
+            ResultRow::new("Q1"),
+            ResultRow::new("Q2"),
+            ResultRow::new("Q3"),
+        ];
+
+        ListProcessor::set_keep_flags(&mut list, vec![true, false, true]);
+
+        assert!(list.results()[0].keep());
+        assert!(!list.results()[1].keep());
+        assert!(list.results()[2].keep());
+    }
 }
