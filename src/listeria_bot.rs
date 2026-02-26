@@ -2,12 +2,10 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
-use sysinfo::System;
-
 use crate::{
     configuration::Configuration, page_to_process::PageToProcess, wiki_page_result::WikiPageResult,
 };
+use anyhow::Result;
 
 #[allow(async_fn_in_trait)]
 pub trait ListeriaBot {
@@ -31,33 +29,4 @@ pub trait ListeriaBot {
 
     /// Returns a page to be processed.
     async fn prepare_next_single_page(&self) -> Result<PageToProcess>;
-
-    fn print_sysinfo() {
-        if !sysinfo::IS_SUPPORTED_SYSTEM {
-            return;
-        }
-        let sys = System::new_all();
-        log::info!(
-            "Memory: total {}, free {}, used {} MB",
-            sys.total_memory() / 1024,
-            sys.free_memory() / 1024,
-            sys.used_memory() / 1024
-        );
-        log::info!(
-            "Swap: total: {}, free {}, used:{} MB",
-            sys.total_swap() / 1024,
-            sys.free_swap() / 1024,
-            sys.used_swap() / 1024
-        );
-        log::info!(
-            "Processes: {}, CPUs: {}",
-            sys.processes().len(),
-            sys.cpus().len()
-        );
-        log::info!(
-            "CPU usage: {}%, Load average: {:?}",
-            sys.global_cpu_usage(),
-            System::load_average()
-        );
-    }
 }

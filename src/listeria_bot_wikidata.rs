@@ -70,10 +70,6 @@ impl ListeriaBot for ListeriaBotWikidata {
 
     /// Removed a pagestatus ID from the running list
     async fn release_running(&self, pagestatus_id: u64) {
-        if !self.config().quiet() {
-            // println!("Releasing {pagestatus_id}");
-            Self::print_sysinfo();
-        }
         self.running.remove(&pagestatus_id);
     }
 
