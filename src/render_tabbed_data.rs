@@ -2,7 +2,6 @@
 
 use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
 use anyhow::{Result, anyhow};
-use async_trait::async_trait;
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -11,7 +10,6 @@ use wikimisc::mediawiki::Api;
 #[derive(Debug, Clone, Copy)]
 pub struct RendererTabbedData;
 
-#[async_trait]
 impl Renderer for RendererTabbedData {
     fn new() -> Self {
         Self {}
