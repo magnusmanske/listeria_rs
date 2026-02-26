@@ -5,8 +5,6 @@ authors = ["Magnus Manske <magnusmanske@googlemail.com>"]
 edition = "2024"
 
 [dependencies]
-async-trait = "0.1"
-async-recursion = "1"
 regex = "^1"
 chrono = "0.4"
 dashmap = "6"

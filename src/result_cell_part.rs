@@ -6,7 +6,6 @@ use crate::listeria_list::ListeriaList;
 use crate::my_entity::MyEntity;
 use crate::reference::Reference;
 use crate::template_params::LinksType;
-use async_recursion::async_recursion;
 use era_date::{Era, Precision};
 use futures::future::join_all;
 use log::warn;
@@ -428,7 +427,6 @@ impl ResultCellPart {
         join_all(futures).await.join(" — ")
     }
 
-    #[async_recursion]
     pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
         match self {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),

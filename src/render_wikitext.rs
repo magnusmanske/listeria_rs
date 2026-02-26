@@ -2,13 +2,11 @@
 
 use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
 use anyhow::Result;
-use async_trait::async_trait;
 use futures::future::join_all;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RendererWikitext;
 
-#[async_trait]
 impl Renderer for RendererWikitext {
     fn new() -> Self {
         Self {}
