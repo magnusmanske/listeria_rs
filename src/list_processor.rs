@@ -358,7 +358,8 @@ impl ListProcessor {
 
         // Make sure section name items are loaded
         list.ecw().load_entities(list.wb_api(), &unique_q).await?;
-        list.profile("AFTER list::process_assign_sections 3a").await;
+        list.profile("AFTER list::process_assign_sections (load_entities) 3a")
+            .await;
 
         // Convert per-row Q IDs to labels (preserving one label per row)
         let mut section_names = Vec::with_capacity(section_names_q.len());
