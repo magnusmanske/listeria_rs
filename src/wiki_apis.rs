@@ -160,7 +160,9 @@ impl WikiApis {
         if new_wikis.is_empty() {
             return Ok(());
         }
-        let placeholders = Self::placeholders(new_wikis.len(), "(?,'ACTIVE')");
+        let placeholders = std::iter::repeat_n("(?,'ACTIVE')", new_wikis.len())
+            .collect::<Vec<_>>()
+            .join(",");
         let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
         log::info!("Adding {new_wikis:?}");
         self.pool
@@ -209,8 +211,10 @@ impl WikiApis {
         log::info!("Adding {} pages for {wiki}", new_pages.len());
         for chunk in new_pages.chunks(10000) {
             let chunk: Vec<String> = chunk.into();
-            let placeholders =
-                Self::placeholders(chunk.len(), &format!("({wiki_id},?,'WAITING','')"));
+            let element = format!("({wiki_id},?,'WAITING','')");
+            let placeholders = std::iter::repeat_n(element.as_str(), chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
             let sql = format!(
                 "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}"
             );
@@ -258,13 +262,6 @@ impl WikiApis {
             }
         }
         Ok(())
-    }
-
-    /// Returns a string with the given number of placeholders, separated by commas
-    fn placeholders(num: usize, element: &str) -> String {
-        let mut placeholders = Vec::with_capacity(num);
-        placeholders.resize(num, element.to_string());
-        placeholders.join(",")
     }
 
     /// Returns all the wikis in the database
@@ -423,8 +420,9 @@ mod tests {
         assert_eq!(wa.get_db_server_group(), ".web.db.svc.eqiad.wmflabs");
     }
 
-    #[tokio::test]
-    async fn test_placeholders() {
-        assert_eq!(WikiApis::placeholders(3, "?"), "?,?,?");
+    #[test]
+    fn test_placeholders() {
+        let result = std::iter::repeat_n("?", 3).collect::<Vec<_>>().join(",");
+        assert_eq!(result, "?,?,?");
     }
 }

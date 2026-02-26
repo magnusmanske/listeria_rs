@@ -65,8 +65,8 @@ impl Reference {
         }
     }
 
-    /// Computes the wikitext and its MD5 hash for this reference.
-    /// Returns `(wikitext, md5)`. Results are not cached; callers run this once per render.
+    /// Computes the wikitext and a blake3 hash for this reference.
+    /// Returns `(wikitext, hash)`. Results are not cached; callers run this once per render.
     async fn compute_wikitext(&self, list: &ListeriaList) -> (String, String) {
         let mut s = String::new();
 
@@ -83,8 +83,8 @@ impl Reference {
             s += &list.get_item_link_with_fallback(q).await;
         }
 
-        let md5 = format!("{:x}", md5::compute(&s));
-        (s, md5)
+        let hash = blake3::hash(s.as_bytes()).to_hex().to_string();
+        (s, hash)
     }
 
     async fn render_cite_web(&self, use_invoke: bool, list: &ListeriaList) -> String {

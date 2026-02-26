@@ -10,6 +10,7 @@ use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{Result, anyhow};
 use foyer::{BlockEngineConfig, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
+use percent_encoding::percent_decode_str;
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
@@ -286,9 +287,10 @@ impl EntityContainerWrapper {
             .filter_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
                 match data_value.value() {
-                    Value::StringValue(s2) => {
-                        Some(s2.to_owned().replace("$1", &urlencoding::decode(id).ok()?))
-                    }
+                    Value::StringValue(s2) => Some(
+                        s2.to_owned()
+                            .replace("$1", &percent_decode_str(id).decode_utf8().ok()?),
+                    ),
                     Value::Coordinate(_coordinate) => None,
                     Value::MonoLingual(_mono_lingual_text) => None,
                     Value::Entity(_entity_value) => None,

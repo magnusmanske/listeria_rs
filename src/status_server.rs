@@ -3,6 +3,7 @@
 use crate::wiki_page_result::WikiPageResult;
 use anyhow::Result;
 use axum::{Router, extract::State, response::Html, routing::get};
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -12,6 +13,22 @@ use std::{
 use tokio::sync::Mutex;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
+
+/// Escapes `&`, `<`, `>`, `"`, and `'` so text is safe to embed in HTML.
+fn escape_html(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#39;"),
+            other => out.push(other),
+        }
+    }
+    out
+}
 
 #[derive(Debug, Clone)]
 pub struct AppState {
@@ -107,11 +124,15 @@ impl StatusServer {
                     Some(pattern) => {
                         format!(
                             "<a target=\"_blank\" href=\"{}\">{}</a>",
-                            pattern.replace("$1", &urlencoding::encode(&page.replace(' ', "_"))),
-                            html_escape::encode_text(page)
+                            pattern.replace(
+                                "$1",
+                                &utf8_percent_encode(&page.replace(' ', "_"), NON_ALPHANUMERIC)
+                                    .to_string()
+                            ),
+                            escape_html(page)
                         )
                     }
-                    None => html_escape::encode_text(page).to_string(),
+                    None => escape_html(page),
                 };
                 html += &format!(
                     "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
