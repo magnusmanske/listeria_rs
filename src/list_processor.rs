@@ -384,7 +384,7 @@ impl ListProcessor {
     ) -> Vec<String> {
         let mut valid_section_names: Vec<String> = section_count
             .into_iter()
-            .filter(|(_name, count)| *count >= min_section)
+            .filter(|(name, count)| *count >= min_section && !name.trim().is_empty())
             .map(|(name, _count)| name.to_owned())
             .collect();
         valid_section_names.sort();
@@ -950,6 +950,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_build_valid_section_names_excludes_empty_strings() {
+        // Items without the section property get "" as their section name.
+        // Empty names must never become valid sections (they render headerless).
+        let names = vec![
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            "human".to_string(),
+            "human".to_string(),
+        ];
+        let count = ListProcessor::build_section_count(&names);
+        let valid = ListProcessor::build_valid_section_names(count, 1);
+        assert_eq!(valid, vec!["human".to_string()]);
+        assert!(!valid.contains(&"".to_string()));
+    }
+
+    #[test]
+    fn test_build_valid_section_names_excludes_whitespace_only() {
+        let names = vec![
+            "  ".to_string(),
+            "  ".to_string(),
+            "human".to_string(),
+            "human".to_string(),
+        ];
+        let count = ListProcessor::build_section_count(&names);
+        let valid = ListProcessor::build_valid_section_names(count, 1);
+        assert_eq!(valid, vec!["human".to_string()]);
+    }
+
     // ── create_section_mappings ──────────────────────────────────────────────
 
     #[test]
@@ -1500,6 +1530,82 @@ mod tests {
                 "row {} (Q{}) was assigned section {} which has no name — \
                  this is the bug from issue #166",
                 i,
+                i,
+                row.section()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_section_names_go_to_misc() {
+        // Reproduces the real-world scenario from issue #166:
+        // Items without the section property get "" as their section name.
+        // With min_section=2 and enough such items, "" used to become a valid
+        // section name, rendering with no visible header ("not in a section").
+        // These items must go to Misc instead.
+        use crate::result_row::ResultRow;
+
+        let mut list = create_test_list().await;
+        let num_rows = 30;
+        let mut rows = Vec::with_capacity(num_rows);
+        for i in 0..num_rows {
+            rows.push(ResultRow::new(&format!("Q{i}")));
+        }
+        *list.results_mut() = rows;
+
+        // Simulate: 22 items have no section property (""), rest have real sections
+        let mut section_names: Vec<String> = Vec::with_capacity(num_rows);
+        for i in 0..num_rows {
+            if i < 22 {
+                section_names.push("".to_string()); // no section property
+            } else {
+                section_names.push("Atari".to_string());
+            }
+        }
+
+        let section_count = ListProcessor::build_section_count(&section_names);
+        let valid_section_names = ListProcessor::build_valid_section_names(section_count, 2);
+
+        // "" must NOT be a valid section name
+        assert!(
+            !valid_section_names.contains(&"".to_string()),
+            "empty string should not be a valid section name"
+        );
+        assert!(valid_section_names.contains(&"Atari".to_string()));
+
+        let (name2id, id2name, misc_id) =
+            ListProcessor::create_section_mappings(valid_section_names);
+        *list.section_id_to_name_mut() = id2name;
+
+        ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
+
+        // Items without the section property must go to Misc
+        for i in 0..22 {
+            assert_eq!(
+                list.results()[i].section(),
+                misc_id,
+                "row {} should be in Misc, not section {}",
+                i,
+                list.results()[i].section()
+            );
+        }
+
+        // Items with the section property must be in the correct section
+        for i in 22..num_rows {
+            let section_name = list.section_name(list.results()[i].section());
+            assert_eq!(
+                section_name,
+                Some("Atari"),
+                "row {} should be in section 'Atari'",
+                i
+            );
+        }
+
+        // Every row must have a named section (no headerless rows)
+        for (i, row) in list.results().iter().enumerate() {
+            assert!(
+                list.section_name(row.section()).is_some(),
+                "row {} has section {} with no name",
                 i,
                 row.section()
             );
