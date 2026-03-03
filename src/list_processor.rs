@@ -459,13 +459,16 @@ impl ListProcessor {
         name2id: HashMap<String, usize>,
         misc_id: usize,
     ) -> Result<()> {
+        if section_names.len() != list.results().len() {
+            return Err(anyhow!(
+                "assign_row_section_ids: section_names length ({}) != results length ({})",
+                section_names.len(),
+                list.results().len()
+            ));
+        }
         for (row_id, row) in list.results_mut().iter_mut().enumerate() {
-            let section_name = match section_names.get(row_id) {
-                Some(name) => name,
-                None => continue,
-            };
-            let section_id = match name2id.get(section_name) {
-                Some(id) => *id,
+            let section_id = match section_names.get(row_id) {
+                Some(name) => name2id.get(name).copied().unwrap_or(misc_id),
                 None => misc_id,
             };
             row.set_section(section_id);
@@ -1350,5 +1353,156 @@ mod tests {
         assert!(list.results()[0].keep());
         assert!(!list.results()[1].keep());
         assert!(list.results()[2].keep());
+    }
+
+    // ── assign_row_section_ids regression tests (issue #166) ────────────────
+
+    #[tokio::test]
+    async fn test_assign_row_section_ids_all_rows_assigned() {
+        // Regression test: every row must get a section assignment.
+        // Previously, sort+dedup on section_names_q caused fewer section names
+        // than rows, leaving some rows with default section 0 and no header.
+        use crate::result_row::ResultRow;
+
+        let mut list = create_test_list().await;
+        *list.results_mut() = vec![
+            ResultRow::new("Q1"),
+            ResultRow::new("Q2"),
+            ResultRow::new("Q3"),
+            ResultRow::new("Q4"),
+            ResultRow::new("Q5"),
+        ];
+
+        let valid = vec!["alpha".to_string(), "beta".to_string()];
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        *list.section_id_to_name_mut() = id2name;
+
+        // One section name per row — the correct 1:1 mapping
+        let section_names = vec![
+            "alpha".to_string(),
+            "beta".to_string(),
+            "alpha".to_string(),
+            "beta".to_string(),
+            "alpha".to_string(),
+        ];
+
+        ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
+
+        // Verify ALL rows have a section name (not the headerless default 0)
+        for row in list.results().iter() {
+            assert!(
+                list.section_name(row.section()).is_some(),
+                "row {} has section {} with no name",
+                row.entity_id(),
+                row.section()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_assign_row_section_ids_length_mismatch_errors() {
+        // If section_names has fewer entries than rows, the function must
+        // return an error instead of silently skipping rows.
+        use crate::result_row::ResultRow;
+
+        let mut list = create_test_list().await;
+        *list.results_mut() = vec![
+            ResultRow::new("Q1"),
+            ResultRow::new("Q2"),
+            ResultRow::new("Q3"),
+        ];
+
+        let valid = vec!["alpha".to_string()];
+        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+
+        // Only 1 section name for 3 rows — must error
+        let section_names = vec!["alpha".to_string()];
+        let result =
+            ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_assign_row_section_ids_unknown_names_go_to_misc() {
+        // Rows whose section name is not in name2id must be assigned to Misc,
+        // not left with a default that has no section header.
+        use crate::result_row::ResultRow;
+
+        let mut list = create_test_list().await;
+        *list.results_mut() = vec![
+            ResultRow::new("Q1"),
+            ResultRow::new("Q2"),
+            ResultRow::new("Q3"),
+        ];
+
+        let valid = vec!["alpha".to_string()];
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        *list.section_id_to_name_mut() = id2name;
+
+        let section_names = vec![
+            "alpha".to_string(),
+            "unknown_section".to_string(),
+            "another_unknown".to_string(),
+        ];
+
+        ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
+
+        assert_eq!(list.results()[0].section(), 0); // alpha → 0
+        assert_eq!(list.results()[1].section(), misc_id); // unknown → misc
+        assert_eq!(list.results()[2].section(), misc_id); // unknown → misc
+
+        // Every row must have a named section
+        for row in list.results().iter() {
+            assert!(
+                list.section_name(row.section()).is_some(),
+                "row {} has section {} with no name",
+                row.entity_id(),
+                row.section()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_section_names_must_match_row_count() {
+        // End-to-end-ish: simulate the full section assignment pipeline and
+        // verify every row gets a valid section.
+        use crate::result_row::ResultRow;
+
+        let mut list = create_test_list().await;
+        let num_rows = 30;
+        let mut rows = Vec::with_capacity(num_rows);
+        for i in 0..num_rows {
+            rows.push(ResultRow::new(&format!("Q{i}")));
+        }
+        *list.results_mut() = rows;
+
+        // Simulate section_names_q with duplicates (the scenario from the bug)
+        let categories = ["cat_a", "cat_b", "cat_c"];
+        let section_names: Vec<String> = (0..num_rows)
+            .map(|i| categories[i % categories.len()].to_string())
+            .collect();
+
+        // This must have exactly one entry per row
+        assert_eq!(section_names.len(), list.results().len());
+
+        let section_count = ListProcessor::build_section_count(&section_names);
+        let valid_section_names = ListProcessor::build_valid_section_names(section_count, 1);
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid_section_names);
+        *list.section_id_to_name_mut() = id2name;
+
+        ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
+
+        // Every single row must be assigned to a named section
+        for (i, row) in list.results().iter().enumerate() {
+            let section_name = list.section_name(row.section());
+            assert!(
+                section_name.is_some(),
+                "row {} (Q{}) was assigned section {} which has no name — \
+                 this is the bug from issue #166",
+                i,
+                i,
+                row.section()
+            );
+        }
     }
 }
