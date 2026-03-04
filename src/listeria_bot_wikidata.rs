@@ -246,7 +246,7 @@ impl ListeriaBotWikidata {
             AND wikis.status='ACTIVE'
             AND pagestatus.status NOT IN ({ignore_status})
             AND pagestatus.id NOT IN ({ids})
-            ORDER BY pagestatus.timestamp
+            ORDER BY rand() # pagestatus.timestamp
             LIMIT 1"
         );
         if let Some(page) = self.get_page_for_sql(&sql_priority).await {
