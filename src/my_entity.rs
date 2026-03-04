@@ -5,13 +5,13 @@
 use serde::{Deserialize, Deserializer, Serialize};
 use std::ops::{Deref, DerefMut};
 use wikimisc::wikibase::Entity;
+use wikimisc::wikibase::EntityTrait;
 
-/// A newtype wrapper around [`Entity`] that adds a [`serde::Deserialize`]
-/// implementation.  Serialization is delegated unchanged to the inner
-/// [`Entity`]; deserialization first deserialises the payload into a
-/// [`serde_json::Value`] and then reconstructs the entity via
-/// [`Entity::new_from_json`] – the inverse of
-/// [`wikimisc::wikibase::EntityTrait::to_json`].
+/// A newtype wrapper around [`Entity`] that adds binary-format-safe
+/// [`serde::Serialize`]/[`serde::Deserialize`] implementations.
+/// The entity is serialized as a JSON string (via [`EntityTrait::to_json`])
+/// so that it works correctly with both JSON and binary serializers
+/// like bincode (used by the foyer disk cache).
 #[derive(Debug, Clone)]
 pub struct MyEntity(pub Entity);
 
@@ -52,8 +52,13 @@ impl Serialize for MyEntity {
     where
         S: serde::Serializer,
     {
-        // Delegate to Entity's own Serialize impl (uses to_json() internally).
-        self.0.serialize(serializer)
+        // Serialize the entity's JSON representation as a String.
+        // We avoid delegating to Entity::serialize because it uses
+        // serialize_some/serialize_none (Option encoding) which is
+        // incompatible with binary formats like bincode.
+        let json_string =
+            serde_json::to_string(&self.0.to_json()).map_err(serde::ser::Error::custom)?;
+        serializer.serialize_str(&json_string)
     }
 }
 
@@ -62,11 +67,10 @@ impl<'de> Deserialize<'de> for MyEntity {
     where
         D: Deserializer<'de>,
     {
-        // Materialise the payload as a generic JSON value first …
-        let json = serde_json::Value::deserialize(deserializer)?;
-        // … then reconstruct the entity using the same JSON format that
-        // to_json() produces, mirroring the existing Entity::new_from_json
-        // call pattern used throughout the codebase.
+        // Deserialize the JSON string, then reconstruct the entity.
+        let json_string = String::deserialize(deserializer)?;
+        let json: serde_json::Value =
+            serde_json::from_str(&json_string).map_err(serde::de::Error::custom)?;
         Entity::new_from_json(&json)
             .map(MyEntity)
             .map_err(serde::de::Error::custom)
@@ -93,19 +97,15 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_roundtrip() {
+    fn test_json_serialize_roundtrip() {
         let json = make_entity_json("Q42");
-        let my: MyEntity = serde_json::from_value(json).expect("deserialize failed");
-        assert_eq!(my.id(), "Q42");
-    }
+        let entity = Entity::new_from_json(&json).expect("entity from json failed");
+        let my = MyEntity(entity);
 
-    #[test]
-    fn test_serialize_roundtrip() {
-        let json = make_entity_json("Q1");
-        let my: MyEntity = serde_json::from_value(json).expect("deserialize failed");
-        // Re-serialise and confirm we get a valid JSON object back.
-        let serialised = serde_json::to_value(&my).expect("serialize failed");
-        assert!(serialised.is_object() || serialised.is_null());
+        // Serialize to JSON string, then deserialize back
+        let serialized = serde_json::to_string(&my).expect("serialize failed");
+        let deserialized: MyEntity = serde_json::from_str(&serialized).expect("deserialize failed");
+        assert_eq!(deserialized.id(), "Q42");
     }
 
     #[test]
@@ -137,8 +137,51 @@ mod tests {
 
     #[test]
     fn test_invalid_json_returns_error() {
-        let bad = serde_json::json!({"no_id": true});
+        // A JSON string containing invalid entity JSON
+        let bad = serde_json::json!("{\"no_id\": true}");
         let result: Result<MyEntity, _> = serde_json::from_value(bad);
         assert!(result.is_err());
+    }
+
+    /// Verify that MyEntity survives a bincode serialize→deserialize roundtrip.
+    /// foyer uses bincode for its disk cache, so this must work correctly.
+    #[test]
+    fn test_bincode_roundtrip() {
+        let json = serde_json::json!({
+            "type": "item",
+            "id": "Q42",
+            "labels": {
+                "en": { "language": "en", "value": "Douglas Adams" }
+            },
+            "descriptions": {},
+            "aliases": {},
+            "claims": {
+                "P31": [{
+                    "mainsnak": {
+                        "snaktype": "value",
+                        "property": "P31",
+                        "datavalue": {
+                            "value": { "entity-type": "item", "numeric-id": 5, "id": "Q5" },
+                            "type": "wikibase-entityid"
+                        }
+                    },
+                    "type": "statement",
+                    "rank": "normal"
+                }]
+            },
+            "sitelinks": {}
+        });
+        let entity = Entity::new_from_json(&json).expect("entity from json failed");
+        let my = MyEntity(entity);
+
+        // This is what foyer does: bincode serialize then deserialize
+        let encoded = bincode::serialize(&my).expect("bincode serialize failed");
+        let decoded: MyEntity = bincode::deserialize(&encoded).expect("bincode deserialize failed");
+
+        assert_eq!(decoded.id(), "Q42");
+        assert_eq!(
+            decoded.label_in_locale("en").map(|s| s.to_string()),
+            Some("Douglas Adams".to_string())
+        );
     }
 }
