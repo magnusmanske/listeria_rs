@@ -59,8 +59,10 @@ impl ListeriaBot for ListeriaBotWikidata {
     }
 
     async fn reset_running(&self) -> Result<()> {
-        let sql = "UPDATE pagestatus SET status='PAUSED' WHERE status='RUNNING'";
-        self.run_sql(sql).await
+        // DEACTIVATED pauses too many pages
+        // let sql = "UPDATE pagestatus SET status='PAUSED' WHERE status='RUNNING'";
+        // self.run_sql(sql).await
+        Ok(())
     }
 
     async fn clear_deleted(&self) -> Result<()> {
