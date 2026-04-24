@@ -22,7 +22,9 @@ pub struct PageElement {
 
 impl PageElement {
     fn extract_text_segment(text: &str, start: usize, end: usize) -> Option<String> {
-        String::from_utf8(text.as_bytes()[start..end].to_vec()).ok()
+        // Regex match offsets are always UTF-8 char boundaries, but use `get`
+        // defensively so that unexpected inputs return None instead of panicking.
+        text.get(start..end).map(str::to_owned)
     }
 
     fn extract_template_text(
@@ -241,16 +243,15 @@ impl PageElement {
         match_start: regex::Match<'_>,
         match_end: regex::Match<'_>,
     ) -> Option<String> {
-        let remaining = if single_template {
-            String::from_utf8(text.as_bytes()[match_start.end()..].to_vec()).ok()?
+        if single_template {
+            text.get(match_start.end()..).map(str::to_owned)
         } else {
             if match_end.start() < match_start.end() {
                 return None;
             }
-            String::from_utf8(text.as_bytes()[match_start.end()..match_end.start()].to_vec())
-                .ok()?
-        };
-        Some(remaining)
+            text.get(match_start.end()..match_end.start())
+                .map(str::to_owned)
+        }
     }
 }
 
