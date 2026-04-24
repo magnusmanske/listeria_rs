@@ -169,8 +169,11 @@ impl ResultRow {
 
     /// Get the sortkey for a sparql value
     pub fn get_sortkey_sparql(&self, variable: &str, list: &ListeriaList) -> String {
-        let obj = ColumnType::Field(variable.to_lowercase());
-        // TODO sort by actual sparql values instead?
+        // ColumnType::Field stores its variable name upper-cased (see
+        // ColumnType::new), and SortMode::SparqlVariable does the same when
+        // parsing \`sort=?foo\`. Match the two representations so that
+        // \`sort=?variable\` actually lines up with the matching column.
+        let obj = ColumnType::Field(variable.to_uppercase());
         match list
             .columns()
             .iter()
