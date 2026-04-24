@@ -80,13 +80,15 @@ impl ListeriaBot for ListeriaBotWikidata {
 
     /// Returns a page to be processed.
     async fn prepare_next_single_page(&self) -> Result<PageToProcess> {
-        let ids: String = self
-            .running
-            .iter()
-            .map(|id| format!("{}", *id))
-            .collect::<Vec<String>>()
-            .join(",");
-        let ids = if ids.is_empty() { "0".to_string() } else { ids };
+        let ids: String = {
+            let mut parts: Vec<String> = self.running.iter().map(|id| id.to_string()).collect();
+            if parts.is_empty() {
+                "0".to_string()
+            } else {
+                parts.sort_unstable();
+                parts.join(",")
+            }
+        };
         info!(target: "lock","Getting next page, without {ids}");
         const IGNORE_STATUS: &str = "'RUNNING','DELETED','TRANSLATION'";
 
@@ -235,7 +237,7 @@ impl ListeriaBotWikidata {
 
     async fn find_priority_page(
         &self,
-        ids: &String,
+        ids: &str,
         ignore_status: &str,
     ) -> Result<Option<PageToProcess>> {
         let sql_priority = format!(
