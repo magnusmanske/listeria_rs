@@ -84,18 +84,14 @@ impl ResultRow {
 
     /// Remove shadow files from cells
     pub fn remove_shadow_files(&mut self, shadow_files: &HashSet<String>) {
-        self.cells.iter_mut().for_each(|cell| {
-            cell.set_parts(
-                cell.parts()
-                    .iter()
-                    .filter(|part_with_reference| match part_with_reference.part() {
-                        ResultCellPart::File(file) => !shadow_files.contains(file),
-                        _ => true,
-                    })
-                    .cloned()
-                    .collect(),
-            );
-        });
+        for cell in self.cells.iter_mut() {
+            cell.parts_mut().retain(|part_with_reference| {
+                match part_with_reference.part() {
+                    ResultCellPart::File(file) => !shadow_files.contains(file),
+                    _ => true,
+                }
+            });
+        }
     }
 
     pub async fn from_columns(&mut self, list: &ListeriaList, sparql_table: &SparqlTableVec) {
