@@ -8,7 +8,6 @@ use crate::reference::Reference;
 use crate::template_params::LinksType;
 use era_date::{Era, Precision};
 use futures::future::join_all;
-use log::warn;
 use serde::{Deserialize, Serialize};
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::entity::EntityTrait;
@@ -190,21 +189,13 @@ impl ResultCellPart {
     ) {
         for part_with_reference in v.iter_mut() {
             let result_cell_part = &mut part_with_reference.part;
-            match result_cell_part {
-                ResultCellPart::Entity(entity_info) if entity_info.try_localize => {
-                    if let Some(ll) = ecw
-                        .entity_to_local_link(&entity_info.id, wiki, language)
-                        .await
-                    {
-                        *result_cell_part = ll;
-                    }
-                }
-                _ => {
-                    warn!(
-                        "localize_snak_list: Failed to localize item links for {:?}",
-                        result_cell_part
-                    );
-                }
+            if let ResultCellPart::Entity(entity_info) = result_cell_part
+                && entity_info.try_localize
+                && let Some(ll) = ecw
+                    .entity_to_local_link(&entity_info.id, wiki, language)
+                    .await
+            {
+                *result_cell_part = ll;
             }
         }
     }
@@ -227,12 +218,7 @@ impl ResultCellPart {
             ResultCellPart::SnakList(v) => {
                 Self::localize_snak_list(ecw, wiki, language, v).await;
             }
-            _ => {
-                warn!(
-                    "localize_item_links: Failed to localize item links for {:?}",
-                    self
-                );
-            }
+            _ => {}
         }
     }
 
