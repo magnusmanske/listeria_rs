@@ -42,7 +42,7 @@ impl SortMode {
         static RE_PROP: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r"^P\d+$").expect("RE_PROP does not parse"));
         static RE_SPARQL: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"^?\S+$").expect("RE_SPARQL does not parse"));
+            LazyLock::new(|| Regex::new(r"^\?\S+$").expect("RE_SPARQL does not parse"));
         let os = os.map(|s| s.trim().to_uppercase());
         match os {
             Some(s) => match s.as_str() {
@@ -426,10 +426,17 @@ mod tests {
     #[test]
     fn test_sort_mode_new_none() {
         assert!(matches!(SortMode::new(None), SortMode::None));
-        // Note: Due to the regex r"^?\S+$" (unescaped ?), strings like "invalid"
-        // match as SparqlVariable. Empty string returns None.
         assert!(matches!(
-            SortMode::new(Some(&"".to_string())),
+            SortMode::new(Some(&String::new())),
+            SortMode::None
+        ));
+        // Non-SPARQL tokens (no leading `?`) and non-property strings fall through to None.
+        assert!(matches!(
+            SortMode::new(Some(&"invalid".to_string())),
+            SortMode::None
+        ));
+        assert!(matches!(
+            SortMode::new(Some(&"Q42".to_string())),
             SortMode::None
         ));
     }
