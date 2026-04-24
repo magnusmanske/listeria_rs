@@ -313,17 +313,11 @@ impl ResultCell {
         q1: &str,
         p2: &str,
     ) {
-        if let Some(e) = entity {
-            list.get_filtered_claims(e, p1)
-                .iter()
-                .for_each(|statement| {
-                    ResultCell::get_parts_p_q_p(statement, q1, p2)
-                        .iter()
-                        .for_each(|part| {
-                            ret.parts
-                                .push(PartWithReference::new(part.to_owned(), None));
-                        });
-                });
+        let Some(e) = entity else { return };
+        for statement in list.get_filtered_claims(e, p1) {
+            for part in Self::get_parts_p_q_p(&statement, q1, p2) {
+                ret.parts.push(PartWithReference::new(part, None));
+            }
         }
     }
 
@@ -334,17 +328,11 @@ impl ResultCell {
         ret: &mut ResultCell,
         p2: &str,
     ) {
-        if let Some(e) = entity {
-            list.get_filtered_claims(e, p1)
-                .iter()
-                .for_each(|statement| {
-                    ResultCell::get_parts_p_p(statement, p2)
-                        .iter()
-                        .for_each(|part| {
-                            ret.parts
-                                .push(PartWithReference::new(part.to_owned(), None));
-                        });
-                });
+        let Some(e) = entity else { return };
+        for statement in list.get_filtered_claims(e, p1) {
+            for part in Self::get_parts_p_p(&statement, p2) {
+                ret.parts.push(PartWithReference::new(part, None));
+            }
         }
     }
 
