@@ -45,28 +45,23 @@ impl Column {
         if self.has_label {
             return;
         }
-        self.label = match &self.obj {
-            ColumnType::Property(prop) => list.get_label_with_fallback(prop).await,
+        match &self.obj {
+            ColumnType::Property(prop) => {
+                self.label = list.get_label_with_fallback(prop).await;
+            }
             ColumnType::PropertyQualifier((prop, qual)) => {
-                list.get_label_with_fallback(prop).await
-                    + "/"
-                    + &list.get_label_with_fallback(qual).await
+                let prop_label = list.get_label_with_fallback(prop).await;
+                let qual_label = list.get_label_with_fallback(qual).await;
+                self.label = format!("{prop_label}/{qual_label}");
             }
             ColumnType::PropertyQualifierValue((prop1, _qual, prop2)) => {
-                list.get_label_with_fallback(prop1).await
-                    + "/"
-                    + &list.get_label_with_fallback(prop2).await
+                let prop1_label = list.get_label_with_fallback(prop1).await;
+                let prop2_label = list.get_label_with_fallback(prop2).await;
+                self.label = format!("{prop1_label}/{prop2_label}");
             }
-            ColumnType::Number => self.label.to_owned(),
-            ColumnType::Label => self.label.to_owned(),
-            ColumnType::LabelLang(_) => self.label.to_owned(),
-            ColumnType::AliasLang(_) => self.label.to_owned(),
-            ColumnType::Description(_) => self.label.to_owned(),
-            ColumnType::Item => self.label.to_owned(),
-            ColumnType::Qid => self.label.to_owned(),
-            ColumnType::Field(_) => self.label.to_owned(),
-            ColumnType::Unknown => self.label.to_owned(),
-        };
+            // All other variants keep the label that was parsed from the column spec.
+            _ => {}
+        }
     }
 }
 
