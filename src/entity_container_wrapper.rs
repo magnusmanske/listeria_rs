@@ -319,21 +319,28 @@ impl EntityContainerWrapper {
     #[must_use]
     pub fn gather_entities_and_external_properties(parts: &[PartWithReference]) -> Vec<String> {
         let mut entities_to_load = Vec::new();
+        Self::gather_entities_and_external_properties_into(parts, &mut entities_to_load);
+        entities_to_load
+    }
+
+    fn gather_entities_and_external_properties_into(
+        parts: &[PartWithReference],
+        out: &mut Vec<String>,
+    ) {
         for part_with_reference in parts {
             match part_with_reference.part() {
                 ResultCellPart::Entity(entity_info) if entity_info.try_localize => {
-                    entities_to_load.push(entity_info.id.to_owned());
+                    out.push(entity_info.id.to_owned());
                 }
                 ResultCellPart::ExternalId(ext_id_info) => {
-                    entities_to_load.push(ext_id_info.property.to_owned());
+                    out.push(ext_id_info.property.to_owned());
                 }
                 ResultCellPart::SnakList(v) => {
-                    entities_to_load.extend(Self::gather_entities_and_external_properties(v));
+                    Self::gather_entities_and_external_properties_into(v, out);
                 }
                 _ => {}
             }
         }
-        entities_to_load
     }
 }
 
