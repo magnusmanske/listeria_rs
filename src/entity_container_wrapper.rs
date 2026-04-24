@@ -10,7 +10,33 @@ use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{Result, anyhow};
 use foyer::{BlockEngineConfig, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
-use percent_encoding::percent_decode_str;
+use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+
+/// Characters that must be percent-encoded when an external-id value is
+/// substituted into a formatter URL's `$1` placeholder. Keeps characters
+/// that are generally safe inside a URL path/query value (alphanumerics,
+/// `-_.~/:`) unencoded, encodes everything else — in particular `&`, `=`,
+/// `?`, `#`, `+`, `%` and spaces — so an id like `base&id=2352486` cannot
+/// inject extra query parameters into the resulting link.
+const EXTERNAL_ID_ESCAPE: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`')
+    .add(b'#')
+    .add(b'?')
+    .add(b'{')
+    .add(b'}')
+    .add(b'[')
+    .add(b']')
+    .add(b'|')
+    .add(b'\\')
+    .add(b'^')
+    .add(b'&')
+    .add(b'=')
+    .add(b'+')
+    .add(b'%');
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
@@ -292,15 +318,13 @@ impl EntityContainerWrapper {
         if has_preferred {
             claims.retain(|s| *s.rank() == StatementRank::Preferred);
         }
+        let encoded_id = utf8_percent_encode(id, EXTERNAL_ID_ESCAPE).to_string();
         claims
             .iter()
             .filter_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
                 match data_value.value() {
-                    Value::StringValue(s2) => Some(
-                        s2.to_owned()
-                            .replace("$1", &percent_decode_str(id).decode_utf8().ok()?),
-                    ),
+                    Value::StringValue(s2) => Some(s2.replace("$1", &encoded_id)),
                     Value::Coordinate(_coordinate) => None,
                     Value::MonoLingual(_mono_lingual_text) => None,
                     Value::Entity(_entity_value) => None,
