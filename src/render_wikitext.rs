@@ -111,39 +111,36 @@ impl RendererWikitext {
         }
     }
 
-    async fn process_rows(list: &mut ListeriaList, section_id: usize, wt: &mut String) {
-        let mut row_entity_ids = Vec::new();
-        // Collect (cloned row, sub-row index) pairs for this section
-        let mut section_rows: Vec<(crate::result_row::ResultRow, usize)> = Vec::new();
-        let mut current_sub_row = 0;
-        for rownum in 0..list.results().len() {
-            if let Some(row) = list.results().get(rownum)
-                && row.section() == section_id
-            {
-                row_entity_ids.push(row.entity_id().to_string());
-                section_rows.push((row.clone(), current_sub_row));
-                current_sub_row += 1;
-            }
-        }
+    async fn process_rows(list: &ListeriaList, section_id: usize, wt: &mut String) {
+        // Borrow rows for this section; no cloning required — as_wikitext only
+        // needs a shared reference and the futures borrow from `list`.
+        let section_rows: Vec<&crate::result_row::ResultRow> = list
+            .results()
+            .iter()
+            .filter(|row| row.section() == section_id)
+            .collect();
 
         // Render all rows for this section in parallel.
-        // as_wikitext takes &self so multiple rows can be driven concurrently.
-        let list_ref: &ListeriaList = list;
         let futures: Vec<_> = section_rows
             .iter()
-            .map(|(row, sub_row)| row.as_wikitext(list_ref, *sub_row))
+            .enumerate()
+            .map(|(sub_row, row)| row.as_wikitext(list, sub_row))
             .collect();
         let rows = join_all(futures).await;
 
         if list.skip_table() {
             *wt += &rows.join("\n");
         } else if list.template_params().wdedit() {
-            let x: Vec<String> = row_entity_ids
+            let x: Vec<String> = section_rows
                 .iter()
                 .zip(rows.iter())
-                .map(|(entity_id, row)| match &list.header_template() {
-                    Some(_) => row.to_string(),
-                    None => format!("\n|- class='wd_{}'\n{}", &entity_id.to_lowercase(), &row),
+                .map(|(row, rendered)| match &list.header_template() {
+                    Some(_) => rendered.to_string(),
+                    None => format!(
+                        "\n|- class='wd_{}'\n{}",
+                        row.entity_id().to_lowercase(),
+                        rendered
+                    ),
                 })
                 .collect();
             *wt += x.join("").trim();
