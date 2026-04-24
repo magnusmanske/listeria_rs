@@ -309,8 +309,7 @@ impl WikiApis {
             .await?
             .map_and_drop(from_row::<u64>)
             .await?
-            .iter()
-            .cloned()
+            .into_iter()
             .next()
             .ok_or_else(|| anyhow!("Wiki {wiki} not known"))
     }
@@ -368,11 +367,11 @@ impl WikiApis {
     #[must_use]
     pub fn fix_wiki_name(&self, wiki: &str) -> String {
         match wiki {
-            "be-taraskwiki" | "be-x-oldwiki" | "be_taraskwiki" | "be_x_oldwiki" => "be_x_oldwiki",
-            other => other,
+            "be-taraskwiki" | "be-x-oldwiki" | "be_taraskwiki" | "be_x_oldwiki" => {
+                "be_x_oldwiki".to_string()
+            }
+            other => other.replace('-', "_"),
         }
-        .to_string()
-        .replace('-', "_")
     }
 
     /// Returns the server and database name for the wiki, as a tuple
