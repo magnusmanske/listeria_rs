@@ -398,16 +398,12 @@ impl ListProcessor {
         let mut names_with_misc = valid_section_names;
         names_with_misc.push("Misc".to_string());
 
-        let name2id: HashMap<String, usize> = names_with_misc
-            .iter()
-            .enumerate()
-            .map(|(num, name)| (name.to_string(), num))
-            .collect();
-
-        let id2name: HashMap<usize, String> = name2id
-            .iter()
-            .map(|(name, id)| (*id, name.to_owned()))
-            .collect();
+        let mut name2id = HashMap::with_capacity(names_with_misc.len());
+        let mut id2name = HashMap::with_capacity(names_with_misc.len());
+        for (num, name) in names_with_misc.into_iter().enumerate() {
+            name2id.insert(name.clone(), num);
+            id2name.insert(num, name);
+        }
 
         (name2id, id2name, misc_id)
     }
@@ -706,16 +702,16 @@ impl ListProcessor {
         list: &mut ListeriaList,
         entity_ids: HashSet<String>,
     ) -> HashMap<String, String> {
+        let entity_ids: Vec<String> = entity_ids.into_iter().collect();
         let futures: Vec<_> = entity_ids
             .iter()
             .map(|entity_id| Self::get_region_for_entity_id(list, entity_id))
             .collect();
         join_all(futures)
             .await
-            .iter()
-            .zip(entity_ids.iter())
-            .filter(|(region, _entity_id)| region.is_some())
-            .map(|(region, entity_id)| (entity_id.to_owned(), region.to_owned().unwrap()))
+            .into_iter()
+            .zip(entity_ids)
+            .filter_map(|(region, entity_id)| region.map(|r| (entity_id, r)))
             .collect()
     }
 
