@@ -515,13 +515,12 @@ impl ListeriaList {
     }
 
     async fn gather_items_section(&mut self) -> Result<Vec<String>> {
-        // TODO support all of SectionType
         let prop = match self.params.section() {
             SectionType::Property(p) => p.to_string(),
-            SectionType::SparqlVariable(_v) => {
-                return Err(anyhow!("SPARQL variable section type not supported yet"));
-            }
-            SectionType::None => return Ok(Vec::new()), // Nothing to do
+            // SPARQL variable sections read their value straight from the
+            // result row, so nothing extra needs loading from Wikidata.
+            SectionType::SparqlVariable(_v) => return Ok(Vec::new()),
+            SectionType::None => return Ok(Vec::new()),
         };
         self.gather_items_for_property(&prop).await
     }
@@ -552,10 +551,9 @@ impl ListeriaList {
             SectionType::Property(prop) => {
                 entities_to_load.push(prop.to_owned());
             }
-            SectionType::SparqlVariable(_v) => {
-                return Err(anyhow!("SPARQL variable section type not supported yet"));
-            }
-            SectionType::None => {}
+            // SPARQL variable sections use the SPARQL-provided value directly
+            // and therefore do not require loading any additional entities.
+            SectionType::SparqlVariable(_) | SectionType::None => {}
         }
         self.ecw
             .load_entities(&self.wb_api, &entities_to_load)

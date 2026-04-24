@@ -411,24 +411,19 @@ impl ListProcessor {
     pub async fn process_assign_sections(list: &mut ListeriaList) -> Result<()> {
         list.profile("BEFORE list::process_assign_sections").await;
 
-        // TODO all SectionType options
-        let section_property = match list.template_params().section() {
-            SectionType::Property(p) => p,
-            SectionType::SparqlVariable(_v) => {
-                return Err(anyhow!("SPARQL variable section type not supported yet"));
+        let section_names = match list.template_params().section().clone() {
+            SectionType::Property(p) => {
+                list.load_row_entities().await?;
+                let datatype = list.ecw().get_datatype_for_property(&p).await;
+                list.profile("AFTER list::process_assign_sections 1").await;
+                Self::get_section_names_for_rows(list, &p, &datatype).await?
+            }
+            SectionType::SparqlVariable(v) => {
+                list.profile("AFTER list::process_assign_sections 1").await;
+                Self::get_section_names_for_rows_sparql(list, &v)
             }
             SectionType::None => return Ok(()), // Nothing to do
-        }
-        .to_owned();
-        list.load_row_entities().await?;
-        let datatype = list
-            .ecw()
-            .get_datatype_for_property(&section_property)
-            .await;
-        list.profile("AFTER list::process_assign_sections 1").await;
-
-        let section_names =
-            Self::get_section_names_for_rows(list, &section_property, &datatype).await?;
+        };
 
         let section_count = Self::build_section_count(&section_names);
         list.profile("AFTER list::process_assign_sections 4").await;
@@ -447,6 +442,13 @@ impl ListProcessor {
         list.profile("AFTER list::process_assign_sections 9").await;
 
         Ok(())
+    }
+
+    fn get_section_names_for_rows_sparql(list: &ListeriaList, variable: &str) -> Vec<String> {
+        list.results()
+            .iter()
+            .map(|row| row.get_sortkey_sparql(variable, list))
+            .collect()
     }
 
     fn assign_row_section_ids(
