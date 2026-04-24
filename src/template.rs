@@ -70,11 +70,11 @@ impl Template {
     }
 
     pub fn fix_values(&mut self) {
-        self.params = self
-            .params
-            .iter()
-            .map(|(k, v)| (k.clone(), v.replace("{{!}}", "|")))
-            .collect();
+        for v in self.params.values_mut() {
+            if v.contains("{{!}}") {
+                *v = v.replace("{{!}}", "|");
+            }
+        }
         // TODO proper template replacement
     }
 
