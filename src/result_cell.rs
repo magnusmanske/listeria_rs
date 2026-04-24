@@ -223,59 +223,40 @@ impl ResultCell {
         list: &ListeriaList,
         entity_id: &str,
     ) {
-        if let Some(e) = entity {
-            ret.wdedit_class = match &list.header_template() {
-                Some(_) => None,
-                None => Some("wd_label".to_string()),
-            };
-            let label = match e.label_in_locale(list.language()) {
-                Some(s) => s.to_string(),
-                None => entity_id.to_string(),
-            };
-            let local_page = match e.sitelinks() {
-                Some(sl) => sl
-                    .iter()
-                    .filter(|s| *s.site() == *list.wiki())
-                    .map(|s| s.title().to_string())
-                    .next(),
-                None => None,
-            };
-            match local_page {
-                Some(page) => {
-                    ret.parts.push(PartWithReference::new(
-                        ResultCellPart::LocalLink(LocalLinkInfo::new(
-                            page,
-                            label,
-                            LinkTarget::Page,
-                        )),
-                        None,
-                    ));
-                }
-                None => {
-                    ret.parts.push(PartWithReference::new(
-                        ResultCellPart::Entity(EntityInfo::new(entity_id.to_string(), true)),
-                        None,
-                    ));
-                }
+        let Some(e) = entity else { return };
+        ret.wdedit_class = list
+            .header_template()
+            .is_none()
+            .then(|| "wd_label".to_string());
+        let label = e
+            .label_in_locale(list.language())
+            .map_or_else(|| entity_id.to_string(), ToString::to_string);
+        let local_page = e.sitelinks().as_ref().and_then(|sl| {
+            sl.iter()
+                .find(|s| *s.site() == *list.wiki())
+                .map(|s| s.title().to_string())
+        });
+        let part = match local_page {
+            Some(page) => {
+                ResultCellPart::LocalLink(LocalLinkInfo::new(page, label, LinkTarget::Page))
             }
-        }
+            None => ResultCellPart::Entity(EntityInfo::new(entity_id.to_string(), true)),
+        };
+        ret.parts.push(PartWithReference::new(part, None));
     }
 
-    fn ct_alias_lang(entity: &Option<EntityEntry>, language: &String, ret: &mut ResultCell) {
-        if let Some(e) = entity {
-            let mut aliases: Vec<String> = e
-                .aliases()
-                .iter()
-                .filter(|alias| alias.language() == language)
-                .map(|alias| alias.value().to_string())
-                .collect();
-            aliases.sort();
-            aliases.iter().for_each(|alias| {
-                ret.parts.push(PartWithReference::new(
-                    ResultCellPart::Text(alias.to_owned()),
-                    None,
-                ));
-            });
+    fn ct_alias_lang(entity: &Option<EntityEntry>, language: &str, ret: &mut ResultCell) {
+        let Some(e) = entity else { return };
+        let mut aliases: Vec<String> = e
+            .aliases()
+            .iter()
+            .filter(|alias| alias.language() == language)
+            .map(|alias| alias.value().to_string())
+            .collect();
+        aliases.sort();
+        for alias in aliases {
+            ret.parts
+                .push(PartWithReference::new(ResultCellPart::Text(alias), None));
         }
     }
 
