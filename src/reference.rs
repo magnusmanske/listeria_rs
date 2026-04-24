@@ -123,82 +123,74 @@ impl Reference {
 
     /// Extracts the timestamp from a snak
     fn extract_timestamp(snak: &Snak, ret: &mut Reference) {
-        // Timestamp/last access
         if let Some(dv) = snak.data_value()
             && let Value::Time(tv) = dv.value()
             && let Some(pos_t) = tv.time().find('T')
         {
             let (date, _) = tv.time().split_at(pos_t);
-            let mut date = date.replace('+', "").to_string();
+            let date = date.replace('+', "");
+            let year = Self::parse_year(&date);
 
-            // Extract year for further processing.
-            // Handle negative years (e.g. "-0099-01-01") by skipping the leading '-'.
-            let year = if let Some(rest) = date.strip_prefix('-') {
-                if let Some(pos) = rest.find('-') {
-                    format!("-{}", &rest[..pos]).parse::<i32>().ok()
-                } else {
-                    format!("-{rest}").parse::<i32>().ok()
-                }
-            } else if let Some(pos) = date.find('-') {
-                date.split_at(pos).0.parse::<i32>().ok()
-            } else {
-                date.parse::<i32>().ok()
-            };
+            ret.date = Some(Self::format_date_by_precision(date, year, *tv.precision()));
+        }
+    }
 
-            if *tv.precision() >= 11 {
-                // Day precision - keep full date
-            } else if *tv.precision() == 10 {
-                // Month precision - remove day
-                if let Some(pos) = date.rfind('-') {
-                    date = date.split_at(pos).0.to_string();
-                }
-            } else if *tv.precision() == 9 {
-                // Year precision - keep only year (handle negative years)
-                if date.starts_with('-') {
-                    let date_rest = &date[1..];
-                    if let Some(pos) = date_rest.find('-') {
-                        date = format!("-{}", &date_rest[..pos]);
-                    }
-                } else if let Some(pos) = date.find('-') {
-                    date = date.split_at(pos).0.to_string();
-                }
-            } else if *tv.precision() == 8 {
-                // Decade precision (e.g., "1990s")
-                if let Some(y) = year {
-                    date = format!("{}0s", y / 10);
-                }
-            } else if *tv.precision() == 7 {
-                // Century precision (e.g., "20th century")
-                if let Some(y) = year {
-                    let century = if y > 0 {
-                        (y - 1) / 100 + 1
-                    } else {
-                        y / 100 - 1
-                    };
-                    date = format!("{} century", Self::ordinal_suffix(century));
-                }
-            } else if *tv.precision() == 6 {
-                // Millennium precision (e.g., "3rd millennium")
-                if let Some(y) = year {
-                    let millennium = if y > 0 {
-                        (y - 1) / 1000 + 1
-                    } else {
-                        y / 1000 - 1
-                    };
-                    date = format!("{} millennium", Self::ordinal_suffix(millennium));
-                }
-            } else {
-                // Lower precision - just use year (handle negative years)
-                if date.starts_with('-') {
-                    let date_rest = &date[1..];
-                    if let Some(pos) = date_rest.find('-') {
-                        date = format!("-{}", &date_rest[..pos]);
-                    }
-                } else if let Some(pos) = date.find('-') {
-                    date = date.split_at(pos).0.to_string();
-                }
+    /// Parses just the year component from a string of the form `YYYY-MM-DD`
+    /// or `-YYYY-MM-DD` (negative years), tolerating year-only or year-month
+    /// inputs.
+    fn parse_year(date: &str) -> Option<i32> {
+        if let Some(rest) = date.strip_prefix('-') {
+            let year_part = rest.split_once('-').map_or(rest, |(y, _)| y);
+            format!("-{year_part}").parse::<i32>().ok()
+        } else {
+            date.split_once('-')
+                .map_or(date, |(y, _)| y)
+                .parse::<i32>()
+                .ok()
+        }
+    }
+
+    /// Trims a `YYYY-MM-DD` style date to just its year component, preserving
+    /// any leading minus sign for negative years.
+    fn trim_to_year(date: &str) -> String {
+        if let Some(rest) = date.strip_prefix('-') {
+            match rest.find('-') {
+                Some(pos) => format!("-{}", &rest[..pos]),
+                None => date.to_string(),
             }
-            ret.date = Some(date);
+        } else {
+            match date.find('-') {
+                Some(pos) => date[..pos].to_string(),
+                None => date.to_string(),
+            }
+        }
+    }
+
+    fn format_date_by_precision(date: String, year: Option<i32>, precision: u64) -> String {
+        match precision {
+            // Day precision or finer: keep full date.
+            p if p >= 11 => date,
+            // Month precision: drop the day.
+            10 => match date.rfind('-') {
+                Some(p) => date[..p].to_string(),
+                None => date,
+            },
+            // Year precision.
+            9 => Self::trim_to_year(&date),
+            // Decade precision: "1990s".
+            8 => year.map_or(date, |y| format!("{}0s", y / 10)),
+            // Century precision: "20th century".
+            7 => year.map_or(date, |y| {
+                let century = if y > 0 { (y - 1) / 100 + 1 } else { y / 100 - 1 };
+                format!("{} century", Self::ordinal_suffix(century))
+            }),
+            // Millennium precision.
+            6 => year.map_or(date, |y| {
+                let millennium = if y > 0 { (y - 1) / 1000 + 1 } else { y / 1000 - 1 };
+                format!("{} millennium", Self::ordinal_suffix(millennium))
+            }),
+            // Lower precisions: fall back to year only.
+            _ => Self::trim_to_year(&date),
         }
     }
 
