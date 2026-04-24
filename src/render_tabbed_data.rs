@@ -5,7 +5,30 @@ use anyhow::{Result, anyhow};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use wikimisc::mediawiki::Api;
+
+static RE_TABBED_DATA_MARKER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\|\s*tabbed_data[^\|\}]*").expect("RE_TABBED_DATA_MARKER does not parse")
+});
+
+static RE_TEMPLATE_START_WITH_END: LazyLock<Regex> = LazyLock::new(|| {
+    RegexBuilder::new(
+        r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#,
+    )
+    .multi_line(true)
+    .dot_matches_new_line(true)
+    .build()
+    .expect("RE_TEMPLATE_START_WITH_END does not parse")
+});
+
+static RE_TEMPLATE_START_NO_END: LazyLock<Regex> = LazyLock::new(|| {
+    RegexBuilder::new(r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)"#)
+        .multi_line(true)
+        .dot_matches_new_line(true)
+        .build()
+        .expect("RE_TEMPLATE_START_NO_END does not parse")
+});
 
 #[derive(Debug, Clone, Copy)]
 pub struct RendererTabbedData;
@@ -74,36 +97,19 @@ impl Renderer for RendererTabbedData {
 }
 
 impl RendererTabbedData {
-    fn build_template_regex(pattern: &str) -> Result<Regex> {
-        RegexBuilder::new(pattern)
-            .multi_line(true)
-            .dot_matches_new_line(true)
-            .build()
-            .map_err(|e| anyhow!("Failed to build regex: {}", e))
-    }
-
     fn extract_template_parts(wikitext: &str) -> Result<(String, String, String, String)> {
-        // Start/end template
-        let pattern1 =
-            r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)(\{\{[Ww]ikidata[ _]list[ _]end\}\})(.*)"#;
-        // No end template
-        let pattern2 = r#"^(.*?)(\{\{[Ww]ikidata[ _]list\b.+)"#;
-
-        let re_wikitext1 = Self::build_template_regex(pattern1)?;
-        let re_wikitext2 = Self::build_template_regex(pattern2)?;
-
-        match re_wikitext1.captures(wikitext) {
-            Some(caps) => Ok(Self::get_wikitext_captures(caps)),
-            None => match re_wikitext2.captures(wikitext) {
-                Some(caps) => Ok(Self::get_wikitext_captures(caps)),
-                None => Err(anyhow!("No template/end template found")),
-            },
+        if let Some(caps) = RE_TEMPLATE_START_WITH_END.captures(wikitext) {
+            return Ok(Self::get_wikitext_captures(caps));
         }
+        if let Some(caps) = RE_TEMPLATE_START_NO_END.captures(wikitext) {
+            return Ok(Self::get_wikitext_captures(caps));
+        }
+        Err(anyhow!("No template/end template found"))
     }
 
     fn process_template_marker(start_template: &str) -> Result<String> {
         // Remove tabbed data marker
-        let start_template = Regex::new(r"\|\s*tabbed_data[^\|\}]*")?.replace(start_template, "");
+        let start_template = RE_TABBED_DATA_MARKER.replace(start_template, "");
 
         // Add tabbed data marker
         let processed = start_template[0..start_template.len() - 2]
