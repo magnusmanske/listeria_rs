@@ -54,11 +54,6 @@ pub struct ListeriaList {
 }
 
 impl ListeriaList {
-    /// Helper iterator for safely iterating over results with their indices
-    fn results_iter(&self) -> impl Iterator<Item = (usize, &ResultRow)> + '_ {
-        self.results.iter().enumerate()
-    }
-
     pub async fn new(template: Template, page_params: Arc<PageParams>) -> Result<Self> {
         let wb_api = page_params.wb_api();
         let mut template = template;
@@ -431,10 +426,11 @@ impl ListeriaList {
     }
 
     pub async fn load_row_entities(&mut self) -> Result<()> {
-        let mut items_to_load = Vec::with_capacity(self.results.len());
-        for (_row_id, row) in self.results_iter() {
-            items_to_load.push(row.entity_id().to_string());
-        }
+        let items_to_load: Vec<String> = self
+            .results
+            .iter()
+            .map(|row| row.entity_id().to_string())
+            .collect();
         self.ecw.load_entities(&self.wb_api, &items_to_load).await?;
         Ok(())
     }
@@ -498,21 +494,24 @@ impl ListeriaList {
     }
 
     async fn gather_items_for_property(&mut self, prop: &str) -> Result<Vec<String>> {
-        let mut entities_to_load = vec![];
-        for (_row_id, row) in self.results_iter() {
-            if let Some(entity) = self.ecw.get_entity(row.entity_id()).await {
-                self.get_filtered_claims(&entity, prop)
-                    .iter()
-                    .filter(|statement| statement.property() == prop)
-                    .map(|statement| statement.main_snak())
-                    .filter(|snak| *snak.datatype() == SnakDataType::WikibaseItem)
-                    .filter_map(|snak| snak.data_value().to_owned())
-                    .map(|datavalue| datavalue.value().to_owned())
-                    .filter_map(|value| match value {
-                        wikimisc::wikibase::value::Value::Entity(v) => Some(v.id().to_owned()),
-                        _ => None,
-                    })
-                    .for_each(|id| entities_to_load.push(id));
+        let mut entities_to_load = Vec::new();
+        for row in self.results.iter() {
+            let Some(entity) = self.ecw.get_entity(row.entity_id()).await else {
+                continue;
+            };
+            for statement in self.get_filtered_claims(&entity, prop) {
+                if statement.property() != prop {
+                    continue;
+                }
+                let snak = statement.main_snak();
+                if *snak.datatype() != SnakDataType::WikibaseItem {
+                    continue;
+                }
+                if let Some(dv) = snak.data_value()
+                    && let wikimisc::wikibase::value::Value::Entity(v) = dv.value()
+                {
+                    entities_to_load.push(v.id().to_owned());
+                }
             }
         }
         Ok(entities_to_load)
@@ -541,7 +540,7 @@ impl ListeriaList {
     async fn gather_and_load_items(&mut self) -> Result<()> {
         // Gather items to load
         let mut entities_to_load: Vec<String> = Vec::new();
-        for (_row_id, row) in self.results_iter() {
+        for row in self.results.iter() {
             for cell in row.cells() {
                 entities_to_load.extend(
                     EntityContainerWrapper::gather_entities_and_external_properties(cell.parts()),
@@ -587,10 +586,7 @@ impl ListeriaList {
     }
 
     pub fn get_section_ids(&self) -> Vec<usize> {
-        let mut ret = Vec::new();
-        for (_row_id, row) in self.results_iter() {
-            ret.push(row.section());
-        }
+        let mut ret: Vec<usize> = self.results.iter().map(|row| row.section()).collect();
         ret.sort_unstable();
         ret.dedup();
         ret
