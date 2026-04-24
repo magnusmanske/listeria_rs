@@ -276,15 +276,13 @@ impl ListeriaList {
             return Vec::new();
         };
 
-        let mut normalized: HashMap<String, String> = pages
-            .iter()
-            .map(|page| ((*page).to_string(), (*page).to_string()))
-            .collect();
-
+        // Only the set of known titles is needed (the "from" side of any
+        // normalization entry is never read), so store them in a HashSet.
+        let mut known_titles: HashSet<&str> = pages.iter().map(String::as_str).collect();
         if let Some(query_normalized) = result["query"]["normalized"].as_array() {
             for n in query_normalized {
-                if let (Some(from), Some(to)) = (n["from"].as_str(), n["to"].as_str()) {
-                    normalized.insert(to.to_string(), from.to_string());
+                if let Some(to) = n["to"].as_str() {
+                    known_titles.insert(to);
                 }
             }
         }
@@ -295,7 +293,7 @@ impl ListeriaList {
                 obj.iter()
                     .filter_map(|(_k, v)| {
                         v["title"].as_str().and_then(|title| {
-                            normalized.contains_key(title).then(|| {
+                            known_titles.contains(title).then(|| {
                                 let page_exists = v["missing"].as_str().is_none();
                                 (title.to_string(), page_exists)
                             })
@@ -372,18 +370,13 @@ impl ListeriaList {
     pub async fn load_entities(&mut self) -> Result<()> {
         // Any columns that require entities to be loaded?
         // TODO also force if self.links is redlinks etc.
-        if self
-            .columns
-            .iter()
-            .filter(|c| {
-                !matches!(
-                    c.obj(),
-                    ColumnType::Number | ColumnType::Item | ColumnType::Field(_)
-                )
-            })
-            .count()
-            == 0
-        {
+        let needs_entities = self.columns.iter().any(|c| {
+            !matches!(
+                c.obj(),
+                ColumnType::Number | ColumnType::Item | ColumnType::Field(_)
+            )
+        });
+        if !needs_entities {
             return Ok(());
         }
 
