@@ -157,19 +157,12 @@ impl ResultRow {
         list: &ListeriaList,
         datatype: &SnakDataType,
     ) -> String {
-        match list.get_entity(&self.entity_id).await {
-            Some(entity) => {
-                match list
-                    .get_filtered_claims(&entity, prop)
-                    .iter()
-                    .filter(|statement| statement.property() == prop)
-                    .map(|statement| statement.main_snak())
-                    .next()
-                {
-                    Some(snak) => self.get_sortkey_from_snak(snak, list).await,
-                    None => Self::no_value(datatype),
-                }
-            }
+        let Some(entity) = list.get_entity(&self.entity_id).await else {
+            return Self::no_value(datatype);
+        };
+        // get_filtered_claims already restricts to `prop`, so no extra filter.
+        match list.get_filtered_claims(&entity, prop).first() {
+            Some(statement) => self.get_sortkey_from_snak(statement.main_snak(), list).await,
             None => Self::no_value(datatype),
         }
     }

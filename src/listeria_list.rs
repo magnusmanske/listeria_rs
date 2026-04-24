@@ -500,9 +500,6 @@ impl ListeriaList {
                 continue;
             };
             for statement in self.get_filtered_claims(&entity, prop) {
-                if statement.property() != prop {
-                    continue;
-                }
                 let snak = statement.main_snak();
                 if *snak.datatype() != SnakDataType::WikibaseItem {
                     continue;
