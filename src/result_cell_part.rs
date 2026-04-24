@@ -284,9 +284,15 @@ impl ResultCellPart {
     fn tabbed_string_safe(s: String) -> String {
         let mut ret = s.replace(['\n', '\t'], " ");
 
-        // limit string to ~400 chars Max
-        if ret.len() >= 380 {
-            ret.truncate(380);
+        // limit string to ~400 bytes max. Use the largest char boundary at or
+        // below 380 so we never slice inside a multi-byte UTF-8 code point
+        // (which would panic in String::truncate).
+        if ret.len() > 380 {
+            let mut cut = 380;
+            while cut > 0 && !ret.is_char_boundary(cut) {
+                cut -= 1;
+            }
+            ret.truncate(cut);
         }
         ret
     }
@@ -691,6 +697,22 @@ mod tests {
     fn test_tabbed_string_safe_empty() {
         let result = ResultCellPart::tabbed_string_safe(String::new());
         assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_tabbed_string_safe_multibyte_truncation_boundary() {
+        // '€' is 3 bytes in UTF-8. 130 copies = 390 bytes. Byte 380 lies in
+        // the middle of a multibyte code point, so a naive truncate(380) would
+        // panic. Verify that tabbed_string_safe keeps the truncation on a char
+        // boundary and leaves a valid UTF-8 string <= 380 bytes.
+        let input = "€".repeat(130);
+        assert_eq!(input.len(), 390);
+        let result = ResultCellPart::tabbed_string_safe(input);
+        assert!(result.len() <= 380);
+        // Confirm the result is still valid UTF-8 (it is, because it's a
+        // String, but also make sure none of the '€' characters were cut off
+        // mid-way — the length must be divisible by 3).
+        assert_eq!(result.len() % 3, 0);
     }
 
     // --- from_sparql_value location ---
