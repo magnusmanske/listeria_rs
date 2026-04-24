@@ -228,9 +228,12 @@ impl ResultCell {
             .header_template()
             .is_none()
             .then(|| "wd_label".to_string());
-        let label = e
-            .label_in_locale(list.language())
-            .map_or_else(|| entity_id.to_string(), ToString::to_string);
+        // Use the full fallback chain (language → mul → common languages →
+        // any available label → entity id) so items that only have a `mul`
+        // label do not fall back to the bare Q-id text. See GitHub issues
+        // #143, #148, #167, #170.
+        let label =
+            EntityContainerWrapper::label_with_fallback_from_entity(&e, list.language(), entity_id);
         let local_page = e.sitelinks().as_ref().and_then(|sl| {
             sl.iter()
                 .find(|s| *s.site() == *list.wiki())

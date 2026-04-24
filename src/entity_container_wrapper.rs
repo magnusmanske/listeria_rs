@@ -196,7 +196,19 @@ impl EntityContainerWrapper {
         let Some(entity) = self.get_entity(entity_id).await else {
             return entity_id.to_string();
         };
+        Self::label_with_fallback_from_entity(&entity, language, entity_id)
+    }
 
+    /// Returns an entity's label, falling back through `language` → `mul` →
+    /// a built-in language list → any available label → the entity id.
+    ///
+    /// Takes an already-resolved entity so callers in synchronous contexts
+    /// (e.g. [`ct_label`]) can avoid the async round-trip.
+    pub fn label_with_fallback_from_entity(
+        entity: &MyEntity,
+        language: &str,
+        entity_id: &str,
+    ) -> String {
         if let Some(label) = entity.label_in_locale(language) {
             return label.to_string();
         }
@@ -207,9 +219,7 @@ impl EntityContainerWrapper {
             }
         }
 
-        if let Some(entity2) = self.get_entity(entity_id).await
-            && let Some(label) = entity2.labels().first()
-        {
+        if let Some(label) = entity.labels().first() {
             return label.value().to_string();
         }
 
