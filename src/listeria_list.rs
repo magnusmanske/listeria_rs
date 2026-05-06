@@ -468,7 +468,8 @@ impl ListeriaList {
         self.profile("AFTER list::process_results process_assign_sections")
             .await;
         ListProcessor::process_regions(self).await?;
-        self.profile("AFTER list::process_results process_regions")
+        ListProcessor::process_assign_location_names(self);
+        self.profile("AFTER list::process_results process_regions+location_names")
             .await;
         ListProcessor::fix_local_links(self)?;
         self.profile("AFTER list::process_results fix_local_links")

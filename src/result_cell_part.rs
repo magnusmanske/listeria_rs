@@ -125,6 +125,12 @@ pub struct LocationInfo {
     pub latitude: f64,
     pub longitude: f64,
     pub region: Option<String>,
+    /// Page-unique anchor name for this location, used as the `name=` parameter
+    /// in coordinate templates. Assigned during result processing so that
+    /// duplicate HTML anchors are avoided when the same item has multiple
+    /// coordinates or appears in multiple rows (see GitHub issue #136).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl LocationInfo {
@@ -134,6 +140,7 @@ impl LocationInfo {
             latitude,
             longitude,
             region,
+            name: None,
         }
     }
 }
@@ -364,18 +371,22 @@ impl ResultCellPart {
         }
     }
 
-    fn as_wikitext_location(
-        list: &ListeriaList,
-        lat: f64,
-        lon: f64,
-        region: &Option<String>,
-        rownum: usize,
-    ) -> String {
-        let entity_id = list
-            .results()
-            .get(rownum)
-            .map(|e| e.entity_id().to_string());
-        list.get_location_template(lat, lon, entity_id, region.clone())
+    fn as_wikitext_location(list: &ListeriaList, loc_info: &LocationInfo, rownum: usize) -> String {
+        // Prefer the explicitly-assigned, page-unique anchor name when
+        // available (see ListProcessor::process_assign_location_names). Fall
+        // back to the row's entity_id for safety if no name has been
+        // assigned (e.g. in tests that bypass the processing pipeline).
+        let name = loc_info.name.clone().or_else(|| {
+            list.results()
+                .get(rownum)
+                .map(|e| e.entity_id().to_string())
+        });
+        list.get_location_template(
+            loc_info.latitude,
+            loc_info.longitude,
+            name,
+            loc_info.region.clone(),
+        )
     }
 
     fn as_wikitext_file(list: &ListeriaList, file: &str) -> String {
@@ -436,13 +447,9 @@ impl ResultCellPart {
                 &link_info.target,
             ),
             ResultCellPart::Time(time) => time.clone(),
-            ResultCellPart::Location(loc_info) => Self::as_wikitext_location(
-                list,
-                loc_info.latitude,
-                loc_info.longitude,
-                &loc_info.region,
-                rownum,
-            ),
+            ResultCellPart::Location(loc_info) => {
+                Self::as_wikitext_location(list, loc_info, rownum)
+            }
             ResultCellPart::File(file) => Self::as_wikitext_file(list, file),
             ResultCellPart::Uri(url) => url.clone(),
             ResultCellPart::ExternalId(ext_id_info) => {

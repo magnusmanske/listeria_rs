@@ -524,6 +524,52 @@ impl ListProcessor {
         Ok(())
     }
 
+    /// Walks every result row and assigns a page-unique anchor name to each
+    /// `ResultCellPart::Location`.
+    ///
+    /// The first occurrence of an item's id (e.g. `Q123`) keeps that id as
+    /// its name; subsequent occurrences receive a numeric suffix
+    /// (`Q123_2`, `Q123_3`, …). This guarantees that the rendered
+    /// `{{Coordinate|...|name=...}}` (or equivalent per-wiki) templates do
+    /// not collide as HTML anchor IDs, which would otherwise trigger
+    /// `duplicate-ids` linter errors when an item has multiple `P625`
+    /// statements or appears in multiple rows (GitHub issue #136).
+    pub fn process_assign_location_names(list: &mut ListeriaList) {
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for row in list.results_mut().iter_mut() {
+            let entity_id = row.entity_id().to_string();
+            for cell in row.cells_mut().iter_mut() {
+                for part in cell.parts_mut().iter_mut() {
+                    Self::assign_location_name_in_part(part.part_mut(), &entity_id, &mut counts);
+                }
+            }
+        }
+    }
+
+    fn assign_location_name_in_part(
+        part: &mut ResultCellPart,
+        entity_id: &str,
+        counts: &mut HashMap<String, usize>,
+    ) {
+        match part {
+            ResultCellPart::Location(loc_info) => {
+                let count = counts.entry(entity_id.to_string()).or_insert(0);
+                *count += 1;
+                loc_info.name = Some(if *count == 1 {
+                    entity_id.to_string()
+                } else {
+                    format!("{entity_id}_{}", *count)
+                });
+            }
+            ResultCellPart::SnakList(parts) => {
+                for nested in parts.iter_mut() {
+                    Self::assign_location_name_in_part(nested.part_mut(), entity_id, counts);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub async fn process_reference_items(list: &mut ListeriaList) -> Result<()> {
         let items_to_load = Self::collect_stated_in_items_from_references(list);
         if !items_to_load.is_empty() {
@@ -1515,7 +1561,8 @@ mod tests {
 
         let section_count = ListProcessor::build_section_count(&section_names);
         let valid_section_names = ListProcessor::build_valid_section_names(section_count, 1);
-        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid_section_names);
+        let (name2id, id2name, misc_id) =
+            ListProcessor::create_section_mappings(valid_section_names);
         *list.section_id_to_name_mut() = id2name;
 
         ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
@@ -1608,5 +1655,191 @@ mod tests {
                 row.section()
             );
         }
+    }
+
+    // ── process_assign_location_names (issue #136) ───────────────────────────
+
+    fn make_location_part(lat: f64, lon: f64) -> crate::result_cell_part::PartWithReference {
+        use crate::result_cell_part::{LocationInfo, PartWithReference, ResultCellPart};
+        PartWithReference::new(
+            ResultCellPart::Location(LocationInfo::new(lat, lon, None)),
+            None,
+        )
+    }
+
+    fn location_name_of(part: &crate::result_cell_part::PartWithReference) -> Option<String> {
+        use crate::result_cell_part::ResultCellPart;
+        match part.part() {
+            ResultCellPart::Location(loc) => loc.name.clone(),
+            _ => None,
+        }
+    }
+
+    fn make_empty_cell() -> crate::result_cell::ResultCell {
+        // ResultCell has no public empty constructor; build via serde for tests
+        serde_json::from_value(serde_json::json!({
+            "parts": [],
+            "wdedit_class": null,
+            "deduplicate_parts": true
+        }))
+        .unwrap()
+    }
+
+    async fn build_list_with_location_rows(rows: Vec<(&str, Vec<usize>)>) -> ListeriaList {
+        // Each tuple is (entity_id, vec_of_location_counts_per_cell).
+        use crate::result_row::ResultRow;
+        let mut list = create_test_list().await;
+        let mut result_rows = Vec::new();
+        for (entity_id, cell_specs) in rows {
+            let mut row = ResultRow::new(entity_id);
+            let cells: Vec<_> = cell_specs
+                .into_iter()
+                .map(|n_locations| {
+                    let mut cell = make_empty_cell();
+                    let parts: Vec<_> = (0..n_locations)
+                        .map(|i| make_location_part(i as f64, i as f64))
+                        .collect();
+                    cell.set_parts(parts);
+                    cell
+                })
+                .collect();
+            *row.cells_mut() = cells;
+            result_rows.push(row);
+        }
+        *list.results_mut() = result_rows;
+        list
+    }
+
+    #[tokio::test]
+    async fn test_assign_location_names_single_row_single_location() {
+        // One row, one location → name == entity_id
+        let mut list = build_list_with_location_rows(vec![("Q42", vec![1])]).await;
+        ListProcessor::process_assign_location_names(&mut list);
+        let row = &list.results()[0];
+        assert_eq!(
+            location_name_of(&row.cells()[0].parts()[0]),
+            Some("Q42".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_assign_location_names_multiple_locations_same_row() {
+        // One row with three locations in a single cell — duplicate-id case
+        // from issue #136. First gets entity_id, others get suffixed names.
+        let mut list = build_list_with_location_rows(vec![("Q42", vec![3])]).await;
+        ListProcessor::process_assign_location_names(&mut list);
+        let cell = &list.results()[0].cells()[0];
+        assert_eq!(location_name_of(&cell.parts()[0]), Some("Q42".to_string()));
+        assert_eq!(
+            location_name_of(&cell.parts()[1]),
+            Some("Q42_2".to_string())
+        );
+        assert_eq!(
+            location_name_of(&cell.parts()[2]),
+            Some("Q42_3".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_assign_location_names_multiple_rows_distinct_items() {
+        // Different entity_ids → each gets its own bare name; counters are
+        // tracked per entity_id, not globally.
+        let mut list =
+            build_list_with_location_rows(vec![("Q1", vec![1]), ("Q2", vec![1]), ("Q3", vec![1])])
+                .await;
+        ListProcessor::process_assign_location_names(&mut list);
+        assert_eq!(
+            location_name_of(&list.results()[0].cells()[0].parts()[0]),
+            Some("Q1".to_string())
+        );
+        assert_eq!(
+            location_name_of(&list.results()[1].cells()[0].parts()[0]),
+            Some("Q2".to_string())
+        );
+        assert_eq!(
+            location_name_of(&list.results()[2].cells()[0].parts()[0]),
+            Some("Q3".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_assign_location_names_same_item_in_multiple_rows() {
+        // Same entity_id appearing in two rows (rare but possible) → second
+        // occurrence is suffixed for uniqueness.
+        let mut list =
+            build_list_with_location_rows(vec![("Q42", vec![1]), ("Q42", vec![1])]).await;
+        ListProcessor::process_assign_location_names(&mut list);
+        assert_eq!(
+            location_name_of(&list.results()[0].cells()[0].parts()[0]),
+            Some("Q42".to_string())
+        );
+        assert_eq!(
+            location_name_of(&list.results()[1].cells()[0].parts()[0]),
+            Some("Q42_2".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_assign_location_names_recurses_into_snaklist() {
+        // Locations nested inside a SnakList (used for property-qualifier
+        // pairs) must also receive unique names.
+        use crate::result_cell_part::{LocationInfo, PartWithReference, ResultCellPart};
+        use crate::result_row::ResultRow;
+
+        let mut list = create_test_list().await;
+        let mut row = ResultRow::new("Q42");
+        let mut snaklist_cell = make_empty_cell();
+
+        let nested_parts = vec![
+            PartWithReference::new(
+                ResultCellPart::Location(LocationInfo::new(1.0, 1.0, None)),
+                None,
+            ),
+            PartWithReference::new(
+                ResultCellPart::Location(LocationInfo::new(2.0, 2.0, None)),
+                None,
+            ),
+        ];
+        let snaklist = PartWithReference::new(ResultCellPart::SnakList(nested_parts), None);
+        snaklist_cell.set_parts(vec![snaklist]);
+        *row.cells_mut() = vec![snaklist_cell];
+        *list.results_mut() = vec![row];
+
+        ListProcessor::process_assign_location_names(&mut list);
+
+        let rendered_cell = &list.results()[0].cells()[0];
+        match rendered_cell.parts()[0].part() {
+            ResultCellPart::SnakList(rendered_nested) => {
+                assert_eq!(
+                    location_name_of(&rendered_nested[0]),
+                    Some("Q42".to_string())
+                );
+                assert_eq!(
+                    location_name_of(&rendered_nested[1]),
+                    Some("Q42_2".to_string())
+                );
+            }
+            other => panic!("Expected SnakList, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_assign_location_names_idempotent_within_call() {
+        // Calling process_assign_location_names a second time must produce
+        // the same names — counters are reset on each call.
+        let mut list = build_list_with_location_rows(vec![("Q42", vec![2])]).await;
+        ListProcessor::process_assign_location_names(&mut list);
+        let first_run: Vec<_> = list.results()[0].cells()[0]
+            .parts()
+            .iter()
+            .map(location_name_of)
+            .collect();
+        ListProcessor::process_assign_location_names(&mut list);
+        let second_run: Vec<_> = list.results()[0].cells()[0]
+            .parts()
+            .iter()
+            .map(location_name_of)
+            .collect();
+        assert_eq!(first_run, second_run);
     }
 }
