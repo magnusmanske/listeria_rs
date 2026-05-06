@@ -37,12 +37,11 @@ const EXTERNAL_ID_ESCAPE: &AsciiSet = &CONTROLS
     .add(b'=')
     .add(b'+')
     .add(b'%');
+use dashmap::DashSet;
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::Entity;
@@ -58,7 +57,12 @@ const RAM_CAPACITY: usize = 1500;
 #[derive(Clone)]
 pub struct EntityContainerWrapper {
     entities: HybridCache<String, MyEntity>,
-    entity_count: Arc<AtomicUsize>,
+    /// Authoritative set of entity IDs that have been inserted into
+    /// [`Self::entities`]. Used in place of [`HybridCache::contains`] when
+    /// deciding what to fetch, because foyer's `contains` may return false
+    /// positives on hash collisions, leading us to skip a load and later
+    /// render the entity as a bare Q-id (see GitHub issue #167).
+    loaded_ids: Arc<DashSet<String>>,
     _temp_dir: Arc<tempfile::TempDir>,
 }
 
@@ -75,7 +79,7 @@ impl EntityContainerWrapper {
         let (entities, temp_dir) = Self::create_entity_container().await?;
         let ret = Self {
             entities,
-            entity_count: Arc::new(AtomicUsize::new(0)),
+            loaded_ids: Arc::new(DashSet::new()),
             _temp_dir: Arc::new(temp_dir),
         };
         // Pre-cache test entities if testing
@@ -118,13 +122,9 @@ impl EntityContainerWrapper {
         let q = json["id"]
             .as_str()
             .ok_or_else(|| anyhow!("Missing 'id' field"))?;
-        // let json_string = json.to_string();
-        if !self.entities.contains(q) {
-            self.entity_count.fetch_add(1, Ordering::Relaxed);
-        }
         let entity = Entity::new_from_json(json)?;
         self.entities.insert(q.to_string(), entity.into());
-        // self.entities.insert(q.to_string(), json_string);
+        self.loaded_ids.insert(q.to_string());
         Ok(())
     }
 
@@ -160,11 +160,16 @@ impl EntityContainerWrapper {
         .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?
     }
 
-    /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times
+    /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times.
+    ///
+    /// Uses the authoritative [`Self::loaded_ids`] set rather than
+    /// [`HybridCache::contains`] because the latter can produce false
+    /// positives on hash collisions, which would cause us to skip a fetch
+    /// for an entity that was never actually cached (see issue #167).
     async fn filter_ids(&self, original_ids: &[String]) -> Result<Vec<String>> {
         let new_ids: Vec<String> = original_ids
             .iter()
-            .filter(|id| !self.entities.contains(*id))
+            .filter(|id| !self.loaded_ids.contains(*id))
             .map(|id| id.to_owned())
             .collect();
         tokio::task::spawn_blocking(move || Self::unique_shuffle_entity_ids(&new_ids))
@@ -182,7 +187,7 @@ impl EntityContainerWrapper {
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.entity_count.load(Ordering::Relaxed)
+        self.loaded_ids.len()
     }
 
     #[must_use]
@@ -396,5 +401,72 @@ mod tests {
 
         let e2 = ecw.get_entity("Q2").await.unwrap();
         assert_eq!(e2.id(), "Q2");
+    }
+
+    /// Regression test for #167: `filter_ids` must NOT skip an entity that
+    /// has never been inserted via `set_entity_from_json`. Previously this
+    /// relied on foyer's `HybridCache::contains`, which can return false
+    /// positives on hash collisions and would cause us to omit unloaded
+    /// entities from the fetch list — leading to bare `[[Qxxx]]` cells.
+    #[tokio::test]
+    async fn test_filter_ids_only_skips_actually_inserted_entities() {
+        let ecw = EntityContainerWrapper::new().await.unwrap();
+
+        // Insert one entity directly via the JSON path (no network).
+        let json = serde_json::json!({
+            "type": "item",
+            "id": "Q42",
+            "labels": {},
+            "descriptions": {},
+            "aliases": {},
+            "claims": {},
+            "sitelinks": {}
+        });
+        ecw.set_entity_from_json(&json).unwrap();
+
+        let ids = vec![
+            "Q42".to_string(),     // already loaded → must be filtered out
+            "Q188451".to_string(), // never inserted → must remain
+            "Q7777573".to_string(), // never inserted → must remain
+        ];
+        let mut filtered = ecw.filter_ids(&ids).await.unwrap();
+        filtered.sort();
+        assert_eq!(filtered, vec!["Q188451".to_string(), "Q7777573".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_loaded_ids_grows_with_inserts() {
+        let ecw = EntityContainerWrapper::new().await.unwrap();
+        // `new()` pre-seeds the cache with test fixtures under cfg(test);
+        // assert deltas from that baseline rather than absolute sizes.
+        let baseline = ecw.len();
+
+        // Use IDs that are not in the test fixtures.
+        for id in ["Q9999991", "Q9999992", "Q9999993"] {
+            let json = serde_json::json!({
+                "type": "item",
+                "id": id,
+                "labels": {},
+                "descriptions": {},
+                "aliases": {},
+                "claims": {},
+                "sitelinks": {}
+            });
+            ecw.set_entity_from_json(&json).unwrap();
+        }
+        assert_eq!(ecw.len(), baseline + 3);
+
+        // Re-inserting an existing ID does not double-count.
+        let json = serde_json::json!({
+            "type": "item",
+            "id": "Q9999991",
+            "labels": {},
+            "descriptions": {},
+            "aliases": {},
+            "claims": {},
+            "sitelinks": {}
+        });
+        ecw.set_entity_from_json(&json).unwrap();
+        assert_eq!(ecw.len(), baseline + 3);
     }
 }
