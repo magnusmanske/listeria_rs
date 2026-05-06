@@ -9,7 +9,6 @@ regex = "^1"
 chrono = "0.4"
 dashmap = "6"
 era_date = "0.1"
-foyer = { version = "0.22", features = ["serde"] }
 rand = "0.9"
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"

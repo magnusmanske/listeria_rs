@@ -3,13 +3,13 @@
 use crate::listeria_list::ListeriaList;
 use crate::my_entity::MyEntity;
 
-/// A handle to a cached [`MyEntity`] entry; derefs transparently to [`MyEntity`].
-pub type EntityEntry = foyer::HybridCacheEntry<String, MyEntity>;
+/// A handle to a cached [`MyEntity`]; derefs transparently to [`MyEntity`].
+pub type EntityEntry = Arc<MyEntity>;
 use crate::result_cell_part::{LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart};
 use crate::result_row::ResultRow;
 use crate::template_params::LinksType;
 use anyhow::{Result, anyhow};
-use foyer::{BlockEngineConfig, DeviceBuilder, FsDeviceBuilder, HybridCache, HybridCacheBuilder};
+use dashmap::DashMap;
 use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
 
 /// Characters that must be percent-encoded when an external-id value is
@@ -37,7 +37,6 @@ const EXTERNAL_ID_ESCAPE: &AsciiSet = &CONTROLS
     .add(b'=')
     .add(b'+')
     .add(b'%');
-use dashmap::DashSet;
 use rand::seq::SliceRandom;
 use std::fs::File;
 use std::io::BufReader;
@@ -51,36 +50,36 @@ use wikimisc::wikibase::Value;
 use wikimisc::wikibase::entity_container::EntityContainer;
 use wikimisc::wikibase::snak::SnakDataType;
 
-const CACHE_CAPACITY_MB: usize = 512;
-const RAM_CAPACITY: usize = 1500;
+/// Maximum number of ids to hand to a single upstream `load_entities` call.
+/// The upstream then sub-chunks this into individual `wbgetentities` API
+/// requests (size 100 in bot mode).
+const LOAD_CHUNK_SIZE: usize = 500;
+/// Number of times to retry the subset of ids that the upstream silently
+/// omitted from a chunk's response (see [`Self::load_chunk_with_retries`]).
+const MAX_LOAD_RETRIES: usize = 3;
+/// Wait between retries — gives the upstream API a moment to recover from a
+/// transient overload (large response, brief network glitch).
+const RETRY_BACKOFF_MS: u64 = 200;
 
-#[derive(Clone)]
+/// Per-page in-memory entity store.
+///
+/// Earlier revisions used a foyer hybrid (RAM + disk) cache here. That
+/// turned out to be the root cause of the persistent label-loss reported in
+/// issue #167: under load, foyer would silently fail to return entries that
+/// had been inserted (eviction-without-disk-promotion or bloom-filter-style
+/// false-positives in the membership check), and the renderer fell back to
+/// bare `[[Qxxx]]`. Since the bot processes one page at a time and the
+/// working set per page comfortably fits in memory, a plain non-evicting
+/// [`DashMap`] is the simplest correct choice.
+#[derive(Clone, Debug)]
 pub struct EntityContainerWrapper {
-    entities: HybridCache<String, MyEntity>,
-    /// Authoritative set of entity IDs that have been inserted into
-    /// [`Self::entities`]. Used in place of [`HybridCache::contains`] when
-    /// deciding what to fetch, because foyer's `contains` may return false
-    /// positives on hash collisions, leading us to skip a load and later
-    /// render the entity as a bare Q-id (see GitHub issue #167).
-    loaded_ids: Arc<DashSet<String>>,
-    _temp_dir: Arc<tempfile::TempDir>,
-}
-
-impl std::fmt::Debug for EntityContainerWrapper {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EntityContainerWrapper")
-            .field("entities", &self.entities)
-            .finish_non_exhaustive()
-    }
+    entities: Arc<DashMap<String, Arc<MyEntity>>>,
 }
 
 impl EntityContainerWrapper {
     pub async fn new() -> Result<Self> {
-        let (entities, temp_dir) = Self::create_entity_container().await?;
         let ret = Self {
-            entities,
-            loaded_ids: Arc::new(DashSet::new()),
-            _temp_dir: Arc::new(temp_dir),
+            entities: Arc::new(DashMap::new()),
         };
         // Pre-cache test entities if testing
         if cfg!(test) {
@@ -100,42 +99,72 @@ impl EntityContainerWrapper {
         Ok(ret)
     }
 
-    pub async fn create_entity_container()
-    -> Result<(HybridCache<String, MyEntity>, tempfile::TempDir)> {
-        let dir = tempfile::tempdir()?;
-        let device = FsDeviceBuilder::new(dir.path())
-            .with_capacity(CACHE_CAPACITY_MB * 1024 * 1024)
-            .build()?;
-        let engine_config = BlockEngineConfig::new(device);
-
-        let hybrid: HybridCache<String, MyEntity> = HybridCacheBuilder::new()
-            .memory(RAM_CAPACITY)
-            .storage()
-            .with_engine_config(engine_config)
-            .with_compression(foyer::Compression::Lz4)
-            .build()
-            .await?;
-        Ok((hybrid, dir))
-    }
-
     pub fn set_entity_from_json(&self, json: &serde_json::Value) -> Result<()> {
         let q = json["id"]
             .as_str()
             .ok_or_else(|| anyhow!("Missing 'id' field"))?;
         let entity = Entity::new_from_json(json)?;
-        self.entities.insert(q.to_string(), entity.into());
-        self.loaded_ids.insert(q.to_string());
+        self.entities
+            .insert(q.to_string(), Arc::new(MyEntity(entity)));
         Ok(())
     }
 
     async fn load_entities_into_entity_cache(&self, api: &Api, ids: &[String]) -> Result<()> {
-        let chunks = ids.chunks(500); // 500 is just some guess
+        let chunks = ids.chunks(LOAD_CHUNK_SIZE);
         for chunk in chunks {
-            let entity_container = EntityContainer::new();
-            if let Err(e) = entity_container.load_entities(api, &chunk.into()).await {
-                return Err(anyhow!("Error loading entities: {e}"));
+            self.load_chunk_with_retries(api, chunk).await?;
+        }
+        Ok(())
+    }
+
+    /// Loads a single chunk via the upstream entity container, then verifies
+    /// every requested id was actually inserted into our cache. Any ids that
+    /// are missing are retried (with progressively smaller batches, since the
+    /// most common failure mode is a large response timing out or being
+    /// truncated). After [`MAX_LOAD_RETRIES`] attempts, persistently missing
+    /// ids are logged and skipped — better to render a single bare `[[Q…]]`
+    /// than to abort the whole page edit.
+    ///
+    /// This addresses the deterministic label-loss reported in #167: the
+    /// upstream `wikibase::EntityContainer::load_entities` returns `Ok` even
+    /// when some ids in a chunk silently never appear in the response (e.g.
+    /// because the chunk's combined JSON was too large), and our previous
+    /// code accepted that silent partial result.
+    async fn load_chunk_with_retries(&self, api: &Api, chunk: &[String]) -> Result<()> {
+        let mut to_load: Vec<String> = chunk.to_vec();
+        for attempt in 0..=MAX_LOAD_RETRIES {
+            if attempt > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(RETRY_BACKOFF_MS)).await;
             }
-            self.store_entity_chunk(chunk, entity_container).await?;
+            let entity_container = EntityContainer::new();
+            if let Err(e) = entity_container.load_entities(api, &to_load).await {
+                if attempt == MAX_LOAD_RETRIES {
+                    return Err(anyhow!(
+                        "Error loading entities after {MAX_LOAD_RETRIES} retries: {e}"
+                    ));
+                }
+                continue;
+            }
+            self.store_entity_chunk(&to_load, entity_container).await?;
+
+            let missing: Vec<String> = to_load
+                .iter()
+                .filter(|id| !self.entities.contains_key(*id))
+                .cloned()
+                .collect();
+            if missing.is_empty() {
+                return Ok(());
+            }
+            if attempt == MAX_LOAD_RETRIES {
+                log::warn!(
+                    "Could not load {} entities after {} retries: {:?}",
+                    missing.len(),
+                    MAX_LOAD_RETRIES,
+                    missing
+                );
+                return Ok(());
+            }
+            to_load = missing;
         }
         Ok(())
     }
@@ -160,16 +189,12 @@ impl EntityContainerWrapper {
         .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?
     }
 
-    /// Removes IDs that are already loaded, removes duplicates, and shuffles the remaining IDs to average load times.
-    ///
-    /// Uses the authoritative [`Self::loaded_ids`] set rather than
-    /// [`HybridCache::contains`] because the latter can produce false
-    /// positives on hash collisions, which would cause us to skip a fetch
-    /// for an entity that was never actually cached (see issue #167).
+    /// Removes IDs that are already loaded, removes duplicates, and shuffles
+    /// the remaining IDs to average load times.
     async fn filter_ids(&self, original_ids: &[String]) -> Result<Vec<String>> {
         let new_ids: Vec<String> = original_ids
             .iter()
-            .filter(|id| !self.loaded_ids.contains(*id))
+            .filter(|id| !self.entities.contains_key(*id))
             .map(|id| id.to_owned())
             .collect();
         tokio::task::spawn_blocking(move || Self::unique_shuffle_entity_ids(&new_ids))
@@ -187,7 +212,7 @@ impl EntityContainerWrapper {
 
     #[must_use]
     pub fn len(&self) -> usize {
-        self.loaded_ids.len()
+        self.entities.len()
     }
 
     #[must_use]
@@ -212,7 +237,7 @@ impl EntityContainerWrapper {
         if cfg!(test) {
             println!("{entity_id}\tentity_loaded");
         }
-        self.entities.get(&entity_id.to_string()).await.ok()?
+        self.entities.get(entity_id).map(|e| e.value().clone())
     }
 
     pub async fn get_local_entity_label(
@@ -403,11 +428,11 @@ mod tests {
         assert_eq!(e2.id(), "Q2");
     }
 
-    /// Regression test for #167: `filter_ids` must NOT skip an entity that
-    /// has never been inserted via `set_entity_from_json`. Previously this
-    /// relied on foyer's `HybridCache::contains`, which can return false
-    /// positives on hash collisions and would cause us to omit unloaded
-    /// entities from the fetch list — leading to bare `[[Qxxx]]` cells.
+    /// Regression test for #167: `filter_ids` must skip already-loaded
+    /// entities while preserving unloaded ones. The previous foyer-backed
+    /// implementation could falsely report unloaded entities as cached
+    /// (hash-collision false positives), causing them to be silently dropped
+    /// from the fetch list and rendered as bare `[[Qxxx]]` in the output.
     #[tokio::test]
     async fn test_filter_ids_only_skips_actually_inserted_entities() {
         let ecw = EntityContainerWrapper::new().await.unwrap();
@@ -435,7 +460,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_loaded_ids_grows_with_inserts() {
+    async fn test_len_grows_with_inserts() {
         let ecw = EntityContainerWrapper::new().await.unwrap();
         // `new()` pre-seeds the cache with test fixtures under cfg(test);
         // assert deltas from that baseline rather than absolute sizes.
@@ -468,5 +493,33 @@ mod tests {
         });
         ecw.set_entity_from_json(&json).unwrap();
         assert_eq!(ecw.len(), baseline + 3);
+    }
+
+    /// Regression test for #167: an entity inserted via `set_entity_from_json`
+    /// must be retrievable via `get_entity` afterwards, indefinitely. The
+    /// previous foyer-backed implementation evicted entries from RAM under
+    /// load and the disk-fallback path silently failed to return them,
+    /// causing the renderer to fall back to bare `[[Qxxx]]`.
+    #[tokio::test]
+    async fn test_inserted_entity_is_retrievable() {
+        let ecw = EntityContainerWrapper::new().await.unwrap();
+        let json = serde_json::json!({
+            "type": "item",
+            "id": "Q12345",
+            "labels": {"en": {"language": "en", "value": "test entity"}},
+            "descriptions": {},
+            "aliases": {},
+            "claims": {},
+            "sitelinks": {}
+        });
+        ecw.set_entity_from_json(&json).unwrap();
+
+        let got = ecw.get_entity("Q12345").await.expect("entity must be present");
+        assert_eq!(got.id(), "Q12345");
+        assert_eq!(
+            got.label_in_locale("en"),
+            Some("test entity"),
+            "label must be readable from the cached entity"
+        );
     }
 }
