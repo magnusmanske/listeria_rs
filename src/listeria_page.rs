@@ -37,7 +37,7 @@ impl ListeriaPage {
     }
 
     pub fn config(&self) -> Arc<Configuration> {
-        Arc::clone(&self.page_params.config())
+        Arc::clone(self.page_params.config())
     }
 
     pub fn wiki(&self) -> &str {
@@ -128,22 +128,17 @@ impl ListeriaPage {
             .get_new_wikitext(&old_wikitext, self)
             .await
             .map_err(|e| self.fail(&e.to_string()))?; // Safe
-        match new_wikitext {
-            Some(new_wikitext) => {
-                if old_wikitext != new_wikitext {
-                    PageOperations::save_wikitext_to_page(
-                        self,
-                        self.page_params.page(),
-                        &new_wikitext,
-                    )
-                    .await
-                    .map_err(|e| self.fail(&e.to_string()))?;
-                    edited = true;
-                }
-            }
-            None => {
-                // get_new_wikitext returned None: nothing to update.
-            }
+        if let Some(new_wikitext) = new_wikitext
+            && old_wikitext != new_wikitext
+        {
+            PageOperations::save_wikitext_to_page(
+                self,
+                self.page_params.page(),
+                &new_wikitext,
+            )
+            .await
+            .map_err(|e| self.fail(&e.to_string()))?;
+            edited = true;
         }
 
         Ok(edited)
@@ -252,6 +247,16 @@ mod tests {
     #[tokio::test]
     async fn header_row_template() {
         check_fixture_file(PathBuf::from("test_data/header_row_template.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn row_template_table() {
+        check_fixture_file(PathBuf::from("test_data/row_template_table.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn dewiki_sections_coordinates() {
+        check_fixture_file(PathBuf::from("test_data/dewiki_sections_coordinates.fixture")).await;
     }
 
     #[tokio::test]

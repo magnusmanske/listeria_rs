@@ -161,8 +161,8 @@ impl StatusServer {
             .pages
             .lock()
             .await
-            .iter()
-            .filter_map(|(_page, result)| result.completed())
+            .values()
+            .filter_map(|result| result.completed())
             .map(|l| now.duration_since(l))
             .min();
 

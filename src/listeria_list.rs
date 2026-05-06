@@ -231,7 +231,7 @@ impl ListeriaList {
             }
         }
 
-        self.params = TemplateParams::new_from_params(&self.template, &self.page_params.config());
+        self.params = TemplateParams::new_from_params(&self.template, self.page_params.config());
         if let Some(s) = self.template.get_value("links") {
             self.params
                 .set_links(LinksType::new_from_string(s.to_string()));

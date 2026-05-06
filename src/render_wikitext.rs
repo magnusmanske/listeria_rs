@@ -59,10 +59,10 @@ impl RendererWikitext {
 
         wt += &Self::as_wikitext_table_header(list);
 
-        if list.get_row_template().is_none()
-            && !list.skip_table()
-            && !list.results().is_empty()
-            && !list.template_params().wdedit()
+        if !(list.skip_table()
+            || list.results().is_empty()
+            || list.template_params().wdedit()
+            || list.get_row_template().is_some() && list.header_template().is_some())
         {
             wt += "|-\n";
         }
@@ -112,19 +112,23 @@ impl RendererWikitext {
     }
 
     async fn process_rows(list: &ListeriaList, section_id: usize, wt: &mut String) {
-        // Borrow rows for this section; no cloning required — as_wikitext only
-        // needs a shared reference and the futures borrow from `list`.
-        let section_rows: Vec<&crate::result_row::ResultRow> = list
+        // Collect (global_index, row) pairs for this section so that each row
+        // is rendered with its global position in list.results(). This is
+        // required by as_wikitext_location, which looks up the entity_id from
+        // list.results()[rownum]; using a section-local sub-index would return
+        // the wrong entity and produce incorrect coordinate template names
+        // (see GitHub issue #136).
+        let section_rows: Vec<(usize, &crate::result_row::ResultRow)> = list
             .results()
             .iter()
-            .filter(|row| row.section() == section_id)
+            .enumerate()
+            .filter(|(_, row)| row.section() == section_id)
             .collect();
 
         // Render all rows for this section in parallel.
         let futures: Vec<_> = section_rows
             .iter()
-            .enumerate()
-            .map(|(sub_row, row)| row.as_wikitext(list, sub_row))
+            .map(|(global_idx, row)| row.as_wikitext(list, *global_idx))
             .collect();
         let rows = join_all(futures).await;
 
@@ -133,6 +137,7 @@ impl RendererWikitext {
         } else if list.template_params().wdedit() {
             let x: Vec<String> = section_rows
                 .iter()
+                .map(|(_, row)| row)
                 .zip(rows.iter())
                 .map(|(row, rendered)| match &list.header_template() {
                     Some(_) => rendered.to_string(),

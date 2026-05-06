@@ -36,12 +36,8 @@ impl Template {
                     curly_braces -= 1;
                     part.push(c);
                 }
-                '|' => {
-                    if curly_braces == 0 && !quoted {
-                        parts.push(std::mem::take(&mut part));
-                    } else {
-                        part.push(c);
-                    }
+                '|' if curly_braces == 0 && !quoted => {
+                    parts.push(std::mem::take(&mut part));
                 }
                 _ => {
                     part.push(c);
