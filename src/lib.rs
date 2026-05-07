@@ -86,6 +86,9 @@ pub mod wiki;
 pub mod wiki_apis;
 pub mod wiki_page_result;
 
+#[cfg(test)]
+pub mod test_utils;
+
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
 

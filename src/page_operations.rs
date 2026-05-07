@@ -157,18 +157,10 @@ impl PageOperations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::configuration::Configuration;
-    use std::sync::Arc;
-    use wikimisc::mediawiki::api::Api;
 
     async fn create_test_page() -> ListeriaPage {
-        let api = Api::new("https://en.wikipedia.org/w/api.php")
-            .await
-            .unwrap();
-        let api = Arc::new(api);
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let config = Arc::new(config);
-
+        let api = crate::test_utils::cached_api("https://en.wikipedia.org/w/api.php").await;
+        let config = crate::test_utils::cached_config().await;
         ListeriaPage::new(config, api, "Test:Page".to_string())
             .await
             .unwrap()

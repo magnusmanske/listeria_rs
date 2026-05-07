@@ -135,19 +135,13 @@ impl ResultGenerator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::configuration::Configuration;
     use crate::page_params::PageParams;
     use crate::template::Template;
     use std::sync::Arc;
-    use wikimisc::mediawiki::api::Api;
 
     async fn create_test_list() -> ListeriaList {
-        let api = Api::new("https://www.wikidata.org/w/api.php")
-            .await
-            .unwrap();
-        let api = Arc::new(api);
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let config = Arc::new(config);
+        let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
+        let config = crate::test_utils::cached_config().await;
         let page_params = PageParams::new(config, api, "Test:Page".to_string())
             .await
             .unwrap();

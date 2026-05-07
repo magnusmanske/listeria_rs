@@ -205,17 +205,11 @@ mod tests {
     use crate::render_wikitext::RendererWikitext;
     use crate::renderer::Renderer;
     use crate::*;
-    use dashmap::DashMap;
     use serde_json::Value;
     use std::collections::HashMap;
     use std::fs;
     use std::io::BufReader;
     use std::path::PathBuf;
-    use std::sync::LazyLock;
-
-    /// Cache of `Api` objects keyed by URL — avoids re-fetching siteinfo on every fixture test.
-    static TEST_API_CACHE: LazyLock<DashMap<String, Arc<wikimisc::mediawiki::api::Api>>> =
-        LazyLock::new(DashMap::new);
 
     /// Standard fixture test config: namespace_blocks cleared, prefer_preferred from config.json.
     static TEST_CONFIG_BASE: tokio::sync::OnceCell<Arc<Configuration>> =
@@ -224,15 +218,6 @@ mod tests {
     /// shadow_images fixture config: same as base but prefer_preferred=false.
     static TEST_CONFIG_SHADOW: tokio::sync::OnceCell<Arc<Configuration>> =
         tokio::sync::OnceCell::const_new();
-
-    async fn cached_wiki_api(url: &str) -> Arc<wikimisc::mediawiki::api::Api> {
-        if let Some(api) = TEST_API_CACHE.get(url) {
-            return api.clone();
-        }
-        let api = Arc::new(wikimisc::mediawiki::api::Api::new(url).await.unwrap());
-        TEST_API_CACHE.insert(url.to_string(), api.clone());
-        api
-    }
 
     async fn cached_config(prefer_preferred_false: bool) -> Arc<Configuration> {
         let cell = if prefer_preferred_false {
@@ -284,7 +269,7 @@ mod tests {
 
     async fn check_fixture_file(path: PathBuf) {
         let data = read_fixture_from_file(path.clone());
-        let mw_api = cached_wiki_api(&data["API"]).await;
+        let mw_api = crate::test_utils::cached_api(&data["API"]).await;
 
         let is_shadow = path.ends_with("shadow_images.fixture");
         let config = cached_config(is_shadow).await;

@@ -358,16 +358,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_simulated_table_with_valid_json() {
-        use crate::configuration::Configuration;
         use crate::page_params::PageParams;
         use std::sync::Arc;
-        use wikimisc::mediawiki::api::Api;
 
-        let api = Api::new("https://www.wikidata.org/w/api.php")
-            .await
-            .unwrap();
-        let api = Arc::new(api);
-        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
+        let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
+        let config = crate::test_utils::cached_config().await;
         let mut page_params = PageParams::new(config, api, "Test".to_string())
             .await
             .unwrap();
@@ -402,16 +397,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_simulated_table_returns_none_when_no_results_configured() {
-        use crate::configuration::Configuration;
         use crate::page_params::PageParams;
         use std::sync::Arc;
-        use wikimisc::mediawiki::api::Api;
 
-        let api = Api::new("https://www.wikidata.org/w/api.php")
-            .await
-            .unwrap();
-        let api = Arc::new(api);
-        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
+        let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
+        let config = crate::test_utils::cached_config().await;
         let page_params = PageParams::new(config, api, "Test".to_string())
             .await
             .unwrap();
