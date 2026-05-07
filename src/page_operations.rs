@@ -29,6 +29,15 @@ impl PageOperations {
             }
             ret.push(element);
         }
+        if ret.iter().any(|e| e.is_missing_end_template()) {
+            return Err(WikiPageResult::new(
+                page.page_params().wiki(),
+                page.page_params().page(),
+                "FAIL",
+                "{{Wikidata list end}} is missing; refusing to update to prevent list duplication (#108)".to_string(),
+            ));
+        }
+
         Ok(ret)
     }
 

@@ -179,6 +179,14 @@ impl PageElement {
         self.list.template_params().freq()
     }
 
+    /// Returns true when the element contains a Listeria start template but no
+    /// matching end template. Saving the page in this state would duplicate the
+    /// list content on every bot run.
+    #[must_use]
+    pub fn is_missing_end_template(&self) -> bool {
+        !self.is_just_text && self.template_end.is_empty()
+    }
+
     fn get_template_end(text: String) -> Option<usize> {
         let mut pos: usize = 0;
         let mut curly_braces_open: usize = 2;
@@ -491,5 +499,24 @@ mod tests {
 
         let result = PageElement::matches_from_separators(sep_start, text, sep_end);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_matches_from_separators_missing_end_is_single_template() {
+        // When the end template is absent, single_template should be true.
+        let text = "prefix {{Wikidata list|sparql=SELECT}} content without end";
+        let sep_start = RegexBuilder::new(r"\{\{Wikidata[ _]list")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+        let sep_end = RegexBuilder::new(r"\{\{Wikidata[ _]list[ _]end")
+            .case_insensitive(true)
+            .build()
+            .unwrap();
+
+        let result = PageElement::matches_from_separators(sep_start, text, sep_end);
+        assert!(result.is_ok());
+        let (_, _, single) = result.unwrap();
+        assert!(single, "missing end template must produce single_template=true");
     }
 }
