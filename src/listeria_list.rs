@@ -565,9 +565,17 @@ impl ListeriaList {
             // and therefore do not require loading any additional entities.
             SectionType::SparqlVariable(_) | SectionType::None => {}
         }
-        self.ecw
-            .load_entities(&self.wb_api, &entities_to_load)
-            .await?;
+        // Deduplicate before loading: items like "depicts" (P180) can appear hundreds of
+        // times across many rows, and without dedup the list sent to the API inflates to
+        // tens-of-thousands of entries for large painting lists (issue #40).
+        entities_to_load.sort_unstable();
+        entities_to_load.dedup();
+        // Non-fatal: sub-entity labels are best-effort. If loading fails (e.g. because
+        // the list is very large), cells degrade to bare QID links rather than aborting
+        // the entire page update.
+        if let Err(e) = self.ecw.load_entities(&self.wb_api, &entities_to_load).await {
+            log::warn!("Could not load sub-entities, some cells may show bare QIDs: {e}");
+        }
 
         entities_to_load = self.gather_items_sort().await?;
         let mut v2 = self.gather_items_section().await?;

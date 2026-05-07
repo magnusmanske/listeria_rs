@@ -500,6 +500,42 @@ mod tests {
     /// previous foyer-backed implementation evicted entries from RAM under
     /// load and the disk-fallback path silently failed to return them,
     /// causing the renderer to fall back to bare `[[Qxxx]]`.
+    /// Regression test for #40: `gather_entities_and_external_properties` can
+    /// return many duplicate IDs when the same entity appears in multiple rows
+    /// (e.g. a popular subject "depicts" value shared by hundreds of paintings).
+    /// The caller (`gather_and_load_items`) must deduplicate before loading so
+    /// the API is not flooded with thousands of identical IDs.
+    #[test]
+    fn test_gather_entities_returns_duplicates_caller_must_dedup() {
+        use crate::result_cell_part::{EntityInfo, PartWithReference, ResultCellPart};
+
+        // Build three parts that all reference the same entity (e.g. a shared "depicts" subject).
+        let parts: Vec<PartWithReference> = vec![
+            PartWithReference::new(
+                ResultCellPart::Entity(EntityInfo::new("Q100".to_string(), true)),
+                None,
+            ),
+            PartWithReference::new(
+                ResultCellPart::Entity(EntityInfo::new("Q100".to_string(), true)),
+                None,
+            ),
+            PartWithReference::new(
+                ResultCellPart::Entity(EntityInfo::new("Q200".to_string(), true)),
+                None,
+            ),
+        ];
+
+        let ids = EntityContainerWrapper::gather_entities_and_external_properties(&parts);
+        // The raw gather returns duplicates — the caller is responsible for dedup.
+        assert_eq!(ids, vec!["Q100", "Q100", "Q200"]);
+
+        // After sort+dedup (as gather_and_load_items now does), duplicates are gone.
+        let mut deduped = ids;
+        deduped.sort_unstable();
+        deduped.dedup();
+        assert_eq!(deduped, vec!["Q100", "Q200"]);
+    }
+
     #[tokio::test]
     async fn test_inserted_entity_is_retrievable() {
         let ecw = EntityContainerWrapper::new().await.unwrap();
