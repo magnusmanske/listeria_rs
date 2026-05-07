@@ -155,6 +155,7 @@ pub struct TemplateParams {
     one_row_per_item: bool,
     sort_order: SortOrder,
     wikibase: String,
+    freq: u64,
 }
 
 impl Default for TemplateParams {
@@ -180,6 +181,7 @@ impl TemplateParams {
             one_row_per_item: false,
             sort_order: SortOrder::Ascending,
             wikibase: String::new(),
+            freq: 0,
         }
     }
 
@@ -233,6 +235,11 @@ impl TemplateParams {
                 .get("wikibase")
                 .map(|s| s.trim().to_uppercase())
                 .unwrap_or_else(|| config.get_default_api().to_string()),
+            freq: template
+                .params()
+                .get("freq")
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .unwrap_or(0),
         }
     }
 
@@ -294,6 +301,10 @@ impl TemplateParams {
 
     pub const fn set_links(&mut self, links: LinksType) {
         self.links = links;
+    }
+
+    pub const fn freq(&self) -> u64 {
+        self.freq
     }
 }
 
@@ -568,6 +579,7 @@ mod tests {
         assert_eq!(params.references(), &ReferencesParameter::None);
         assert!(!params.one_row_per_item()); // Default is false in new()
         assert_eq!(params.sort_order(), &SortOrder::Ascending);
+        assert_eq!(params.freq(), 0);
     }
 
     #[test]

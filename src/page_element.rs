@@ -174,6 +174,11 @@ impl PageElement {
         self.is_just_text
     }
 
+    #[must_use]
+    pub fn freq(&self) -> u64 {
+        self.list.template_params().freq()
+    }
+
     fn get_template_end(text: String) -> Option<usize> {
         let mut pos: usize = 0;
         let mut curly_braces_open: usize = 2;

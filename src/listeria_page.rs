@@ -1,7 +1,9 @@
 //! Represents a wiki page containing one or more Listeria lists.
 
 use anyhow::{Result, anyhow};
+use chrono::Utc;
 use futures::future::try_join_all;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
@@ -120,7 +122,58 @@ impl ListeriaPage {
         &self.elements
     }
 
+    fn max_freq(&self) -> u64 {
+        self.elements
+            .iter()
+            .filter(|e| !e.is_just_text())
+            .map(|e| e.freq())
+            .max()
+            .unwrap_or(0)
+    }
+
+    async fn get_last_edit_days_ago(&self) -> Option<u64> {
+        let params: HashMap<String, String> = [
+            ("action", "query"),
+            ("prop", "revisions"),
+            ("titles", self.page_params.page()),
+            ("rvlimit", "1"),
+            ("rvprop", "timestamp"),
+        ]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+        let result = self
+            .page_params
+            .mw_api()
+            .get_query_api_json(&params)
+            .await
+            .ok()?;
+
+        let timestamp = result["query"]["pages"]
+            .as_object()?
+            .values()
+            .next()?["revisions"][0]["timestamp"]
+            .as_str()?;
+
+        let last_edit = chrono::DateTime::parse_from_rfc3339(timestamp).ok()?;
+        let days = Utc::now()
+            .signed_duration_since(last_edit)
+            .num_days()
+            .max(0) as u64;
+        Some(days)
+    }
+
     pub async fn update_source_page(&mut self) -> Result<bool, WikiPageResult> {
+        let max_freq = self.max_freq();
+        if max_freq > 0 && !self.page_params.simulate() {
+            if let Some(days_ago) = self.get_last_edit_days_ago().await {
+                if days_ago < max_freq {
+                    return Ok(false);
+                }
+            }
+        }
+
         let renderer = RendererWikitext::new();
         let mut edited = false;
         let old_wikitext = self.load_page_as("wikitext").await?;
