@@ -393,21 +393,36 @@ impl ResultCellPart {
         }
     }
 
-    fn as_wikitext_location(list: &ListeriaList, loc_info: &LocationInfo, rownum: usize) -> String {
+    async fn as_wikitext_location(
+        list: &ListeriaList,
+        loc_info: &LocationInfo,
+        rownum: usize,
+    ) -> String {
         // Prefer the explicitly-assigned, page-unique anchor name when
         // available (see ListProcessor::process_assign_location_names). Fall
         // back to the row's entity_id for safety if no name has been
         // assigned (e.g. in tests that bypass the processing pipeline).
-        let name = loc_info.name.clone().or_else(|| {
-            list.results()
-                .get(rownum)
-                .map(|e| e.entity_id().to_string())
-        });
+        let entity_id = list
+            .results()
+            .get(rownum)
+            .map(|e| e.entity_id().to_string());
+        let name = loc_info.name.clone().or_else(|| entity_id.clone());
+        let label = match &entity_id {
+            Some(id) => {
+                let l = list
+                    .ecw()
+                    .get_entity_label_with_fallback(id, list.language())
+                    .await;
+                if l == *id { None } else { Some(l) }
+            }
+            None => None,
+        };
         list.get_location_template(
             loc_info.latitude,
             loc_info.longitude,
             name,
             loc_info.region.clone(),
+            label,
         )
     }
 
@@ -470,7 +485,7 @@ impl ResultCellPart {
             ),
             ResultCellPart::Time(time) => time.clone(),
             ResultCellPart::Location(loc_info) => {
-                Self::as_wikitext_location(list, loc_info, rownum)
+                Self::as_wikitext_location(list, loc_info, rownum).await
             }
             ResultCellPart::File(file) => Self::as_wikitext_file(list, file),
             ResultCellPart::Uri(url) => url.clone(),

@@ -335,14 +335,18 @@ impl ListeriaList {
         lon: f64,
         entity_id: Option<String>,
         region: Option<String>,
+        label: Option<String>,
     ) -> String {
+        let entity_id = entity_id.unwrap_or_default();
+        let label = label.unwrap_or_else(|| entity_id.clone());
         self.page_params
             .config()
             .get_location_template(self.page_params.wiki())
             .replace("$LAT$", &Self::format_coordinate(lat))
             .replace("$LON$", &Self::format_coordinate(lon))
-            .replace("$ITEM$", &entity_id.unwrap_or_default())
+            .replace("$ITEM$", &entity_id)
             .replace("$REGION$", &region.unwrap_or_default())
+            .replace("$LABEL$", &label)
     }
 
     pub fn thumbnail_size(&self) -> u64 {
