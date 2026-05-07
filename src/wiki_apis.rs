@@ -211,12 +211,12 @@ impl WikiApis {
         log::info!("Adding {} pages for {wiki}", new_pages.len());
         for chunk in new_pages.chunks(10000) {
             let chunk: Vec<String> = chunk.into();
-            let element = format!("({wiki_id},?,'WAITING','')");
+            let element = format!("({wiki_id},?,'WAITING','','')");
             let placeholders = std::iter::repeat_n(element.as_str(), chunk.len())
                 .collect::<Vec<_>>()
                 .join(",");
             let sql = format!(
-                "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`) VALUES {placeholders}"
+                "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`,`message`) VALUES {placeholders}"
             );
             self.pool.get_conn().await?.exec_drop(sql, chunk).await?;
         }
