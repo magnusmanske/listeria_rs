@@ -60,6 +60,7 @@ impl ResultCell {
             ColumnType::AliasLang(language) => Self::ct_alias_lang(&entity, language, &mut ret),
             ColumnType::Label => Self::ct_label(entity, &mut ret, list, entity_id),
             ColumnType::Number => Self::ct_number(&mut ret),
+            ColumnType::Sitelink(wiki) => Self::ct_sitelink(&entity, wiki, list, &mut ret),
             ColumnType::Unknown => {} // Ignore
         }
 
@@ -376,6 +377,46 @@ impl ResultCell {
         }
     }
 
+    /// Renders a sitelink column for the given `wiki` (e.g. `"enwiki"`).
+    /// When the sitelink wiki matches the current list wiki the title is
+    /// rendered as a local `[[page]]` link; otherwise as an interwiki link
+    /// `[[:prefix:title|display]]`.
+    fn ct_sitelink(
+        entity: &Option<EntityEntry>,
+        wiki: &str,
+        list: &ListeriaList,
+        ret: &mut ResultCell,
+    ) {
+        let Some(e) = entity else { return };
+        let Some(sitelinks) = e.sitelinks().as_ref() else { return };
+        let Some(sl) = sitelinks.iter().find(|s| *s.site() == *wiki) else { return };
+        let title = sl.title().to_string();
+        let part = if wiki == list.wiki() {
+            ResultCellPart::LocalLink(LocalLinkInfo::new(
+                title.clone(),
+                title,
+                LinkTarget::Page,
+            ))
+        } else {
+            let prefix = Self::wiki_id_to_interwiki_prefix(wiki);
+            let display = title.replace('_', " ");
+            ResultCellPart::Text(format!("[[:{}:{}|{}]]", prefix, title, display))
+        };
+        ret.parts.push(PartWithReference::new(part, None));
+    }
+
+    /// Maps a Wikimedia wiki id to the MediaWiki interwiki prefix used in
+    /// `[[:prefix:title]]` links.  Common cases: `enwiki` → `en`,
+    /// `commonswiki` → `commons`, `wikidatawiki` → `d`.
+    fn wiki_id_to_interwiki_prefix(wiki: &str) -> String {
+        match wiki {
+            "commonswiki" => "commons".to_string(),
+            "wikidatawiki" => "d".to_string(),
+            w if w.ends_with("wiki") => w[..w.len() - 4].to_string(),
+            w => w.to_string(),
+        }
+    }
+
     fn ct_description(
         entity: &Option<EntityEntry>,
         list: &ListeriaList,
@@ -671,6 +712,24 @@ mod tests {
         let parts = vec!["x".to_string(), "x".to_string(), "x".to_string()];
         let result = ResultCell::do_deduplicate_parts(&parts);
         assert_eq!(result, vec!["x"]);
+    }
+
+    // --- wiki_id_to_interwiki_prefix (#147) ---
+
+    #[test]
+    fn test_wiki_id_to_interwiki_prefix_standard() {
+        assert_eq!(ResultCell::wiki_id_to_interwiki_prefix("enwiki"), "en");
+        assert_eq!(ResultCell::wiki_id_to_interwiki_prefix("dewiki"), "de");
+        assert_eq!(ResultCell::wiki_id_to_interwiki_prefix("frwiki"), "fr");
+    }
+
+    #[test]
+    fn test_wiki_id_to_interwiki_prefix_special() {
+        assert_eq!(
+            ResultCell::wiki_id_to_interwiki_prefix("commonswiki"),
+            "commons"
+        );
+        assert_eq!(ResultCell::wiki_id_to_interwiki_prefix("wikidatawiki"), "d");
     }
 
     // --- set_parts / parts ---

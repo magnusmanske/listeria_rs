@@ -1,0 +1,32 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q42 } }
+|columns=label:name,sitelink/dewiki:German Wikipedia
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable'
+! name
+! German Wikipedia
+|-
+| [[Tim Berners-Lee]]
+| [[:de:Tim Berners-Lee|Tim Berners-Lee]]
+|-
+| [[Douglas Adams]]
+| [[:de:Douglas Adams|Douglas Adams]]
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q42"}}]}}

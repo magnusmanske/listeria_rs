@@ -13,6 +13,7 @@ pub enum ColumnType {
     PropertyQualifier((String, String)),
     PropertyQualifierValue((String, String, String)),
     Field(String),
+    Sitelink(String),
     Unknown,
 }
 
@@ -94,6 +95,14 @@ impl ColumnType {
             return ColumnType::AliasLang(rest.to_string());
         }
 
+        // Check for "sitelink/WIKI" (case-insensitive)
+        if let Some(rest) = lower_trimmed.strip_prefix("sitelink/") {
+            let wiki = rest.trim().to_string();
+            if !wiki.is_empty() {
+                return ColumnType::Sitelink(wiki);
+            }
+        }
+
         // From here on, work with the original string (preserving case for P/Q ids)
         let trimmed = s.trim();
 
@@ -145,6 +154,7 @@ impl ColumnType {
                 key
             }
             Self::Field(f) => f.to_lowercase(),
+            Self::Sitelink(wiki) => format!("sitelink/{wiki}"),
             Self::Unknown => "unknown".to_string(),
         }
     }

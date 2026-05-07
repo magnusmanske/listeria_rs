@@ -59,6 +59,9 @@ impl Column {
                 let prop2_label = list.get_label_with_fallback(prop2).await;
                 self.label = format!("{prop1_label}/{prop2_label}");
             }
+            ColumnType::Sitelink(wiki) => {
+                self.label = wiki.clone();
+            }
             // All other variants keep the label that was parsed from the column spec.
             _ => {}
         }
@@ -211,6 +214,22 @@ mod tests {
     }
 
     #[test]
+    fn test_column_type_new_sitelink() {
+        assert_eq!(
+            ColumnType::new("sitelink/enwiki"),
+            ColumnType::Sitelink("enwiki".to_string())
+        );
+        assert_eq!(
+            ColumnType::new("SITELINK/dewiki"),
+            ColumnType::Sitelink("dewiki".to_string())
+        );
+        // With a user-supplied column label parsed by Column::new
+        let col = Column::new("sitelink/enwiki:English Wikipedia").unwrap();
+        assert_eq!(col.obj(), &ColumnType::Sitelink("enwiki".to_string()));
+        assert_eq!(col.label(), "English Wikipedia");
+    }
+
+    #[test]
     fn test_column_type_new_unknown() {
         assert_eq!(ColumnType::new("invalid"), ColumnType::Unknown);
         assert_eq!(ColumnType::new("Q123"), ColumnType::Unknown);
@@ -244,6 +263,10 @@ mod tests {
             "p39_q41582_p580"
         );
         assert_eq!(ColumnType::Field("NAME".to_string()).as_key(), "name");
+        assert_eq!(
+            ColumnType::Sitelink("enwiki".to_string()).as_key(),
+            "sitelink/enwiki"
+        );
         assert_eq!(ColumnType::Unknown.as_key(), "unknown");
     }
 

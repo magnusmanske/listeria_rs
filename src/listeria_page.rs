@@ -311,6 +311,11 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sitelink_column() {
+        check_fixture_file(PathBuf::from("test_data/sitelink_column.fixture")).await;
+    }
+
+    #[tokio::test]
     async fn header_template() {
         check_fixture_file(PathBuf::from("test_data/header_template.fixture")).await;
     }
