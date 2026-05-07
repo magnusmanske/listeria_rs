@@ -38,7 +38,9 @@ const EXTERNAL_ID_ESCAPE: &AsciiSet = &CONTROLS
     .add(b'+')
     .add(b'%');
 use rand::seq::SliceRandom;
+#[cfg(test)]
 use std::fs::File;
+#[cfg(test)]
 use std::io::BufReader;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
@@ -76,27 +78,47 @@ pub struct EntityContainerWrapper {
     entities: Arc<DashMap<String, Arc<MyEntity>>>,
 }
 
+/// Parses `test_entities.json` exactly once for the entire test run.
+/// Each `EntityContainerWrapper::new()` call in test mode clones `Arc` pointers
+/// from this map into a fresh `DashMap`, avoiding repeated 8 MB JSON parsing.
+#[cfg(test)]
+static TEST_ENTITIES_CACHE: std::sync::LazyLock<DashMap<String, Arc<MyEntity>>> =
+    std::sync::LazyLock::new(|| {
+        let file =
+            File::open("test_data/test_entities.json").expect("test_data/test_entities.json");
+        let reader = BufReader::new(file);
+        let test_items: serde_json::Value =
+            serde_json::from_reader(reader).expect("test entities JSON parse");
+        let map = DashMap::new();
+        for (_key, j) in test_items
+            .as_object()
+            .expect("test entities JSON should be an object")
+        {
+            let q = j["id"].as_str().expect("entity should have an id field");
+            let entity = Entity::new_from_json(j).expect("entity JSON should be valid");
+            map.insert(q.to_string(), Arc::new(MyEntity(entity)));
+        }
+        map
+    });
+
 impl EntityContainerWrapper {
     pub async fn new() -> Result<Self> {
         let ret = Self {
             entities: Arc::new(DashMap::new()),
         };
-        // Pre-cache test entities if testing
-        if cfg!(test) {
-            let test_items: serde_json::Value =
-                tokio::task::spawn_blocking(|| -> Result<serde_json::Value> {
-                    let file = File::open("test_data/test_entities.json")?;
-                    let reader = BufReader::new(file);
-                    let v = serde_json::from_reader(reader)?;
-                    Ok(v)
-                })
-                .await
-                .map_err(|e| anyhow!("spawn_blocking join error: {e}"))??;
-            for (_item, j) in test_items.as_object().ok_or(anyhow!("Not an object"))? {
-                ret.set_entity_from_json(j)?;
-            }
-        }
+        // Pre-cache test entities — clones Arc pointers from the once-parsed
+        // static rather than re-reading the 8 MB JSON file.
+        #[cfg(test)]
+        Self::load_test_entities(&ret.entities);
+
         Ok(ret)
+    }
+
+    #[cfg(test)]
+    fn load_test_entities(entities: &DashMap<String, Arc<MyEntity>>) {
+        for entry in TEST_ENTITIES_CACHE.iter() {
+            entities.insert(entry.key().clone(), entry.value().clone());
+        }
     }
 
     pub fn set_entity_from_json(&self, json: &serde_json::Value) -> Result<()> {
@@ -416,6 +438,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires live Wikidata API access"]
     async fn test_entity_caching() {
         let ecw = EntityContainerWrapper::new().await.unwrap();
         let api = Api::new("https://www.wikidata.org/w/api.php")

@@ -205,11 +205,54 @@ mod tests {
     use crate::render_wikitext::RendererWikitext;
     use crate::renderer::Renderer;
     use crate::*;
+    use dashmap::DashMap;
     use serde_json::Value;
     use std::collections::HashMap;
     use std::fs;
     use std::io::BufReader;
     use std::path::PathBuf;
+    use std::sync::LazyLock;
+
+    /// Cache of `Api` objects keyed by URL — avoids re-fetching siteinfo on every fixture test.
+    static TEST_API_CACHE: LazyLock<DashMap<String, Arc<wikimisc::mediawiki::api::Api>>> =
+        LazyLock::new(DashMap::new);
+
+    /// Standard fixture test config: namespace_blocks cleared, prefer_preferred from config.json.
+    static TEST_CONFIG_BASE: tokio::sync::OnceCell<Arc<Configuration>> =
+        tokio::sync::OnceCell::const_new();
+
+    /// shadow_images fixture config: same as base but prefer_preferred=false.
+    static TEST_CONFIG_SHADOW: tokio::sync::OnceCell<Arc<Configuration>> =
+        tokio::sync::OnceCell::const_new();
+
+    async fn cached_wiki_api(url: &str) -> Arc<wikimisc::mediawiki::api::Api> {
+        if let Some(api) = TEST_API_CACHE.get(url) {
+            return api.clone();
+        }
+        let api = Arc::new(wikimisc::mediawiki::api::Api::new(url).await.unwrap());
+        TEST_API_CACHE.insert(url.to_string(), api.clone());
+        api
+    }
+
+    async fn cached_config(prefer_preferred_false: bool) -> Arc<Configuration> {
+        let cell = if prefer_preferred_false {
+            &TEST_CONFIG_SHADOW
+        } else {
+            &TEST_CONFIG_BASE
+        };
+        cell.get_or_init(|| async move {
+            let file = std::fs::File::open("config.json").unwrap();
+            let reader = BufReader::new(file);
+            let mut j: Value = serde_json::from_reader(reader).unwrap();
+            j["namespace_blocks"] = json!({});
+            if prefer_preferred_false {
+                j["prefer_preferred"] = json!(false);
+            }
+            Arc::new(Configuration::new_from_json(j).await.unwrap())
+        })
+        .await
+        .clone()
+    }
 
     fn read_fixture_from_file(path: PathBuf) -> HashMap<String, String> {
         let text = fs::read_to_string(path).unwrap();
@@ -241,25 +284,10 @@ mod tests {
 
     async fn check_fixture_file(path: PathBuf) {
         let data = read_fixture_from_file(path.clone());
-        let mw_api = wikimisc::mediawiki::api::Api::new(&data["API"])
-            .await
-            .unwrap();
-        let mw_api = Arc::new(mw_api);
+        let mw_api = cached_wiki_api(&data["API"]).await;
 
-        let file = std::fs::File::open("config.json").unwrap();
-        let reader = BufReader::new(file);
-        let mut j: Value = serde_json::from_reader(reader).unwrap();
-        j["namespace_blocks"] = json!({}); // Allow all namespaces, everywhere
-        if path.to_str().unwrap() == "test_data/shadow_images.fixture" {
-            // HACKISH
-            j["prefer_preferred"] = json!(false);
-        }
-        let mut config = Configuration::new_from_json(j).await.unwrap();
-        if path.to_str().unwrap() == "test_data/commons_sparql.fixture" {
-            // HACKISH TODO FIXME
-            let _ = config.wbapi_login("commons").await;
-        }
-        let config = Arc::new(config);
+        let is_shadow = path.ends_with("shadow_images.fixture");
+        let config = cached_config(is_shadow).await;
         let mut page = ListeriaPage::new(config, mw_api, data["PAGETITLE"].clone())
             .await
             .unwrap();

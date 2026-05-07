@@ -402,6 +402,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[ignore = "requires Toolforge MySQL tunnel on port 3308"]
     async fn test_fix_wiki_name() {
         let config = Configuration::new_from_file("config.json").await.unwrap();
         let wa = WikiApis::new(Arc::new(config)).await.unwrap();
@@ -413,6 +414,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Toolforge MySQL tunnel on port 3308"]
     async fn test_get_db_server_group() {
         let config = Configuration::new_from_file("config.json").await.unwrap();
         let wa = WikiApis::new(Arc::new(config)).await.unwrap();

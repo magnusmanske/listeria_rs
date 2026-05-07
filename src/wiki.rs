@@ -179,6 +179,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Toolforge MySQL tunnel on port 3308"]
     async fn test_wiki_use_flags() {
         let config = Configuration::new_from_file("config.json").await.unwrap();
         let wiki_apis = WikiApis::new(Arc::new(config)).await.unwrap();
