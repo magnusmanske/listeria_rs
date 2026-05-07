@@ -306,6 +306,11 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn summary_itemnumber_label() {
+        check_fixture_file(PathBuf::from("test_data/summary_itemnumber_label.fixture")).await;
+    }
+
+    #[tokio::test]
     async fn header_template() {
         check_fixture_file(PathBuf::from("test_data/header_template.fixture")).await;
     }

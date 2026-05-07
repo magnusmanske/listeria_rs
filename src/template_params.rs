@@ -149,6 +149,7 @@ pub struct TemplateParams {
     header_template: Option<String>,
     autodesc: Option<String>,
     summary: Option<String>,
+    summary_label: Option<String>,
     skip_table: bool,
     wdedit: bool,
     references: ReferencesParameter,
@@ -175,6 +176,7 @@ impl TemplateParams {
             header_template: None,
             autodesc: None,
             summary: None,
+            summary_label: None,
             skip_table: false,
             wdedit: false,
             references: ReferencesParameter::None,
@@ -217,6 +219,10 @@ impl TemplateParams {
                 .params()
                 .get("summary")
                 .map(|s| s.trim().to_uppercase()),
+            summary_label: template
+                .params()
+                .get("summary_label")
+                .map(|s| s.trim().to_string()),
             skip_table: template.params().contains_key("skip_table"),
             one_row_per_item: template
                 .params()
@@ -281,6 +287,10 @@ impl TemplateParams {
 
     pub const fn summary(&self) -> &Option<String> {
         &self.summary
+    }
+
+    pub fn summary_label(&self) -> &str {
+        self.summary_label.as_deref().unwrap_or("items")
     }
 
     pub const fn row_template(&self) -> &Option<String> {
@@ -614,6 +624,12 @@ mod tests {
             SortMode::Property(p) => assert_eq!(p, "P99999"),
             _ => panic!("Expected Property variant"),
         }
+    }
+
+    #[test]
+    fn test_summary_label_default() {
+        let params = TemplateParams::new();
+        assert_eq!(params.summary_label(), "items");
     }
 
     #[test]

@@ -27,7 +27,8 @@ impl Renderer for RendererWikitext {
         }
 
         if let Some("ITEMNUMBER") = list.summary().as_deref() {
-            wt += format!("\n----\n&sum; {} items.", list.results().len()).as_str();
+            let label = list.template_params().summary_label();
+            wt += format!("\n----\n&sum; {} {label}.", list.results().len()).as_str();
         }
 
         Ok(wt)
