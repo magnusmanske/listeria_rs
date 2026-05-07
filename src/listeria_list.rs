@@ -671,6 +671,7 @@ impl ListeriaList {
         let mut ret: Vec<Statement> = e
             .claims_with_property(property)
             .iter()
+            .filter(|s| *s.rank() != StatementRank::Deprecated)
             .map(|&x| x.clone())
             .collect();
 
