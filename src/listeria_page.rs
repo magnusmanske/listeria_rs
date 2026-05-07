@@ -385,6 +385,11 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn trwiki_coordinates() {
+        check_fixture_file(PathBuf::from("test_data/trwiki_coordinates.fixture")).await;
+    }
+
+    #[tokio::test]
     async fn commons() {
         check_fixture_file(PathBuf::from("test_data/commons.fixture")).await;
     }

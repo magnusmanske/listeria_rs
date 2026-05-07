@@ -1,0 +1,29 @@
+$$$$ API
+
+https://tr.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q58976 } }
+|columns=label:name,P625
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable'
+! name
+! konum koordinatları
+|-
+| [[Pire (şehir)|Pire]]
+| {{Koordinat|37.943|23.646944|display=inline}}
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q58976"}}]}}
