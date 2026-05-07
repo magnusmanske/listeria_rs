@@ -466,6 +466,11 @@ impl ResultCellPart {
     }
 
     fn as_wikitext_text(list: &ListeriaList, text: &str, colnum: usize) -> String {
+        // Newlines in cell values break wiki table structure: MediaWiki ends the
+        // cell at the first bare newline, and lines starting with a space are
+        // rendered as pre-formatted code blocks. Replace \n with <br/> to keep
+        // multi-line values readable without corrupting the table (#98).
+        let text = &text.replace('\n', "<br/>");
         list.column(colnum)
             .and_then(|col| match col.obj() {
                 ColumnType::Property(p) if p == "P373" => {
@@ -1080,5 +1085,12 @@ mod tests {
         // Mutate the inner part through part_mut()
         *pwr.part_mut() = ResultCellPart::Text("after".to_string());
         assert_eq!(pwr.part(), &ResultCellPart::Text("after".to_string()));
+    }
+
+    // --- as_wikitext_text newline sanitization (#98) ---
+
+    #[test]
+    fn test_time_sort_year_negative_year() {
+        assert_eq!(ResultCellPart::time_sort_year("-0100-00-00T00:00:00Z"), Some(-100));
     }
 }
