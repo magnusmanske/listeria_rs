@@ -207,7 +207,13 @@ impl ResultRow {
                 }
                 wikimisc::wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikimisc::wikibase::value::Value::StringValue(s) => s.to_owned(),
-                wikimisc::wikibase::value::Value::Time(t) => t.time().to_owned(),
+                wikimisc::wikibase::value::Value::Time(t) => {
+                    // Extract the year from the ISO time string for numeric sorting.
+                    // Format: +YYYY-MM-DDT... or -YYYY-MM-DDT...
+                    ResultCellPart::time_sort_year(t.time())
+                        .map(|y| y.to_string())
+                        .unwrap_or_default()
+                }
                 wikimisc::wikibase::value::Value::EntitySchema(v) => v.id().to_owned(),
             },
             None => "".to_string(),
@@ -226,6 +232,21 @@ impl ResultRow {
                 let va = self.sortkey.parse::<u64>().unwrap_or(0);
                 let vb = other.sortkey.parse::<u64>().unwrap_or(0);
                 if va == 0 && vb == 0 {
+                    self.compare_entity_ids(other)
+                } else {
+                    va.cmp(&vb)
+                }
+            }
+            // Time sort keys are numeric years (can be negative for BC dates).
+            // Lexicographic comparison of year strings ("33" vs "1900") gives
+            // wrong order, so parse as i64 for correct chronological sorting.
+            // Non-parseable keys (e.g. "no time" sentinel for missing values)
+            // use i64::MAX so they sort after all real dates.
+            SnakDataType::Time => {
+                let parse_year = |s: &str| s.parse::<i64>().unwrap_or(i64::MAX);
+                let va = parse_year(&self.sortkey);
+                let vb = parse_year(&other.sortkey);
+                if va == vb {
                     self.compare_entity_ids(other)
                 } else {
                     va.cmp(&vb)
@@ -445,6 +466,38 @@ mod tests {
         r2.set_sortkey("also_not".to_string());
         // Both parse to 0, so falls back to entity id comparison
         assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
+    }
+
+    // --- compare_to with Time datatype ---
+
+    #[test]
+    fn test_compare_to_time_numeric() {
+        // Year 33 < 1900: without numeric comparison, "1900" < "33" lexicographically
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("33".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("1900".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Time), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_time_negative_before_positive() {
+        // BC year sorts before AD year
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("-100".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("33".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Time), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_time_no_value_sorts_last() {
+        // Items without a birth date should sort after those with one
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("no time".to_string()); // sentinel from no_value()
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("1900".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Time), Ordering::Greater);
     }
 
     // --- case-insensitive string comparison (issue #61) ---

@@ -164,7 +164,7 @@ pub enum ResultCellPart {
     Entity(EntityInfo),
     EntitySchema(String),
     LocalLink(LocalLinkInfo),
-    Time(String),
+    Time(String, i32), // (display, sort_year)
     Location(LocationInfo),
     File(String),
     Uri(String),
@@ -249,7 +249,7 @@ impl ResultCellPart {
                     ResultCellPart::Quantity(*v.amount(), unit_id)
                 }
                 Value::Time(v) => match ResultCellPart::reduce_time(v) {
-                    Some(part) => ResultCellPart::Time(part),
+                    Some((display, year)) => ResultCellPart::Time(display, year),
                     None => ResultCellPart::Text("No/unknown value".to_string()),
                 },
                 Value::Coordinate(v) => {
@@ -274,7 +274,26 @@ impl ResultCellPart {
             .map(str::to_string)
     }
 
-    pub fn reduce_time(v: &TimeValue) -> Option<String> {
+    /// Extracts the year from a Wikidata ISO time string like `+1900-00-00T00:00:00Z`.
+    /// Returns `None` if the string cannot be parsed.
+    pub fn time_sort_year(time_str: &str) -> Option<i32> {
+        let s = time_str.strip_prefix('+').unwrap_or(time_str);
+        let t_pos = s.find('T')?;
+        let date_part = &s[..t_pos];
+        let year_str = if let Some(after_sign) = date_part.strip_prefix('-') {
+            let dash = after_sign.find('-')?;
+            &date_part[..dash + 1]
+        } else {
+            let dash = date_part.find('-')?;
+            &date_part[..dash]
+        };
+        year_str.parse::<i32>().ok()
+    }
+
+    /// Returns `(display_string, sort_year)` for a Wikidata time value.
+    /// `sort_year` is the raw Wikidata year (before the century +1 correction)
+    /// so that all time cells can be sorted chronologically by a plain integer.
+    pub fn reduce_time(v: &TimeValue) -> Option<(String, i32)> {
         let s = v.time();
         // Parse format: +?(-?\d+)-(\d{1,2})-(\d{1,2})T...
         let s = s.strip_prefix('+').unwrap_or(s);
@@ -307,7 +326,10 @@ impl ResultCellPart {
         } else {
             year
         };
-        Some(Era::new(era_year, month, day, precision).to_string())
+        let display = Era::new(era_year, month, day, precision).to_string();
+        // Use the raw Wikidata year (not era_year) as the numeric sort key so that
+        // century-precision dates (e.g. year=1900 → "20th century") sort correctly.
+        Some((display, year))
     }
 
     fn tabbed_string_safe(s: String) -> String {
@@ -483,7 +505,7 @@ impl ResultCellPart {
                 &link_info.label,
                 &link_info.target,
             ),
-            ResultCellPart::Time(time) => time.clone(),
+            ResultCellPart::Time(time, _year) => time.clone(),
             ResultCellPart::Location(loc_info) => {
                 Self::as_wikitext_location(list, loc_info, rownum).await
             }
@@ -903,7 +925,10 @@ mod tests {
         let snak = Snak::new_time("P569", "+1879-03-14T00:00:00Z", 11);
         let part = ResultCellPart::from_snak(&snak);
         match part {
-            ResultCellPart::Time(s) => assert_eq!(s, "1879-03-14"),
+            ResultCellPart::Time(s, year) => {
+                assert_eq!(s, "1879-03-14");
+                assert_eq!(year, 1879);
+            }
             other => panic!("Expected Time, got {:?}", other),
         }
     }
@@ -913,7 +938,10 @@ mod tests {
         let snak = Snak::new_time("P569", "+1955-06-08T00:00:00Z", 11);
         let part = ResultCellPart::from_snak(&snak);
         match part {
-            ResultCellPart::Time(s) => assert_eq!(s, "1955-06-08"),
+            ResultCellPart::Time(s, year) => {
+                assert_eq!(s, "1955-06-08");
+                assert_eq!(year, 1955);
+            }
             other => panic!("Expected Time, got {:?}", other),
         }
     }
@@ -924,7 +952,10 @@ mod tests {
         let snak = Snak::new_time("P569", "+1900-00-00T00:00:00Z", 7);
         let part = ResultCellPart::from_snak(&snak);
         match part {
-            ResultCellPart::Time(s) => assert_eq!(s, "20th century"),
+            ResultCellPart::Time(s, year) => {
+                assert_eq!(s, "20th century");
+                assert_eq!(year, 1900); // raw Wikidata year, not era_year
+            }
             other => panic!("Expected Time, got {:?}", other),
         }
     }
@@ -934,7 +965,10 @@ mod tests {
         let snak = Snak::new_time("P569", "+1800-00-00T00:00:00Z", 7);
         let part = ResultCellPart::from_snak(&snak);
         match part {
-            ResultCellPart::Time(s) => assert_eq!(s, "19th century"),
+            ResultCellPart::Time(s, year) => {
+                assert_eq!(s, "19th century");
+                assert_eq!(year, 1800); // raw Wikidata year
+            }
             other => panic!("Expected Time, got {:?}", other),
         }
     }
@@ -945,9 +979,29 @@ mod tests {
         let snak = Snak::new_time("P569", "+1900-00-00T00:00:00Z", 8);
         let part = ResultCellPart::from_snak(&snak);
         match part {
-            ResultCellPart::Time(s) => assert_eq!(s, "1900s"),
+            ResultCellPart::Time(s, _year) => assert_eq!(s, "1900s"),
             other => panic!("Expected Time, got {:?}", other),
         }
+    }
+
+    // --- time_sort_year ---
+
+    #[test]
+    fn test_time_sort_year_positive() {
+        assert_eq!(ResultCellPart::time_sort_year("+1879-03-14T00:00:00Z"), Some(1879));
+        assert_eq!(ResultCellPart::time_sort_year("+1900-00-00T00:00:00Z"), Some(1900));
+        assert_eq!(ResultCellPart::time_sort_year("+0033-00-00T00:00:00Z"), Some(33));
+    }
+
+    #[test]
+    fn test_time_sort_year_negative() {
+        assert_eq!(ResultCellPart::time_sort_year("-0100-00-00T00:00:00Z"), Some(-100));
+    }
+
+    #[test]
+    fn test_time_sort_year_no_sign() {
+        // Without leading '+', year should still parse
+        assert_eq!(ResultCellPart::time_sort_year("1955-06-08T00:00:00Z"), Some(1955));
     }
 
     // --- AutoDesc ---

@@ -134,7 +134,7 @@ impl ResultCell {
             Some(part_with_reference) => match part_with_reference.part() {
                 ResultCellPart::Entity(entity_info) => entity_info.id.clone(),
                 ResultCellPart::LocalLink(link_info) => link_info.page.clone(),
-                ResultCellPart::Time(time) => time.clone(),
+                ResultCellPart::Time(_display, year) => year.to_string(),
                 ResultCellPart::File(s) | ResultCellPart::Uri(s) | ResultCellPart::Text(s) => {
                     s.clone()
                 }
@@ -198,17 +198,30 @@ impl ResultCell {
         if self.deduplicate_parts {
             parts = Self::do_deduplicate_parts(&parts);
         }
-        self.get_cell_class(list) + &parts.join("<br/>")
+        self.get_cell_prefix(list) + &parts.join("<br/>")
     }
 
-    fn get_cell_class(&self, list: &ListeriaList) -> String {
-        if list.template_params().wdedit()
+    fn get_cell_prefix(&self, list: &ListeriaList) -> String {
+        let time_sort_year = self.parts.first().and_then(|p| match p.part() {
+            ResultCellPart::Time(_, year) => Some(*year),
+            _ => None,
+        });
+
+        let wdedit_class = if list.template_params().wdedit()
             && list.header_template().is_none()
-            && let Some(class) = &self.wdedit_class
         {
-            format!("class='{class}'| ")
+            self.wdedit_class.as_deref()
         } else {
-            " ".to_string()
+            None
+        };
+
+        match (wdedit_class, time_sort_year) {
+            (Some(class), Some(year)) => {
+                format!("class='{class}' data-sort-value=\"{year}\" | ")
+            }
+            (Some(class), None) => format!("class='{class}'| "),
+            (None, Some(year)) => format!(" data-sort-value=\"{year}\" | "),
+            (None, None) => " ".to_string(),
         }
     }
 
@@ -565,10 +578,9 @@ mod tests {
 
     #[test]
     fn test_get_sortkey_time() {
-        let cell = make_cell(vec![ResultCellPart::Time(
-            "+2024-01-15T00:00:00Z".to_string(),
-        )]);
-        assert_eq!(cell.get_sortkey(), "+2024-01-15T00:00:00Z");
+        // The sort key is now the numeric year, not the display string.
+        let cell = make_cell(vec![ResultCellPart::Time("2024-01-15".to_string(), 2024)]);
+        assert_eq!(cell.get_sortkey(), "2024");
     }
 
     #[test]

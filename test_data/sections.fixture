@@ -23,10 +23,10 @@ $$$$ EXPECTED
 ! date of birth
 |-
 | [[Tim Berners-Lee]]
-| 1955-06-08
+| data-sort-value="1955" | 1955-06-08
 |-
 | [[Albert Einstein]]
-| 1879-03-14
+| data-sort-value="1879" | 1879-03-14
 |}
 
 
