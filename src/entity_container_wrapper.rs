@@ -402,6 +402,9 @@ impl EntityContainerWrapper {
                 ResultCellPart::SnakList(v) => {
                     Self::gather_entities_and_external_properties_into(v, out);
                 }
+                ResultCellPart::Quantity(_, Some(unit_id)) => {
+                    out.push(unit_id.to_owned());
+                }
                 _ => {}
             }
         }

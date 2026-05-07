@@ -172,6 +172,7 @@ pub enum ResultCellPart {
     Text(String),
     SnakList(Vec<PartWithReference>), // PP and PQP
     AutoDesc(AutoDesc),
+    Quantity(f64, Option<String>), // (amount, unit_entity_id)
 }
 
 impl ResultCellPart {
@@ -243,7 +244,10 @@ impl ResultCellPart {
                     )),
                     _ => ResultCellPart::Text(v.to_string()),
                 },
-                Value::Quantity(v) => ResultCellPart::Text(v.amount().to_string()),
+                Value::Quantity(v) => {
+                    let unit_id = Self::unit_entity_id_from_url(v.unit());
+                    ResultCellPart::Quantity(*v.amount(), unit_id)
+                }
                 Value::Time(v) => match ResultCellPart::reduce_time(v) {
                     Some(part) => ResultCellPart::Time(part),
                     None => ResultCellPart::Text("No/unknown value".to_string()),
@@ -258,6 +262,16 @@ impl ResultCellPart {
             },
             _ => ResultCellPart::Text("No/unknown value".to_string()),
         }
+    }
+
+    fn unit_entity_id_from_url(unit: &str) -> Option<String> {
+        if unit == "1" {
+            return None;
+        }
+        unit.rsplit('/')
+            .next()
+            .filter(|s| s.starts_with('Q') || s.starts_with('P'))
+            .map(str::to_string)
     }
 
     pub fn reduce_time(v: &TimeValue) -> Option<String> {
@@ -468,6 +482,19 @@ impl ResultCellPart {
                 Self::as_wikitext_snak_list(v, list, rownum, colnum).await
             }
             ResultCellPart::AutoDesc(ad) => ad.desc.as_deref().unwrap_or_default().to_string(),
+            ResultCellPart::Quantity(amount, unit_id) => {
+                let amount_str = amount.to_string();
+                match unit_id {
+                    Some(uid) => {
+                        let label = list
+                            .ecw()
+                            .get_entity_label_with_fallback(uid, list.language())
+                            .await;
+                        format!("{amount_str} {label}")
+                    }
+                    None => amount_str,
+                }
+            }
         }
     }
 
@@ -672,10 +699,60 @@ mod tests {
     }
 
     #[test]
-    fn test_from_snak_quantity() {
+    fn test_from_snak_quantity_dimensionless() {
         let snak = Snak::new_quantity("P1082", 42.0);
         let part = ResultCellPart::from_snak(&snak);
-        assert_eq!(part, ResultCellPart::Text("42".to_string()));
+        assert_eq!(part, ResultCellPart::Quantity(42.0, None));
+    }
+
+    #[test]
+    fn test_from_snak_quantity_with_unit() {
+        use wikimisc::wikibase::{
+            DataValue, DataValueType, Snak, SnakDataType, SnakType, Value,
+        };
+        use wikimisc::wikibase::value::QuantityValue;
+        let snak = Snak::new(
+            SnakDataType::Quantity,
+            "P2048",
+            SnakType::Value,
+            Some(DataValue::new(
+                DataValueType::Quantity,
+                Value::Quantity(QuantityValue::new(
+                    1.96,
+                    None,
+                    "http://www.wikidata.org/entity/Q11573",
+                    None,
+                )),
+            )),
+        );
+        let part = ResultCellPart::from_snak(&snak);
+        assert_eq!(
+            part,
+            ResultCellPart::Quantity(1.96, Some("Q11573".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_unit_entity_id_from_url_dimensionless() {
+        assert_eq!(ResultCellPart::unit_entity_id_from_url("1"), None);
+    }
+
+    #[test]
+    fn test_unit_entity_id_from_url_valid_entity() {
+        assert_eq!(
+            ResultCellPart::unit_entity_id_from_url(
+                "http://www.wikidata.org/entity/Q11573"
+            ),
+            Some("Q11573".to_string())
+        );
+    }
+
+    #[test]
+    fn test_unit_entity_id_from_url_unknown_format() {
+        assert_eq!(
+            ResultCellPart::unit_entity_id_from_url("https://example.com/unit/foo"),
+            None
+        );
     }
 
     #[test]
