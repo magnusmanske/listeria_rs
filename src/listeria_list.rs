@@ -30,7 +30,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table_vec::SparqlTableVec;
-use wikimisc::wikibase::{EntityTrait, SnakDataType, Statement, StatementRank};
+use wikimisc::wikibase::{EntityTrait, SnakDataType, Statement, StatementRank, Value as WikibaseValue};
 
 const AUTODESC_FALLBACK: &str = "FALLBACK";
 
@@ -689,6 +689,19 @@ impl ListeriaList {
                 ret.retain(|x| *x.rank() == StatementRank::Preferred);
             }
         }
+
+        // Stable-sort string-valued claims (external IDs, URLs, etc.) alphabetically
+        // so the rendered output is deterministic regardless of API return order (#168).
+        ret.sort_by_key(|s| {
+            match s.main_snak().data_value() {
+                Some(dv) => match dv.value() {
+                    WikibaseValue::StringValue(v) => v.clone(),
+                    _ => String::new(),
+                },
+                None => String::new(),
+            }
+        });
+
         ret
     }
 
