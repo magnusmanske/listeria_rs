@@ -335,6 +335,11 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn sort_label_case_insensitive() {
+        check_fixture_file(PathBuf::from("test_data/sort_label_case_insensitive.fixture")).await;
+    }
+
+    #[tokio::test]
     async fn sort_family_name() {
         check_fixture_file(PathBuf::from("test_data/sort_family_name.fixture")).await;
     }

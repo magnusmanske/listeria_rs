@@ -232,10 +232,12 @@ impl ResultRow {
                 }
             }
             _ => {
-                if self.sortkey == other.sortkey {
+                let a = self.sortkey.to_lowercase();
+                let b = other.sortkey.to_lowercase();
+                if a == b {
                     self.compare_entity_ids(other)
                 } else {
-                    self.sortkey.cmp(&other.sortkey)
+                    a.cmp(&b)
                 }
             }
         }
@@ -443,6 +445,43 @@ mod tests {
         r2.set_sortkey("also_not".to_string());
         // Both parse to 0, so falls back to entity id comparison
         assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
+    }
+
+    // --- case-insensitive string comparison (issue #61) ---
+
+    #[test]
+    fn test_compare_to_string_case_insensitive_mixed() {
+        // "apple" < "BANANA" alphabetically (a < b), regardless of case
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("apple".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("BANANA".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::String), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_string_uppercase_sorts_with_lowercase() {
+        // "Zoom" must sort AFTER "alpha" when case-insensitive (z > a).
+        // With the old byte-order comparison "Zoom" (Z=90) < "alpha" (a=97),
+        // placing uppercase labels before all lowercase ones — the bug.
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("Zoom".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("alpha".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::String), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_compare_to_string_same_value_different_case_falls_back_to_entity_id() {
+        // "Apple" and "apple" are equal case-insensitively → tiebreak by entity ID
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("Apple".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("apple".to_string());
+        assert_eq!(
+            r1.compare_to(&r2, &SnakDataType::String),
+            Ordering::Less // Q1 < Q2
+        );
     }
 
     // --- remove_excess_files ---

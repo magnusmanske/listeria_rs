@@ -1,0 +1,36 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q937 wd:Q80 wd:Q5 wd:Q4 wd:Q3 } }
+|columns=label:name
+|sort=label
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable'
+! name
+|-
+| [[Albert Einstein]]
+|-
+| [[death]]
+|-
+| [[human]]
+|-
+| [[life]]
+|-
+| [[Tim Berners-Lee]]
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q5"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q4"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q3"}}]}}
