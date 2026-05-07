@@ -465,6 +465,33 @@ impl ResultCellPart {
         }
     }
 
+    /// Converts a URI to wikitext. Wikipedia article URLs become interwiki
+    /// links (`[[:en:Title|Title]]`); all other URIs are rendered as-is.
+    fn uri_to_wikitext(url: &str) -> String {
+        Self::wikipedia_url_to_wikilink(url).unwrap_or_else(|| url.to_string())
+    }
+
+    /// Parses `https://{lang}.wikipedia.org/wiki/{title}` and returns a
+    /// MediaWiki interwiki link string, or `None` if the URL doesn't match.
+    fn wikipedia_url_to_wikilink(url: &str) -> Option<String> {
+        let without_scheme = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))?;
+        let (host, path) = without_scheme.split_once('/')?;
+        let lang = host.strip_suffix(".wikipedia.org")?;
+        if lang.is_empty() {
+            return None;
+        }
+        let title = path.strip_prefix("wiki/")?;
+        // Drop any fragment (#Section) from the title
+        let title = title.split('#').next().unwrap_or(title);
+        if title.is_empty() {
+            return None;
+        }
+        let display = title.replace('_', " ");
+        Some(format!("[[:{}:{}|{}]]", lang, title, display))
+    }
+
     fn as_wikitext_text(list: &ListeriaList, text: &str, colnum: usize) -> String {
         // Newlines in cell values break wiki table structure: MediaWiki ends the
         // cell at the first bare newline, and lines starting with a space are
@@ -515,7 +542,7 @@ impl ResultCellPart {
                 Self::as_wikitext_location(list, loc_info, rownum).await
             }
             ResultCellPart::File(file) => Self::as_wikitext_file(list, file),
-            ResultCellPart::Uri(url) => url.clone(),
+            ResultCellPart::Uri(url) => Self::uri_to_wikitext(url),
             ResultCellPart::ExternalId(ext_id_info) => {
                 Self::as_wikitext_external_id(list, &ext_id_info.property, &ext_id_info.id).await
             }
@@ -1092,5 +1119,48 @@ mod tests {
     #[test]
     fn test_time_sort_year_negative_year() {
         assert_eq!(ResultCellPart::time_sort_year("-0100-00-00T00:00:00Z"), Some(-100));
+    }
+
+    // --- wikipedia_url_to_wikilink (#138) ---
+
+    #[test]
+    fn test_wikipedia_url_to_wikilink_basic() {
+        let result = ResultCellPart::wikipedia_url_to_wikilink(
+            "https://en.wikipedia.org/wiki/Obelisk_(biology)",
+        );
+        assert_eq!(
+            result,
+            Some("[[:en:Obelisk_(biology)|Obelisk (biology)]]".to_string())
+        );
+    }
+
+    #[test]
+    fn test_wikipedia_url_to_wikilink_other_lang() {
+        let result = ResultCellPart::wikipedia_url_to_wikilink(
+            "https://de.wikipedia.org/wiki/Berlin",
+        );
+        assert_eq!(result, Some("[[:de:Berlin|Berlin]]".to_string()));
+    }
+
+    #[test]
+    fn test_wikipedia_url_to_wikilink_with_fragment() {
+        let result = ResultCellPart::wikipedia_url_to_wikilink(
+            "https://en.wikipedia.org/wiki/Foo#Section",
+        );
+        assert_eq!(result, Some("[[:en:Foo|Foo]]".to_string()));
+    }
+
+    #[test]
+    fn test_wikipedia_url_to_wikilink_non_wikipedia_url() {
+        let result =
+            ResultCellPart::wikipedia_url_to_wikilink("https://example.com/page");
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_wikipedia_url_to_wikilink_empty_title() {
+        let result =
+            ResultCellPart::wikipedia_url_to_wikilink("https://en.wikipedia.org/wiki/");
+        assert_eq!(result, None);
     }
 }
