@@ -175,7 +175,7 @@ impl PageElement {
     }
 
     #[must_use]
-    pub fn freq(&self) -> u64 {
+    pub const fn freq(&self) -> u64 {
         self.list.template_params().freq()
     }
 
@@ -183,7 +183,7 @@ impl PageElement {
     /// matching end template. Saving the page in this state would duplicate the
     /// list content on every bot run.
     #[must_use]
-    pub fn is_missing_end_template(&self) -> bool {
+    pub const fn is_missing_end_template(&self) -> bool {
         !self.is_just_text && self.template_end.is_empty()
     }
 

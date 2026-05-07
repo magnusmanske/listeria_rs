@@ -166,12 +166,12 @@ impl ListeriaPage {
 
     pub async fn update_source_page(&mut self) -> Result<bool, WikiPageResult> {
         let max_freq = self.max_freq();
-        if max_freq > 0 && !self.page_params.simulate() {
-            if let Some(days_ago) = self.get_last_edit_days_ago().await {
-                if days_ago < max_freq {
-                    return Ok(false);
-                }
-            }
+        if max_freq > 0
+            && !self.page_params.simulate()
+            && let Some(days_ago) = self.get_last_edit_days_ago().await
+            && days_ago < max_freq
+        {
+            return Ok(false);
         }
 
         let renderer = RendererWikitext::new();

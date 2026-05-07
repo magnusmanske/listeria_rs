@@ -45,10 +45,10 @@ impl PageOperations {
     pub async fn load_page_as(page: &ListeriaPage, mode: &str) -> Result<String, WikiPageResult> {
         // When wikitext is already available locally (simulate mode), skip the
         // action=parse round-trip — the API would return the same text unchanged.
-        if mode == "wikitext" {
-            if let Some(t) = page.page_params().simulated_text() {
-                return Ok(t.to_string());
-            }
+        if mode == "wikitext"
+            && let Some(t) = page.page_params().simulated_text()
+        {
+            return Ok(t.to_string());
         }
 
         let mut params: HashMap<String, String> = [("action", "parse"), ("prop", mode)]
