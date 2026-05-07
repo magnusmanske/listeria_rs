@@ -285,7 +285,15 @@ impl ResultCellPart {
         let precision_val: u8 = (*v.precision()).try_into().ok()?;
         let precision = Precision::try_from(precision_val).ok()?;
 
-        Some(Era::new(year, month, day, precision).to_string())
+        // Wikidata stores century-precision dates as the first year of the colloquial century
+        // (e.g. year 1900 = "20th century" = "the 1900s"). era_date uses the mathematical
+        // convention where year 1900 falls in the 19th century, so we add 1 for positive years.
+        let era_year = if precision == Precision::Century && year > 0 {
+            year + 1
+        } else {
+            year
+        };
+        Some(Era::new(era_year, month, day, precision).to_string())
     }
 
     fn tabbed_string_safe(s: String) -> String {
@@ -814,6 +822,38 @@ mod tests {
         let part = ResultCellPart::from_snak(&snak);
         match part {
             ResultCellPart::Time(s) => assert_eq!(s, "1955-06-08"),
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_reduce_time_century_1900_is_20th_century() {
+        // Wikidata stores "20th century" (the 1900s) as year 1900 with precision 7.
+        let snak = Snak::new_time("P569", "+1900-00-00T00:00:00Z", 7);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s) => assert_eq!(s, "20th century"),
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_reduce_time_century_1800_is_19th_century() {
+        let snak = Snak::new_time("P569", "+1800-00-00T00:00:00Z", 7);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s) => assert_eq!(s, "19th century"),
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_reduce_time_decade_1900s() {
+        // Issue #44: decade precision should show "1900s" not "190s"
+        let snak = Snak::new_time("P569", "+1900-00-00T00:00:00Z", 8);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s) => assert_eq!(s, "1900s"),
             other => panic!("Expected Time, got {:?}", other),
         }
     }
