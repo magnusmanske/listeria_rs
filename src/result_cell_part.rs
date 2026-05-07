@@ -531,11 +531,11 @@ impl ResultCellPart {
         match list.get_links_type() {
             LinksType::Text => use_label,
             LinksType::Red | LinksType::RedOnly => {
-                let contains_colon = use_label.contains(':');
-                if list.local_page_exists(&use_label) {
-                    let category_prefix = if contains_colon { ":" } else { "" };
-                    format!("[[{}{} ({})|]]", category_prefix, &use_label, &id)
-                } else if contains_colon {
+                // For categories/namespaced labels use the colon prefix to avoid
+                // a category inclusion; for everything else use a plain link.
+                // MediaWiki determines blue vs. red based on page existence;
+                // we no longer synthesise a "(Q-id)" page that rarely exists (#137).
+                if use_label.contains(':') {
                     format!("[[:{}|]]", &use_label)
                 } else {
                     format!("[[{}]]", &use_label)
