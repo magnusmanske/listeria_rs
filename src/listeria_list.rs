@@ -320,6 +320,15 @@ impl ListeriaList {
         Self::first_letter_to_upper_case(s)
     }
 
+    /// Formats a coordinate value to at most 6 decimal places, trimming trailing zeros.
+    /// 6 decimals gives ~0.1 m precision, which is more than sufficient for geographic display.
+    pub fn format_coordinate(val: f64) -> String {
+        let s = format!("{:.6}", val);
+        s.trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
+    }
+
     pub fn get_location_template(
         &self,
         lat: f64,
@@ -330,8 +339,8 @@ impl ListeriaList {
         self.page_params
             .config()
             .get_location_template(self.page_params.wiki())
-            .replace("$LAT$", &format!("{lat}"))
-            .replace("$LON$", &format!("{lon}"))
+            .replace("$LAT$", &Self::format_coordinate(lat))
+            .replace("$LON$", &Self::format_coordinate(lon))
             .replace("$ITEM$", &entity_id.unwrap_or_default())
             .replace("$REGION$", &region.unwrap_or_default())
     }
@@ -769,5 +778,39 @@ mod tests {
             ListeriaList::normalize_page_title("category:test"),
             "Category:test"
         );
+    }
+
+    // --- format_coordinate (issue #32) ---
+
+    #[test]
+    fn test_format_coordinate_repeating_decimal() {
+        // 50°55′27″ = 50 + 55/60 + 27/3600 = 50.924166... → rounded to 6 dp
+        assert_eq!(ListeriaList::format_coordinate(50.924_166_666_666_665), "50.924167");
+    }
+
+    #[test]
+    fn test_format_coordinate_repeating_decimal_2() {
+        // 4°06′39″ = 4 + 6/60 + 39/3600 = 4.110833... → 6 dp, no rounding needed
+        assert_eq!(ListeriaList::format_coordinate(4.110_833_333_333_334), "4.110833");
+    }
+
+    #[test]
+    fn test_format_coordinate_trailing_zeros_trimmed() {
+        assert_eq!(ListeriaList::format_coordinate(1.5), "1.5");
+    }
+
+    #[test]
+    fn test_format_coordinate_whole_number() {
+        assert_eq!(ListeriaList::format_coordinate(50.0), "50");
+    }
+
+    #[test]
+    fn test_format_coordinate_negative() {
+        assert_eq!(ListeriaList::format_coordinate(-33.868_820), "-33.86882");
+    }
+
+    #[test]
+    fn test_format_coordinate_zero() {
+        assert_eq!(ListeriaList::format_coordinate(0.0), "0");
     }
 }

@@ -21,7 +21,7 @@ $$$$ EXPECTED
 ! coordinate location
 |-
 | [[Piraeus]]
-| {{Coord|37.943|23.646944444444|display=inline}}
+| {{Coord|37.943|23.646944|display=inline}}
 |}
 
 $$$$ SPARQL_RESULTS
