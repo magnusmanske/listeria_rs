@@ -1,807 +1,44 @@
 //! Result processing and entity resolution.
 //!
 //! Transforms SPARQL results into structured data with resolved entities and references.
+//! Processing stages are organised into sub-modules by concern:
+//!
+//! - `shadow_files` — shadow-image and excess-file removal
+//! - `links`        — redlinks, local links, link target fixing
+//! - `sort`         — result sorting
+//! - `sections`     — section assignment
+//! - `autodesc`     — autodesc description gathering
+//! - `regions`      — geographic region detection and location naming
+//! - `references`   — stated-in reference loading
 
-use crate::listeria_list::ListeriaList;
-use crate::result_cell::ResultCell;
-use crate::result_cell_part::{LinkTarget, ResultCellPart};
-use crate::sparql_results::SparqlResults;
-use crate::template_params::LinksType;
-use crate::template_params::SectionType;
-use crate::template_params::SortMode;
-use crate::template_params::SortOrder;
-use anyhow::{Result, anyhow};
-use futures::StreamExt;
-use futures::future::join_all;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::collections::HashSet;
-use std::sync::Arc;
-use wikimisc::sparql_value::SparqlValue;
-use wikimisc::wikibase::{EntityTrait, SnakDataType};
+mod autodesc;
+mod links;
+mod references;
+mod regions;
+mod sections;
+mod shadow_files;
+mod sort;
 
-const MAX_CONCURRENT_REDLINKS_REQUESTS: usize = 5;
-
-/// Handles the processing of result data for ListeriaList
+/// Handles the processing of result data for ListeriaList.
+///
+/// This is a zero-field marker struct used as a namespace for the processing
+/// pipeline stages.  Each stage is a free `async fn` that takes `&mut ListeriaList`,
+/// performs its transformation, and returns `Result<()>`.
 #[derive(Debug, Clone, Copy)]
 pub struct ListProcessor;
 
-impl ListProcessor {
-    pub async fn process_items_to_local_links(list: &mut ListeriaList) -> Result<()> {
-        let wiki = list.wiki().to_owned();
-        let language = list.language().to_owned();
-        let ecw = list.ecw().clone();
-
-        let futures: Vec<_> = list
-            .results_mut()
-            .iter_mut()
-            .map(|row| Self::process_items_to_local_links_row(&wiki, &language, &ecw, row))
-            .collect();
-        join_all(futures).await;
-        Ok(())
-    }
-
-    pub fn process_excess_files(list: &mut ListeriaList) -> Result<()> {
-        for row in list.results_mut().iter_mut() {
-            row.remove_excess_files();
-        }
-        Ok(())
-    }
-
-    fn check_this_wiki_for_shadow_images(list: &ListeriaList) -> bool {
-        list.page_params()
-            .config()
-            .check_for_shadow_images(list.wiki())
-    }
-
-    async fn fetch_file_info(
-        list: &mut ListeriaList,
-        param_list: &[HashMap<String, String>],
-        files_to_check: Vec<String>,
-    ) -> Vec<(String, Value)> {
-        let page_params = list.page_params().clone();
-        let api_read = page_params.mw_api();
-
-        let mut futures = Vec::with_capacity(param_list.len());
-        for params in param_list {
-            futures.push(api_read.get_query_api_json(params));
-        }
-        list.profile(&format!(
-            "ListProcessor::process_remove_shadow_files running {} futures",
-            futures.len()
-        ))
-        .await;
-
-        join_all(futures)
-            .await
-            .iter()
-            .zip(files_to_check)
-            .filter_map(|(result, filename)| match result {
-                Ok(j) => Some((filename, j.to_owned())),
-                _ => None,
-            })
-            .collect()
-    }
-
-    fn identify_shadow_files(api_results: Vec<(String, Value)>) -> HashSet<String> {
-        api_results
-            .into_iter()
-            .filter_map(|(filename, j)| {
-                let could_be_local = j["query"]["pages"].as_object().map_or_else(
-                    || true,
-                    |results| {
-                        results
-                            .iter()
-                            .filter_map(|(_k, o)| o["imagerepository"].as_str())
-                            .any(|s| s != "shared")
-                    },
-                );
-
-                could_be_local.then_some(filename)
-            })
-            .collect()
-    }
-
-    fn remove_shadow_files_from_rows(list: &mut ListeriaList, shadow_files: &HashSet<String>) {
-        for row_id in 0..list.results().len() {
-            let row = match list.results_mut().get_mut(row_id) {
-                Some(row) => row,
-                None => continue,
-            };
-            row.remove_shadow_files(shadow_files);
-        }
-    }
-
-    pub async fn process_remove_shadow_files(list: &mut ListeriaList) -> Result<()> {
-        if !Self::check_this_wiki_for_shadow_images(list) {
-            return Ok(());
-        }
-        let files_to_check = Self::get_files_to_check(list);
-        list.shadow_files_mut().clear();
-        let param_list = Self::get_param_list_for_files(list, &files_to_check);
-
-        let api_results = Self::fetch_file_info(list, &param_list, files_to_check).await;
-        let shadow_files = Self::identify_shadow_files(api_results);
-        Self::remove_shadow_files_from_rows(list, &shadow_files);
-
-        *list.shadow_files_mut() = shadow_files;
-
-        Ok(())
-    }
-
-    fn get_files_to_check(list: &ListeriaList) -> Vec<String> {
-        let mut files_to_check = Vec::new();
-        for row in list.results().iter() {
-            for cell in row.cells() {
-                for part in cell.parts() {
-                    if let ResultCellPart::File(file) = part.part() {
-                        files_to_check.push(file.to_owned());
-                    }
-                }
-            }
-        }
-        files_to_check.sort_unstable();
-        files_to_check.dedup();
-        files_to_check
-    }
-
-    /// Get parameters for fileinfo API
-    fn get_param_list_for_files(
-        list: &ListeriaList,
-        files_to_check: &[String],
-    ) -> Vec<HashMap<String, String>> {
-        files_to_check
-            .iter()
-            .map(|filename| {
-                let prefixed_filename = format!(
-                    "{}:{}",
-                    list.page_params().local_file_namespace_prefix(),
-                    &filename
-                );
-                let params: HashMap<String, String> = [
-                    ("action", "query"),
-                    ("titles", prefixed_filename.as_str()),
-                    ("prop", "imageinfo"),
-                ]
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect();
-                params
-            })
-            .collect()
-    }
-
-    pub async fn process_redlinks_only(list: &mut ListeriaList) -> Result<()> {
-        if *list.get_links_type() != LinksType::RedOnly {
-            return Ok(());
-        }
-        let keep_flags = Self::find_keep_flags(list).await;
-        Self::set_keep_flags(list, keep_flags);
-        list.results_mut().retain(|r| r.keep());
-        Ok(())
-    }
-
-    pub async fn process_redlinks(list: &mut ListeriaList) -> Result<()> {
-        if *list.get_links_type() != LinksType::RedOnly && *list.get_links_type() != LinksType::Red
-        {
-            return Ok(());
-        }
-
-        let ids = Self::collect_entity_ids_from_results(list);
-        let labels = Self::get_labels_for_entity_ids(list, ids).await;
-        Self::cache_local_page_existence(list, labels).await;
-
-        Ok(())
-    }
-
-    fn collect_entity_ids_from_results(list: &ListeriaList) -> Vec<String> {
-        let mut ids = Vec::new();
-        for row in list.results().iter() {
-            row.cells().iter().for_each(|cell| {
-                cell.parts().iter().for_each(|part| {
-                    if let ResultCellPart::Entity(entity_info) = part.part()
-                        && entity_info.try_localize
-                    {
-                        ids.push(entity_info.id.to_owned());
-                    }
-                });
-            });
-        }
-
-        ids.sort();
-        ids.dedup();
-        ids
-    }
-
-    async fn get_labels_for_entity_ids(list: &mut ListeriaList, ids: Vec<String>) -> Vec<String> {
-        let ecw = list.ecw().clone();
-        // Arc<str>: one allocation shared across all futures instead of N String clones
-        let language: Arc<str> = list.language().into();
-        let futures: Vec<_> = ids
-            .into_iter()
-            .map(|id| {
-                let ecw = ecw.clone();
-                let language = Arc::clone(&language);
-                async move {
-                    ecw.get_entity(&id)
-                        .await
-                        .and_then(|e| e.label_in_locale(&language).map(|l| l.to_string()))
-                }
-            })
-            .collect();
-        let mut labels: Vec<String> = join_all(futures).await.into_iter().flatten().collect();
-        labels.sort();
-        labels.dedup();
-        labels
-    }
-
-    async fn cache_local_page_existence(list: &mut ListeriaList, labels: Vec<String>) {
-        let labels_per_chunk = if list.mw_api().user().is_bot() {
-            500
-        } else {
-            50
-        };
-
-        let num_chunks = labels.len().div_ceil(labels_per_chunk);
-        let mut futures = Vec::with_capacity(num_chunks);
-        for chunk in labels.chunks(labels_per_chunk) {
-            let future = list.cache_local_pages_exist(chunk);
-            futures.push(future);
-        }
-        let stream =
-            futures::stream::iter(futures).buffer_unordered(MAX_CONCURRENT_REDLINKS_REQUESTS);
-        let results = stream.collect::<Vec<_>>().await;
-        for (title, page_exists) in results.into_iter().flatten() {
-            list.local_page_cache_mut().insert(title, page_exists);
-        }
-    }
-
-    pub async fn process_sort_results(list: &mut ListeriaList) -> Result<()> {
-        let sortkeys: Vec<String>;
-        // Default
-        let mut datatype = SnakDataType::String;
-        list.profile("BEFORE process_sort_results SORTKEYS").await;
-        match list.template_params().sort() {
-            SortMode::Label => {
-                list.load_row_entities().await?;
-                let mut futures = Vec::with_capacity(list.results().len());
-                for row in list.results().iter() {
-                    futures.push(row.get_sortkey_label(list));
-                }
-                sortkeys = join_all(futures).await.to_vec();
-            }
-            SortMode::FamilyName => {
-                let mut futures = Vec::with_capacity(list.results().len());
-                for row in list.results().iter() {
-                    futures.push(row.get_sortkey_family_name(list));
-                }
-                sortkeys = join_all(futures).await.to_vec();
-            }
-            SortMode::Property(prop) => {
-                datatype = list.ecw().get_datatype_for_property(prop).await;
-                let mut futures = Vec::with_capacity(list.results().len());
-                for row in list.results().iter() {
-                    futures.push(row.get_sortkey_prop(prop, list, &datatype));
-                }
-                sortkeys = join_all(futures).await.to_vec();
-            }
-            SortMode::SparqlVariable(variable) => {
-                sortkeys = list
-                    .results()
-                    .iter()
-                    .map(|row| row.get_sortkey_sparql(variable, list))
-                    .collect();
-            }
-            SortMode::None => return Ok(()),
-        }
-        list.profile("AFTER process_sort_results SORTKEYS").await;
-
-        let ret = Self::process_sort_results_finish(list, sortkeys, datatype).await;
-        list.profile("AFTER process_sort_results_finish").await;
-        ret
-    }
-
-    async fn process_sort_results_finish(
-        list: &mut ListeriaList,
-        sortkeys: Vec<String>,
-        datatype: SnakDataType,
-    ) -> Result<()> {
-        // Apply sortkeys
-        if list.results().len() != sortkeys.len() {
-            // Paranoia
-            return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
-        }
-
-        for row_id in 0..list.results().len() {
-            if let Some(row) = list.results_mut().get_mut(row_id)
-                && let Some(sk) = sortkeys.get(row_id)
-            {
-                row.set_sortkey(sk.to_owned());
-            };
-        }
-
-        list.profile("BEFORE process_sort_results_finish sort of items")
-            .await;
-        let descending = *list.template_params().sort_order() == SortOrder::Descending;
-        let mut results = std::mem::take(list.results_mut());
-        results = tokio::task::spawn_blocking(move || {
-            results.sort_by(|a, b| a.compare_to(b, &datatype));
-            if descending {
-                results.reverse();
-            }
-            results
-        })
-        .await
-        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?;
-        *list.results_mut() = results;
-        list.profile("AFTER process_sort_results_finish sort").await;
-
-        Ok(())
-    }
-
-    async fn get_section_names_for_rows(
-        list: &mut ListeriaList,
-        section_property: &str,
-        datatype: &SnakDataType,
-    ) -> Result<Vec<String>> {
-        // Build per-row section Q IDs (one entry per row)
-        let mut section_names_q: Vec<String> = Vec::with_capacity(list.results().len());
-        for row in list.results().iter() {
-            section_names_q.push(row.get_sortkey_prop(section_property, list, datatype).await);
-        }
-        list.profile("AFTER list::process_assign_sections 2").await;
-
-        // Create a deduplicated copy solely for efficient entity loading
-        let mut unique_q = section_names_q.clone();
-        unique_q.sort();
-        unique_q.dedup();
-
-        // Make sure section name items are loaded
-        list.ecw().load_entities(list.wb_api(), &unique_q).await?;
-        list.profile("AFTER list::process_assign_sections (load_entities) 3a")
-            .await;
-
-        // Convert per-row Q IDs to labels (preserving one label per row)
-        let mut section_names = Vec::with_capacity(section_names_q.len());
-        for q in section_names_q {
-            let label = list.get_label_with_fallback(&q).await;
-            section_names.push(label);
-        }
-        Ok(section_names)
-    }
-
-    fn build_section_count(section_names: &[String]) -> HashMap<&String, u64> {
-        let mut section_count = HashMap::new();
-        for name in section_names {
-            *section_count.entry(name).or_insert(0) += 1;
-        }
-        section_count
-    }
-
-    fn build_valid_section_names(
-        section_count: HashMap<&String, u64>,
-        min_section: u64,
-    ) -> Vec<String> {
-        let mut valid_section_names: Vec<String> = section_count
-            .into_iter()
-            .filter(|(name, count)| *count >= min_section && !name.trim().is_empty())
-            .map(|(name, _count)| name.to_owned())
-            .collect();
-        valid_section_names.sort();
-        valid_section_names
-    }
-
-    fn create_section_mappings(
-        valid_section_names: Vec<String>,
-    ) -> (HashMap<String, usize>, HashMap<usize, String>, usize) {
-        let misc_id = valid_section_names.len();
-        let mut names_with_misc = valid_section_names;
-        names_with_misc.push("Misc".to_string());
-
-        let mut name2id = HashMap::with_capacity(names_with_misc.len());
-        let mut id2name = HashMap::with_capacity(names_with_misc.len());
-        for (num, name) in names_with_misc.into_iter().enumerate() {
-            name2id.insert(name.clone(), num);
-            id2name.insert(num, name);
-        }
-
-        (name2id, id2name, misc_id)
-    }
-
-    pub async fn process_assign_sections(list: &mut ListeriaList) -> Result<()> {
-        list.profile("BEFORE list::process_assign_sections").await;
-
-        let section_names = match list.template_params().section().clone() {
-            SectionType::Property(p) => {
-                list.load_row_entities().await?;
-                let datatype = list.ecw().get_datatype_for_property(&p).await;
-                list.profile("AFTER list::process_assign_sections 1").await;
-                Self::get_section_names_for_rows(list, &p, &datatype).await?
-            }
-            SectionType::SparqlVariable(v) => {
-                list.profile("AFTER list::process_assign_sections 1").await;
-                Self::get_section_names_for_rows_sparql(list, &v)
-            }
-            SectionType::None => return Ok(()), // Nothing to do
-        };
-
-        let section_count = Self::build_section_count(&section_names);
-        list.profile("AFTER list::process_assign_sections 4").await;
-
-        let valid_section_names =
-            Self::build_valid_section_names(section_count, list.template_params().min_section());
-        list.profile("AFTER list::process_assign_sections 6").await;
-
-        let (name2id, id2name, misc_id) = Self::create_section_mappings(valid_section_names);
-        list.profile("AFTER list::process_assign_sections 7").await;
-
-        *list.section_id_to_name_mut() = id2name;
-        list.profile("AFTER list::process_assign_sections 8").await;
-
-        Self::assign_row_section_ids(list, section_names, name2id, misc_id)?;
-        list.profile("AFTER list::process_assign_sections 9").await;
-
-        Ok(())
-    }
-
-    fn get_section_names_for_rows_sparql(list: &ListeriaList, variable: &str) -> Vec<String> {
-        list.results()
-            .iter()
-            .map(|row| row.get_sortkey_sparql(variable, list))
-            .collect()
-    }
-
-    fn assign_row_section_ids(
-        list: &mut ListeriaList,
-        section_names: Vec<String>,
-        name2id: HashMap<String, usize>,
-        misc_id: usize,
-    ) -> Result<()> {
-        if section_names.len() != list.results().len() {
-            return Err(anyhow!(
-                "assign_row_section_ids: section_names length ({}) != results length ({})",
-                section_names.len(),
-                list.results().len()
-            ));
-        }
-        for (row_id, row) in list.results_mut().iter_mut().enumerate() {
-            let section_id = match section_names.get(row_id) {
-                Some(name) => name2id.get(name).copied().unwrap_or(misc_id),
-                None => misc_id,
-            };
-            row.set_section(section_id);
-        }
-        Ok(())
-    }
-
-    async fn get_region_for_entity_id(list: &ListeriaList, entity_id: &str) -> Option<String> {
-        let wikibase_key = list.template_params().wikibase().to_lowercase();
-        let sparql = format!("SELECT ?q ?x {{ wd:{entity_id} wdt:P131* ?q . ?q wdt:P300 ?x }}");
-        let mut sparql_results = SparqlResults::new(list.page_params().clone(), &wikibase_key);
-        sparql_results.set_simulate(false);
-        let mut region = String::new();
-        let sparql_table = sparql_results.run_query(sparql).await.ok()?;
-        let x_idx = sparql_table.get_var_index("x")?;
-        for row_id in 0..sparql_table.len() {
-            match sparql_table.get_row_col(row_id, x_idx) {
-                Some(SparqlValue::Literal(r)) => {
-                    if r.len() > region.len() {
-                        region = r.to_string();
-                    }
-                }
-                _ => continue,
-            }
-        }
-        if region.is_empty() {
-            None
-        } else {
-            Some(region)
-        }
-    }
-
-    pub async fn process_regions(list: &mut ListeriaList) -> Result<()> {
-        if !list.do_get_regions() {
-            return Ok(());
-        }
-
-        let entity_ids = list.process_regions_get_entity_ids();
-        let entity_id2region = Self::process_regions_get_entity_id2region(list, entity_ids).await;
-
-        for row in list.results_mut().iter_mut() {
-            let the_region = match entity_id2region.get(row.entity_id()) {
-                Some(r) => r,
-                None => continue,
-            };
-            for cell in row.cells_mut().iter_mut() {
-                for part in cell.parts_mut().iter_mut() {
-                    if let ResultCellPart::Location(loc_info) = part.part_mut() {
-                        loc_info.region = Some(the_region.clone());
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Walks every result row and assigns a page-unique anchor name to each
-    /// `ResultCellPart::Location`.
-    ///
-    /// The first occurrence of an item's id (e.g. `Q123`) keeps that id as
-    /// its name; subsequent occurrences receive a numeric suffix
-    /// (`Q123_2`, `Q123_3`, …). This guarantees that the rendered
-    /// `{{Coordinate|...|name=...}}` (or equivalent per-wiki) templates do
-    /// not collide as HTML anchor IDs, which would otherwise trigger
-    /// `duplicate-ids` linter errors when an item has multiple `P625`
-    /// statements or appears in multiple rows (GitHub issue #136).
-    pub fn process_assign_location_names(list: &mut ListeriaList) {
-        let mut counts: HashMap<String, usize> = HashMap::new();
-        for row in list.results_mut().iter_mut() {
-            let entity_id = row.entity_id().to_string();
-            for cell in row.cells_mut().iter_mut() {
-                for part in cell.parts_mut().iter_mut() {
-                    Self::assign_location_name_in_part(part.part_mut(), &entity_id, &mut counts);
-                }
-            }
-        }
-    }
-
-    fn assign_location_name_in_part(
-        part: &mut ResultCellPart,
-        entity_id: &str,
-        counts: &mut HashMap<String, usize>,
-    ) {
-        match part {
-            ResultCellPart::Location(loc_info) => {
-                let count = counts.entry(entity_id.to_string()).or_insert(0);
-                *count += 1;
-                loc_info.name = Some(if *count == 1 {
-                    entity_id.to_string()
-                } else {
-                    format!("{entity_id}_{}", *count)
-                });
-            }
-            ResultCellPart::SnakList(parts) => {
-                for nested in parts.iter_mut() {
-                    Self::assign_location_name_in_part(nested.part_mut(), entity_id, counts);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    pub async fn process_reference_items(list: &mut ListeriaList) -> Result<()> {
-        let items_to_load = Self::collect_stated_in_items_from_references(list);
-        if !items_to_load.is_empty() {
-            list.ecw()
-                .load_entities(list.wb_api(), &items_to_load)
-                .await?;
-        }
-        Ok(())
-    }
-
-    fn collect_stated_in_items_from_references(list: &mut ListeriaList) -> Vec<String> {
-        let mut items_to_load: Vec<String> = Vec::new();
-        for row in list.results_mut().iter_mut() {
-            for cell in row.cells_mut().iter_mut() {
-                for part_with_reference in cell.parts_mut().iter_mut() {
-                    Self::collect_stated_in_from_part(part_with_reference, &mut items_to_load);
-                }
-            }
-        }
-        items_to_load.sort_unstable();
-        items_to_load.dedup();
-        items_to_load
-    }
-
-    fn collect_stated_in_from_part(
-        part: &crate::result_cell_part::PartWithReference,
-        items_to_load: &mut Vec<String>,
-    ) {
-        if let Some(references) = part.references() {
-            for reference in references.iter() {
-                if let Some(stated_in) = reference.stated_in() {
-                    items_to_load.push(stated_in.to_string());
-                }
-            }
-        }
-    }
-
-    pub fn fix_local_links(list: &mut ListeriaList) -> Result<()> {
-        let mw_api = list.mw_api();
-        for row in list.results_mut().iter_mut() {
-            for cell in row.cells_mut().iter_mut() {
-                for part in cell.parts_mut().iter_mut() {
-                    Self::fix_local_link_in_part(part, &mw_api);
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn fix_local_link_in_part(
-        part: &mut crate::result_cell_part::PartWithReference,
-        mw_api: &wikimisc::mediawiki::api::Api,
-    ) {
-        match part.part_mut() {
-            ResultCellPart::LocalLink(link_info) => {
-                Self::set_link_target_from_page(&link_info.page, &mut link_info.target, mw_api);
-            }
-            ResultCellPart::SnakList(v) => {
-                for subpart in v.iter_mut() {
-                    if let ResultCellPart::LocalLink(link_info) = subpart.part_mut() {
-                        Self::set_link_target_from_page(
-                            &link_info.page,
-                            &mut link_info.target,
-                            mw_api,
-                        );
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn set_link_target_from_page(
-        page: &str,
-        link_target: &mut LinkTarget,
-        mw_api: &wikimisc::mediawiki::api::Api,
-    ) {
-        let title = wikimisc::mediawiki::title::Title::new_from_full(page, mw_api);
-        *link_target = match title.namespace_id() {
-            14 => LinkTarget::Category,
-            _ => LinkTarget::Page,
-        };
-    }
-
-    pub async fn fill_autodesc(list: &mut ListeriaList) -> Result<()> {
-        // Done in two different steps, otherwise get_autodesc_description() would borrow self when &mut self is already borrowed
-        // TODO Maybe gather futures and run get_autodesc_description() in async/parallel?
-        let autodescs = Self::fill_autodesc_gather_descriptions(list).await?;
-        Self::fill_autodesc_set_descriptions(list, autodescs)?;
-        Ok(())
-    }
-
-    fn fill_autodesc_set_descriptions(
-        list: &mut ListeriaList,
-        autodescs: HashMap<String, String>,
-    ) -> Result<()> {
-        for row in list.results_mut().iter_mut() {
-            for cell in row.cells_mut() {
-                for part_with_reference in cell.parts_mut() {
-                    if let ResultCellPart::AutoDesc(ad) = part_with_reference.part_mut()
-                        && let Some(desc) = autodescs.get(ad.entity_id())
-                    {
-                        ad.set_description(desc);
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    async fn fill_autodesc_gather_descriptions(
-        list: &mut ListeriaList,
-    ) -> Result<HashMap<String, String>> {
-        let entity_ids = Self::collect_autodesc_entity_ids(list);
-        Self::load_and_get_descriptions(list, entity_ids).await
-    }
-
-    fn collect_autodesc_entity_ids(list: &ListeriaList) -> Vec<String> {
-        let mut entity_ids = Vec::new();
-        for row in list.results().iter() {
-            for cell in row.cells() {
-                for part_with_reference in cell.parts() {
-                    if let ResultCellPart::AutoDesc(ad) = part_with_reference.part() {
-                        entity_ids.push(ad.entity_id().to_owned());
-                    }
-                }
-            }
-        }
-        entity_ids
-    }
-
-    async fn load_and_get_descriptions(
-        list: &mut ListeriaList,
-        entity_ids: Vec<String>,
-    ) -> Result<HashMap<String, String>> {
-        if entity_ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        // Batch-load all entities at once instead of one HTTP round-trip per entity
-        list.ecw().load_entities(list.wb_api(), &entity_ids).await?;
-        let mut autodescs = HashMap::new();
-        for entity_id in entity_ids {
-            if let Some(entity) = list.ecw().get_entity(&entity_id).await
-                && let Ok(desc) = list.get_autodesc_description(&entity).await
-            {
-                autodescs.insert(entity_id, desc);
-            }
-        }
-        Ok(autodescs)
-    }
-
-    async fn find_keep_flags(list: &mut ListeriaList) -> Vec<bool> {
-        // Arc<str>: one allocation shared across all futures instead of N String clones
-        let wiki: Arc<str> = list.wiki().into();
-        let ecw = list.ecw().clone();
-
-        let futures: Vec<_> = list
-            .results()
-            .iter()
-            .map(|row| {
-                let ecw = ecw.clone();
-                let wiki = Arc::clone(&wiki);
-                let entity_id = row.entity_id().to_string();
-                async move {
-                    ecw.get_entity(&entity_id).await.is_some_and(|entity| {
-                        entity
-                            .sitelinks()
-                            .as_ref()
-                            .map_or_else(|| true, |sl| !sl.iter().any(|s| *s.site() == *wiki))
-                    })
-                }
-            })
-            .collect();
-        join_all(futures).await
-    }
-
-    async fn process_regions_get_entity_id2region(
-        list: &mut ListeriaList,
-        entity_ids: HashSet<String>,
-    ) -> HashMap<String, String> {
-        let entity_ids: Vec<String> = entity_ids.into_iter().collect();
-        let futures: Vec<_> = entity_ids
-            .iter()
-            .map(|entity_id| Self::get_region_for_entity_id(list, entity_id))
-            .collect();
-        join_all(futures)
-            .await
-            .into_iter()
-            .zip(entity_ids)
-            .filter_map(|(region, entity_id)| region.map(|r| (entity_id, r)))
-            .collect()
-    }
-
-    fn set_keep_flags(list: &mut ListeriaList, keep_flags: Vec<bool>) {
-        for (row, keep) in list.results_mut().iter_mut().zip(keep_flags) {
-            row.set_keep(keep);
-        }
-    }
-
-    async fn process_items_to_local_links_row(
-        wiki: &str,
-        language: &str,
-        ecw: &crate::entity_container_wrapper::EntityContainerWrapper,
-        row: &mut crate::result_row::ResultRow,
-    ) {
-        let futures: Vec<_> = row
-            .cells_mut()
-            .iter_mut()
-            .map(|cell| {
-                ResultCell::localize_item_links_in_parts(cell.parts_mut(), ecw, wiki, language)
-            })
-            .collect();
-        futures::future::join_all(futures).await;
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ListProcessor;
     use crate::configuration::Configuration;
+    use crate::listeria_list::ListeriaList;
     use crate::page_params::PageParams;
     use crate::template::Template;
     use std::sync::Arc;
-    use wikimisc::mediawiki::api::Api;
 
     async fn create_test_list() -> ListeriaList {
-        let api = Api::new("https://www.wikidata.org/w/api.php")
-            .await
-            .unwrap();
-        let api = Arc::new(api);
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let config = Arc::new(config);
+        let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
+        let config = crate::test_utils::cached_config().await;
         let page_params = PageParams::new(config, api, "Test:Page".to_string())
             .await
             .unwrap();
@@ -816,7 +53,6 @@ mod tests {
 
     #[test]
     fn test_list_processor_is_debug() {
-        // Verify that ListProcessor implements Debug
         let _ = format!("{:?}", ListProcessor);
     }
 
@@ -837,17 +73,14 @@ mod tests {
     #[tokio::test]
     async fn test_process_redlinks_only_not_redonly() {
         let mut list = create_test_list().await;
-        // Default links type should not be RedOnly
         let result = ListProcessor::process_redlinks_only(&mut list).await;
         assert!(result.is_ok());
-        // Results should be unchanged since links type is not RedOnly
     }
 
     #[tokio::test]
     async fn test_process_sort_results_with_empty_results() {
         let mut list = create_test_list().await;
         let result = ListProcessor::process_sort_results(&mut list).await;
-        // Should succeed with empty results
         assert!(result.is_ok());
     }
 
@@ -875,7 +108,6 @@ mod tests {
     #[tokio::test]
     async fn test_process_assign_sections_none() {
         let mut list = create_test_list().await;
-        // Default section type should be None
         let result = ListProcessor::process_assign_sections(&mut list).await;
         assert!(result.is_ok());
     }
@@ -950,7 +182,6 @@ mod tests {
 
     #[test]
     fn test_build_valid_section_names_filters_below_min() {
-        // "rare" appears only once, min_section=2 → filtered out
         let names = vec![
             "human".to_string(),
             "human".to_string(),
@@ -967,7 +198,6 @@ mod tests {
     fn test_build_valid_section_names_none_qualify() {
         let names = vec!["human".to_string(), "state".to_string()];
         let count = ListProcessor::build_section_count(&names);
-        // min_section=5 — nothing reaches that threshold
         let valid = ListProcessor::build_valid_section_names(count, 5);
         assert!(valid.is_empty());
     }
@@ -996,8 +226,6 @@ mod tests {
 
     #[test]
     fn test_build_valid_section_names_excludes_empty_strings() {
-        // Items without the section property get "" as their section name.
-        // Empty names must never become valid sections (they render headerless).
         let names = vec![
             "".to_string(),
             "".to_string(),
@@ -1030,10 +258,8 @@ mod tests {
     fn test_create_section_mappings_misc_always_appended() {
         let valid = vec!["human".to_string(), "state".to_string()];
         let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
-        // Misc must be present
         assert!(name2id.contains_key("Misc"));
         assert!(id2name.values().any(|v| v == "Misc"));
-        // misc_id is the last index (== number of non-Misc sections)
         assert_eq!(misc_id, 2);
         assert_eq!(id2name[&misc_id], "Misc");
     }
@@ -1041,7 +267,6 @@ mod tests {
     #[test]
     fn test_create_section_mappings_empty_input() {
         let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(vec![]);
-        // Only "Misc" is present
         assert_eq!(name2id.len(), 1);
         assert_eq!(id2name.len(), 1);
         assert_eq!(misc_id, 0);
@@ -1052,7 +277,6 @@ mod tests {
     fn test_create_section_mappings_bidirectional_consistency() {
         let valid = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
         let (name2id, id2name, _misc_id) = ListProcessor::create_section_mappings(valid);
-        // Every forward mapping must have a matching reverse mapping
         for (name, id) in &name2id {
             assert_eq!(&id2name[id], name);
         }
@@ -1065,7 +289,6 @@ mod tests {
     fn test_create_section_mappings_ids_are_unique() {
         let valid = vec!["a".to_string(), "b".to_string(), "c".to_string()];
         let (name2id, _id2name, _misc_id) = ListProcessor::create_section_mappings(valid);
-        // All assigned IDs must be distinct
         let mut ids: Vec<usize> = name2id.values().cloned().collect();
         ids.sort();
         ids.dedup();
@@ -1078,21 +301,17 @@ mod tests {
     fn test_assign_row_section_ids_maps_correctly() {
         use crate::result_row::ResultRow;
 
-        // Two sections: "alpha"=0, "beta"=1, "Misc"=2
         let valid = vec!["alpha".to_string(), "beta".to_string()];
         let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
 
-        // Build a tiny fake list-like structure via three rows
         let mut rows = [
             ResultRow::new("Q1"),
             ResultRow::new("Q2"),
             ResultRow::new("Q3"),
         ];
 
-        // section_names is one label per row (the fixed output of get_section_names_for_rows)
         let section_names = ["alpha".to_string(), "beta".to_string(), "alpha".to_string()];
 
-        // Simulate what assign_row_section_ids does
         for (row_id, row) in rows.iter_mut().enumerate() {
             let section_name = &section_names[row_id];
             let section_id = name2id.get(section_name).copied().unwrap_or(misc_id);
@@ -1104,7 +323,6 @@ mod tests {
         assert_eq!(rows[0].section(), alpha_id);
         assert_eq!(rows[1].section(), beta_id);
         assert_eq!(rows[2].section(), alpha_id);
-        // Confirm reverse map is consistent
         assert_eq!(id2name[&alpha_id], "alpha");
         assert_eq!(id2name[&beta_id], "beta");
     }
@@ -1117,7 +335,6 @@ mod tests {
         let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid);
 
         let mut row = ResultRow::new("Q99");
-        // "unknown" is not in name2id → should fall back to misc_id
         let section_id = name2id.get("unknown").copied().unwrap_or(misc_id);
         row.set_section(section_id);
         assert_eq!(row.section(), misc_id);
@@ -1137,7 +354,6 @@ mod tests {
             let section_id = name2id.get(section_name).copied().unwrap_or(misc_id);
             row.set_section(section_id);
         }
-        // Nothing to assert — just verifying no panic on empty input
         assert!(rows.is_empty());
     }
 
@@ -1145,7 +361,6 @@ mod tests {
 
     #[test]
     fn test_identify_shadow_files_shared_file_excluded() {
-        // imagerepository = "shared" → file is NOT a shadow, should be excluded
         let api_results = vec![(
             "Example.jpg".to_string(),
             serde_json::json!({
@@ -1162,7 +377,6 @@ mod tests {
 
     #[test]
     fn test_identify_shadow_files_local_file_included() {
-        // imagerepository = "local" → IS a shadow (local file shadows a Commons image)
         let api_results = vec![(
             "LocalOverride.jpg".to_string(),
             serde_json::json!({
@@ -1179,7 +393,6 @@ mod tests {
 
     #[test]
     fn test_identify_shadow_files_missing_query_pages_assumed_local() {
-        // No "query.pages" key → could_be_local defaults to true
         let api_results = vec![(
             "Unknown.jpg".to_string(),
             serde_json::json!({ "query": {} }),
@@ -1223,7 +436,6 @@ mod tests {
         use crate::result_cell_part::{PartWithReference, ResultCellPart};
         use wikimisc::wikibase::Snak;
 
-        // P248 = "stated in" → produces a Reference with stated_in set
         let snaks = vec![Snak::new_item("P248", "Q36578")];
         let reference = Reference::new_from_snaks(&snaks, "en").unwrap();
         let part = PartWithReference::new(ResultCellPart::Text("x".into()), Some(vec![reference]));
@@ -1238,7 +450,6 @@ mod tests {
         use crate::result_cell_part::{PartWithReference, ResultCellPart};
         use wikimisc::wikibase::Snak;
 
-        // P854 = reference URL → Reference has a URL but no stated_in
         let snaks = vec![Snak::new_string("P854", "https://example.com")];
         let reference = Reference::new_from_snaks(&snaks, "en").unwrap();
         let part = PartWithReference::new(ResultCellPart::Text("x".into()), Some(vec![reference]));
@@ -1266,7 +477,6 @@ mod tests {
         let refs = vec![
             Reference::new_from_snaks(&[Snak::new_item("P248", "Q1")], "en").unwrap(),
             Reference::new_from_snaks(&[Snak::new_item("P248", "Q2")], "en").unwrap(),
-            // URL only — no stated_in
             Reference::new_from_snaks(&[Snak::new_string("P854", "https://example.com")], "en")
                 .unwrap(),
         ];
@@ -1287,7 +497,6 @@ mod tests {
 
         let mut list = create_test_list().await;
 
-        // Insert three rows with explicit sortkeys (unsorted)
         let mut r1 = ResultRow::new("Q3");
         r1.set_sortkey("charlie".to_string());
         let mut r2 = ResultRow::new("Q1");
@@ -1320,7 +529,6 @@ mod tests {
         let mut list = create_test_list().await;
         *list.results_mut() = vec![ResultRow::new("Q1"), ResultRow::new("Q2")];
 
-        // Provide only one sortkey for two rows → should error
         let result = ListProcessor::process_sort_results_finish(
             &mut list,
             vec!["only_one".to_string()],
@@ -1332,20 +540,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_process_sort_results_finish_sorts_descending_via_sort_order() {
-        use crate::configuration::Configuration;
         use crate::page_params::PageParams;
         use crate::result_row::ResultRow;
         use crate::template::Template;
         use std::sync::Arc;
-        use wikimisc::mediawiki::api::Api;
         use wikimisc::wikibase::SnakDataType;
 
-        let api = Arc::new(
-            Api::new("https://www.wikidata.org/w/api.php")
-                .await
-                .unwrap(),
-        );
-        let config = Arc::new(Configuration::new_from_file("config.json").await.unwrap());
+        let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
+        let config = crate::test_utils::cached_config().await;
         let page_params = Arc::new(
             PageParams::new(config, api, "Test:Page".to_string())
                 .await
@@ -1356,7 +558,7 @@ mod tests {
         )
         .unwrap();
         let mut list = ListeriaList::new(template, page_params).await.unwrap();
-        list.process_template().unwrap(); // apply sort_order=descending from the template
+        list.process_template().unwrap();
 
         let mut r1 = ResultRow::new("Q1");
         r1.set_sortkey("alpha".to_string());
@@ -1378,7 +580,6 @@ mod tests {
         .await
         .unwrap();
 
-        // descending: charlie > bravo > alpha
         let ids: Vec<&str> = list.results().iter().map(|r| r.entity_id()).collect();
         assert_eq!(ids, vec!["Q3", "Q2", "Q1"]);
     }
@@ -1389,9 +590,6 @@ mod tests {
     fn test_collect_entity_ids_from_results_empty() {
         use crate::result_row::ResultRow;
 
-        // Build a list and leave results empty
-        // We test the helper logic directly without a real list by mimicking its
-        // behaviour on plain result rows.
         let rows: Vec<ResultRow> = vec![];
         let mut ids: Vec<String> = Vec::new();
         for row in rows.iter() {
@@ -1433,9 +631,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_row_section_ids_all_rows_assigned() {
-        // Regression test: every row must get a section assignment.
-        // Previously, sort+dedup on section_names_q caused fewer section names
-        // than rows, leaving some rows with default section 0 and no header.
         use crate::result_row::ResultRow;
 
         let mut list = create_test_list().await;
@@ -1451,7 +646,6 @@ mod tests {
         let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
         *list.section_id_to_name_mut() = id2name;
 
-        // One section name per row — the correct 1:1 mapping
         let section_names = vec![
             "alpha".to_string(),
             "beta".to_string(),
@@ -1462,7 +656,6 @@ mod tests {
 
         ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
 
-        // Verify ALL rows have a section name (not the headerless default 0)
         for row in list.results().iter() {
             assert!(
                 list.section_name(row.section()).is_some(),
@@ -1475,8 +668,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_row_section_ids_length_mismatch_errors() {
-        // If section_names has fewer entries than rows, the function must
-        // return an error instead of silently skipping rows.
         use crate::result_row::ResultRow;
 
         let mut list = create_test_list().await;
@@ -1489,7 +680,6 @@ mod tests {
         let valid = vec!["alpha".to_string()];
         let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid);
 
-        // Only 1 section name for 3 rows — must error
         let section_names = vec!["alpha".to_string()];
         let result =
             ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id);
@@ -1498,8 +688,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_row_section_ids_unknown_names_go_to_misc() {
-        // Rows whose section name is not in name2id must be assigned to Misc,
-        // not left with a default that has no section header.
         use crate::result_row::ResultRow;
 
         let mut list = create_test_list().await;
@@ -1521,11 +709,10 @@ mod tests {
 
         ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
 
-        assert_eq!(list.results()[0].section(), 0); // alpha → 0
-        assert_eq!(list.results()[1].section(), misc_id); // unknown → misc
-        assert_eq!(list.results()[2].section(), misc_id); // unknown → misc
+        assert_eq!(list.results()[0].section(), 0);
+        assert_eq!(list.results()[1].section(), misc_id);
+        assert_eq!(list.results()[2].section(), misc_id);
 
-        // Every row must have a named section
         for row in list.results().iter() {
             assert!(
                 list.section_name(row.section()).is_some(),
@@ -1538,8 +725,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_section_names_must_match_row_count() {
-        // End-to-end-ish: simulate the full section assignment pipeline and
-        // verify every row gets a valid section.
         use crate::result_row::ResultRow;
 
         let mut list = create_test_list().await;
@@ -1550,13 +735,11 @@ mod tests {
         }
         *list.results_mut() = rows;
 
-        // Simulate section_names_q with duplicates (the scenario from the bug)
         let categories = ["cat_a", "cat_b", "cat_c"];
         let section_names: Vec<String> = (0..num_rows)
             .map(|i| categories[i % categories.len()].to_string())
             .collect();
 
-        // This must have exactly one entry per row
         assert_eq!(section_names.len(), list.results().len());
 
         let section_count = ListProcessor::build_section_count(&section_names);
@@ -1567,13 +750,11 @@ mod tests {
 
         ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
 
-        // Every single row must be assigned to a named section
         for (i, row) in list.results().iter().enumerate() {
             let section_name = list.section_name(row.section());
             assert!(
                 section_name.is_some(),
-                "row {} (Q{}) was assigned section {} which has no name — \
-                 this is the bug from issue #166",
+                "row {} (Q{}) was assigned section {} which has no name",
                 i,
                 i,
                 row.section()
@@ -1583,11 +764,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_section_names_go_to_misc() {
-        // Reproduces the real-world scenario from issue #166:
-        // Items without the section property get "" as their section name.
-        // With min_section=2 and enough such items, "" used to become a valid
-        // section name, rendering with no visible header ("not in a section").
-        // These items must go to Misc instead.
         use crate::result_row::ResultRow;
 
         let mut list = create_test_list().await;
@@ -1598,11 +774,10 @@ mod tests {
         }
         *list.results_mut() = rows;
 
-        // Simulate: 22 items have no section property (""), rest have real sections
         let mut section_names: Vec<String> = Vec::with_capacity(num_rows);
         for i in 0..num_rows {
             if i < 22 {
-                section_names.push("".to_string()); // no section property
+                section_names.push("".to_string());
             } else {
                 section_names.push("Atari".to_string());
             }
@@ -1611,7 +786,6 @@ mod tests {
         let section_count = ListProcessor::build_section_count(&section_names);
         let valid_section_names = ListProcessor::build_valid_section_names(section_count, 2);
 
-        // "" must NOT be a valid section name
         assert!(
             !valid_section_names.contains(&"".to_string()),
             "empty string should not be a valid section name"
@@ -1624,18 +798,15 @@ mod tests {
 
         ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
 
-        // Items without the section property must go to Misc
         for i in 0..22 {
             assert_eq!(
                 list.results()[i].section(),
                 misc_id,
-                "row {} should be in Misc, not section {}",
-                i,
-                list.results()[i].section()
+                "row {} should be in Misc",
+                i
             );
         }
 
-        // Items with the section property must be in the correct section
         for i in 22..num_rows {
             let section_name = list.section_name(list.results()[i].section());
             assert_eq!(
@@ -1646,7 +817,6 @@ mod tests {
             );
         }
 
-        // Every row must have a named section (no headerless rows)
         for (i, row) in list.results().iter().enumerate() {
             assert!(
                 list.section_name(row.section()).is_some(),
@@ -1676,7 +846,6 @@ mod tests {
     }
 
     fn make_empty_cell() -> crate::result_cell::ResultCell {
-        // ResultCell has no public empty constructor; build via serde for tests
         serde_json::from_value(serde_json::json!({
             "parts": [],
             "wdedit_class": null,
@@ -1686,7 +855,6 @@ mod tests {
     }
 
     async fn build_list_with_location_rows(rows: Vec<(&str, Vec<usize>)>) -> ListeriaList {
-        // Each tuple is (entity_id, vec_of_location_counts_per_cell).
         use crate::result_row::ResultRow;
         let mut list = create_test_list().await;
         let mut result_rows = Vec::new();
@@ -1712,7 +880,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_location_names_single_row_single_location() {
-        // One row, one location → name == entity_id
         let mut list = build_list_with_location_rows(vec![("Q42", vec![1])]).await;
         ListProcessor::process_assign_location_names(&mut list);
         let row = &list.results()[0];
@@ -1724,8 +891,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_location_names_multiple_locations_same_row() {
-        // One row with three locations in a single cell — duplicate-id case
-        // from issue #136. First gets entity_id, others get suffixed names.
         let mut list = build_list_with_location_rows(vec![("Q42", vec![3])]).await;
         ListProcessor::process_assign_location_names(&mut list);
         let cell = &list.results()[0].cells()[0];
@@ -1742,8 +907,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_location_names_multiple_rows_distinct_items() {
-        // Different entity_ids → each gets its own bare name; counters are
-        // tracked per entity_id, not globally.
         let mut list =
             build_list_with_location_rows(vec![("Q1", vec![1]), ("Q2", vec![1]), ("Q3", vec![1])])
                 .await;
@@ -1764,8 +927,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_location_names_same_item_in_multiple_rows() {
-        // Same entity_id appearing in two rows (rare but possible) → second
-        // occurrence is suffixed for uniqueness.
         let mut list =
             build_list_with_location_rows(vec![("Q42", vec![1]), ("Q42", vec![1])]).await;
         ListProcessor::process_assign_location_names(&mut list);
@@ -1781,8 +942,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_location_names_recurses_into_snaklist() {
-        // Locations nested inside a SnakList (used for property-qualifier
-        // pairs) must also receive unique names.
         use crate::result_cell_part::{LocationInfo, PartWithReference, ResultCellPart};
         use crate::result_row::ResultRow;
 
@@ -1825,8 +984,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_assign_location_names_idempotent_within_call() {
-        // Calling process_assign_location_names a second time must produce
-        // the same names — counters are reset on each call.
         let mut list = build_list_with_location_rows(vec![("Q42", vec![2])]).await;
         ListProcessor::process_assign_location_names(&mut list);
         let first_run: Vec<_> = list.results()[0].cells()[0]
@@ -1842,4 +999,10 @@ mod tests {
             .collect();
         assert_eq!(first_run, second_run);
     }
+
+    // Suppress unused import warning for Configuration — it is used in
+    // test_process_sort_results_finish_sorts_descending_via_sort_order
+    // through the re-exported cached_config helper, but not directly here.
+    #[allow(unused_imports)]
+    use Configuration as _;
 }
