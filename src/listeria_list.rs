@@ -8,6 +8,7 @@ use crate::entity_container_wrapper::{EntityContainerWrapper, EntityEntry};
 use crate::list_processor::ListProcessor;
 use crate::my_entity::MyEntity;
 use crate::page_params::PageParams;
+use crate::profiling_service::ProfilingService;
 use crate::result_cell_part::ResultCellPart;
 use crate::result_generator::ResultGenerator;
 use crate::result_row::ResultRow;
@@ -20,10 +21,6 @@ use crate::template_params::SortMode;
 use crate::template_params::TemplateParams;
 use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
-use chrono::DateTime;
-use chrono::Utc;
-use mysql_async::params;
-use mysql_async::prelude::Queryable;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -49,8 +46,7 @@ pub struct ListeriaList {
     wb_api: Arc<Api>,
     language: String,
     reference_ids: HashSet<String>,
-    profiling: bool,
-    last_timestamp: DateTime<Utc>,
+    profiler: ProfilingService,
 }
 
 impl ListeriaList {
@@ -58,6 +54,12 @@ impl ListeriaList {
         let wb_api = page_params.wb_api();
         let mut template = template;
         template.fix_values();
+        let profiler = ProfilingService::new(
+            page_params.config().clone(),
+            page_params.wiki(),
+            page_params.page(),
+            page_params.config().profiling(),
+        );
         Ok(Self {
             page_params: page_params.clone(),
             template,
@@ -72,23 +74,8 @@ impl ListeriaList {
             wb_api,
             language: page_params.language().to_string(),
             reference_ids: HashSet::new(),
-            profiling: page_params.config().profiling(),
-            last_timestamp: Utc::now(),
+            profiler,
         })
-    }
-
-    async fn log2db(&self, ms: i64, timestamp: &str, msg: &str) -> Result<()> {
-        let sql = "REPLACE INTO list_log (wiki, page, timestamp, diff_ms, message) VALUES (:wiki, :page, :timestamp, :ms, :msg)";
-        let wiki = self.page_params.wiki();
-        let page = self.page_params.page();
-        self.page_params
-            .config()
-            .pool()?
-            .get_conn()
-            .await?
-            .exec_drop(sql, params! {wiki, page, timestamp, ms, msg})
-            .await?;
-        Ok(())
     }
 
     pub fn do_get_regions(&self) -> bool {
@@ -116,19 +103,7 @@ impl ListeriaList {
     }
 
     pub async fn profile(&mut self, msg: &str) {
-        if self.profiling {
-            let now = Utc::now();
-            let last = self.last_timestamp;
-            self.last_timestamp = now;
-            let diff = now - last;
-            let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-            let time_diff = diff.num_milliseconds();
-
-            let _ = self.log2db(time_diff, &timestamp, msg).await;
-
-            let section = format!("{}:{}", self.page_params.wiki(), self.page_params.page());
-            log::debug!("{timestamp} {section}: {msg} [{time_diff}ms]");
-        }
+        self.profiler.profile(msg).await;
     }
 
     /// Main processing pipeline: parses template, runs SPARQL query, and generates results.

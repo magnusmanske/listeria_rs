@@ -70,6 +70,7 @@ pub mod page_element;
 pub mod page_operations;
 pub mod page_params;
 pub mod page_to_process;
+pub mod profiling_service;
 pub mod reference;
 pub mod render_context;
 pub mod render_tabbed_data;
