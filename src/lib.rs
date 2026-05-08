@@ -52,6 +52,7 @@
 #[macro_use]
 extern crate serde_json;
 
+pub mod circuit_breaker;
 pub mod column;
 pub mod column_type;
 pub mod configuration;

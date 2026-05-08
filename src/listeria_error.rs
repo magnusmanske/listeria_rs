@@ -20,6 +20,9 @@ pub enum ListeriaError {
 
     #[error("No items to show")]
     NoItemsToShow,
+
+    #[error("SPARQL circuit open — endpoint '{0}' is temporarily blocked after repeated failures")]
+    SparqlCircuitOpen(String),
 }
 
 #[cfg(test)]

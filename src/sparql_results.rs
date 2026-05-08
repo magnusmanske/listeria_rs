@@ -83,26 +83,50 @@ impl SparqlResults {
         sparql: &str,
     ) -> Result<SparqlTableVec> {
         let query_api_url = self.get_sparql_endpoint(wb_api_sparql);
+        let circuit_breaker = self
+            .page_params
+            .config()
+            .sparql_circuit_breaker(&query_api_url);
+        if circuit_breaker.is_open() {
+            return Err(ListeriaError::SparqlCircuitOpen(query_api_url).into());
+        }
+
         let sparql = match self.page_params.config().sparql_prefix() {
             Some(prefix) => format!("{}\n{}", prefix, sparql),
             None => sparql.to_string(),
         };
         let params = [("query", sparql.as_str()), ("format", "json")];
         let timeout = self.page_params.config().api_timeout();
-        let response = wb_api_sparql
+        let send_result = wb_api_sparql
             .client()
             .post(&query_api_url)
             .header(reqwest::header::USER_AGENT, crate::LISTERIA_USER_AGENT)
             .timeout(timeout)
             .form(&params)
             .send()
-            .await?;
-        let result = response.json::<SparqlApiResult>().await?;
-        self.set_main_variable(&result);
+            .await;
 
-        let mut ret = SparqlTableVec::from_api_result(result)?;
-        ret.set_main_variable(self.sparql_main_variable());
-        Ok(ret)
+        let response = match send_result {
+            Ok(r) => r,
+            Err(e) => {
+                circuit_breaker.record_failure();
+                return Err(e.into());
+            }
+        };
+
+        match response.json::<SparqlApiResult>().await {
+            Ok(result) => {
+                circuit_breaker.record_success();
+                self.set_main_variable(&result);
+                let mut ret = SparqlTableVec::from_api_result(result)?;
+                ret.set_main_variable(self.sparql_main_variable());
+                Ok(ret)
+            }
+            Err(e) => {
+                circuit_breaker.record_failure();
+                Err(e.into())
+            }
+        }
     }
 
     fn set_main_variable(&mut self, result: &SparqlApiResult) {

@@ -3,9 +3,11 @@
 //! Handles loading and parsing configuration from JSON files, including API endpoints,
 //! template mappings, database settings, and operational parameters.
 
+use crate::circuit_breaker::CircuitBreaker;
 use crate::database_pool::DatabasePool;
 use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
+use dashmap::DashMap;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -73,6 +75,9 @@ pub struct Configuration {
     /// Shared semaphore that limits the number of concurrent SPARQL requests.
     /// Initialized from `max_sparql_simultaneous` in `new_from_json`.
     sparql_semaphore: Arc<Semaphore>,
+    /// Per-endpoint circuit breakers. Shared across all `Configuration` clones
+    /// so that failures recorded by one clone are visible to all others.
+    sparql_circuit_breakers: Arc<DashMap<String, Arc<CircuitBreaker>>>,
 }
 
 impl Default for Configuration {
@@ -115,6 +120,7 @@ impl Default for Configuration {
             sparql_prefix: None,
             main_item_prefix: String::new(),
             sparql_semaphore: Arc::new(Semaphore::new(1)),
+            sparql_circuit_breakers: Arc::new(DashMap::new()),
         }
     }
 }
@@ -236,6 +242,15 @@ impl Configuration {
     /// Returns the shared semaphore that limits concurrent SPARQL requests.
     pub const fn sparql_semaphore(&self) -> &Arc<Semaphore> {
         &self.sparql_semaphore
+    }
+
+    /// Returns the circuit breaker for the given SPARQL endpoint URL, creating
+    /// one on first access. All `Configuration` clones share the same breaker map.
+    pub fn sparql_circuit_breaker(&self, endpoint: &str) -> Arc<CircuitBreaker> {
+        self.sparql_circuit_breakers
+            .entry(endpoint.to_owned())
+            .or_insert_with(|| Arc::new(CircuitBreaker::new()))
+            .clone()
     }
 
     pub const fn profiling(&self) -> bool {
