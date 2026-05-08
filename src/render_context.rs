@@ -76,3 +76,60 @@ pub(crate) fn normalize_page_title(s: &str) -> String {
         .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::normalize_page_title;
+
+    #[test]
+    fn test_empty_string() {
+        assert_eq!(normalize_page_title(""), "");
+    }
+
+    #[test]
+    fn test_single_ascii_char_unchanged() {
+        assert_eq!(normalize_page_title("h"), "h");
+    }
+
+    #[test]
+    fn test_two_chars_lowercase_uppercased() {
+        assert_eq!(normalize_page_title("ab"), "Ab");
+    }
+
+    #[test]
+    fn test_already_uppercase_unchanged() {
+        assert_eq!(normalize_page_title("Hello world"), "Hello world");
+    }
+
+    #[test]
+    fn test_lowercase_first_char_uppercased() {
+        assert_eq!(normalize_page_title("hello world"), "Hello world");
+    }
+
+    #[test]
+    fn test_namespace_prefix_uppercased() {
+        assert_eq!(normalize_page_title("category:test"), "Category:test");
+    }
+
+    #[test]
+    fn test_unicode_multibyte_first_char() {
+        assert_eq!(normalize_page_title("über alles"), "Über alles");
+    }
+
+    #[test]
+    fn test_digit_first_char_unchanged() {
+        // digits have no uppercase form, remain unchanged
+        assert_eq!(normalize_page_title("123 abc"), "123 abc");
+    }
+
+    #[test]
+    fn test_already_uppercase_unicode() {
+        assert_eq!(normalize_page_title("Über etwas"), "Über etwas");
+    }
+
+    #[test]
+    fn test_rest_of_string_preserved() {
+        // Only the very first character changes; the rest is untouched
+        assert_eq!(normalize_page_title("aBcDe"), "ABcDe");
+    }
+}

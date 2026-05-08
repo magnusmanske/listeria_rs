@@ -103,3 +103,85 @@ impl PageParams {
         self.simulated_autodesc = autodesc;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn make_page_params() -> PageParams {
+        let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
+        let config = crate::test_utils::cached_config().await;
+        PageParams::new(config, api, "Test:Page".to_string())
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_simulate_default_false() {
+        let pp = make_page_params().await;
+        assert!(!pp.simulate());
+    }
+
+    #[tokio::test]
+    async fn test_set_simulation_enables_flag() {
+        let mut pp = make_page_params().await;
+        pp.set_simulation(None, None, None);
+        assert!(pp.simulate());
+    }
+
+    #[tokio::test]
+    async fn test_set_simulation_stores_text() {
+        let mut pp = make_page_params().await;
+        pp.set_simulation(Some("page text".to_string()), None, None);
+        assert_eq!(pp.simulated_text(), &Some("page text".to_string()));
+        assert_eq!(pp.simulated_sparql_results(), &None);
+        assert_eq!(pp.simulated_autodesc(), &None);
+    }
+
+    #[tokio::test]
+    async fn test_set_simulation_stores_sparql_results() {
+        let mut pp = make_page_params().await;
+        pp.set_simulation(None, Some("sparql json".to_string()), None);
+        assert_eq!(pp.simulated_text(), &None);
+        assert_eq!(
+            pp.simulated_sparql_results(),
+            &Some("sparql json".to_string())
+        );
+        assert_eq!(pp.simulated_autodesc(), &None);
+    }
+
+    #[tokio::test]
+    async fn test_set_simulation_stores_autodesc() {
+        let mut pp = make_page_params().await;
+        let autodesc = vec!["desc1".to_string(), "desc2".to_string()];
+        pp.set_simulation(None, None, Some(autodesc.clone()));
+        assert_eq!(pp.simulated_autodesc(), &Some(autodesc));
+    }
+
+    #[tokio::test]
+    async fn test_set_simulation_all_fields() {
+        let mut pp = make_page_params().await;
+        let autodesc = vec!["desc".to_string()];
+        pp.set_simulation(
+            Some("text".to_string()),
+            Some("sparql".to_string()),
+            Some(autodesc.clone()),
+        );
+        assert!(pp.simulate());
+        assert_eq!(pp.simulated_text(), &Some("text".to_string()));
+        assert_eq!(pp.simulated_sparql_results(), &Some("sparql".to_string()));
+        assert_eq!(pp.simulated_autodesc(), &Some(autodesc));
+    }
+
+    #[tokio::test]
+    async fn test_page_accessor() {
+        let pp = make_page_params().await;
+        assert_eq!(pp.page(), "Test:Page");
+    }
+
+    #[tokio::test]
+    async fn test_local_file_namespace_prefix_nonempty() {
+        let pp = make_page_params().await;
+        assert!(!pp.local_file_namespace_prefix().is_empty());
+    }
+}
