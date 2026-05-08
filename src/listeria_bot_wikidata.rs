@@ -52,14 +52,12 @@ impl ListeriaBot for ListeriaBotWikidata {
         Self::new_from_config(config).await
     }
 
-    async fn new_from_config(mut config: Arc<Configuration>) -> Result<Self> {
+    async fn new_from_config(config: Arc<Configuration>) -> Result<Self> {
         let wikis = WikiApis::new(config.clone())
             .await?
             .get_all_wikis_in_database()
             .await?;
-        Arc::get_mut(&mut config)
-            .ok_or(anyhow!("Failed to get mutable reference to config"))?
-            .set_wikis(wikis);
+        let config = Arc::new((*config).clone().with_wikis(wikis));
         let wiki_apis = WikiApis::new(config.clone()).await?;
         let pagestatus = PageStatusRepository::new(config.pool()?.as_ref().clone());
 

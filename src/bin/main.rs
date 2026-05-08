@@ -36,13 +36,13 @@ async fn main() -> Result<()> {
     let cli = Args::parse();
 
     let config_file = cli.config;
-    let mut config = Configuration::new_from_file(&config_file).await?;
+    let config = Configuration::new_from_file(&config_file).await?;
 
-    // Set the profiling flag for single use commands only
-    match cli.cmd {
-        Commands::Wikidata | Commands::SingleWiki { once: _ } => {}
-        _ => config.set_profiling(true),
-    }
+    // Enable profiling for single-use commands (page, update-wikis, load-test-entities).
+    let config = match cli.cmd {
+        Commands::Wikidata | Commands::SingleWiki { once: _ } => config,
+        _ => config.with_profiling(true),
+    };
 
     let mut main = MainCommands {
         config: Arc::new(config),

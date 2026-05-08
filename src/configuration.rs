@@ -138,8 +138,20 @@ impl Configuration {
         self.max_local_cached_entities = max_local_cached_entities;
     }
 
+    #[must_use]
+    pub fn with_max_local_cached_entities(mut self, max_local_cached_entities: usize) -> Self {
+        self.max_local_cached_entities = max_local_cached_entities;
+        self
+    }
+
     pub fn set_wikis(&mut self, wikis: HashMap<String, Wiki>) {
         self.wikis = wikis;
+    }
+
+    #[must_use]
+    pub fn with_wikis(mut self, wikis: HashMap<String, Wiki>) -> Self {
+        self.wikis = wikis;
+        self
     }
 
     #[must_use]
@@ -236,6 +248,12 @@ impl Configuration {
 
     pub const fn set_profiling(&mut self, profiling: bool) {
         self.profiling = profiling;
+    }
+
+    #[must_use]
+    pub const fn with_profiling(mut self, profiling: bool) -> Self {
+        self.profiling = profiling;
+        self
     }
 
     /// Returns the database connection pool if configured.
@@ -1055,5 +1073,44 @@ mod tests {
         let mut config = Configuration::default();
         let j = serde_json::json!({ "namespace_blocks": { "enwiki": "bad_value" } });
         assert!(config.new_from_json_namespace_blocks(&j).is_err());
+    }
+
+    // ── consuming builder (with_*) ─────────────────────────────────────────
+
+    #[test]
+    fn test_with_profiling_returns_updated_config() {
+        let config = Configuration::default().with_profiling(true);
+        assert!(config.profiling());
+    }
+
+    #[test]
+    fn test_with_profiling_false() {
+        let mut config = Configuration::default();
+        config.profiling = true;
+        let config = config.with_profiling(false);
+        assert!(!config.profiling());
+    }
+
+    #[test]
+    fn test_with_max_local_cached_entities() {
+        let config = Configuration::default().with_max_local_cached_entities(42);
+        assert_eq!(config.max_local_cached_entities(), 42);
+    }
+
+    #[test]
+    fn test_with_wikis_adds_wikis() {
+        use crate::wiki::Wiki;
+        let w = Wiki::from_row((
+            1,
+            "enwiki".to_string(),
+            "active".to_string(),
+            "20240101".to_string(),
+            true,
+            true,
+        ))
+        .unwrap();
+        let config =
+            Configuration::default().with_wikis([("enwiki".to_string(), w)].into());
+        assert!(config.get_wiki("enwiki").is_some());
     }
 }

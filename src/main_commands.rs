@@ -64,9 +64,7 @@ impl MainCommands {
         items.push("Q3".to_string());
         items.push("Q4".to_string());
 
-        let config = Arc::get_mut(&mut self.config)
-            .ok_or(anyhow!("Failed to get mutable reference to config"))?;
-        config.set_max_local_cached_entities(1000000); // A lot
+        self.config = Arc::new((*self.config).clone().with_max_local_cached_entities(1_000_000));
         let ecw = EntityContainerWrapper::new().await?;
         let api = wikimisc::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await?;
         ecw.load_entities(&api, &items).await?;
