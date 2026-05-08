@@ -61,3 +61,18 @@ pub trait RenderContext {
     async fn get_label_with_fallback_lang(&self, entity_id: &str, language: &str) -> String;
     async fn external_id_url(&self, prop: &str, id: &str) -> Option<String>;
 }
+
+/// Capitalises the first letter of a page title for link normalisation.
+///
+/// Returns the string unchanged when it has fewer than 2 bytes (avoids
+/// uppercasing lone ASCII punctuation or single combining code points).
+/// TODO: consult per-wiki capitalisation config instead of always uppercasing.
+pub(crate) fn normalize_page_title(s: &str) -> String {
+    if s.len() < 2 {
+        return s.to_string();
+    }
+    let mut c = s.chars();
+    c.next()
+        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+        .unwrap_or_default()
+}

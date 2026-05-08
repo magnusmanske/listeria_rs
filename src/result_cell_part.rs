@@ -353,16 +353,6 @@ impl ResultCellPart {
         ret
     }
 
-    /// Capitalises the first letter of a page title for link normalisation.
-    fn normalize_page_title(s: &str) -> String {
-        if s.len() < 2 {
-            return s.to_string();
-        }
-        let mut c = s.chars();
-        c.next()
-            .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
-            .unwrap_or_default()
-    }
 
     async fn as_wikitext_entity(
         &self,
@@ -417,12 +407,12 @@ impl ResultCellPart {
         };
 
         let normalized_page =
-            Self::normalize_page_title(list.page_title()).replace(' ', "_");
-        let normalized_title = Self::normalize_page_title(title).replace(' ', "_");
+            crate::render_context::normalize_page_title(list.page_title()).replace(' ', "_");
+        let normalized_title = crate::render_context::normalize_page_title(title).replace(' ', "_");
 
         if normalized_page == normalized_title {
             label.to_string()
-        } else if Self::normalize_page_title(title) == Self::normalize_page_title(label) {
+        } else if crate::render_context::normalize_page_title(title) == crate::render_context::normalize_page_title(label) {
             format!("{start}{label}]]")
         } else {
             format!("{start}{title}|{label}]]")

@@ -303,21 +303,8 @@ impl ListeriaList {
         *self.local_page_cache.get(page).unwrap_or(&false)
     }
 
-    /// Converts the first letter of a string to uppercase.
-    fn first_letter_to_upper_case(s1: &str) -> String {
-        let mut c = s1.chars();
-        c.next()
-            .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
-            .unwrap_or_default()
-    }
-
-    /// Normalizes a page title by capitalizing the first letter.
-    /// TODO: use wiki configuration to determine first character capitalization rules
     pub fn normalize_page_title(s: &str) -> String {
-        if s.len() < 2 {
-            return s.to_string();
-        }
-        Self::first_letter_to_upper_case(s)
+        crate::render_context::normalize_page_title(s)
     }
 
     /// Formats a coordinate value to at most 6 decimal places, trimming trailing zeros.
@@ -839,38 +826,6 @@ impl crate::render_context::RenderContext for ListeriaList {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // --- first_letter_to_upper_case ---
-
-    #[test]
-    fn test_first_letter_to_upper_case_basic() {
-        assert_eq!(ListeriaList::first_letter_to_upper_case("hello"), "Hello");
-    }
-
-    #[test]
-    fn test_first_letter_to_upper_case_already_upper() {
-        assert_eq!(ListeriaList::first_letter_to_upper_case("Hello"), "Hello");
-    }
-
-    #[test]
-    fn test_first_letter_to_upper_case_single_char() {
-        assert_eq!(ListeriaList::first_letter_to_upper_case("h"), "H");
-    }
-
-    #[test]
-    fn test_first_letter_to_upper_case_empty() {
-        assert_eq!(ListeriaList::first_letter_to_upper_case(""), "");
-    }
-
-    #[test]
-    fn test_first_letter_to_upper_case_unicode() {
-        assert_eq!(ListeriaList::first_letter_to_upper_case("über"), "Über");
-    }
-
-    #[test]
-    fn test_first_letter_to_upper_case_number() {
-        assert_eq!(ListeriaList::first_letter_to_upper_case("123abc"), "123abc");
-    }
 
     // --- normalize_page_title ---
 
