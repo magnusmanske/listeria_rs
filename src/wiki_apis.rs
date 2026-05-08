@@ -4,6 +4,7 @@ use crate::{ApiArc, configuration::Configuration, database_pool::DatabasePool, w
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use log::info;
+use tokio::sync::OnceCell;
 use mysql_async::{Conn, Opts, OptsBuilder, from_row, prelude::*};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -19,7 +20,11 @@ use wikimisc::{
 pub struct WikiApis {
     config: Arc<Configuration>,
     site_matrix: SiteMatrix,
-    apis: DashMap<String, ApiArc>,
+    /// Each entry is an `Arc<OnceCell<ApiArc>>` so that concurrent callers for
+    /// the same new wiki wait on a single `get_or_try_init` rather than racing
+    /// to each create their own TCP connection. The `DashMap` shard lock is
+    /// held only for the map lookup/insert, not during the async API creation.
+    apis: DashMap<String, Arc<OnceCell<ApiArc>>>,
     pool: DatabasePool,
 }
 
@@ -36,24 +41,33 @@ impl WikiApis {
     }
 
     /// Returns a MediaWiki API instance for the given wiki. Creates a new one and caches it, if required.
+    ///
+    /// Concurrent callers for the same previously-unseen wiki share a single
+    /// `OnceCell` initializer — only one TCP connection is opened even if many
+    /// tasks race to request the same wiki for the first time.
     pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiArc> {
         self.wait_for_max_mw_apis_total().await;
 
-        // Check for existing API and return that if it exists
-        if let Some(api) = self.apis.get(wiki) {
-            self.wait_for_wiki_apis(&api).await;
-            return Ok(api.clone());
-        }
+        // Get-or-create the OnceCell for this wiki, holding the DashMap shard
+        // lock only for the brief map operation, not during async API creation.
+        let once = self
+            .apis
+            .entry(wiki.to_owned())
+            .or_insert_with(|| Arc::new(OnceCell::new()))
+            .clone();
 
-        // Create a new API
-        let mw_api = self.create_wiki_api(wiki).await?;
-        self.apis.insert(wiki.to_owned(), mw_api);
-        info!(target: "lock", "WikiApis::get_or_create_wiki_api: new wiki {wiki} created");
+        // Initialize exactly once; any concurrent callers for the same wiki
+        // block here until the first caller's `create_wiki_api` completes.
+        let api = once
+            .get_or_try_init(|| async {
+                let api = self.create_wiki_api(wiki).await?;
+                info!(target: "lock", "WikiApis::get_or_create_wiki_api: new wiki {wiki} created");
+                Ok::<ApiArc, anyhow::Error>(api)
+            })
+            .await?;
 
-        self.apis
-            .get(wiki)
-            .ok_or(anyhow!("Wiki not found: {wiki}"))
-            .map(|ret| (*ret).clone())
+        self.wait_for_wiki_apis(api).await;
+        Ok(api.clone())
     }
 
     async fn wait_with_condition<F>(&self, mut condition: F, message: String)
@@ -90,7 +104,7 @@ impl WikiApis {
                     let current_strong_locks: usize = self
                         .apis
                         .iter()
-                        .map(|entry| Arc::strong_count(entry.value()))
+                        .filter_map(|entry| entry.value().get().map(Arc::strong_count))
                         .sum();
                     current_strong_locks >= max
                 },
