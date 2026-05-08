@@ -4,7 +4,7 @@ use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
 use crate::my_entity::MyEntity;
 use crate::reference::Reference;
-use crate::render_context::RenderContext;
+use crate::render_context::{normalize_page_title, RenderContext};
 use crate::template_params::LinksType;
 use era_date::{Era, Precision};
 use futures::future::join_all;
@@ -406,13 +406,12 @@ impl ResultCellPart {
             "[["
         };
 
-        let normalized_page =
-            crate::render_context::normalize_page_title(list.page_title()).replace(' ', "_");
-        let normalized_title = crate::render_context::normalize_page_title(title).replace(' ', "_");
+        let norm_title = normalize_page_title(title);
+        let norm_page = normalize_page_title(list.page_title()).replace(' ', "_");
 
-        if normalized_page == normalized_title {
+        if norm_page == norm_title.replace(' ', "_") {
             label.to_string()
-        } else if crate::render_context::normalize_page_title(title) == crate::render_context::normalize_page_title(label) {
+        } else if norm_title == normalize_page_title(label) {
             format!("{start}{label}]]")
         } else {
             format!("{start}{title}|{label}]]")

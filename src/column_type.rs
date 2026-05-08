@@ -444,13 +444,11 @@ impl ColumnType {
         statement: &Statement,
         language: &str,
     ) -> Option<Vec<Reference>> {
-        let references = statement.references();
-        let mut ret: Vec<Reference> = Vec::with_capacity(references.len());
-        for reference in references.iter() {
-            if let Some(r) = Reference::new_from_snaks(reference.snaks(), language) {
-                ret.push(r);
-            }
-        }
+        let ret: Vec<Reference> = statement
+            .references()
+            .iter()
+            .filter_map(|r| Reference::new_from_snaks(r.snaks(), language))
+            .collect();
         if ret.is_empty() { None } else { Some(ret) }
     }
 }
