@@ -34,8 +34,14 @@ static RE_TEMPLATE_START_NO_END: LazyLock<Regex> = LazyLock::new(|| {
 pub struct RendererTabbedData;
 
 impl RendererTabbedData {
-    pub fn new() -> Self {
-        Self {}
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for RendererTabbedData {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

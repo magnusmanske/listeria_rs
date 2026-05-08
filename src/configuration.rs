@@ -145,7 +145,7 @@ impl Configuration {
     }
 
     #[must_use]
-    pub fn with_max_local_cached_entities(mut self, max_local_cached_entities: usize) -> Self {
+    pub const fn with_max_local_cached_entities(mut self, max_local_cached_entities: usize) -> Self {
         self.max_local_cached_entities = max_local_cached_entities;
         self
     }

@@ -16,7 +16,7 @@ pub struct PageStatusRepository {
 }
 
 impl PageStatusRepository {
-    pub fn new(pool: DatabasePool) -> Self {
+    pub const fn new(pool: DatabasePool) -> Self {
         Self { pool }
     }
 

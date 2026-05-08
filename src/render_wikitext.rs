@@ -12,8 +12,14 @@ use futures::future::join_all;
 pub struct RendererWikitext;
 
 impl RendererWikitext {
-    pub fn new() -> Self {
-        Self {}
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+impl Default for RendererWikitext {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
