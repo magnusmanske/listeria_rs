@@ -2,26 +2,14 @@
 
 use crate::{
     column::Column,
-    column_type::ColumnType,
-    entity_container_wrapper::{EntityContainerWrapper, EntityEntry},
-    reference::Reference,
+    entity_container_wrapper::EntityContainerWrapper,
     render_context::RenderContext,
-    result_cell_part::{
-        AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart,
-    },
-    template_params::ReferencesParameter,
+    result_cell_part::{PartWithReference, ResultCellPart},
 };
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use wikimisc::{
-    sparql_table_vec::SparqlTableVec,
-    wikibase::{Statement, entity::EntityTrait},
-};
-
-// Wikitext escape sequences
-const WIKITEXT_APOSTROPHE_ESCAPE: &str = "&#39;";
-const WIKITEXT_LT_ESCAPE: &str = "&lt;";
+use wikimisc::sparql_table_vec::SparqlTableVec;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ResultCell {
@@ -37,96 +25,15 @@ impl ResultCell {
         sparql_table: &SparqlTableVec,
         col: &Column,
     ) -> Self {
-        let mut ret = Self {
-            parts: Vec::new(),
-            wdedit_class: None,
+        let (parts, wdedit_class) = col
+            .obj()
+            .render_cell_parts(list, entity_id, sparql_table)
+            .await;
+        Self {
+            parts,
+            wdedit_class,
             deduplicate_parts: true,
-        };
-
-        let entity = list.get_entity(entity_id).await;
-        match col.obj() {
-            ColumnType::Qid => Self::ct_qid(&mut ret, entity_id),
-            ColumnType::Item => Self::ct_item(&mut ret, entity_id),
-            ColumnType::Description(langs) => Self::ct_description(&entity, list, &mut ret, langs),
-            ColumnType::Field(varname) => Self::ct_field(varname, sparql_table, &mut ret),
-            ColumnType::Property(property) => Self::ct_property(&entity, &mut ret, list, property),
-            ColumnType::PropertyQualifier((p1, p2)) => Self::ct_pq(&entity, list, p1, &mut ret, p2),
-            ColumnType::PropertyQualifierValue((p1, q1, p2)) => {
-                Self::ct_pqv(&entity, list, p1, &mut ret, q1, p2);
-            }
-            ColumnType::LabelLang(language) => {
-                Self::ct_label_lang(&entity, language, &mut ret, list);
-            }
-            ColumnType::AliasLang(language) => Self::ct_alias_lang(&entity, language, &mut ret),
-            ColumnType::Label => Self::ct_label(entity, &mut ret, list, entity_id),
-            ColumnType::Number => Self::ct_number(&mut ret),
-            ColumnType::Sitelink(wiki) => Self::ct_sitelink(&entity, wiki, list, &mut ret),
-            ColumnType::Unknown => {} // Ignore
         }
-
-        ret
-    }
-
-    fn fix_wikitext_for_output(s: &str) -> String {
-        s.replace('\'', WIKITEXT_APOSTROPHE_ESCAPE)
-            .replace('<', WIKITEXT_LT_ESCAPE)
-    }
-
-    fn get_parts_p_p(statement: &Statement, property: &str) -> Vec<ResultCellPart> {
-        statement
-            .qualifiers()
-            .iter()
-            .filter(|snak| *snak.property() == *property)
-            .map(|snak| {
-                ResultCellPart::SnakList(vec![
-                    PartWithReference::new(ResultCellPart::from_snak(statement.main_snak()), None),
-                    PartWithReference::new(ResultCellPart::from_snak(snak), None),
-                ])
-            })
-            .collect()
-    }
-
-    fn get_references_for_statement(
-        statement: &Statement,
-        language: &str,
-    ) -> Option<Vec<Reference>> {
-        let references = statement.references();
-        let mut ret: Vec<Reference> = Vec::with_capacity(references.len());
-        for reference in references.iter() {
-            if let Some(r) = Reference::new_from_snaks(reference.snaks(), language) {
-                ret.push(r);
-            }
-        }
-        if ret.is_empty() { None } else { Some(ret) }
-    }
-
-    fn get_parts_p_q_p(
-        statement: &Statement,
-        target_item: &str,
-        property: &str,
-    ) -> Vec<ResultCellPart> {
-        let links_to_target = match statement.main_snak().data_value() {
-            Some(dv) => match dv.value() {
-                wikimisc::wikibase::value::Value::Entity(e) => e.id() == target_item,
-                _ => false,
-            },
-            None => false,
-        };
-        if !links_to_target {
-            return Vec::new();
-        }
-        //self.get_parts_p_p(statement,property)
-        statement
-            .qualifiers()
-            .iter()
-            .filter(|snak| *snak.property() == *property)
-            .map(|snak| {
-                ResultCellPart::SnakList(vec![PartWithReference::new(
-                    ResultCellPart::from_snak(snak),
-                    None,
-                )])
-            })
-            .collect()
     }
 
     #[must_use]
@@ -208,9 +115,7 @@ impl ResultCell {
             _ => None,
         });
 
-        let wdedit_class = if list.template_params().wdedit()
-            && list.header_template().is_none()
-        {
+        let wdedit_class = if list.template_params().wdedit() && list.header_template().is_none() {
             self.wdedit_class.as_deref()
         } else {
             None
@@ -224,246 +129,6 @@ impl ResultCell {
             (None, Some(year)) => format!(" data-sort-value=\"{year}\" | "),
             (None, None) => " ".to_string(),
         }
-    }
-
-    fn ct_number(ret: &mut ResultCell) {
-        ret.parts
-            .push(PartWithReference::new(ResultCellPart::Number, None));
-    }
-
-    fn ct_label(
-        entity: Option<EntityEntry>,
-        ret: &mut ResultCell,
-        list: &impl RenderContext,
-        entity_id: &str,
-    ) {
-        let Some(e) = entity else { return };
-        ret.wdedit_class = list
-            .header_template()
-            .is_none()
-            .then(|| "wd_label".to_string());
-        // Use the full fallback chain (language → mul → common languages →
-        // any available label → entity id) so items that only have a `mul`
-        // label do not fall back to the bare Q-id text. See GitHub issues
-        // #143, #148, #167, #170.
-        let label =
-            EntityContainerWrapper::label_with_fallback_from_entity(&e, list.language(), entity_id);
-        let local_page = e.sitelinks().as_ref().and_then(|sl| {
-            sl.iter()
-                .find(|s| *s.site() == *list.wiki())
-                .map(|s| s.title().to_string())
-        });
-        let part = match local_page {
-            Some(page) => {
-                ResultCellPart::LocalLink(LocalLinkInfo::new(page, label, LinkTarget::Page))
-            }
-            None => ResultCellPart::Entity(EntityInfo::new(entity_id.to_string(), true)),
-        };
-        ret.parts.push(PartWithReference::new(part, None));
-    }
-
-    fn ct_alias_lang(entity: &Option<EntityEntry>, language: &str, ret: &mut ResultCell) {
-        let Some(e) = entity else { return };
-        let mut aliases: Vec<String> = e
-            .aliases()
-            .iter()
-            .filter(|alias| alias.language() == language)
-            .map(|alias| alias.value().to_string())
-            .collect();
-        aliases.sort();
-        for alias in aliases {
-            ret.parts
-                .push(PartWithReference::new(ResultCellPart::Text(alias), None));
-        }
-    }
-
-    fn ct_label_lang(
-        entity: &Option<EntityEntry>,
-        language: &str,
-        ret: &mut ResultCell,
-        list: &impl RenderContext,
-    ) {
-        if let Some(e) = entity {
-            match e.label_in_locale(language) {
-                Some(s) => {
-                    ret.parts.push(PartWithReference::new(
-                        ResultCellPart::Text(s.to_string()),
-                        None,
-                    ));
-                }
-                None => {
-                    if let Some(s) = e.label_in_locale(list.language()) {
-                        ret.parts.push(PartWithReference::new(
-                            ResultCellPart::Text(s.to_string()),
-                            None,
-                        ));
-                    }
-                }
-            }
-        }
-    }
-
-    fn ct_pqv(
-        entity: &Option<EntityEntry>,
-        list: &impl RenderContext,
-        p1: &str,
-        ret: &mut ResultCell,
-        q1: &str,
-        p2: &str,
-    ) {
-        let Some(e) = entity else { return };
-        for statement in list.get_filtered_claims(e, p1) {
-            for part in Self::get_parts_p_q_p(&statement, q1, p2) {
-                ret.parts.push(PartWithReference::new(part, None));
-            }
-        }
-    }
-
-    fn ct_pq(
-        entity: &Option<EntityEntry>,
-        list: &impl RenderContext,
-        p1: &str,
-        ret: &mut ResultCell,
-        p2: &str,
-    ) {
-        let Some(e) = entity else { return };
-        for statement in list.get_filtered_claims(e, p1) {
-            for part in Self::get_parts_p_p(&statement, p2) {
-                ret.parts.push(PartWithReference::new(part, None));
-            }
-        }
-    }
-
-    fn ct_property(
-        entity: &Option<EntityEntry>,
-        ret: &mut ResultCell,
-        list: &impl RenderContext,
-        property: &str,
-    ) {
-        if let Some(e) = entity {
-            ret.wdedit_class = match &list.header_template() {
-                Some(_) => None,
-                None => Some(format!("wd_{}", property.to_lowercase())),
-            };
-            list.get_filtered_claims(e, property)
-                .iter()
-                .for_each(|statement| {
-                    let references = match list.get_reference_parameter() {
-                        ReferencesParameter::All => {
-                            Self::get_references_for_statement(statement, list.language())
-                        }
-                        _ => None,
-                    };
-                    ret.parts.push(PartWithReference::new(
-                        ResultCellPart::from_snak(statement.main_snak()),
-                        references,
-                    ));
-                });
-        }
-    }
-
-    fn ct_field(varname: &str, sparql_table: &SparqlTableVec, ret: &mut ResultCell) {
-        let var_index = match sparql_table.get_var_index(varname) {
-            Some(i) => i,
-            None => return, // Nothing to do
-        };
-        for row_id in 0..sparql_table.len() {
-            if let Some(x) = sparql_table.get_row_col(row_id, var_index) {
-                ret.parts.push(PartWithReference::new(
-                    ResultCellPart::from_sparql_value(&x),
-                    None,
-                ));
-            }
-        }
-    }
-
-    /// Renders a sitelink column for the given `wiki` (e.g. `"enwiki"`).
-    /// When the sitelink wiki matches the current list wiki the title is
-    /// rendered as a local `[[page]]` link; otherwise as an interwiki link
-    /// `[[:prefix:title|display]]`.
-    fn ct_sitelink(
-        entity: &Option<EntityEntry>,
-        wiki: &str,
-        list: &impl RenderContext,
-        ret: &mut ResultCell,
-    ) {
-        let Some(e) = entity else { return };
-        let Some(sitelinks) = e.sitelinks().as_ref() else { return };
-        let Some(sl) = sitelinks.iter().find(|s| *s.site() == *wiki) else { return };
-        let title = sl.title().to_string();
-        let part = if wiki == list.wiki() {
-            ResultCellPart::LocalLink(LocalLinkInfo::new(
-                title.clone(),
-                title,
-                LinkTarget::Page,
-            ))
-        } else {
-            let prefix = Self::wiki_id_to_interwiki_prefix(wiki);
-            let display = title.replace('_', " ");
-            ResultCellPart::Text(format!("[[:{}:{}|{}]]", prefix, title, display))
-        };
-        ret.parts.push(PartWithReference::new(part, None));
-    }
-
-    /// Maps a Wikimedia wiki id to the MediaWiki interwiki prefix used in
-    /// `[[:prefix:title]]` links.  Common cases: `enwiki` → `en`,
-    /// `commonswiki` → `commons`, `wikidatawiki` → `d`.
-    fn wiki_id_to_interwiki_prefix(wiki: &str) -> String {
-        match wiki {
-            "commonswiki" => "commons".to_string(),
-            "wikidatawiki" => "d".to_string(),
-            w if w.ends_with("wiki") => w[..w.len() - 4].to_string(),
-            w => w.to_string(),
-        }
-    }
-
-    fn ct_description(
-        entity: &Option<EntityEntry>,
-        list: &impl RenderContext,
-        ret: &mut ResultCell,
-        langs: &[String],
-    ) {
-        if let Some(e) = entity {
-            let description = if langs.is_empty() {
-                // Default behavior: use list language
-                e.description_in_locale(list.language())
-            } else {
-                // Try each fallback language in order
-                langs.iter().find_map(|lang| e.description_in_locale(lang))
-            };
-
-            match description {
-                Some(s) => {
-                    ret.wdedit_class = match &list.header_template() {
-                        Some(_) => None,
-                        None => Some("wd_desc".to_string()),
-                    };
-                    let s = Self::fix_wikitext_for_output(s);
-                    ret.parts
-                        .push(PartWithReference::new(ResultCellPart::Text(s), None));
-                }
-                None => {
-                    ret.parts.push(PartWithReference::new(
-                        ResultCellPart::AutoDesc(AutoDesc::new(e)),
-                        None,
-                    ));
-                }
-            }
-        }
-    }
-
-    fn ct_item(ret: &mut ResultCell, entity_id: &str) {
-        ret.parts.push(PartWithReference::new(
-            ResultCellPart::Entity(EntityInfo::new(entity_id.to_owned(), false)),
-            None,
-        ));
-    }
-
-    fn ct_qid(ret: &mut ResultCell, entity_id: &str) {
-        ret.parts.push(PartWithReference::new(
-            ResultCellPart::Text(entity_id.to_string()),
-            None,
-        ));
     }
 
     fn do_deduplicate_parts(parts: &[String]) -> Vec<String> {
@@ -481,109 +146,7 @@ impl ResultCell {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::result_cell_part::ExternalIdInfo;
-
-    #[test]
-    fn test_fix_wikitext_for_output() {
-        assert_eq!(ResultCell::fix_wikitext_for_output("a'b<c"), "a&#39;b&lt;c");
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_no_special_chars() {
-        assert_eq!(
-            ResultCell::fix_wikitext_for_output("normal text"),
-            "normal text"
-        );
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_only_apostrophe() {
-        assert_eq!(ResultCell::fix_wikitext_for_output("it's"), "it&#39;s");
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_only_less_than() {
-        assert_eq!(ResultCell::fix_wikitext_for_output("a<b"), "a&lt;b");
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_multiple_apostrophes() {
-        assert_eq!(
-            ResultCell::fix_wikitext_for_output("it's John's"),
-            "it&#39;s John&#39;s"
-        );
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_multiple_less_than() {
-        assert_eq!(ResultCell::fix_wikitext_for_output("a<b<c"), "a&lt;b&lt;c");
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_empty_string() {
-        assert_eq!(ResultCell::fix_wikitext_for_output(""), "");
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_html_tag() {
-        assert_eq!(
-            ResultCell::fix_wikitext_for_output("<script>alert('hi')</script>"),
-            "&lt;script>alert(&#39;hi&#39;)&lt;/script>"
-        );
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_wikitext_bold() {
-        // Bold markup should remain unchanged
-        assert_eq!(
-            ResultCell::fix_wikitext_for_output("'''bold'''"),
-            "&#39;&#39;&#39;bold&#39;&#39;&#39;"
-        );
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_comparison() {
-        assert_eq!(ResultCell::fix_wikitext_for_output("1<2"), "1&lt;2");
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_unicode_with_special() {
-        assert_eq!(
-            ResultCell::fix_wikitext_for_output("日本's data<test"),
-            "日本&#39;s data&lt;test"
-        );
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_consecutive_special() {
-        assert_eq!(
-            ResultCell::fix_wikitext_for_output("'<'<"),
-            "&#39;&lt;&#39;&lt;"
-        );
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_greater_than_unchanged() {
-        // Greater than should NOT be escaped
-        assert_eq!(ResultCell::fix_wikitext_for_output("a>b"), "a>b");
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_double_quote_unchanged() {
-        // Double quotes should NOT be escaped
-        assert_eq!(
-            ResultCell::fix_wikitext_for_output("\"quoted\""),
-            "\"quoted\""
-        );
-    }
-
-    #[test]
-    fn test_fix_wikitext_for_output_ampersand_unchanged() {
-        // Ampersand should NOT be escaped
-        assert_eq!(ResultCell::fix_wikitext_for_output("a&b"), "a&b");
-    }
-
-    // --- get_sortkey ---
+    use crate::result_cell_part::{EntityInfo, ExternalIdInfo, LinkTarget, LocalLinkInfo};
 
     fn make_cell(parts: Vec<ResultCellPart>) -> ResultCell {
         let pwrs: Vec<PartWithReference> = parts
@@ -597,6 +160,8 @@ mod tests {
         }))
         .unwrap()
     }
+
+    // --- get_sortkey ---
 
     #[test]
     fn test_get_sortkey_entity() {
@@ -619,7 +184,6 @@ mod tests {
 
     #[test]
     fn test_get_sortkey_time() {
-        // The sort key is now the numeric year, not the display string.
         let cell = make_cell(vec![ResultCellPart::Time("2024-01-15".to_string(), 2024)]);
         assert_eq!(cell.get_sortkey(), "2024");
     }
@@ -712,24 +276,6 @@ mod tests {
         let parts = vec!["x".to_string(), "x".to_string(), "x".to_string()];
         let result = ResultCell::do_deduplicate_parts(&parts);
         assert_eq!(result, vec!["x"]);
-    }
-
-    // --- wiki_id_to_interwiki_prefix (#147) ---
-
-    #[test]
-    fn test_wiki_id_to_interwiki_prefix_standard() {
-        assert_eq!(ResultCell::wiki_id_to_interwiki_prefix("enwiki"), "en");
-        assert_eq!(ResultCell::wiki_id_to_interwiki_prefix("dewiki"), "de");
-        assert_eq!(ResultCell::wiki_id_to_interwiki_prefix("frwiki"), "fr");
-    }
-
-    #[test]
-    fn test_wiki_id_to_interwiki_prefix_special() {
-        assert_eq!(
-            ResultCell::wiki_id_to_interwiki_prefix("commonswiki"),
-            "commons"
-        );
-        assert_eq!(ResultCell::wiki_id_to_interwiki_prefix("wikidatawiki"), "d");
     }
 
     // --- set_parts / parts ---

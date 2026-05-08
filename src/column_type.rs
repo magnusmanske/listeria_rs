@@ -1,4 +1,17 @@
 //! Column types for result tables.
+//!
+//! `ColumnType` is both a parser (via `new`) and the single dispatch point for
+//! per-column cell rendering (`render_cell_parts`).  Adding a new column type
+//! only requires extending the `ColumnType` enum and the two match expressions
+//! that live inside this file — callers (`ResultCell`) need no changes.
+
+use crate::entity_container_wrapper::{EntityContainerWrapper, EntityEntry};
+use crate::reference::Reference;
+use crate::render_context::RenderContext;
+use crate::result_cell_part::{AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart};
+use crate::template_params::ReferencesParameter;
+use wikimisc::sparql_table_vec::SparqlTableVec;
+use wikimisc::wikibase::{Statement, entity::EntityTrait};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ColumnType {
@@ -157,5 +170,393 @@ impl ColumnType {
             Self::Sitelink(wiki) => format!("sitelink/{wiki}"),
             Self::Unknown => "unknown".to_string(),
         }
+    }
+
+    /// Renders the cell parts for a single entity row, returning
+    /// `(parts, wdedit_class)`.  This is the only place that needs to change
+    /// when a new `ColumnType` variant is added.
+    pub async fn render_cell_parts(
+        &self,
+        list: &impl RenderContext,
+        entity_id: &str,
+        sparql_table: &SparqlTableVec,
+    ) -> (Vec<PartWithReference>, Option<String>) {
+        let entity = list.get_entity(entity_id).await;
+        let mut parts: Vec<PartWithReference> = Vec::new();
+        let mut wdedit_class: Option<String> = None;
+
+        match self {
+            Self::Qid => {
+                parts.push(PartWithReference::new(
+                    ResultCellPart::Text(entity_id.to_string()),
+                    None,
+                ));
+            }
+            Self::Item => {
+                parts.push(PartWithReference::new(
+                    ResultCellPart::Entity(EntityInfo::new(entity_id.to_owned(), false)),
+                    None,
+                ));
+            }
+            Self::Number => {
+                parts.push(PartWithReference::new(ResultCellPart::Number, None));
+            }
+            Self::Description(langs) => {
+                Self::render_description(&entity, list, langs, &mut parts, &mut wdedit_class);
+            }
+            Self::Field(varname) => {
+                let var_index = match sparql_table.get_var_index(varname) {
+                    Some(i) => i,
+                    None => return (parts, wdedit_class),
+                };
+                for row_id in 0..sparql_table.len() {
+                    if let Some(x) = sparql_table.get_row_col(row_id, var_index) {
+                        parts.push(PartWithReference::new(
+                            ResultCellPart::from_sparql_value(&x),
+                            None,
+                        ));
+                    }
+                }
+            }
+            Self::Property(property) => {
+                Self::render_property(&entity, list, property, &mut parts, &mut wdedit_class);
+            }
+            Self::PropertyQualifier((p1, p2)) => {
+                if let Some(e) = &entity {
+                    for statement in list.get_filtered_claims(e, p1) {
+                        for part in Self::get_parts_p_p(&statement, p2) {
+                            parts.push(PartWithReference::new(part, None));
+                        }
+                    }
+                }
+            }
+            Self::PropertyQualifierValue((p1, q1, p2)) => {
+                if let Some(e) = &entity {
+                    for statement in list.get_filtered_claims(e, p1) {
+                        for part in Self::get_parts_p_q_p(&statement, q1, p2) {
+                            parts.push(PartWithReference::new(part, None));
+                        }
+                    }
+                }
+            }
+            Self::LabelLang(language) => {
+                if let Some(e) = &entity {
+                    let label = e
+                        .label_in_locale(language)
+                        .or_else(|| e.label_in_locale(list.language()))
+                        .map(|s| s.to_string());
+                    if let Some(s) = label {
+                        parts.push(PartWithReference::new(ResultCellPart::Text(s), None));
+                    }
+                }
+            }
+            Self::AliasLang(language) => {
+                if let Some(e) = &entity {
+                    let mut aliases: Vec<String> = e
+                        .aliases()
+                        .iter()
+                        .filter(|alias| alias.language() == language)
+                        .map(|alias| alias.value().to_string())
+                        .collect();
+                    aliases.sort();
+                    for alias in aliases {
+                        parts.push(PartWithReference::new(ResultCellPart::Text(alias), None));
+                    }
+                }
+            }
+            Self::Label => {
+                Self::render_label(entity, list, entity_id, &mut parts, &mut wdedit_class);
+            }
+            Self::Sitelink(wiki) => {
+                Self::render_sitelink(&entity, wiki, list, &mut parts);
+            }
+            Self::Unknown => {} // nothing to render
+        }
+
+        (parts, wdedit_class)
+    }
+
+    fn render_description(
+        entity: &Option<EntityEntry>,
+        list: &impl RenderContext,
+        langs: &[String],
+        parts: &mut Vec<PartWithReference>,
+        wdedit_class: &mut Option<String>,
+    ) {
+        let Some(e) = entity else { return };
+        let description = if langs.is_empty() {
+            e.description_in_locale(list.language())
+        } else {
+            langs.iter().find_map(|lang| e.description_in_locale(lang))
+        };
+        match description {
+            Some(s) => {
+                *wdedit_class = list
+                    .header_template()
+                    .is_none()
+                    .then(|| "wd_desc".to_string());
+                let s = Self::fix_wikitext_for_output(s);
+                parts.push(PartWithReference::new(ResultCellPart::Text(s), None));
+            }
+            None => {
+                parts.push(PartWithReference::new(
+                    ResultCellPart::AutoDesc(AutoDesc::new(e)),
+                    None,
+                ));
+            }
+        }
+    }
+
+    fn render_property(
+        entity: &Option<EntityEntry>,
+        list: &impl RenderContext,
+        property: &str,
+        parts: &mut Vec<PartWithReference>,
+        wdedit_class: &mut Option<String>,
+    ) {
+        let Some(e) = entity else { return };
+        *wdedit_class = list
+            .header_template()
+            .is_none()
+            .then(|| format!("wd_{}", property.to_lowercase()));
+        for statement in list.get_filtered_claims(e, property) {
+            let references = match list.get_reference_parameter() {
+                ReferencesParameter::All => {
+                    Self::get_references_for_statement(&statement, list.language())
+                }
+                _ => None,
+            };
+            parts.push(PartWithReference::new(
+                ResultCellPart::from_snak(statement.main_snak()),
+                references,
+            ));
+        }
+    }
+
+    fn render_label(
+        entity: Option<EntityEntry>,
+        list: &impl RenderContext,
+        entity_id: &str,
+        parts: &mut Vec<PartWithReference>,
+        wdedit_class: &mut Option<String>,
+    ) {
+        let Some(e) = entity else { return };
+        *wdedit_class = list
+            .header_template()
+            .is_none()
+            .then(|| "wd_label".to_string());
+        let label =
+            EntityContainerWrapper::label_with_fallback_from_entity(&e, list.language(), entity_id);
+        let local_page = e.sitelinks().as_ref().and_then(|sl| {
+            sl.iter()
+                .find(|s| *s.site() == *list.wiki())
+                .map(|s| s.title().to_string())
+        });
+        let part = match local_page {
+            Some(page) => {
+                ResultCellPart::LocalLink(LocalLinkInfo::new(page, label, LinkTarget::Page))
+            }
+            None => ResultCellPart::Entity(EntityInfo::new(entity_id.to_string(), true)),
+        };
+        parts.push(PartWithReference::new(part, None));
+    }
+
+    fn render_sitelink(
+        entity: &Option<EntityEntry>,
+        wiki: &str,
+        list: &impl RenderContext,
+        parts: &mut Vec<PartWithReference>,
+    ) {
+        let Some(e) = entity else { return };
+        let Some(sitelinks) = e.sitelinks().as_ref() else { return };
+        let Some(sl) = sitelinks.iter().find(|s| *s.site() == *wiki) else { return };
+        let title = sl.title().to_string();
+        let part = if wiki == list.wiki() {
+            ResultCellPart::LocalLink(LocalLinkInfo::new(
+                title.clone(),
+                title,
+                LinkTarget::Page,
+            ))
+        } else {
+            let prefix = Self::wiki_id_to_interwiki_prefix(wiki);
+            let display = title.replace('_', " ");
+            ResultCellPart::Text(format!("[[:{}:{}|{}]]", prefix, title, display))
+        };
+        parts.push(PartWithReference::new(part, None));
+    }
+
+    fn fix_wikitext_for_output(s: &str) -> String {
+        s.replace('\'', "&#39;").replace('<', "&lt;")
+    }
+
+    fn wiki_id_to_interwiki_prefix(wiki: &str) -> String {
+        match wiki {
+            "commonswiki" => "commons".to_string(),
+            "wikidatawiki" => "d".to_string(),
+            w if w.ends_with("wiki") => w[..w.len() - 4].to_string(),
+            w => w.to_string(),
+        }
+    }
+
+    fn get_parts_p_p(statement: &Statement, property: &str) -> Vec<ResultCellPart> {
+        statement
+            .qualifiers()
+            .iter()
+            .filter(|snak| *snak.property() == *property)
+            .map(|snak| {
+                ResultCellPart::SnakList(vec![
+                    PartWithReference::new(ResultCellPart::from_snak(statement.main_snak()), None),
+                    PartWithReference::new(ResultCellPart::from_snak(snak), None),
+                ])
+            })
+            .collect()
+    }
+
+    fn get_parts_p_q_p(
+        statement: &Statement,
+        target_item: &str,
+        property: &str,
+    ) -> Vec<ResultCellPart> {
+        let links_to_target = match statement.main_snak().data_value() {
+            Some(dv) => match dv.value() {
+                wikimisc::wikibase::value::Value::Entity(e) => e.id() == target_item,
+                _ => false,
+            },
+            None => false,
+        };
+        if !links_to_target {
+            return Vec::new();
+        }
+        statement
+            .qualifiers()
+            .iter()
+            .filter(|snak| *snak.property() == *property)
+            .map(|snak| {
+                ResultCellPart::SnakList(vec![PartWithReference::new(
+                    ResultCellPart::from_snak(snak),
+                    None,
+                )])
+            })
+            .collect()
+    }
+
+    fn get_references_for_statement(
+        statement: &Statement,
+        language: &str,
+    ) -> Option<Vec<Reference>> {
+        let references = statement.references();
+        let mut ret: Vec<Reference> = Vec::with_capacity(references.len());
+        for reference in references.iter() {
+            if let Some(r) = Reference::new_from_snaks(reference.snaks(), language) {
+                ret.push(r);
+            }
+        }
+        if ret.is_empty() { None } else { Some(ret) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- fix_wikitext_for_output ---
+
+    #[test]
+    fn test_fix_wikitext_for_output() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("a'b<c"), "a&#39;b&lt;c");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_no_special_chars() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("normal text"), "normal text");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_only_apostrophe() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("it's"), "it&#39;s");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_only_less_than() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("a<b"), "a&lt;b");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_multiple_apostrophes() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("it's John's"), "it&#39;s John&#39;s");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_multiple_less_than() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("a<b<c"), "a&lt;b&lt;c");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_empty_string() {
+        assert_eq!(ColumnType::fix_wikitext_for_output(""), "");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_html_tag() {
+        assert_eq!(
+            ColumnType::fix_wikitext_for_output("<script>alert('hi')</script>"),
+            "&lt;script>alert(&#39;hi&#39;)&lt;/script>"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_wikitext_bold() {
+        assert_eq!(
+            ColumnType::fix_wikitext_for_output("'''bold'''"),
+            "&#39;&#39;&#39;bold&#39;&#39;&#39;"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_comparison() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("1<2"), "1&lt;2");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_unicode_with_special() {
+        assert_eq!(
+            ColumnType::fix_wikitext_for_output("日本's data<test"),
+            "日本&#39;s data&lt;test"
+        );
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_consecutive_special() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("'<'<"), "&#39;&lt;&#39;&lt;");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_greater_than_unchanged() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("a>b"), "a>b");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_double_quote_unchanged() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("\"quoted\""), "\"quoted\"");
+    }
+
+    #[test]
+    fn test_fix_wikitext_for_output_ampersand_unchanged() {
+        assert_eq!(ColumnType::fix_wikitext_for_output("a&b"), "a&b");
+    }
+
+    // --- wiki_id_to_interwiki_prefix ---
+
+    #[test]
+    fn test_wiki_id_to_interwiki_prefix_standard() {
+        assert_eq!(ColumnType::wiki_id_to_interwiki_prefix("enwiki"), "en");
+        assert_eq!(ColumnType::wiki_id_to_interwiki_prefix("dewiki"), "de");
+        assert_eq!(ColumnType::wiki_id_to_interwiki_prefix("frwiki"), "fr");
+    }
+
+    #[test]
+    fn test_wiki_id_to_interwiki_prefix_special() {
+        assert_eq!(ColumnType::wiki_id_to_interwiki_prefix("commonswiki"), "commons");
+        assert_eq!(ColumnType::wiki_id_to_interwiki_prefix("wikidatawiki"), "d");
     }
 }
