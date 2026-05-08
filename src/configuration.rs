@@ -168,6 +168,7 @@ impl Configuration {
         if j["mysql"].as_object().is_some() {
             ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
         }
+        ret.validate()?;
         Ok(ret)
     }
 
@@ -401,6 +402,29 @@ impl Configuration {
 
     pub const fn is_single_wiki(&self) -> bool {
         self.is_single_wiki
+    }
+
+    /// Validates that required configuration fields are sensible.
+    ///
+    /// Returns an error if any constraint is violated so callers can
+    /// fail fast with a clear message instead of crashing later.
+    pub fn validate(&self) -> Result<()> {
+        if !self.is_single_wiki && self.default_api.is_empty() {
+            return Err(anyhow!("default_api must be set in multi-wiki mode"));
+        }
+        if self.max_sparql_simultaneous == 0 {
+            return Err(anyhow!("max_sparql_simultaneous must be > 0"));
+        }
+        if self.max_sparql_attempts == 0 {
+            return Err(anyhow!("max_sparql_attempts must be > 0"));
+        }
+        if self.max_threads == 0 {
+            return Err(anyhow!("max_threads must be > 0"));
+        }
+        if self.api_timeout == 0 {
+            return Err(anyhow!("api_timeout must be > 0"));
+        }
+        Ok(())
     }
 
     pub const fn delay_after_page_check_sec(&self) -> Option<u64> {
@@ -641,5 +665,67 @@ mod tests {
         assert!(!group.can_edit_namespace(-2)); // Negative always blocked
         assert!(!group.can_edit_namespace(0)); // 0 in list
         assert!(!group.can_edit_namespace(1)); // 1 in list
+    }
+
+    // --- validate ---
+
+    fn valid_config() -> Configuration {
+        Configuration {
+            default_api: "wikidata".to_string(),
+            max_sparql_simultaneous: 5,
+            max_sparql_attempts: 3,
+            max_threads: 4,
+            api_timeout: 60,
+            sparql_semaphore: Arc::new(Semaphore::new(5)),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_validate_valid_multi_wiki() {
+        assert!(valid_config().validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_missing_default_api_in_multi_wiki_mode() {
+        let mut config = valid_config();
+        config.default_api = String::new();
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_missing_default_api_ok_in_single_wiki_mode() {
+        let mut config = valid_config();
+        config.default_api = String::new();
+        config.is_single_wiki = true;
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_validate_zero_sparql_simultaneous() {
+        let mut config = valid_config();
+        config.max_sparql_simultaneous = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_zero_sparql_attempts() {
+        let mut config = valid_config();
+        config.max_sparql_attempts = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_zero_max_threads() {
+        let mut config = valid_config();
+        config.max_threads = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_zero_api_timeout() {
+        let mut config = valid_config();
+        config.api_timeout = 0;
+        assert!(config.validate().is_err());
     }
 }
