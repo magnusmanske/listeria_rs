@@ -21,6 +21,7 @@ mysql_async = "0.36"
 blake3 = "1"
 tempfile = "3"
 anyhow = "^1"
+thiserror = "^1"
 reqwest = { version = "0.13", features = ["gzip", "deflate", "brotli"] }
 log = "0.4"
 clap = { version = "4", features = ["derive"] }

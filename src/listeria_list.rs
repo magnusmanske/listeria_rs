@@ -6,6 +6,7 @@ use crate::column::Column;
 use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::{EntityContainerWrapper, EntityEntry};
 use crate::list_processor::ListProcessor;
+use crate::listeria_error::ListeriaError;
 use crate::my_entity::MyEntity;
 use crate::page_params::PageParams;
 use crate::profiling_service::ProfilingService;
@@ -222,7 +223,7 @@ impl ListeriaList {
             .get_wbapi(&wikibase.to_lowercase())
         {
             Some(api) => api.clone(),
-            None => return Err(anyhow!("No wikibase setup configured for '{wikibase}'")),
+            None => return Err(ListeriaError::SparqlNoConfig(wikibase.to_string()).into()),
         };
 
         Ok(())
@@ -323,7 +324,7 @@ impl ListeriaList {
         let wikibase_key = self.params.wikibase().to_lowercase();
         let sparql = match self.template.get_value("sparql") {
             Some(s) => s,
-            None => return Err(anyhow!("No 'sparql' parameter in {:?}", &self.template)),
+            None => return Err(ListeriaError::MissingSparqlParam.into()),
         };
         let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
         if self.page_params.config().is_single_wiki()
@@ -352,7 +353,7 @@ impl ListeriaList {
 
         let ids = ResultGenerator::get_ids_from_sparql_rows(self)?;
         if ids.is_empty() {
-            return Err(anyhow!("No items to show"));
+            return Err(ListeriaError::NoItemsToShow.into());
         }
         self.ecw.load_entities(&self.wb_api, &ids).await?;
 

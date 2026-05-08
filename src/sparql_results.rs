@@ -1,7 +1,8 @@
 //! SPARQL query execution with retry logic and rate limiting.
 
+use crate::listeria_error::ListeriaError;
 use crate::page_params::PageParams;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::{collections::HashMap, sync::Arc};
 use wikimisc::{
     mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table_vec::SparqlTableVec,
@@ -69,7 +70,7 @@ impl SparqlResults {
         let wikibase_key = &self.wikibase_key;
         let api = match self.page_params.config().get_wbapi(wikibase_key) {
             Some(api) => api.clone(),
-            None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
+            None => return Err(ListeriaError::SparqlNoConfig(wikibase_key.clone()).into()),
         };
         let semaphore = Arc::clone(self.page_params.config().sparql_semaphore());
         let _permit = semaphore.acquire().await?;

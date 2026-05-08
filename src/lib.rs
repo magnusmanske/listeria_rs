@@ -62,6 +62,7 @@ pub mod listeria_bot;
 pub mod listeria_bot_single;
 pub mod listeria_bot_wiki;
 pub mod listeria_bot_wikidata;
+pub mod listeria_error;
 pub mod listeria_list;
 pub mod listeria_page;
 pub mod main_commands;

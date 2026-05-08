@@ -1,7 +1,10 @@
 //! Generates result tables from SPARQL query results.
 
-use crate::{column_type::ColumnType, listeria_list::ListeriaList, result_row::ResultRow};
-use anyhow::{Result, anyhow};
+use crate::{
+    column_type::ColumnType, listeria_error::ListeriaError, listeria_list::ListeriaList,
+    result_row::ResultRow,
+};
+use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use wikimisc::{sparql_table_vec::SparqlTableVec, sparql_value::SparqlValue};
 
@@ -113,7 +116,7 @@ impl ResultGenerator {
     fn get_var_index(list: &ListeriaList) -> Result<usize> {
         list.sparql_table()
             .main_column()
-            .ok_or_else(|| anyhow!("SPARQL query must include the ?item variable — do not rename it"))
+            .ok_or_else(|| ListeriaError::SparqlNoItemVariable.into())
     }
 
     fn get_tmp_rows(
