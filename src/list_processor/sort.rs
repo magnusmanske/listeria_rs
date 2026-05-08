@@ -1,6 +1,7 @@
 //! Result sorting.
 
 use crate::listeria_list::ListeriaList;
+use crate::result_row::ResultRow;
 use crate::template_params::{SortMode, SortOrder};
 use anyhow::{Result, anyhow};
 use futures::future::join_all;
@@ -46,44 +47,117 @@ impl super::ListProcessor {
         }
         list.profile("AFTER process_sort_results SORTKEYS").await;
 
-        let ret = Self::process_sort_results_finish(list, sortkeys, datatype).await;
-        list.profile("AFTER process_sort_results_finish").await;
-        ret
-    }
-
-    pub(crate) async fn process_sort_results_finish(
-        list: &mut ListeriaList,
-        sortkeys: Vec<String>,
-        datatype: SnakDataType,
-    ) -> Result<()> {
-        if list.results().len() != sortkeys.len() {
-            return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
-        }
-
-        for row_id in 0..list.results().len() {
-            if let Some(row) = list.results_mut().get_mut(row_id)
-                && let Some(sk) = sortkeys.get(row_id)
-            {
-                row.set_sortkey(sk.to_owned());
-            };
-        }
-
+        let descending = *list.template_params().sort_order() == SortOrder::Descending;
         list.profile("BEFORE process_sort_results_finish sort of items")
             .await;
-        let descending = *list.template_params().sort_order() == SortOrder::Descending;
-        let mut results = std::mem::take(list.results_mut());
-        results = tokio::task::spawn_blocking(move || {
-            results.sort_by(|a, b| a.compare_to(b, &datatype));
-            if descending {
-                results.reverse();
-            }
-            results
-        })
-        .await
-        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?;
-        *list.results_mut() = results;
+        Self::apply_sort(list.results_mut(), sortkeys, descending, datatype).await?;
         list.profile("AFTER process_sort_results_finish sort").await;
 
         Ok(())
+    }
+
+    /// Applies sort keys and order to a result set — no list dependency.
+    ///
+    /// `results` and `sortkeys` must have the same length.
+    pub(crate) async fn apply_sort(
+        results: &mut Vec<ResultRow>,
+        sortkeys: Vec<String>,
+        descending: bool,
+        datatype: SnakDataType,
+    ) -> Result<()> {
+        if results.len() != sortkeys.len() {
+            return Err(anyhow!("process_sort_results: sortkeys length mismatch"));
+        }
+
+        for (row, sk) in results.iter_mut().zip(sortkeys.iter()) {
+            row.set_sortkey(sk.to_owned());
+        }
+
+        let mut owned = std::mem::take(results);
+        owned = tokio::task::spawn_blocking(move || {
+            owned.sort_by(|a, b| a.compare_to(b, &datatype));
+            if descending {
+                owned.reverse();
+            }
+            owned
+        })
+        .await
+        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?;
+        *results = owned;
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::result_row::ResultRow;
+    use wikimisc::wikibase::SnakDataType;
+
+    fn rows_with_keys(keys: &[&str]) -> Vec<ResultRow> {
+        keys.iter()
+            .enumerate()
+            .map(|(i, k)| {
+                let mut r = ResultRow::new(&format!("Q{i}"));
+                r.set_sortkey(k.to_string());
+                r
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn test_apply_sort_ascending_string() {
+        let keys = vec!["banana".to_string(), "apple".to_string(), "cherry".to_string()];
+        let mut results = rows_with_keys(&["banana", "apple", "cherry"]);
+        super::super::ListProcessor::apply_sort(&mut results, keys, false, SnakDataType::String)
+            .await
+            .unwrap();
+        assert_eq!(results[0].sortkey(), "apple");
+        assert_eq!(results[1].sortkey(), "banana");
+        assert_eq!(results[2].sortkey(), "cherry");
+    }
+
+    #[tokio::test]
+    async fn test_apply_sort_descending_string() {
+        let keys = vec!["banana".to_string(), "apple".to_string(), "cherry".to_string()];
+        let mut results = rows_with_keys(&["banana", "apple", "cherry"]);
+        super::super::ListProcessor::apply_sort(&mut results, keys, true, SnakDataType::String)
+            .await
+            .unwrap();
+        assert_eq!(results[0].sortkey(), "cherry");
+        assert_eq!(results[1].sortkey(), "banana");
+        assert_eq!(results[2].sortkey(), "apple");
+    }
+
+    #[tokio::test]
+    async fn test_apply_sort_length_mismatch_returns_err() {
+        let keys = vec!["a".to_string(), "b".to_string()];
+        let mut results = rows_with_keys(&["a"]);
+        let err =
+            super::super::ListProcessor::apply_sort(&mut results, keys, false, SnakDataType::String)
+                .await
+                .unwrap_err();
+        assert!(err.to_string().contains("sortkeys length mismatch"));
+    }
+
+    #[tokio::test]
+    async fn test_apply_sort_empty() {
+        let mut results: Vec<ResultRow> = vec![];
+        super::super::ListProcessor::apply_sort(&mut results, vec![], false, SnakDataType::String)
+            .await
+            .unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_apply_sort_time_numeric() {
+        let keys = vec!["1900".to_string(), "33".to_string()];
+        let mut results = rows_with_keys(&["1900", "33"]);
+        super::super::ListProcessor::apply_sort(&mut results, keys, false, SnakDataType::Time)
+            .await
+            .unwrap();
+        assert_eq!(results[0].sortkey(), "33");
+        assert_eq!(results[1].sortkey(), "1900");
     }
 }

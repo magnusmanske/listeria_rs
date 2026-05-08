@@ -488,14 +488,12 @@ mod tests {
         assert!(items.contains(&"Q2".to_string()));
     }
 
-    // ── process_sort_results_finish ──────────────────────────────────────────
+    // ── apply_sort ───────────────────────────────────────────────────────────
 
     #[tokio::test]
-    async fn test_process_sort_results_finish_sorts_ascending() {
+    async fn test_apply_sort_ascending() {
         use crate::result_row::ResultRow;
         use wikimisc::wikibase::SnakDataType;
-
-        let mut list = create_test_list().await;
 
         let mut r1 = ResultRow::new("Q3");
         r1.set_sortkey("charlie".to_string());
@@ -503,35 +501,35 @@ mod tests {
         r2.set_sortkey("alpha".to_string());
         let mut r3 = ResultRow::new("Q2");
         r3.set_sortkey("bravo".to_string());
-        *list.results_mut() = vec![r1, r2, r3];
+        let mut results = vec![r1, r2, r3];
 
-        ListProcessor::process_sort_results_finish(
-            &mut list,
+        ListProcessor::apply_sort(
+            &mut results,
             vec![
                 "charlie".to_string(),
                 "alpha".to_string(),
                 "bravo".to_string(),
             ],
+            false,
             SnakDataType::String,
         )
         .await
         .unwrap();
 
-        let ids: Vec<&str> = list.results().iter().map(|r| r.entity_id()).collect();
+        let ids: Vec<&str> = results.iter().map(|r| r.entity_id()).collect();
         assert_eq!(ids, vec!["Q1", "Q2", "Q3"]);
     }
 
     #[tokio::test]
-    async fn test_process_sort_results_finish_length_mismatch_errors() {
+    async fn test_apply_sort_length_mismatch_errors() {
         use crate::result_row::ResultRow;
         use wikimisc::wikibase::SnakDataType;
 
-        let mut list = create_test_list().await;
-        *list.results_mut() = vec![ResultRow::new("Q1"), ResultRow::new("Q2")];
-
-        let result = ListProcessor::process_sort_results_finish(
-            &mut list,
+        let mut results = vec![ResultRow::new("Q1"), ResultRow::new("Q2")];
+        let result = ListProcessor::apply_sort(
+            &mut results,
             vec!["only_one".to_string()],
+            false,
             SnakDataType::String,
         )
         .await;
@@ -539,26 +537,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_process_sort_results_finish_sorts_descending_via_sort_order() {
-        use crate::page_params::PageParams;
+    async fn test_apply_sort_descending() {
         use crate::result_row::ResultRow;
-        use crate::template::Template;
-        use std::sync::Arc;
         use wikimisc::wikibase::SnakDataType;
-
-        let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
-        let config = crate::test_utils::cached_config().await;
-        let page_params = Arc::new(
-            PageParams::new(config, api, "Test:Page".to_string())
-                .await
-                .unwrap(),
-        );
-        let template = Template::new_from_params(
-            "sort_order=desc|columns=item|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }}",
-        )
-        .unwrap();
-        let mut list = ListeriaList::new(template, page_params).await.unwrap();
-        list.process_template().unwrap();
 
         let mut r1 = ResultRow::new("Q1");
         r1.set_sortkey("alpha".to_string());
@@ -566,21 +547,22 @@ mod tests {
         r2.set_sortkey("bravo".to_string());
         let mut r3 = ResultRow::new("Q3");
         r3.set_sortkey("charlie".to_string());
-        *list.results_mut() = vec![r1, r2, r3];
+        let mut results = vec![r1, r2, r3];
 
-        ListProcessor::process_sort_results_finish(
-            &mut list,
+        ListProcessor::apply_sort(
+            &mut results,
             vec![
                 "alpha".to_string(),
                 "bravo".to_string(),
                 "charlie".to_string(),
             ],
+            true,
             SnakDataType::String,
         )
         .await
         .unwrap();
 
-        let ids: Vec<&str> = list.results().iter().map(|r| r.entity_id()).collect();
+        let ids: Vec<&str> = results.iter().map(|r| r.entity_id()).collect();
         assert_eq!(ids, vec!["Q3", "Q2", "Q1"]);
     }
 
@@ -1000,9 +982,4 @@ mod tests {
         assert_eq!(first_run, second_run);
     }
 
-    // Suppress unused import warning for Configuration — it is used in
-    // test_process_sort_results_finish_sorts_descending_via_sort_order
-    // through the re-exported cached_config helper, but not directly here.
-    #[allow(unused_imports)]
-    use Configuration as _;
 }

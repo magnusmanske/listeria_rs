@@ -25,7 +25,7 @@ impl ResultGenerator {
     }
 
     async fn generate_results_multiple_rows_per_item(
-        list: &mut ListeriaList,
+        list: &ListeriaList,
         tmp_results: &mut Vec<ResultRow>,
     ) -> Result<()> {
         let var_index = Self::get_var_index(list)?;
@@ -49,7 +49,7 @@ impl ResultGenerator {
     }
 
     async fn generate_results_one_row_per_item(
-        list: &mut ListeriaList,
+        list: &ListeriaList,
         tmp_results: &mut Vec<ResultRow>,
     ) -> Result<()> {
         let var_index = Self::get_var_index(list)?;
