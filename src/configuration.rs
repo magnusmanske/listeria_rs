@@ -728,4 +728,332 @@ mod tests {
         config.api_timeout = 0;
         assert!(config.validate().is_err());
     }
+
+    // ── check_for_shadow_images ────────────────────────────────────────────
+
+    #[test]
+    fn test_check_for_shadow_images_found() {
+        let mut config = Configuration::default();
+        config.shadow_images_check = vec!["enwiki".to_string(), "dewiki".to_string()];
+        assert!(config.check_for_shadow_images("enwiki"));
+        assert!(config.check_for_shadow_images("dewiki"));
+    }
+
+    #[test]
+    fn test_check_for_shadow_images_not_found() {
+        let mut config = Configuration::default();
+        config.shadow_images_check = vec!["enwiki".to_string()];
+        assert!(!config.check_for_shadow_images("frwiki"));
+        assert!(!config.check_for_shadow_images(""));
+    }
+
+    #[test]
+    fn test_check_for_shadow_images_empty_list() {
+        let config = Configuration::default();
+        assert!(!config.check_for_shadow_images("enwiki"));
+    }
+
+    // ── get_location_template ──────────────────────────────────────────────
+
+    #[test]
+    fn test_get_location_template_specific_wiki() {
+        let mut config = Configuration::default();
+        config
+            .location_templates
+            .insert("enwiki".to_string(), "{{Coord|$1|$2}}".to_string());
+        assert_eq!(
+            config.get_location_template("enwiki"),
+            "{{Coord|$1|$2}}"
+        );
+    }
+
+    #[test]
+    fn test_get_location_template_falls_back_to_default() {
+        let mut config = Configuration::default();
+        config
+            .location_templates
+            .insert("default".to_string(), "{{Coord|$1|$2|default}}".to_string());
+        assert_eq!(
+            config.get_location_template("frwiki"),
+            "{{Coord|$1|$2|default}}"
+        );
+    }
+
+    #[test]
+    fn test_get_location_template_specific_overrides_default() {
+        let mut config = Configuration::default();
+        config
+            .location_templates
+            .insert("default".to_string(), "default_tmpl".to_string());
+        config
+            .location_templates
+            .insert("enwiki".to_string(), "enwiki_tmpl".to_string());
+        assert_eq!(config.get_location_template("enwiki"), "enwiki_tmpl");
+        assert_eq!(config.get_location_template("dewiki"), "default_tmpl");
+    }
+
+    #[test]
+    fn test_get_location_template_none_returns_empty() {
+        let config = Configuration::default();
+        assert_eq!(config.get_location_template("enwiki"), "");
+    }
+
+    // ── can_edit_namespace ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_can_edit_namespace_no_block_for_wiki() {
+        let config = Configuration::default();
+        // No entry for "enwiki" → editing is allowed in all namespaces
+        assert!(config.can_edit_namespace("enwiki", 0));
+        assert!(config.can_edit_namespace("enwiki", 10));
+    }
+
+    #[test]
+    fn test_can_edit_namespace_wiki_with_all_block() {
+        let mut config = Configuration::default();
+        config
+            .namespace_blocks
+            .insert("enwiki".to_string(), NamespaceGroup::All);
+        assert!(!config.can_edit_namespace("enwiki", 0));
+        assert!(!config.can_edit_namespace("enwiki", 10));
+        // Another wiki is still unrestricted
+        assert!(config.can_edit_namespace("frwiki", 0));
+    }
+
+    #[test]
+    fn test_can_edit_namespace_wiki_with_list_block() {
+        let mut config = Configuration::default();
+        config.namespace_blocks.insert(
+            "enwiki".to_string(),
+            NamespaceGroup::List(vec![1, 3]),
+        );
+        assert!(!config.can_edit_namespace("enwiki", 1));
+        assert!(!config.can_edit_namespace("enwiki", 3));
+        assert!(config.can_edit_namespace("enwiki", 0));
+        assert!(config.can_edit_namespace("enwiki", 10));
+    }
+
+    // ── get_local_template_title_start / _end ─────────────────────────────
+
+    #[test]
+    fn test_get_local_template_title_start_with_namespace_prefix() {
+        let mut config = Configuration::default();
+        config
+            .template_start_sites
+            .insert("enwiki".to_string(), "Template:Wikidata list".to_string());
+        assert_eq!(
+            config.get_local_template_title_start("enwiki").unwrap(),
+            "Wikidata list"
+        );
+    }
+
+    #[test]
+    fn test_get_local_template_title_start_missing_wiki_is_err() {
+        let config = Configuration::default();
+        assert!(config.get_local_template_title_start("enwiki").is_err());
+    }
+
+    #[test]
+    fn test_get_local_template_title_end_with_namespace_prefix() {
+        let mut config = Configuration::default();
+        config
+            .template_end_sites
+            .insert("enwiki".to_string(), "Template:Wikidata list end".to_string());
+        assert_eq!(
+            config.get_local_template_title_end("enwiki").unwrap(),
+            "Wikidata list end"
+        );
+    }
+
+    #[test]
+    fn test_get_local_template_title_end_missing_wiki_is_err() {
+        let config = Configuration::default();
+        assert!(config.get_local_template_title_end("enwiki").is_err());
+    }
+
+    #[test]
+    fn test_get_local_template_title_no_colon_returns_full_name() {
+        let mut config = Configuration::default();
+        config
+            .template_start_sites
+            .insert("enwiki".to_string(), "Wikidata_list".to_string());
+        // No colon → split_back gives the whole string
+        assert_eq!(
+            config.get_local_template_title_start("enwiki").unwrap(),
+            "Wikidata_list"
+        );
+    }
+
+    // ── mysql accessor ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_mysql_accessor_no_config_returns_null() {
+        let config = Configuration::default();
+        assert!(config.mysql("host").is_null());
+    }
+
+    #[test]
+    fn test_mysql_accessor_with_config() {
+        let mut config = Configuration::default();
+        config.mysql = Some(serde_json::json!({"host": "localhost", "port": 3306}));
+        assert_eq!(config.mysql("host").as_str(), Some("localhost"));
+        assert_eq!(config.mysql("port").as_u64(), Some(3306));
+        assert!(config.mysql("missing").is_null());
+    }
+
+    // ── pool accessor ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_pool_accessor_no_pool_is_err() {
+        let config = Configuration::default();
+        assert!(config.pool().is_err());
+    }
+
+    // ── default_thumbnail_size ─────────────────────────────────────────────
+
+    #[test]
+    fn test_default_thumbnail_size_uses_default_128() {
+        let config = Configuration::default();
+        assert_eq!(config.default_thumbnail_size(), 128);
+    }
+
+    #[test]
+    fn test_default_thumbnail_size_custom() {
+        let mut config = Configuration::default();
+        config.default_thumbnail_size = Some(256);
+        assert_eq!(config.default_thumbnail_size(), 256);
+    }
+
+    // ── api_timeout ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_api_timeout_as_duration() {
+        let mut config = Configuration::default();
+        config.api_timeout = 60;
+        assert_eq!(config.api_timeout(), Duration::from_secs(60));
+    }
+
+    // ── get_default_wbapi ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_get_default_wbapi_no_api_is_err() {
+        let config = Configuration::default();
+        assert!(config.get_default_wbapi().is_err());
+    }
+
+    // ── set_wikis / get_wiki ───────────────────────────────────────────────
+
+    #[test]
+    fn test_set_and_get_wiki() {
+        let mut config = Configuration::default();
+        let w = Wiki::from_row((
+            1,
+            "enwiki".to_string(),
+            "active".to_string(),
+            "20240101".to_string(),
+            true,
+            true,
+        ))
+        .unwrap();
+        config.set_wikis([("enwiki".to_string(), w.clone())].into());
+        assert!(config.get_wiki("enwiki").is_some());
+        assert!(config.get_wiki("dewiki").is_none());
+    }
+
+    // ── is_single_wiki detection ───────────────────────────────────────────
+
+    #[test]
+    fn test_is_single_wiki_false_by_default() {
+        let config = Configuration::default();
+        assert!(!config.is_single_wiki());
+    }
+
+    // ── new_from_json_misc defaults ────────────────────────────────────────
+
+    #[test]
+    fn test_new_from_json_misc_fills_defaults() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({}));
+        // All optional fields absent → use hard-coded defaults
+        assert_eq!(config.max_sparql_simultaneous, 10);
+        assert_eq!(config.max_sparql_attempts, 5);
+        assert_eq!(config.api_timeout, 360);
+        assert_eq!(config.max_threads, 8);
+        assert_eq!(config.max_local_cached_entities, 5000);
+    }
+
+    #[test]
+    fn test_new_from_json_misc_reads_provided_values() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({
+            "max_sparql_simultaneous": 3,
+            "max_sparql_attempts": 2,
+            "api_timeout": 120,
+            "max_threads": 16,
+            "default_language": "fr",
+            "quiet": true,
+            "profiling": true,
+        }));
+        assert_eq!(config.max_sparql_simultaneous, 3);
+        assert_eq!(config.max_sparql_attempts, 2);
+        assert_eq!(config.api_timeout, 120);
+        assert_eq!(config.max_threads, 16);
+        assert_eq!(config.default_language, "fr");
+        assert!(config.quiet);
+        assert!(config.profiling);
+    }
+
+    // ── new_from_json_locations ────────────────────────────────────────────
+
+    #[test]
+    fn test_new_from_json_locations_reads_templates() {
+        let mut config = Configuration::default();
+        config.new_from_json_locations(&serde_json::json!({
+            "location_templates": {
+                "default": "{{Coord|$1|$2}}",
+                "enwiki": "{{Coord|$1|$2|display=title}}"
+            },
+            "location_regions": ["US", "DE"]
+        }));
+        assert_eq!(
+            config.location_templates.get("default").unwrap(),
+            "{{Coord|$1|$2}}"
+        );
+        assert_eq!(
+            config.location_templates.get("enwiki").unwrap(),
+            "{{Coord|$1|$2|display=title}}"
+        );
+        assert_eq!(config.location_regions, vec!["US", "DE"]);
+    }
+
+    // ── new_from_json_namespace_blocks ─────────────────────────────────────
+
+    #[test]
+    fn test_new_from_json_namespace_blocks_star_means_all() {
+        let mut config = Configuration::default();
+        let j = serde_json::json!({ "namespace_blocks": { "enwiki": "*" } });
+        config.new_from_json_namespace_blocks(&j).unwrap();
+        assert!(matches!(
+            config.namespace_blocks.get("enwiki").unwrap(),
+            NamespaceGroup::All
+        ));
+    }
+
+    #[test]
+    fn test_new_from_json_namespace_blocks_array_means_list() {
+        let mut config = Configuration::default();
+        let j = serde_json::json!({ "namespace_blocks": { "enwiki": [1, 3] } });
+        config.new_from_json_namespace_blocks(&j).unwrap();
+        assert!(matches!(
+            config.namespace_blocks.get("enwiki").unwrap(),
+            NamespaceGroup::List(_)
+        ));
+    }
+
+    #[test]
+    fn test_new_from_json_namespace_blocks_unrecognised_string_is_err() {
+        let mut config = Configuration::default();
+        let j = serde_json::json!({ "namespace_blocks": { "enwiki": "bad_value" } });
+        assert!(config.new_from_json_namespace_blocks(&j).is_err());
+    }
 }
