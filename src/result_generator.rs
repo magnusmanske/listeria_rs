@@ -113,7 +113,7 @@ impl ResultGenerator {
     fn get_var_index(list: &ListeriaList) -> Result<usize> {
         list.sparql_table()
             .main_column()
-            .ok_or_else(|| anyhow!("Could not find SPARQL variable in results"))
+            .ok_or_else(|| anyhow!("SPARQL query must include the ?item variable — do not rename it"))
     }
 
     fn get_tmp_rows(
@@ -160,6 +160,17 @@ mod tests {
         // The sparql_table is empty by default, so this should fail
         let result = ResultGenerator::get_var_index(&list);
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_get_var_index_error_mentions_item_variable() {
+        let list = create_test_list().await;
+        let err = ResultGenerator::get_var_index(&list).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("?item"),
+            "Error message should mention '?item', got: {msg}"
+        );
     }
 
     #[tokio::test]
