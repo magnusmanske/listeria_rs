@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{RwLock, Semaphore};
 use wikimisc::{seppuku::Seppuku, wikibase::EntityTrait};
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 300;
@@ -147,7 +147,7 @@ impl MainCommands {
 
     pub async fn run_single_wiki_bot(&self, once: bool) -> Result<()> {
         let state = AppState {
-            pages: Arc::new(Mutex::new(HashMap::new())),
+            pages: Arc::new(RwLock::new(HashMap::new())),
             started: Instant::now(),
             wiki_page_pattern: self.config.wiki_page_pattern(),
         };
@@ -192,7 +192,7 @@ impl MainCommands {
             result.set_completed(Instant::now());
             state
                 .pages
-                .lock()
+                .write()
                 .await
                 .insert(page.title().to_string(), result);
             if let Some(seconds) = bot.config().delay_after_page_check_sec() {

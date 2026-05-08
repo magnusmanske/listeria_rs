@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
 
@@ -30,9 +30,15 @@ fn escape_html(s: &str) -> String {
     out
 }
 
+/// Shared state for the HTTP status server.
+///
+/// `pages` is behind an `RwLock` so the read-heavy status endpoint can hold
+/// a read guard without blocking concurrent bot-task writes. A single lock
+/// acquisition per request (rather than four separate ones) also guarantees a
+/// consistent snapshot.
 #[derive(Debug, Clone)]
 pub struct AppState {
-    pub pages: Arc<Mutex<HashMap<String, WikiPageResult>>>,
+    pub pages: Arc<RwLock<HashMap<String, WikiPageResult>>>,
     pub started: Instant,
     pub wiki_page_pattern: Option<String>,
 }
@@ -150,32 +156,31 @@ impl StatusServer {
         let now = Instant::now();
         let mut statistics = ServerStatistics::from_state(&state, now);
 
-        for (_page, result) in state.pages.lock().await.iter() {
+        // Take a single consistent snapshot; all metrics below derive from it.
+        let snapshot = state.pages.read().await;
+
+        for result in snapshot.values() {
             *statistics
                 .status_counts
                 .entry(result.result().to_string())
                 .or_insert(0) += 1;
         }
 
-        statistics.last_event = state
-            .pages
-            .lock()
-            .await
+        statistics.last_event = snapshot
             .values()
             .filter_map(|result| result.completed())
             .map(|l| now.duration_since(l))
             .min();
 
-        statistics.total_pages = state.pages.lock().await.len();
+        statistics.total_pages = snapshot.len();
 
-        let problems: Vec<_> = state
-            .pages
-            .lock()
-            .await
+        let problems: Vec<_> = snapshot
             .iter()
             .filter(|(_page, result)| result.result() != "OK")
             .map(|(page, result)| (page.clone(), result.clone()))
             .collect();
+
+        drop(snapshot);
 
         let mut html = Self::build_html_header();
         html += &Self::build_status_card(&statistics);
@@ -391,7 +396,7 @@ mod tests {
     fn test_server_statistics_from_state_zero_uptime() {
         let started = Instant::now();
         let state = AppState {
-            pages: Arc::new(Mutex::new(HashMap::new())),
+            pages: Arc::new(RwLock::new(HashMap::new())),
             started,
             wiki_page_pattern: None,
         };
@@ -414,7 +419,7 @@ mod tests {
         use tower::ServiceExt;
 
         let state = AppState {
-            pages: Arc::new(Mutex::new(HashMap::new())),
+            pages: Arc::new(RwLock::new(HashMap::new())),
             started: Instant::now(),
             wiki_page_pattern: None,
         };
@@ -451,7 +456,7 @@ mod tests {
         );
 
         let state = AppState {
-            pages: Arc::new(Mutex::new(pages)),
+            pages: Arc::new(RwLock::new(pages)),
             started: Instant::now(),
             wiki_page_pattern: None,
         };
