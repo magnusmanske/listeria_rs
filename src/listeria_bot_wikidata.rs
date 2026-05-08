@@ -59,8 +59,20 @@ impl ListeriaBot for ListeriaBotWikidata {
     }
 
     async fn reset_running(&self) -> Result<()> {
-        let sql = "UPDATE pagestatus SET status='OK' WHERE status='RUNNING'";
-        self.run_sql(sql).await
+        let now: DateTime<Utc> = Utc::now();
+        let timestamp = now.format("%Y%m%d%H%M%S").to_string();
+        let sql = "UPDATE pagestatus \
+            SET status='FAIL', priority=0, \
+            message='Bot restarted while page was processing', \
+            timestamp=:timestamp \
+            WHERE status='RUNNING'";
+        self.config
+            .pool()?
+            .get_conn()
+            .await?
+            .exec_drop(sql, params! { timestamp })
+            .await?;
+        Ok(())
     }
 
     async fn clear_deleted(&self) -> Result<()> {
@@ -155,6 +167,17 @@ impl ListeriaBot for ListeriaBotWikidata {
 }
 
 impl ListeriaBotWikidata {
+    /// Returns the SQL fragment for the `priority` column in an UPDATE.
+    ///
+    /// While a page is `RUNNING` the priority is preserved so the scheduler
+    /// can still identify it as high-priority.  For every other status
+    /// (including terminal states like `TRANSLATION` and `INVALID`) the
+    /// priority is reset to `0` so pages do not accumulate in the priority
+    /// queue indefinitely.
+    fn priority_sql_for_status(status: &str) -> &'static str {
+        if status == "RUNNING" { "`priority`" } else { "0" }
+    }
+
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
         if let Some(bot) = self.bot_per_wiki.get(wiki) {
             let new_bot = bot.to_owned();
@@ -210,11 +233,7 @@ impl ListeriaBotWikidata {
             "status" => status,
             "message" => message.chars().take(200).collect::<String>(),
         };
-        let priority = match status {
-            // Reset priority on OK or FAIL
-            "OK" | "FAIL" => "0",
-            _ => "`priority`",
-        };
+        let priority = Self::priority_sql_for_status(status);
         let sql = format!(
             "UPDATE `pagestatus` SET
             `status`=:status,
@@ -248,7 +267,7 @@ impl ListeriaBotWikidata {
             AND wikis.status='ACTIVE'
             AND pagestatus.status NOT IN ({ignore_status})
             AND pagestatus.id NOT IN ({ids})
-            ORDER BY rand() # pagestatus.timestamp
+            ORDER BY pagestatus.timestamp
             LIMIT 1"
         );
         if let Some(page) = self.get_page_for_sql(&sql_priority).await {
@@ -260,5 +279,65 @@ impl ListeriaBotWikidata {
         } else {
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- priority_sql_for_status ---
+
+    #[test]
+    fn test_priority_sql_running_keeps_existing() {
+        assert_eq!(
+            ListeriaBotWikidata::priority_sql_for_status("RUNNING"),
+            "`priority`"
+        );
+    }
+
+    #[test]
+    fn test_priority_sql_ok_resets_to_zero() {
+        assert_eq!(ListeriaBotWikidata::priority_sql_for_status("OK"), "0");
+    }
+
+    #[test]
+    fn test_priority_sql_fail_resets_to_zero() {
+        assert_eq!(ListeriaBotWikidata::priority_sql_for_status("FAIL"), "0");
+    }
+
+    #[test]
+    fn test_priority_sql_translation_resets_to_zero() {
+        // TRANSLATION pages are never re-queued; their priority must not stay 1.
+        assert_eq!(
+            ListeriaBotWikidata::priority_sql_for_status("TRANSLATION"),
+            "0"
+        );
+    }
+
+    #[test]
+    fn test_priority_sql_invalid_resets_to_zero() {
+        // INVALID pages should not accumulate in the priority queue.
+        assert_eq!(
+            ListeriaBotWikidata::priority_sql_for_status("INVALID"),
+            "0"
+        );
+    }
+
+    #[test]
+    fn test_priority_sql_deleted_resets_to_zero() {
+        assert_eq!(
+            ListeriaBotWikidata::priority_sql_for_status("DELETED"),
+            "0"
+        );
+    }
+
+    #[test]
+    fn test_priority_sql_unknown_status_resets_to_zero() {
+        // Any future / unknown terminal status should also reset priority.
+        assert_eq!(
+            ListeriaBotWikidata::priority_sql_for_status("SOME_NEW_STATUS"),
+            "0"
+        );
     }
 }
