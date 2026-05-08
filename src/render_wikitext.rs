@@ -1,18 +1,24 @@
 //! Renders results as MediaWiki wikitext tables.
 
-use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
+use crate::{
+    listeria_page::ListeriaPage,
+    render_context::RenderContext,
+    renderer::Renderer,
+};
 use anyhow::Result;
 use futures::future::join_all;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RendererWikitext;
 
-impl Renderer for RendererWikitext {
-    fn new() -> Self {
+impl RendererWikitext {
+    pub fn new() -> Self {
         Self {}
     }
+}
 
-    async fn render(&mut self, list: &mut ListeriaList) -> Result<String> {
+impl Renderer for RendererWikitext {
+    async fn render<C: RenderContext>(&mut self, list: &C) -> Result<String> {
         let mut wt = String::new();
         for section_id in list.get_section_ids() {
             wt += &self.as_wikitext_section(list, section_id).await;
@@ -51,7 +57,7 @@ impl Renderer for RendererWikitext {
 }
 
 impl RendererWikitext {
-    async fn as_wikitext_section(&self, list: &mut ListeriaList, section_id: usize) -> String {
+    async fn as_wikitext_section<C: RenderContext>(&self, list: &C, section_id: usize) -> String {
         let mut wt = String::new();
 
         if let Some(name) = list.section_name(section_id) {
@@ -78,7 +84,7 @@ impl RendererWikitext {
         wt
     }
 
-    fn as_wikitext_table_header(list: &ListeriaList) -> String {
+    fn as_wikitext_table_header<C: RenderContext>(list: &C) -> String {
         let mut wt = String::new();
         match &list.header_template() {
             Some(t) => {
@@ -112,7 +118,7 @@ impl RendererWikitext {
         }
     }
 
-    async fn process_rows(list: &ListeriaList, section_id: usize, wt: &mut String) {
+    async fn process_rows<C: RenderContext>(list: &C, section_id: usize, wt: &mut String) {
         // Collect (global_index, row) pairs for this section so that each row
         // is rendered with its global position in list.results(). This is
         // required by as_wikitext_location, which looks up the entity_id from

@@ -778,6 +778,34 @@ impl crate::render_context::RenderContext for ListeriaList {
         ListeriaList::get_filtered_claims(self, entity, property)
     }
 
+    fn columns(&self) -> &Vec<crate::column::Column> {
+        ListeriaList::columns(self)
+    }
+
+    fn get_section_ids(&self) -> Vec<usize> {
+        ListeriaList::get_section_ids(self)
+    }
+
+    fn shadow_files(&self) -> &std::collections::HashSet<String> {
+        ListeriaList::shadow_files(self)
+    }
+
+    fn summary(&self) -> &Option<String> {
+        ListeriaList::summary(self)
+    }
+
+    fn skip_table(&self) -> bool {
+        ListeriaList::skip_table(self)
+    }
+
+    fn get_row_template(&self) -> &Option<String> {
+        ListeriaList::get_row_template(self)
+    }
+
+    fn section_name(&self, id: usize) -> Option<&str> {
+        ListeriaList::section_name(self, id)
+    }
+
     async fn get_entity(
         &self,
         entity_id: &str,

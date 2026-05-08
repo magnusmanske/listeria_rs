@@ -148,7 +148,7 @@ impl PageElement {
             return Ok(String::new());
         }
         let mut renderer = RendererWikitext::new();
-        renderer.render(&mut self.list).await
+        renderer.render(&self.list).await
     }
 
     pub async fn as_wikitext(&mut self) -> Result<String> {

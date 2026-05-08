@@ -10,6 +10,7 @@ use crate::my_entity::MyEntity;
 use crate::result_row::ResultRow;
 use crate::template_params::{LinksType, ReferencesParameter, TemplateParams};
 use crate::wiki::Wiki;
+use std::collections::HashSet;
 use wikimisc::wikibase::Statement;
 
 /// Methods from `ListeriaList` that the rendering layer needs.
@@ -54,6 +55,15 @@ pub trait RenderContext {
     // ── entity access (sync) ──────────────────────────────────────────────
     fn ecw(&self) -> &EntityContainerWrapper;
     fn get_filtered_claims(&self, entity: &MyEntity, property: &str) -> Vec<Statement>;
+
+    // ── section / layout access ───────────────────────────────────────────
+    fn columns(&self) -> &Vec<Column>;
+    fn get_section_ids(&self) -> Vec<usize>;
+    fn shadow_files(&self) -> &HashSet<String>;
+    fn summary(&self) -> &Option<String>;
+    fn skip_table(&self) -> bool;
+    fn get_row_template(&self) -> &Option<String>;
+    fn section_name(&self, id: usize) -> Option<&str>;
 
     // ── entity access (async) ─────────────────────────────────────────────
     async fn get_entity(&self, entity_id: &str) -> Option<EntityEntry>;

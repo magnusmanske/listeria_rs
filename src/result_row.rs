@@ -1,7 +1,7 @@
 //! Table rows containing cells with formatted data.
 
 use crate::{
-    column_type::ColumnType, listeria_list::ListeriaList, result_cell::ResultCell,
+    column_type::ColumnType, render_context::RenderContext, result_cell::ResultCell,
     result_cell_part::ResultCellPart,
 };
 use futures::future::join_all;
@@ -94,7 +94,7 @@ impl ResultRow {
         }
     }
 
-    pub async fn from_columns(&mut self, list: &ListeriaList, sparql_table: &SparqlTableVec) {
+    pub async fn from_columns(&mut self, list: &impl RenderContext, sparql_table: &SparqlTableVec) {
         // Clone entity_id so futures can borrow it without conflicting with &mut self
         let entity_id = self.entity_id.clone();
         let futures: Vec<_> = list
@@ -110,16 +110,16 @@ impl ResultRow {
     }
 
     /// Get the sortkey for the label of the entity
-    pub async fn get_sortkey_label(&self, list: &ListeriaList) -> String {
+    pub async fn get_sortkey_label(&self, list: &impl RenderContext) -> String {
         if list.get_entity(self.entity_id()).await.is_some() {
-            list.get_label_with_fallback(self.entity_id()).await
+            list.get_label_with_fallback_lang(self.entity_id(), list.language()).await
         } else {
             String::new()
         }
     }
 
     /// Get the sortkey for the family name of the entity
-    pub async fn get_sortkey_family_name(&self, page: &ListeriaList) -> String {
+    pub async fn get_sortkey_family_name(&self, page: &impl RenderContext) -> String {
         static RE_SR_JR: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r", [JS]r\.$").expect("RE_SR_JR does not parse"));
         static RE_BRACES: LazyLock<Regex> =
@@ -154,7 +154,7 @@ impl ResultRow {
     pub async fn get_sortkey_prop(
         &self,
         prop: &str,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         datatype: &SnakDataType,
     ) -> String {
         let Some(entity) = list.get_entity(&self.entity_id).await else {
@@ -168,7 +168,7 @@ impl ResultRow {
     }
 
     /// Get the sortkey for a sparql value
-    pub fn get_sortkey_sparql(&self, variable: &str, list: &ListeriaList) -> String {
+    pub fn get_sortkey_sparql(&self, variable: &str, list: &impl RenderContext) -> String {
         // ColumnType::Field stores its variable name upper-cased (see
         // ColumnType::new), and SortMode::SparqlVariable does the same when
         // parsing \`sort=?foo\`. Match the two representations so that
@@ -189,7 +189,7 @@ impl ResultRow {
     }
 
     /// Get the sortkey from a snak
-    async fn get_sortkey_from_snak(&self, snak: &Snak, list: &ListeriaList) -> String {
+    async fn get_sortkey_from_snak(&self, snak: &Snak, list: &impl RenderContext) -> String {
         match snak.data_value() {
             Some(data_value) => match data_value.value() {
                 wikimisc::wikibase::value::Value::Coordinate(c) => format!(
@@ -202,8 +202,7 @@ impl ResultRow {
                     format!("{}:{}", m.language(), m.text())
                 }
                 wikimisc::wikibase::value::Value::Entity(entity) => {
-                    // TODO language?
-                    list.get_label_with_fallback(entity.id()).await
+                    list.get_label_with_fallback_lang(entity.id(), list.language()).await
                 }
                 wikimisc::wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikimisc::wikibase::value::Value::StringValue(s) => s.to_owned(),
@@ -265,7 +264,7 @@ impl ResultRow {
     }
 
     /// Get the cells as tabbed data
-    pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize) -> Value {
+    pub async fn as_tabbed_data(&self, list: &impl RenderContext, rownum: usize) -> Value {
         let mut ret = Vec::with_capacity(self.cells.len() + 1);
         ret.push(json!(self.section));
         for (colnum, cell) in self.cells.iter().enumerate() {
@@ -275,7 +274,7 @@ impl ResultRow {
     }
 
     /// Get the cells as wikitext
-    fn cells_as_wikitext(list: &ListeriaList, cells: &[String]) -> String {
+    fn cells_as_wikitext(list: &impl RenderContext, cells: &[String]) -> String {
         cells
             .iter()
             .enumerate()
@@ -295,7 +294,7 @@ impl ResultRow {
     }
 
     /// Get the row as wikitext
-    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize) -> String {
+    pub async fn as_wikitext(&self, list: &impl RenderContext, rownum: usize) -> String {
         let futures: Vec<_> = self
             .cells
             .iter()

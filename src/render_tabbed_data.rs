@@ -1,6 +1,6 @@
 //! Renders results as tabbed data stored in database tables.
 
-use crate::{listeria_list::ListeriaList, listeria_page::ListeriaPage, renderer::Renderer};
+use crate::{listeria_page::ListeriaPage, render_context::RenderContext, renderer::Renderer};
 use anyhow::{Result, anyhow};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
@@ -33,12 +33,14 @@ static RE_TEMPLATE_START_NO_END: LazyLock<Regex> = LazyLock::new(|| {
 #[derive(Debug, Clone, Copy)]
 pub struct RendererTabbedData;
 
-impl Renderer for RendererTabbedData {
-    fn new() -> Self {
+impl RendererTabbedData {
+    pub fn new() -> Self {
         Self {}
     }
+}
 
-    async fn render(&mut self, list: &mut ListeriaList) -> Result<String> {
+impl Renderer for RendererTabbedData {
+    async fn render<C: RenderContext>(&mut self, list: &C) -> Result<String> {
         let mut ret = json!({"license": "CC0-1.0","description": {"en":"Listeria output"},"sources":"https://github.com/magnusmanske/listeria_rs","schema":{"fields":[{ "name": "section", "type": "number", "title": { list.language().to_owned(): "Section"}}]},"data":[]});
         list.columns().iter().enumerate().for_each(|(colnum,col)| {
             if let Some(x) = ret["schema"]["fields"].as_array_mut() {
@@ -125,7 +127,7 @@ impl RendererTabbedData {
     }
 
     #[must_use]
-    pub fn tabbed_data_page_name(&self, list: &ListeriaList) -> Option<String> {
+    pub fn tabbed_data_page_name(&self, list: &impl RenderContext) -> Option<String> {
         let ret = "Data:Listeria/".to_string() + list.wiki() + "/" + list.page_title() + ".tab";
         if ret.len() > 250 {
             return None; // Page title too long
@@ -154,7 +156,7 @@ impl RendererTabbedData {
         &mut self,
         tabbed_data_json: Value,
         commons_api: &mut Api,
-        list: &ListeriaList,
+        list: &impl RenderContext,
     ) -> Result<bool> {
         let data_page = self
             .tabbed_data_page_name(list)
