@@ -2,9 +2,9 @@
 
 use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
-use crate::listeria_list::ListeriaList;
 use crate::my_entity::MyEntity;
 use crate::reference::Reference;
+use crate::render_context::RenderContext;
 use crate::template_params::LinksType;
 use era_date::{Era, Precision};
 use futures::future::join_all;
@@ -39,7 +39,12 @@ impl PartWithReference {
         &mut self.part
     }
 
-    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub async fn as_wikitext(
+        &self,
+        list: &impl RenderContext,
+        rownum: usize,
+        colnum: usize,
+    ) -> String {
         let wikitext_part = self.part.as_wikitext(list, rownum, colnum).await;
         let wikitext_reference = if let Some(references) = &self.references {
             let futures: Vec<_> = references
@@ -348,9 +353,20 @@ impl ResultCellPart {
         ret
     }
 
+    /// Capitalises the first letter of a page title for link normalisation.
+    fn normalize_page_title(s: &str) -> String {
+        if s.len() < 2 {
+            return s.to_string();
+        }
+        let mut c = s.chars();
+        c.next()
+            .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
+            .unwrap_or_default()
+    }
+
     async fn as_wikitext_entity(
         &self,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         id: &str,
         try_localize: bool,
         colnum: usize,
@@ -389,7 +405,7 @@ impl ResultCellPart {
     }
 
     fn as_wikitext_local_link(
-        list: &ListeriaList,
+        list: &impl RenderContext,
         title: &str,
         label: &str,
         link_target: &LinkTarget,
@@ -401,14 +417,12 @@ impl ResultCellPart {
         };
 
         let normalized_page =
-            ListeriaList::normalize_page_title(list.page_title()).replace(' ', "_");
-        let normalized_title = ListeriaList::normalize_page_title(title).replace(' ', "_");
+            Self::normalize_page_title(list.page_title()).replace(' ', "_");
+        let normalized_title = Self::normalize_page_title(title).replace(' ', "_");
 
         if normalized_page == normalized_title {
             label.to_string()
-        } else if ListeriaList::normalize_page_title(title)
-            == ListeriaList::normalize_page_title(label)
-        {
+        } else if Self::normalize_page_title(title) == Self::normalize_page_title(label) {
             format!("{start}{label}]]")
         } else {
             format!("{start}{title}|{label}]]")
@@ -416,7 +430,7 @@ impl ResultCellPart {
     }
 
     async fn as_wikitext_location(
-        list: &ListeriaList,
+        list: &impl RenderContext,
         loc_info: &LocationInfo,
         rownum: usize,
     ) -> String {
@@ -448,7 +462,7 @@ impl ResultCellPart {
         )
     }
 
-    fn as_wikitext_file(list: &ListeriaList, file: &str) -> String {
+    fn as_wikitext_file(list: &impl RenderContext, file: &str) -> String {
         let thumb = list.thumbnail_size();
         format!(
             "[[{}:{}|center|{}px]]",
@@ -458,7 +472,11 @@ impl ResultCellPart {
         )
     }
 
-    async fn as_wikitext_external_id(list: &ListeriaList, property: &str, id: &str) -> String {
+    async fn as_wikitext_external_id(
+        list: &impl RenderContext,
+        property: &str,
+        id: &str,
+    ) -> String {
         match list.external_id_url(property, id).await {
             Some(url) => format!("[{url} {id}]"),
             None => id.to_string(),
@@ -492,7 +510,7 @@ impl ResultCellPart {
         Some(format!("[[:{}:{}|{}]]", lang, title, display))
     }
 
-    fn as_wikitext_text(list: &ListeriaList, text: &str, colnum: usize) -> String {
+    fn as_wikitext_text(list: &impl RenderContext, text: &str, colnum: usize) -> String {
         // Newlines in cell values break wiki table structure: MediaWiki ends the
         // cell at the first bare newline, and lines starting with a space are
         // rendered as pre-formatted code blocks. Replace \n with <br/> to keep
@@ -510,7 +528,7 @@ impl ResultCellPart {
 
     async fn as_wikitext_snak_list(
         v: &[PartWithReference],
-        list: &ListeriaList,
+        list: &impl RenderContext,
         rownum: usize,
         colnum: usize,
     ) -> String {
@@ -521,7 +539,7 @@ impl ResultCellPart {
         join_all(futures).await.join(" — ")
     }
 
-    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub async fn as_wikitext(&self, list: &impl RenderContext, rownum: usize, colnum: usize) -> String {
         match self {
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity(entity_info) => {
@@ -569,7 +587,7 @@ impl ResultCellPart {
 
     pub async fn as_tabbed_data(
         &self,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         rownum: usize,
         colnum: usize,
     ) -> String {
@@ -577,7 +595,7 @@ impl ResultCellPart {
     }
 
     fn render_entity_link(
-        list: &ListeriaList,
+        list: &impl RenderContext,
         use_label: String,
         id: &str,
         labeled_entity_link: String,

@@ -1,7 +1,6 @@
 //! Wikidata reference handling and formatting.
 
-use crate::listeria_list::ListeriaList;
-
+use crate::render_context::RenderContext;
 use serde::{Deserialize, Serialize};
 use wikimisc::wikibase::Snak;
 use wikimisc::wikibase::Value;
@@ -55,7 +54,7 @@ impl Reference {
     }
 
     /// Returns the reference as a wikitext string.
-    pub async fn as_reference(&self, list: &ListeriaList) -> String {
+    pub async fn as_reference(&self, list: &impl RenderContext) -> String {
         let (wikitext, md5) = self.compute_wikitext(list).await;
         let has_md5 = list.reference_ids().get(&md5).is_some();
         if has_md5 {
@@ -67,7 +66,7 @@ impl Reference {
 
     /// Computes the wikitext and a blake3 hash for this reference.
     /// Returns `(wikitext, hash)`. Results are not cached; callers run this once per render.
-    async fn compute_wikitext(&self, list: &ListeriaList) -> (String, String) {
+    async fn compute_wikitext(&self, list: &impl RenderContext) -> (String, String) {
         let mut s = String::new();
 
         let (use_invoke, use_cite_web) = match list.get_wiki() {
@@ -87,7 +86,7 @@ impl Reference {
         (s, hash)
     }
 
-    async fn render_cite_web(&self, use_invoke: bool, list: &ListeriaList) -> String {
+    async fn render_cite_web(&self, use_invoke: bool, list: &impl RenderContext) -> String {
         let template = if use_invoke {
             "{{#invoke:cite|web"
         } else {

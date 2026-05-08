@@ -71,6 +71,7 @@ pub mod page_operations;
 pub mod page_params;
 pub mod page_to_process;
 pub mod reference;
+pub mod render_context;
 pub mod render_tabbed_data;
 pub mod render_wikitext;
 pub mod renderer;

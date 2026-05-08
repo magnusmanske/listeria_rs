@@ -4,8 +4,8 @@ use crate::{
     column::Column,
     column_type::ColumnType,
     entity_container_wrapper::{EntityContainerWrapper, EntityEntry},
-    listeria_list::ListeriaList,
     reference::Reference,
+    render_context::RenderContext,
     result_cell_part::{
         AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart,
     },
@@ -32,7 +32,7 @@ pub struct ResultCell {
 
 impl ResultCell {
     pub async fn new(
-        list: &ListeriaList,
+        list: &impl RenderContext,
         entity_id: &str,
         sparql_table: &SparqlTableVec,
         col: &Column,
@@ -176,7 +176,7 @@ impl ResultCell {
         futures::future::join_all(futures).await;
     }
 
-    pub async fn as_tabbed_data(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> Value {
+    pub async fn as_tabbed_data(&self, list: &impl RenderContext, rownum: usize, colnum: usize) -> Value {
         let mut ret = Vec::with_capacity(self.parts.len());
         for part_with_reference in self.parts.iter() {
             ret.push(
@@ -189,7 +189,7 @@ impl ResultCell {
         json!(ret.join("<br/>"))
     }
 
-    pub async fn as_wikitext(&self, list: &ListeriaList, rownum: usize, colnum: usize) -> String {
+    pub async fn as_wikitext(&self, list: &impl RenderContext, rownum: usize, colnum: usize) -> String {
         let futures: Vec<_> = self
             .parts
             .iter()
@@ -202,7 +202,7 @@ impl ResultCell {
         self.get_cell_prefix(list) + &parts.join("<br/>")
     }
 
-    fn get_cell_prefix(&self, list: &ListeriaList) -> String {
+    fn get_cell_prefix(&self, list: &impl RenderContext) -> String {
         let time_sort_year = self.parts.first().and_then(|p| match p.part() {
             ResultCellPart::Time(_, year) => Some(*year),
             _ => None,
@@ -234,7 +234,7 @@ impl ResultCell {
     fn ct_label(
         entity: Option<EntityEntry>,
         ret: &mut ResultCell,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         entity_id: &str,
     ) {
         let Some(e) = entity else { return };
@@ -281,7 +281,7 @@ impl ResultCell {
         entity: &Option<EntityEntry>,
         language: &str,
         ret: &mut ResultCell,
-        list: &ListeriaList,
+        list: &impl RenderContext,
     ) {
         if let Some(e) = entity {
             match e.label_in_locale(language) {
@@ -305,7 +305,7 @@ impl ResultCell {
 
     fn ct_pqv(
         entity: &Option<EntityEntry>,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         p1: &str,
         ret: &mut ResultCell,
         q1: &str,
@@ -321,7 +321,7 @@ impl ResultCell {
 
     fn ct_pq(
         entity: &Option<EntityEntry>,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         p1: &str,
         ret: &mut ResultCell,
         p2: &str,
@@ -337,7 +337,7 @@ impl ResultCell {
     fn ct_property(
         entity: &Option<EntityEntry>,
         ret: &mut ResultCell,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         property: &str,
     ) {
         if let Some(e) = entity {
@@ -384,7 +384,7 @@ impl ResultCell {
     fn ct_sitelink(
         entity: &Option<EntityEntry>,
         wiki: &str,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         ret: &mut ResultCell,
     ) {
         let Some(e) = entity else { return };
@@ -419,7 +419,7 @@ impl ResultCell {
 
     fn ct_description(
         entity: &Option<EntityEntry>,
-        list: &ListeriaList,
+        list: &impl RenderContext,
         ret: &mut ResultCell,
         langs: &[String],
     ) {

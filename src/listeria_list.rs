@@ -728,6 +728,114 @@ impl ListeriaList {
     }
 }
 
+impl crate::render_context::RenderContext for ListeriaList {
+    fn language(&self) -> &str {
+        ListeriaList::language(self)
+    }
+
+    fn default_language(&self) -> String {
+        ListeriaList::default_language(self)
+    }
+
+    fn page_title(&self) -> &str {
+        ListeriaList::page_title(self)
+    }
+
+    fn wiki(&self) -> &str {
+        ListeriaList::wiki(self)
+    }
+
+    fn is_main_wikibase_wiki(&self) -> bool {
+        ListeriaList::is_main_wikibase_wiki(self)
+    }
+
+    fn get_links_type(&self) -> &crate::template_params::LinksType {
+        ListeriaList::get_links_type(self)
+    }
+
+    fn header_template(&self) -> &Option<String> {
+        ListeriaList::header_template(self)
+    }
+
+    fn template_params(&self) -> &crate::template_params::TemplateParams {
+        ListeriaList::template_params(self)
+    }
+
+    fn get_reference_parameter(&self) -> &crate::template_params::ReferencesParameter {
+        ListeriaList::get_reference_parameter(self)
+    }
+
+    fn thumbnail_size(&self) -> u64 {
+        ListeriaList::thumbnail_size(self)
+    }
+
+    fn local_file_namespace_prefix(&self) -> &str {
+        ListeriaList::local_file_namespace_prefix(self)
+    }
+
+    fn column(&self, colnum: usize) -> Option<&crate::column::Column> {
+        ListeriaList::column(self, colnum)
+    }
+
+    fn results(&self) -> &Vec<crate::result_row::ResultRow> {
+        ListeriaList::results(self)
+    }
+
+    fn reference_ids(&self) -> &std::collections::HashSet<String> {
+        ListeriaList::reference_ids(self)
+    }
+
+    fn get_wiki(&self) -> Option<crate::wiki::Wiki> {
+        ListeriaList::get_wiki(self)
+    }
+
+    fn get_item_wiki_target(&self, entity_id: &str) -> String {
+        ListeriaList::get_item_wiki_target(self, entity_id)
+    }
+
+    fn get_location_template(
+        &self,
+        lat: f64,
+        lon: f64,
+        entity_id: Option<String>,
+        region: Option<String>,
+        label: Option<String>,
+    ) -> String {
+        ListeriaList::get_location_template(self, lat, lon, entity_id, region, label)
+    }
+
+    fn ecw(&self) -> &crate::entity_container_wrapper::EntityContainerWrapper {
+        ListeriaList::ecw(self)
+    }
+
+    fn get_filtered_claims(
+        &self,
+        entity: &crate::my_entity::MyEntity,
+        property: &str,
+    ) -> Vec<wikimisc::wikibase::Statement> {
+        ListeriaList::get_filtered_claims(self, entity, property)
+    }
+
+    async fn get_entity(
+        &self,
+        entity_id: &str,
+    ) -> Option<crate::entity_container_wrapper::EntityEntry> {
+        ListeriaList::get_entity(self, entity_id).await
+    }
+
+    async fn get_item_link_with_fallback(&self, entity_id: &str) -> String {
+        ListeriaList::get_item_link_with_fallback(self, entity_id).await
+    }
+
+    async fn get_label_with_fallback_lang(&self, entity_id: &str, language: &str) -> String {
+        ListeriaList::get_label_with_fallback_lang(self, entity_id, language).await
+    }
+
+    async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
+        ListeriaList::external_id_url(self, prop, id).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
