@@ -445,7 +445,11 @@ mod tests {
         check_fixture_file(PathBuf::from("test_data/preferred_rank.fixture")).await;
     }
 
+    // Flaky: depends on live SPARQL queries to Wikidata WDQS (no SPARQL_RESULTS in fixture).
+    // When WDQS throttles or returns an HTML error page, page.run() errors with
+    // "error decoding response body". Run with `cargo test -- --ignored` for live smoke tests.
     #[tokio::test]
+    #[ignore = "live SPARQL endpoint dependency, intermittently throttled by WDQS"]
     async fn multiple_lists() {
         check_fixture_file(PathBuf::from("test_data/multiple_lists.fixture")).await;
     }
@@ -460,7 +464,15 @@ mod tests {
         check_fixture_file(PathBuf::from("test_data/dewiki.fixture")).await;
     }
 
+    // Flaky: asserts on `region=` values (e.g. GB-ENG, DE-NW, GR-I) that
+    // ListProcessor::get_region_for_entity_id fetches via a live SPARQL query
+    // (P131*/P300). The fixture cannot inject these results because that code
+    // path forces set_simulate(false). When WDQS throttles, errors are
+    // silently swallowed by `.ok()?` (list_processor.rs ~line 483) and the
+    // resulting empty `region=` breaks the exact-match EXPECTED assertion.
+    // Run with `cargo test -- --ignored` for a live smoke test.
     #[tokio::test]
+    #[ignore = "live SPARQL region lookup is intermittently throttled by WDQS"]
     async fn dewiki_coordinates() {
         check_fixture_file(PathBuf::from("test_data/dewiki_coordinates.fixture")).await;
     }
