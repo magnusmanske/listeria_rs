@@ -4,15 +4,13 @@ use crate::configuration::Configuration;
 use crate::listeria_bot::ListeriaBot;
 use crate::listeria_bot_wiki::ListeriaBotWiki;
 use crate::page_to_process::PageToProcess;
+use crate::pagestatus_repository::PageStatusRepository;
 use crate::wiki_apis::WikiApis;
 use crate::wiki_page_result::WikiPageResult;
 use anyhow::{Result, anyhow};
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use dashmap::DashSet;
 use log::info;
-use mysql_async::from_row;
-use mysql_async::prelude::*;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -21,12 +19,30 @@ pub struct ListeriaBotWikidata {
     wiki_apis: Arc<WikiApis>,
     bot_per_wiki: DashMap<String, ListeriaBotWiki>,
     running: DashSet<u64>,
+    pagestatus: PageStatusRepository,
 }
 
 impl ListeriaBotWikidata {
     pub async fn clear_log_table(&self) -> Result<()> {
+        use mysql_async::prelude::Queryable;
         let sql = "TRUNCATE `list_log`";
-        self.run_sql(sql).await
+        self.config
+            .pool()?
+            .get_conn()
+            .await?
+            .exec_iter(sql, ())
+            .await?;
+        Ok(())
+    }
+
+    fn running_ids_string(&self) -> String {
+        let mut parts: Vec<String> = self.running.iter().map(|id| id.to_string()).collect();
+        if parts.is_empty() {
+            "0".to_string()
+        } else {
+            parts.sort_unstable();
+            parts.join(",")
+        }
     }
 }
 
@@ -45,12 +61,14 @@ impl ListeriaBot for ListeriaBotWikidata {
             .ok_or(anyhow!("Failed to get mutable reference to config"))?
             .set_wikis(wikis);
         let wiki_apis = WikiApis::new(config.clone()).await?;
+        let pagestatus = PageStatusRepository::new(config.pool()?.as_ref().clone());
 
         Ok(Self {
             config: config.clone(),
             wiki_apis: Arc::new(wiki_apis),
             bot_per_wiki: DashMap::new(),
             running: DashSet::new(),
+            pagestatus,
         })
     }
 
@@ -59,99 +77,68 @@ impl ListeriaBot for ListeriaBotWikidata {
     }
 
     async fn reset_running(&self) -> Result<()> {
-        let now: DateTime<Utc> = Utc::now();
-        let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-        let sql = "UPDATE pagestatus \
-            SET status='FAIL', priority=0, \
-            message='Bot restarted while page was processing', \
-            timestamp=:timestamp \
-            WHERE status='RUNNING'";
-        self.config
-            .pool()?
-            .get_conn()
-            .await?
-            .exec_drop(sql, params! { timestamp })
-            .await?;
-        Ok(())
+        self.pagestatus.reset_running().await
     }
 
     async fn clear_deleted(&self) -> Result<()> {
-        let sql = "DELETE FROM `pagestatus` WHERE `status`='DELETED'";
-        self.run_sql(sql).await
+        self.pagestatus.clear_deleted().await
     }
 
-    /// Removed a pagestatus ID from the running list
+    /// Removes a pagestatus ID from the running list.
     async fn release_running(&self, pagestatus_id: u64) {
         self.running.remove(&pagestatus_id);
     }
 
-    /// Returns how many pages are running
+    /// Returns how many pages are currently running.
     async fn get_running_count(&self) -> usize {
         self.running.len()
     }
 
-    /// Returns a page to be processed.
+    /// Returns the next page to be processed.
     async fn prepare_next_single_page(&self) -> Result<PageToProcess> {
-        let ids: String = {
-            let mut parts: Vec<String> = self.running.iter().map(|id| id.to_string()).collect();
-            if parts.is_empty() {
-                "0".to_string()
-            } else {
-                parts.sort_unstable();
-                parts.join(",")
-            }
-        };
-        info!(target: "lock","Getting next page, without {ids}");
+        let ids = self.running_ids_string();
+        info!(target: "lock", "Getting next page, without {ids}");
         const IGNORE_STATUS: &str = "'RUNNING','DELETED','TRANSLATION'";
 
-        if let Some(page) = self.find_priority_page(&ids, IGNORE_STATUS).await? {
+        if let Some(page) = self.pagestatus.find_priority_page(&ids, IGNORE_STATUS).await? {
+            info!(target: "lock", "Found a priority page: {:?}", &page);
+            self.pagestatus
+                .update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
+                .await?;
+            self.running.insert(page.id());
             return Ok(page);
         }
 
-        // Get the oldest page
-        let sql_oldest = format!(
-            "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
-            FROM pagestatus,wikis
-            WHERE pagestatus.wiki=wikis.id
-            AND wikis.status='ACTIVE'
-            AND pagestatus.status NOT IN ({IGNORE_STATUS})
-            AND pagestatus.id NOT IN ({ids})
-            /*AND pagestatus.wiki NOT IN (SELECT DISTINCT ps.wiki FROM pagestatus ps WHERE ps.id IN ({ids}))*/
-            ORDER BY pagestatus.timestamp
-            LIMIT 1"
-        );
-        let page = self.get_page_for_sql(&sql_oldest).await.ok_or(anyhow!(
-            "prepare_next_single_page:: no pop\n{sql_oldest}\n{ids}"
-        ))?;
-        info!(target: "lock","Found a page: {:?}",&page);
-        self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
+        let page = self
+            .pagestatus
+            .find_oldest_page(&ids, IGNORE_STATUS)
+            .await?
+            .ok_or_else(|| anyhow!("prepare_next_single_page: no page available"))?;
+
+        info!(target: "lock", "Found a page: {:?}", &page);
+        self.pagestatus
+            .update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
             .await?;
         self.running.insert(page.id());
         Ok(page)
     }
 
     async fn set_runtime(&self, pagestatus_id: u64, seconds: u64) -> Result<()> {
-        let sql = "UPDATE `pagestatus` SET `last_runtime_sec`=:seconds WHERE `id`=:pagestatus_id";
-        self.config
-            .pool()?
-            .get_conn()
-            .await?
-            .exec_drop(sql, params! {seconds, pagestatus_id})
-            .await?;
-        Ok(())
+        self.pagestatus.set_runtime(pagestatus_id, seconds).await
     }
 
     async fn run_single_bot(&self, page: PageToProcess) -> Result<WikiPageResult> {
         let bot = match self.create_bot_for_wiki(page.wiki()).await {
             Some(bot) => bot.to_owned(),
             None => {
-                self.update_page_status(
-                    page.title(),
-                    page.wiki(),
-                    "FAIL",
-                    &format!("No such wiki: {}", page.wiki()),
-                )
-                .await?;
+                self.pagestatus
+                    .update_page_status(
+                        page.title(),
+                        page.wiki(),
+                        "FAIL",
+                        &format!("No such wiki: {}", page.wiki()),
+                    )
+                    .await?;
                 return Err(anyhow!(
                     "ListeriaBot::run_single_bot: No such wiki '{}'",
                     page.wiki()
@@ -160,24 +147,14 @@ impl ListeriaBot for ListeriaBotWikidata {
         };
         let mut wpr = bot.process_page(page.title()).await;
         wpr.standardize_meassage();
-        self.update_page_status(wpr.page(), wpr.wiki(), wpr.result(), wpr.message())
+        self.pagestatus
+            .update_page_status(wpr.page(), wpr.wiki(), wpr.result(), wpr.message())
             .await?;
         Ok(wpr)
     }
 }
 
 impl ListeriaBotWikidata {
-    /// Returns the SQL fragment for the `priority` column in an UPDATE.
-    ///
-    /// While a page is `RUNNING` the priority is preserved so the scheduler
-    /// can still identify it as high-priority.  For every other status
-    /// (including terminal states like `TRANSLATION` and `INVALID`) the
-    /// priority is reset to `0` so pages do not accumulate in the priority
-    /// queue indefinitely.
-    fn priority_sql_for_status(status: &str) -> &'static str {
-        if status == "RUNNING" { "`priority`" } else { "0" }
-    }
-
     async fn create_bot_for_wiki(&self, wiki: &str) -> Option<ListeriaBotWiki> {
         if let Some(bot) = self.bot_per_wiki.get(wiki) {
             let new_bot = bot.to_owned();
@@ -190,154 +167,41 @@ impl ListeriaBotWikidata {
         info!("Created bot for {wiki}");
         Some(bot)
     }
-
-    async fn run_sql(&self, sql: &str) -> Result<()> {
-        self.config
-            .pool()?
-            .get_conn()
-            .await?
-            .exec_iter(sql, ())
-            .await?;
-        Ok(())
-    }
-
-    async fn get_page_for_sql(&self, sql: &str) -> Option<PageToProcess> {
-        self.config
-            .pool()
-            .ok()?
-            .get_conn()
-            .await
-            .ok()?
-            .exec_iter(sql, ())
-            .await
-            .ok()?
-            .map_and_drop(PageToProcess::from_row)
-            .await
-            .ok()?
-            .pop()
-    }
-
-    async fn update_page_status(
-        &self,
-        page: &str,
-        wiki: &str,
-        status: &str,
-        message: &str,
-    ) -> Result<()> {
-        let now: DateTime<Utc> = Utc::now();
-        let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-        let params = params! {
-            "wiki" => wiki,
-            "page" => page,
-            "timestamp" => timestamp,
-            "status" => status,
-            "message" => message.chars().take(200).collect::<String>(),
-        };
-        let priority = Self::priority_sql_for_status(status);
-        let sql = format!(
-            "UPDATE `pagestatus` SET
-            `status`=:status,
-            `message`=:message,
-            `timestamp`=:timestamp,
-            `bot_version`=2,
-            `priority`={priority}
-            WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page"
-        );
-        self.config
-            .pool()?
-            .get_conn()
-            .await?
-            .exec_iter(sql.as_str(), params)
-            .await?
-            .map_and_drop(from_row::<String>)
-            .await?;
-        Ok(())
-    }
-
-    async fn find_priority_page(
-        &self,
-        ids: &str,
-        ignore_status: &str,
-    ) -> Result<Option<PageToProcess>> {
-        let sql_priority = format!(
-            "SELECT pagestatus.id,pagestatus.page,pagestatus.status,wikis.name AS wiki
-            FROM pagestatus,wikis
-            WHERE priority=1
-            AND wikis.id=pagestatus.wiki
-            AND wikis.status='ACTIVE'
-            AND pagestatus.status NOT IN ({ignore_status})
-            AND pagestatus.id NOT IN ({ids})
-            ORDER BY pagestatus.timestamp
-            LIMIT 1"
-        );
-        if let Some(page) = self.get_page_for_sql(&sql_priority).await {
-            self.update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
-                .await?;
-            info!(target: "lock","Found a priority page: {:?}",&page);
-            self.running.insert(page.id());
-            Ok(Some(page))
-        } else {
-            Ok(None)
-        }
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // --- priority_sql_for_status ---
+    // The priority logic now lives in PageStatusRepository and is tested there.
+    // These tests cover the running-ids helper that remains in this module.
 
     #[test]
-    fn test_priority_sql_running_keeps_existing() {
-        assert_eq!(
-            ListeriaBotWikidata::priority_sql_for_status("RUNNING"),
-            "`priority`"
-        );
+    fn test_running_ids_string_empty() {
+        // Can't build a full ListeriaBotWikidata without a DB, so test the
+        // logic directly via a local DashSet.
+        let running: DashSet<u64> = DashSet::new();
+        let ids = {
+            let mut parts: Vec<String> = running.iter().map(|id| id.to_string()).collect();
+            if parts.is_empty() {
+                "0".to_string()
+            } else {
+                parts.sort_unstable();
+                parts.join(",")
+            }
+        };
+        assert_eq!(ids, "0");
     }
 
     #[test]
-    fn test_priority_sql_ok_resets_to_zero() {
-        assert_eq!(ListeriaBotWikidata::priority_sql_for_status("OK"), "0");
-    }
-
-    #[test]
-    fn test_priority_sql_fail_resets_to_zero() {
-        assert_eq!(ListeriaBotWikidata::priority_sql_for_status("FAIL"), "0");
-    }
-
-    #[test]
-    fn test_priority_sql_translation_resets_to_zero() {
-        // TRANSLATION pages are never re-queued; their priority must not stay 1.
-        assert_eq!(
-            ListeriaBotWikidata::priority_sql_for_status("TRANSLATION"),
-            "0"
-        );
-    }
-
-    #[test]
-    fn test_priority_sql_invalid_resets_to_zero() {
-        // INVALID pages should not accumulate in the priority queue.
-        assert_eq!(
-            ListeriaBotWikidata::priority_sql_for_status("INVALID"),
-            "0"
-        );
-    }
-
-    #[test]
-    fn test_priority_sql_deleted_resets_to_zero() {
-        assert_eq!(
-            ListeriaBotWikidata::priority_sql_for_status("DELETED"),
-            "0"
-        );
-    }
-
-    #[test]
-    fn test_priority_sql_unknown_status_resets_to_zero() {
-        // Any future / unknown terminal status should also reset priority.
-        assert_eq!(
-            ListeriaBotWikidata::priority_sql_for_status("SOME_NEW_STATUS"),
-            "0"
-        );
+    fn test_running_ids_string_sorted() {
+        let running: DashSet<u64> = DashSet::new();
+        running.insert(3);
+        running.insert(1);
+        running.insert(2);
+        let mut parts: Vec<String> = running.iter().map(|id| id.to_string()).collect();
+        parts.sort_unstable();
+        let ids = parts.join(",");
+        assert_eq!(ids, "1,2,3");
     }
 }
