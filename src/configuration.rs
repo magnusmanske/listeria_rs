@@ -221,7 +221,7 @@ impl Configuration {
     }
 
     /// Returns the shared semaphore that limits concurrent SPARQL requests.
-    pub fn sparql_semaphore(&self) -> &Arc<Semaphore> {
+    pub const fn sparql_semaphore(&self) -> &Arc<Semaphore> {
         &self.sparql_semaphore
     }
 
