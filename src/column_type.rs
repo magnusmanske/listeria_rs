@@ -88,32 +88,8 @@ impl ColumnType {
             _ => {}
         }
 
-        // Check for "description/..." (case-insensitive, already lowered)
-        if let Some(rest) = lower_trimmed.strip_prefix("description/") {
-            let langs: Vec<String> = rest
-                .split('/')
-                .map(|lang| lang.trim().to_string())
-                .filter(|lang| !lang.is_empty())
-                .collect();
-            return ColumnType::Description(langs);
-        }
-
-        // Check for "label/..." (case-insensitive)
-        if let Some(rest) = lower_trimmed.strip_prefix("label/") {
-            return ColumnType::LabelLang(rest.to_string());
-        }
-
-        // Check for "alias/..." (case-insensitive)
-        if let Some(rest) = lower_trimmed.strip_prefix("alias/") {
-            return ColumnType::AliasLang(rest.to_string());
-        }
-
-        // Check for "sitelink/WIKI" (case-insensitive)
-        if let Some(rest) = lower_trimmed.strip_prefix("sitelink/") {
-            let wiki = rest.trim().to_string();
-            if !wiki.is_empty() {
-                return ColumnType::Sitelink(wiki);
-            }
+        if let Some(ct) = Self::parse_from_lowercase_prefix(lower_trimmed) {
+            return ct;
         }
 
         // From here on, work with the original string (preserving case for P/Q ids)
@@ -139,6 +115,30 @@ impl ColumnType {
         }
 
         ColumnType::Unknown
+    }
+
+    fn parse_from_lowercase_prefix(lower_trimmed: &str) -> Option<Self> {
+        if let Some(rest) = lower_trimmed.strip_prefix("description/") {
+            let langs = rest
+                .split('/')
+                .map(|lang| lang.trim().to_string())
+                .filter(|lang| !lang.is_empty())
+                .collect();
+            return Some(ColumnType::Description(langs));
+        }
+        for (prefix, ctor) in [
+            ("label/", ColumnType::LabelLang as fn(String) -> Self),
+            ("alias/", ColumnType::AliasLang),
+        ] {
+            if let Some(rest) = lower_trimmed.strip_prefix(prefix) {
+                return Some(ctor(rest.to_string()));
+            }
+        }
+        lower_trimmed
+            .strip_prefix("sitelink/")
+            .map(str::trim)
+            .filter(|wiki| !wiki.is_empty())
+            .map(|wiki| ColumnType::Sitelink(wiki.to_string()))
     }
 
     #[must_use]
@@ -205,64 +205,25 @@ impl ColumnType {
                 Self::render_description(&entity, list, langs, &mut parts, &mut wdedit_class);
             }
             Self::Field(varname) => {
-                let var_index = match sparql_table.get_var_index(varname) {
-                    Some(i) => i,
-                    None => return (parts, wdedit_class),
+                let Some(var_index) = sparql_table.get_var_index(varname) else {
+                    return (parts, wdedit_class);
                 };
-                for row_id in 0..sparql_table.len() {
-                    if let Some(x) = sparql_table.get_row_col(row_id, var_index) {
-                        parts.push(PartWithReference::new(
-                            ResultCellPart::from_sparql_value(&x),
-                            None,
-                        ));
-                    }
-                }
+                Self::render_field(var_index, sparql_table, &mut parts);
             }
             Self::Property(property) => {
                 Self::render_property(&entity, list, property, &mut parts, &mut wdedit_class);
             }
             Self::PropertyQualifier((p1, p2)) => {
-                if let Some(e) = &entity {
-                    for statement in list.get_filtered_claims(e, p1) {
-                        for part in Self::get_parts_p_p(&statement, p2) {
-                            parts.push(PartWithReference::new(part, None));
-                        }
-                    }
-                }
+                Self::render_property_qualifier(&entity, list, p1, p2, &mut parts);
             }
             Self::PropertyQualifierValue((p1, q1, p2)) => {
-                if let Some(e) = &entity {
-                    for statement in list.get_filtered_claims(e, p1) {
-                        for part in Self::get_parts_p_q_p(&statement, q1, p2) {
-                            parts.push(PartWithReference::new(part, None));
-                        }
-                    }
-                }
+                Self::render_property_qualifier_value(&entity, list, p1, q1, p2, &mut parts);
             }
             Self::LabelLang(language) => {
-                if let Some(e) = &entity {
-                    let label = e
-                        .label_in_locale(language)
-                        .or_else(|| e.label_in_locale(list.language()))
-                        .map(|s| s.to_string());
-                    if let Some(s) = label {
-                        parts.push(PartWithReference::new(ResultCellPart::Text(s), None));
-                    }
-                }
+                Self::render_label_lang(&entity, list, language, &mut parts);
             }
             Self::AliasLang(language) => {
-                if let Some(e) = &entity {
-                    let mut aliases: Vec<String> = e
-                        .aliases()
-                        .iter()
-                        .filter(|alias| alias.language() == language)
-                        .map(|alias| alias.value().to_string())
-                        .collect();
-                    aliases.sort();
-                    for alias in aliases {
-                        parts.push(PartWithReference::new(ResultCellPart::Text(alias), None));
-                    }
-                }
+                Self::render_alias_lang(&entity, language, &mut parts);
             }
             Self::Label => {
                 Self::render_label(entity, list, entity_id, &mut parts, &mut wdedit_class);
@@ -383,6 +344,86 @@ impl ColumnType {
             ResultCellPart::Text(format!("[[:{}:{}|{}]]", prefix, title, display))
         };
         parts.push(PartWithReference::new(part, None));
+    }
+
+    fn render_field(
+        var_index: usize,
+        sparql_table: &SparqlTableVec,
+        parts: &mut Vec<PartWithReference>,
+    ) {
+        for row_id in 0..sparql_table.len() {
+            if let Some(x) = sparql_table.get_row_col(row_id, var_index) {
+                parts.push(PartWithReference::new(
+                    ResultCellPart::from_sparql_value(&x),
+                    None,
+                ));
+            }
+        }
+    }
+
+    fn render_property_qualifier(
+        entity: &Option<EntityEntry>,
+        list: &impl RenderContext,
+        p1: &str,
+        p2: &str,
+        parts: &mut Vec<PartWithReference>,
+    ) {
+        let Some(e) = entity else { return };
+        for statement in list.get_filtered_claims(e, p1) {
+            for part in Self::get_parts_p_p(&statement, p2) {
+                parts.push(PartWithReference::new(part, None));
+            }
+        }
+    }
+
+    fn render_property_qualifier_value(
+        entity: &Option<EntityEntry>,
+        list: &impl RenderContext,
+        p1: &str,
+        q1: &str,
+        p2: &str,
+        parts: &mut Vec<PartWithReference>,
+    ) {
+        let Some(e) = entity else { return };
+        for statement in list.get_filtered_claims(e, p1) {
+            for part in Self::get_parts_p_q_p(&statement, q1, p2) {
+                parts.push(PartWithReference::new(part, None));
+            }
+        }
+    }
+
+    fn render_label_lang(
+        entity: &Option<EntityEntry>,
+        list: &impl RenderContext,
+        language: &str,
+        parts: &mut Vec<PartWithReference>,
+    ) {
+        let Some(e) = entity else { return };
+        let label = e
+            .label_in_locale(language)
+            .or_else(|| e.label_in_locale(list.language()))
+            .map(|s| s.to_string());
+        if let Some(s) = label {
+            parts.push(PartWithReference::new(ResultCellPart::Text(s), None));
+        }
+    }
+
+    fn render_alias_lang(
+        entity: &Option<EntityEntry>,
+        language: &str,
+        parts: &mut Vec<PartWithReference>,
+    ) {
+        let Some(e) = entity else { return };
+        let mut aliases: Vec<String> = e
+            .aliases()
+            .iter()
+            .filter(|alias| alias.language() == language)
+            .map(|alias| alias.value().to_string())
+            .collect();
+        aliases.sort();
+        for alias in aliases {
+            parts.push(PartWithReference::new(ResultCellPart::Text(alias), None));
+        }
     }
 
     fn fix_wikitext_for_output(s: &str) -> String {

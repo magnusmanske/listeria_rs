@@ -192,61 +192,60 @@ impl TemplateParams {
             links: LinksType::All,
             sort: SortMode::new(template.params().get("sort")),
             section: SectionType::new_from_string_option(template.params().get("section")),
-            min_section: template
-                .params()
-                .get("min_section")
-                .map(|s| s.parse::<u64>().ok().or(Some(2)).unwrap_or(2))
-                .unwrap_or(2),
-            row_template: template
-                .params()
-                .get("row_template")
-                .map(|s| s.trim().to_string()),
-            header_template: template
-                .params()
-                .get("header_template")
-                .map(|s| s.trim().to_string()),
-            autodesc: template
-                .params()
-                .get("autolist")
-                .map(|s| s.trim().to_uppercase())
-                .or_else(|| {
-                    template
-                        .params()
-                        .get("autodesc")
-                        .map(|s| s.trim().to_uppercase())
-                }),
-            summary: template
-                .params()
-                .get("summary")
-                .map(|s| s.trim().to_uppercase()),
-            summary_label: template
-                .params()
-                .get("summary_label")
-                .map(|s| s.trim().to_string()),
+            min_section: Self::parse_min_section(template),
+            row_template: template.params().get("row_template").map(|s| s.trim().to_string()),
+            header_template: template.params().get("header_template").map(|s| s.trim().to_string()),
+            autodesc: Self::parse_autodesc(template),
+            summary: template.params().get("summary").map(|s| s.trim().to_uppercase()),
+            summary_label: template.params().get("summary_label").map(|s| s.trim().to_string()),
             skip_table: template.params().contains_key("skip_table"),
-            one_row_per_item: template
-                .params()
-                .get("one_row_per_item")
-                .map(|s| s.trim().to_uppercase())
-                != Some("NO".to_string()),
-            wdedit: template
-                .params()
-                .get("wdedit")
-                .map(|s| s.trim().to_uppercase())
-                == Some("YES".to_string()),
+            one_row_per_item: Self::parse_one_row_per_item(template),
+            wdedit: Self::parse_flag_yes(template, "wdedit"),
             references: ReferencesParameter::new(template.params().get("references")),
             sort_order: SortOrder::new(template.params().get("sort_order")),
-            wikibase: template
-                .params()
-                .get("wikibase")
-                .map(|s| s.trim().to_uppercase())
-                .unwrap_or_else(|| config.get_default_api().to_string()),
-            freq: template
-                .params()
-                .get("freq")
-                .and_then(|s| s.trim().parse::<u64>().ok())
-                .unwrap_or(0),
+            wikibase: Self::parse_wikibase(template, config),
+            freq: template.params().get("freq").and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0),
         }
+    }
+
+    fn parse_min_section(template: &Template) -> u64 {
+        template
+            .params()
+            .get("min_section")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(2)
+    }
+
+    fn parse_autodesc(template: &Template) -> Option<String> {
+        template
+            .params()
+            .get("autolist")
+            .or_else(|| template.params().get("autodesc"))
+            .map(|s| s.trim().to_uppercase())
+    }
+
+    fn parse_one_row_per_item(template: &Template) -> bool {
+        template
+            .params()
+            .get("one_row_per_item")
+            .map(|s| s.trim().to_uppercase())
+            != Some("NO".to_string())
+    }
+
+    fn parse_flag_yes(template: &Template, key: &str) -> bool {
+        template
+            .params()
+            .get(key)
+            .map(|s| s.trim().to_uppercase())
+            == Some("YES".to_string())
+    }
+
+    fn parse_wikibase(template: &Template, config: &Configuration) -> String {
+        template
+            .params()
+            .get("wikibase")
+            .map(|s| s.trim().to_uppercase())
+            .unwrap_or_else(|| config.get_default_api().to_string())
     }
 
     pub fn wikibase(&self) -> &str {

@@ -1,7 +1,7 @@
 //! Wrapper for entity container with caching and batch loading.
 
-use crate::listeria_list::ListeriaList;
 use crate::my_entity::MyEntity;
+use crate::render_context::RenderContext;
 
 /// A handle to a cached [`MyEntity`]; derefs transparently to [`MyEntity`].
 pub type EntityEntry = Arc<MyEntity>;
@@ -334,7 +334,7 @@ impl EntityContainerWrapper {
         &self,
         entity_id: &str,
         sparql_table: &SparqlTableVec,
-        list: &ListeriaList,
+        list: &impl RenderContext,
     ) -> Option<ResultRow> {
         if sparql_table.is_empty() {
             return None;
@@ -346,7 +346,7 @@ impl EntityContainerWrapper {
         Some(row)
     }
 
-    async fn use_local_links(&self, list: &ListeriaList, entity_id: &str) -> Option<()> {
+    async fn use_local_links(&self, list: &impl RenderContext, entity_id: &str) -> Option<()> {
         if LinksType::Local == *list.template_params().links() {
             let entity = self.get_entity(entity_id).await?;
             entity
