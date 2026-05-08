@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
+use tokio::sync::Semaphore;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::entity_container::EntityContainer;
@@ -31,7 +32,7 @@ impl NamespaceGroup {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Configuration {
     wb_apis: HashMap<String, Arc<Api>>,
     namespace_blocks: HashMap<String, NamespaceGroup>,
@@ -69,6 +70,53 @@ pub struct Configuration {
     status_server_port: Option<u16>,         // For single wiki mode, the port for the status server
     sparql_prefix: Option<String>, // For single wiki mode, a prefix for all SPARQL queries
     main_item_prefix: String,      // For single wiki mode, the prefix for items
+    /// Shared semaphore that limits the number of concurrent SPARQL requests.
+    /// Initialized from `max_sparql_simultaneous` in `new_from_json`.
+    sparql_semaphore: Arc<Semaphore>,
+}
+
+impl Default for Configuration {
+    fn default() -> Self {
+        Self {
+            wb_apis: HashMap::new(),
+            namespace_blocks: HashMap::new(),
+            default_api: String::new(),
+            prefer_preferred: false,
+            default_language: String::new(),
+            template_start_sites: HashMap::new(),
+            template_end_sites: HashMap::new(),
+            location_templates: HashMap::new(),
+            shadow_images_check: Vec::new(),
+            default_thumbnail_size: None,
+            location_regions: Vec::new(),
+            mysql: None,
+            oauth2_token: String::new(),
+            template_start_q: String::new(),
+            pattern_string_start: String::new(),
+            pattern_string_end: String::new(),
+            max_mw_apis_per_wiki: None,
+            max_mw_apis_total: None,
+            max_local_cached_entities: 0,
+            max_concurrent_entry_queries: 0,
+            api_timeout: 0,
+            ms_delay_after_edit: None,
+            max_threads: 0,
+            pool: None,
+            max_sparql_simultaneous: 0,
+            max_sparql_attempts: 0,
+            profiling: false,
+            wikis: HashMap::new(),
+            is_single_wiki: false,
+            quiet: false,
+            wiki_page_pattern: None,
+            delay_after_page_check_sec: None,
+            query_endpoint: None,
+            status_server_port: None,
+            sparql_prefix: None,
+            main_item_prefix: String::new(),
+            sparql_semaphore: Arc::new(Semaphore::new(1)),
+        }
+    }
 }
 
 impl Configuration {
@@ -112,6 +160,7 @@ impl Configuration {
             ..Default::default()
         };
         ret.new_from_json_misc(&j);
+        ret.sparql_semaphore = Arc::new(Semaphore::new(ret.max_sparql_simultaneous as usize));
         ret.new_from_json_locations(&j);
         ret.new_from_json_wikibase_apis(&j).await?;
         ret.new_from_json_namespace_blocks(&j)?;
@@ -169,6 +218,11 @@ impl Configuration {
 
     pub const fn max_sparql_simultaneous(&self) -> u64 {
         self.max_sparql_simultaneous
+    }
+
+    /// Returns the shared semaphore that limits concurrent SPARQL requests.
+    pub fn sparql_semaphore(&self) -> &Arc<Semaphore> {
+        &self.sparql_semaphore
     }
 
     pub const fn profiling(&self) -> bool {

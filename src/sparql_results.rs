@@ -2,18 +2,10 @@
 
 use crate::page_params::PageParams;
 use anyhow::{Result, anyhow};
-use std::{
-    collections::HashMap,
-    sync::{Arc, OnceLock},
-};
-use tokio::sync::Semaphore;
+use std::{collections::HashMap, sync::Arc};
 use wikimisc::{
     mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table_vec::SparqlTableVec,
 };
-
-/// Limits the number of concurrent SPARQL requests.
-/// Initialised on first use from `Configuration::max_sparql_simultaneous`.
-static SPARQL_REQUEST_SEMAPHORE: OnceLock<Semaphore> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct SparqlResults {
@@ -79,8 +71,7 @@ impl SparqlResults {
             Some(api) => api.clone(),
             None => return Err(anyhow!("No wikibase setup configured for '{wikibase_key}'")),
         };
-        let max = self.page_params.config().max_sparql_simultaneous() as usize;
-        let semaphore = SPARQL_REQUEST_SEMAPHORE.get_or_init(|| Semaphore::new(max));
+        let semaphore = Arc::clone(self.page_params.config().sparql_semaphore());
         let _permit = semaphore.acquire().await?;
         self.run_sparql_query_stream(&api, sparql).await
     }
