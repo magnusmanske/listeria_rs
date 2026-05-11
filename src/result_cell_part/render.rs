@@ -80,12 +80,13 @@ impl ResultCellPart {
             "[["
         };
 
-        let norm_title = normalize_page_title(title);
-        let norm_page = normalize_page_title(list.page_title()).replace(' ', "_");
+        let cs = list.is_case_sensitive_wiki();
+        let norm_title = normalize_page_title(title, cs);
+        let norm_page = normalize_page_title(list.page_title(), cs).replace(' ', "_");
 
         if norm_page == norm_title.replace(' ', "_") {
             label.to_string()
-        } else if norm_title == normalize_page_title(label) {
+        } else if norm_title == normalize_page_title(label, cs) {
             format!("{start}{label}]]")
         } else {
             format!("{start}{title}|{label}]]")

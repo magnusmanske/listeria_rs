@@ -9,7 +9,7 @@ use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
@@ -82,6 +82,12 @@ pub struct Configuration {
     /// config can extend or override the map via the `wiki_name_aliases` key.
     /// Names not present in the map fall through `replace('-', '_')`.
     wiki_name_aliases: HashMap<String, String>,
+    /// Explicit list of wikis whose `general.case` is `case-sensitive`.
+    /// Wiktionary projects (`*wiktionary`) are detected by suffix and don't
+    /// need to be listed; this set is for wikis that need the same treatment
+    /// but don't match the wiktionary pattern (e.g. a custom MediaWiki
+    /// installation in single-wiki mode).
+    case_sensitive_wikis: HashSet<String>,
 }
 
 impl Default for Configuration {
@@ -125,6 +131,7 @@ impl Default for Configuration {
             sparql_semaphore: Arc::new(Semaphore::new(1)),
             sparql_circuit_breakers: Arc::new(DashMap::new()),
             wiki_name_aliases: Self::default_wiki_name_aliases(),
+            case_sensitive_wikis: HashSet::new(),
         }
     }
 }
@@ -155,6 +162,23 @@ impl Configuration {
             .get(wiki)
             .cloned()
             .unwrap_or_else(|| wiki.replace('-', "_"))
+    }
+
+    /// Returns `true` when `wiki` treats page titles as case-sensitive
+    /// (MediaWiki's `general.case = "case-sensitive"` setting).
+    ///
+    /// All Wiktionary projects are detected automatically by suffix; other
+    /// case-sensitive wikis can be listed in the JSON config under
+    /// `case_sensitive_wikis`. The default is `false` (first-letter
+    /// case-folding, matching most Wikipedias and Wikidata).
+    #[must_use]
+    pub fn is_wiki_case_sensitive(&self, wiki: &str) -> bool {
+        if self.case_sensitive_wikis.contains(wiki) {
+            return true;
+        }
+        // Every Wiktionary project (`enwiktionary`, `dewiktionary`, …) is
+        // case-sensitive in MediaWiki's siteinfo.
+        wiki.ends_with("wiktionary")
     }
 
     /// Loads configuration from a JSON file.
@@ -615,6 +639,13 @@ impl Configuration {
                 if let Some(target) = v.as_str() {
                     self.wiki_name_aliases
                         .insert(k.clone(), target.to_string());
+                }
+            }
+        }
+        if let Some(arr) = j["case_sensitive_wikis"].as_array() {
+            for v in arr {
+                if let Some(name) = v.as_str() {
+                    self.case_sensitive_wikis.insert(name.to_string());
                 }
             }
         }
@@ -1108,6 +1139,43 @@ mod tests {
         assert_eq!(config.fix_wiki_name("be_x_oldwiki"), "be_overridden");
         // Sibling defaults that the user didn't override remain
         assert_eq!(config.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
+    }
+
+    // ── is_wiki_case_sensitive ─────────────────────────────────────────────
+
+    #[test]
+    fn test_is_wiki_case_sensitive_wiktionary_by_suffix() {
+        let config = Configuration::default();
+        // Every wiktionary project is case-sensitive without needing explicit
+        // config entries.
+        assert!(config.is_wiki_case_sensitive("enwiktionary"));
+        assert!(config.is_wiki_case_sensitive("dewiktionary"));
+        assert!(config.is_wiki_case_sensitive("zh_min_nanwiktionary"));
+    }
+
+    #[test]
+    fn test_is_wiki_case_sensitive_non_wiktionary_default_false() {
+        let config = Configuration::default();
+        // The vast majority of Wikimedia projects are first-letter; default
+        // must not flag them as case-sensitive.
+        assert!(!config.is_wiki_case_sensitive("enwiki"));
+        assert!(!config.is_wiki_case_sensitive("wikidatawiki"));
+        assert!(!config.is_wiki_case_sensitive("commonswiki"));
+        assert!(!config.is_wiki_case_sensitive("dewiki"));
+    }
+
+    #[test]
+    fn test_is_wiki_case_sensitive_reads_explicit_list_from_json() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({
+            "case_sensitive_wikis": ["customwiki", "another-wiki"]
+        }));
+        assert!(config.is_wiki_case_sensitive("customwiki"));
+        assert!(config.is_wiki_case_sensitive("another-wiki"));
+        // wiktionary heuristic still applies after explicit list parses
+        assert!(config.is_wiki_case_sensitive("frwiktionary"));
+        // Unrelated wiki stays false
+        assert!(!config.is_wiki_case_sensitive("frwiki"));
     }
 
     // ── new_from_json_locations ────────────────────────────────────────────

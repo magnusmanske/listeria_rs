@@ -294,8 +294,12 @@ impl ListeriaList {
         *self.state.local_page_cache.get(page).unwrap_or(&false)
     }
 
+    /// Test-only helper that uses the first-letter (case-insensitive)
+    /// normalisation path. Production code paths should call
+    /// `render_context::normalize_page_title(s, list.is_case_sensitive_wiki())`
+    /// directly so the per-wiki case setting is respected.
     pub fn normalize_page_title(s: &str) -> String {
-        crate::render_context::normalize_page_title(s)
+        crate::render_context::normalize_page_title(s, false)
     }
 
     /// Formats a coordinate value to at most 6 decimal places, trimming trailing zeros.
@@ -744,6 +748,12 @@ impl crate::render_context::RenderContext for ListeriaList {
 
     fn is_main_wikibase_wiki(&self) -> bool {
         ListeriaList::is_main_wikibase_wiki(self)
+    }
+
+    fn is_case_sensitive_wiki(&self) -> bool {
+        self.page_params
+            .config()
+            .is_wiki_case_sensitive(self.wiki())
     }
 
     fn get_links_type(&self) -> &crate::template_params::LinksType {

@@ -26,6 +26,12 @@ pub trait RenderContext {
     fn page_title(&self) -> &str;
     fn wiki(&self) -> &str;
     fn is_main_wikibase_wiki(&self) -> bool;
+    /// Whether `wiki()` treats page titles as case-sensitive (the MediaWiki
+    /// `general.case = "case-sensitive"` setting). Wiktionaries and a few
+    /// other projects need this — page "cat" and page "Cat" are distinct,
+    /// and the renderer must not silently uppercase the first letter when
+    /// comparing or building wikilinks.
+    fn is_case_sensitive_wiki(&self) -> bool;
 
     // ── link / rendering preferences ─────────────────────────────────────
     fn get_links_type(&self) -> &LinksType;
@@ -72,13 +78,25 @@ pub trait RenderContext {
     async fn external_id_url(&self, prop: &str, id: &str) -> Option<String>;
 }
 
-/// Capitalises the first letter of a page title for link normalisation.
+/// Normalises the first letter of a page title for link comparison.
 ///
-/// Returns the string unchanged when it has fewer than 2 bytes (avoids
-/// uppercasing lone ASCII punctuation or single combining code points).
-/// TODO: consult per-wiki capitalisation config instead of always uppercasing.
-pub(crate) fn normalize_page_title(s: &str) -> String {
-    if s.len() < 2 {
+/// On wikis whose `general.case` is `first-letter` (the default — `enwiki`,
+/// most Wikipedias, Wikidata, Commons, etc.) MediaWiki treats `[[cat]]` and
+/// `[[Cat]]` as the same page, displayed with the leading character
+/// uppercased. The renderer applies the same uppercasing when comparing
+/// titles so that "is the row's local-link target equal to the current page
+/// title?" works the way readers would expect.
+///
+/// On case-sensitive wikis (`general.case = "case-sensitive"` — wiktionaries
+/// and a few others) `[[cat]]` and `[[Cat]]` are distinct pages and the
+/// leading character must be left alone; uppercasing here would mis-identify
+/// row links and silently break self-link detection.
+///
+/// Strings shorter than two bytes are returned unchanged — avoids
+/// uppercasing a lone ASCII punctuation char or a single combining code
+/// point.
+pub(crate) fn normalize_page_title(s: &str, case_sensitive: bool) -> String {
+    if case_sensitive || s.len() < 2 {
         return s.to_string();
     }
     let mut c = s.chars();
@@ -93,53 +111,77 @@ mod tests {
 
     #[test]
     fn test_empty_string() {
-        assert_eq!(normalize_page_title(""), "");
+        assert_eq!(normalize_page_title("", false), "");
     }
 
     #[test]
     fn test_single_ascii_char_unchanged() {
-        assert_eq!(normalize_page_title("h"), "h");
+        assert_eq!(normalize_page_title("h", false), "h");
     }
 
     #[test]
     fn test_two_chars_lowercase_uppercased() {
-        assert_eq!(normalize_page_title("ab"), "Ab");
+        assert_eq!(normalize_page_title("ab", false), "Ab");
     }
 
     #[test]
     fn test_already_uppercase_unchanged() {
-        assert_eq!(normalize_page_title("Hello world"), "Hello world");
+        assert_eq!(normalize_page_title("Hello world", false), "Hello world");
     }
 
     #[test]
     fn test_lowercase_first_char_uppercased() {
-        assert_eq!(normalize_page_title("hello world"), "Hello world");
+        assert_eq!(normalize_page_title("hello world", false), "Hello world");
     }
 
     #[test]
     fn test_namespace_prefix_uppercased() {
-        assert_eq!(normalize_page_title("category:test"), "Category:test");
+        assert_eq!(normalize_page_title("category:test", false), "Category:test");
     }
 
     #[test]
     fn test_unicode_multibyte_first_char() {
-        assert_eq!(normalize_page_title("über alles"), "Über alles");
+        assert_eq!(normalize_page_title("über alles", false), "Über alles");
     }
 
     #[test]
     fn test_digit_first_char_unchanged() {
         // digits have no uppercase form, remain unchanged
-        assert_eq!(normalize_page_title("123 abc"), "123 abc");
+        assert_eq!(normalize_page_title("123 abc", false), "123 abc");
     }
 
     #[test]
     fn test_already_uppercase_unicode() {
-        assert_eq!(normalize_page_title("Über etwas"), "Über etwas");
+        assert_eq!(normalize_page_title("Über etwas", false), "Über etwas");
     }
 
     #[test]
     fn test_rest_of_string_preserved() {
         // Only the very first character changes; the rest is untouched
-        assert_eq!(normalize_page_title("aBcDe"), "ABcDe");
+        assert_eq!(normalize_page_title("aBcDe", false), "ABcDe");
+    }
+
+    // ── case-sensitive mode ──────────────────────────────────────────────
+
+    #[test]
+    fn test_case_sensitive_leaves_lowercase_first_char_alone() {
+        // Wiktionary etc. — "cat" must not become "Cat".
+        assert_eq!(normalize_page_title("cat", true), "cat");
+    }
+
+    #[test]
+    fn test_case_sensitive_leaves_uppercase_first_char_alone() {
+        assert_eq!(normalize_page_title("Cat", true), "Cat");
+    }
+
+    #[test]
+    fn test_case_sensitive_with_unicode() {
+        assert_eq!(normalize_page_title("über alles", true), "über alles");
+    }
+
+    #[test]
+    fn test_case_sensitive_empty_string() {
+        // The length-guard fires before the case-sensitive flag matters.
+        assert_eq!(normalize_page_title("", true), "");
     }
 }
