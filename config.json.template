@@ -31,7 +31,6 @@
         "max_connections":8
     },
     "max_sparql_simultaneous": 5,
-    "max_sparql_attempts": 1,
     "profiling":false,
     "max_threads":64,
     "pattern_string_start":"\\{\\{(Wikidata[ _]list[^\\|]*|",

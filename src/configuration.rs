@@ -61,7 +61,6 @@ pub struct Configuration {
     max_threads: usize,
     pool: Option<Arc<DatabasePool>>,
     max_sparql_simultaneous: u64,
-    max_sparql_attempts: u64,
     profiling: bool,
     wikis: HashMap<String, Wiki>,
     is_single_wiki: bool, // Set single wiki mode
@@ -108,7 +107,6 @@ impl Default for Configuration {
             max_threads: 0,
             pool: None,
             max_sparql_simultaneous: 0,
-            max_sparql_attempts: 0,
             profiling: false,
             wikis: HashMap::new(),
             is_single_wiki: false,
@@ -229,10 +227,6 @@ impl Configuration {
             }
         }
         Ok(())
-    }
-
-    pub const fn max_sparql_attempts(&self) -> u64 {
-        self.max_sparql_attempts
     }
 
     pub const fn max_sparql_simultaneous(&self) -> u64 {
@@ -448,9 +442,6 @@ impl Configuration {
         if self.max_sparql_simultaneous == 0 {
             return Err(anyhow!("max_sparql_simultaneous must be > 0"));
         }
-        if self.max_sparql_attempts == 0 {
-            return Err(anyhow!("max_sparql_attempts must be > 0"));
-        }
         if self.max_threads == 0 {
             return Err(anyhow!("max_threads must be > 0"));
         }
@@ -563,7 +554,6 @@ impl Configuration {
             .to_string();
         self.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
         self.max_sparql_simultaneous = j["max_sparql_simultaneous"].as_u64().unwrap_or(10);
-        self.max_sparql_attempts = j["max_sparql_attempts"].as_u64().unwrap_or(5);
         self.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
         self.max_local_cached_entities = j["max_local_cached_entities"]
             .as_u64()
@@ -706,7 +696,6 @@ mod tests {
         Configuration {
             default_api: "wikidata".to_string(),
             max_sparql_simultaneous: 5,
-            max_sparql_attempts: 3,
             max_threads: 4,
             api_timeout: 60,
             sparql_semaphore: Arc::new(Semaphore::new(5)),
@@ -738,13 +727,6 @@ mod tests {
     fn test_validate_zero_sparql_simultaneous() {
         let mut config = valid_config();
         config.max_sparql_simultaneous = 0;
-        assert!(config.validate().is_err());
-    }
-
-    #[test]
-    fn test_validate_zero_sparql_attempts() {
-        let mut config = valid_config();
-        config.max_sparql_attempts = 0;
         assert!(config.validate().is_err());
     }
 
@@ -1009,7 +991,6 @@ mod tests {
         config.new_from_json_misc(&serde_json::json!({}));
         // All optional fields absent → use hard-coded defaults
         assert_eq!(config.max_sparql_simultaneous, 10);
-        assert_eq!(config.max_sparql_attempts, 5);
         assert_eq!(config.api_timeout, 360);
         assert_eq!(config.max_threads, 8);
         assert_eq!(config.max_local_cached_entities, 5000);
@@ -1020,7 +1001,6 @@ mod tests {
         let mut config = Configuration::default();
         config.new_from_json_misc(&serde_json::json!({
             "max_sparql_simultaneous": 3,
-            "max_sparql_attempts": 2,
             "api_timeout": 120,
             "max_threads": 16,
             "default_language": "fr",
@@ -1028,7 +1008,6 @@ mod tests {
             "profiling": true,
         }));
         assert_eq!(config.max_sparql_simultaneous, 3);
-        assert_eq!(config.max_sparql_attempts, 2);
         assert_eq!(config.api_timeout, 120);
         assert_eq!(config.max_threads, 16);
         assert_eq!(config.default_language, "fr");

@@ -43,7 +43,6 @@ This should not be necessary for an initial test.
 		"default": "{{Coord|$LAT$|$LON$|display=inline}}"
 	},
 	"max_sparql_simultaneous": 2,
-	"max_sparql_attempts": 1,
 	"max_concurrent_entry_queries": 100,
 	"max_local_cached_entities": 3000,
 	"api_timeout": 600,
