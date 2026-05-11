@@ -1,8 +1,8 @@
 # SOLID Principles Audit — listeria_rs
 
-**Date:** 2026-05-07  
-**Auditor:** Claude Code (claude-sonnet-4-6)  
-**Branch:** master (cc83992)
+**Date:** 2026-05-07 (revised 2026-05-11)  
+**Auditor:** Claude Code (claude-sonnet-4-6); revisions by claude-opus-4-7  
+**Branch:** master (cc83992 → e1a5b0b)
 
 ---
 
@@ -13,18 +13,24 @@
 | Extract `RenderContext` trait | DIP-1, ISP-3 | d86d474 |
 | Move column dispatch into `ColumnType::render_cell_parts()` | OCP-1, OCP-2 | 676825c |
 | Move SPARQL semaphore into `Configuration` | DIP-2 | 2176bb8 |
+| Renderer trait takes `&impl RenderContext` instead of `&mut ListeriaList` | ISP-1, DIP-1 (renderer slice) | e755cb1 |
+| Extract `ProfilingService` from `ListeriaList` | SRP-1 (partial) | 5d2eb02 |
+| Extract `PageStatusRepository`; centralise pagestatus SQL | SRP-3 (partial), Repository | cc8861b |
+| Extract `WikiRepository`; centralise wikis/pagestatus SQL | SRP-3 (partial), Repository | ef63c00 |
+| Move `fix_wiki_name` to `Configuration` with config-driven aliases | OCP-3 | 2c1cb81 |
+| Extract `ProcessingState` struct from `ListeriaList` | SRP-1 (structural) | de957be |
 
 ---
 
 ## Overall Scores
 
-| Principle | Score | Summary |
+| Principle | Score (original → 2026-05-11) | Summary |
 |-----------|-------|---------|
-| S — Single Responsibility | 4/10 | Several structs carry 5–14 distinct concerns |
-| O — Open/Closed | 5/10 | Pervasive large `match` arms; new types require touching existing code |
+| S — Single Responsibility | 4 → 6 / 10 | `ResultCellPart` split into 4 focused files; `WikiApis` SQL extracted; `ListeriaList` carries `ProcessingState`. `ListProcessor` still operates on `&mut ListeriaList`. |
+| O — Open/Closed | 5 → 7 / 10 | Column dispatch + cell-part rendering moved into per-variant methods; `fix_wiki_name` now config-driven. |
 | L — Liskov Substitution | 8/10 | Trait implementations are well-behaved; no substitution violations found |
-| I — Interface Segregation | 6/10 | Two traits are wider than needed; implicit interfaces via concrete-type parameters |
-| D — Dependency Inversion | 4/10 | Concrete types (`ListeriaList`, `Configuration`, `PageParams`) cross module boundaries everywhere |
+| I — Interface Segregation | 6 → 7 / 10 | `Renderer` now takes `&impl RenderContext`; `fn new()` removed. `ListeriaBot` trait still bundles lifecycle + query methods. |
+| D — Dependency Inversion | 4 → 6 / 10 | `RenderContext` and explicit SPARQL semaphore have removed two of the three concrete-type leaks; `WikiApis::config` still consumed directly. |
 
 ---
 
@@ -32,7 +38,8 @@
 
 ### SRP-1 · `ListeriaList` is a God Struct
 **File:** `src/listeria_list.rs:38–54`  
-**Importance:** 9/10
+**Importance:** 9/10  
+**Status (2026-05-11):** Partially addressed. `ProfilingService` (5d2eb02) and `ProcessingState` (de957be) have been extracted; the 5 mutable pipeline-state fields now live in a dedicated struct. The remaining work — making `ListProcessor` stages take `&mut ProcessingState` instead of `&mut ListeriaList` — requires split-borrow infrastructure on `ListeriaList` and is deferred.
 
 `ListeriaList` holds 14 fields that span at least 7 distinct responsibilities:
 
@@ -113,7 +120,8 @@ The `localize_item_links` method, which mutates the part in-place, is the tricki
 
 ### SRP-3 · `WikiApis` mixes API pooling, DB operations, and wiki discovery
 **File:** `src/wiki_apis.rs:18–24`  
-**Importance:** 6/10
+**Importance:** 6/10  
+**Status (2026-05-11):** Mostly addressed. The DB operations were extracted into `WikiRepository` (ef63c00) and `fix_wiki_name` moved to `Configuration` (2c1cb81). `WikiApis` now does API pooling + wiki discovery + a thin delegation to the repository for the `get_all_wikis_in_database` public method. Wiki discovery (`get_all_wikis_with_template`, `get_current_pages_on_wiki`) still lives here because it talks to Wikidata + replica DBs rather than the bot's own pool.
 
 `WikiApis` has four fields but logically does three separate jobs:
 
@@ -192,7 +200,8 @@ Every new `ResultCellPart` variant forces modification of this central rendering
 
 ### OCP-3 · `fix_wiki_name()` hard-codes wiki name exceptions
 **File:** `src/wiki_apis.rs:368–375`  
-**Importance:** 4/10
+**Importance:** 4/10  
+**Status (2026-05-11):** ✅ Fixed (2c1cb81). The function moved to `Configuration` and now consults a `wiki_name_aliases: HashMap<String, String>` field, pre-seeded with the four `be_x_oldwiki` spellings (T11216). JSON config can extend or override the map via the new `wiki_name_aliases` key; adding a new wiki rename is a config change, not a code change.
 
 ```rust
 pub fn fix_wiki_name(&self, wiki: &str) -> String {
@@ -251,7 +260,8 @@ Mark as **Unable to fully verify** without running the test suite with both impl
 
 ### ISP-1 · `Renderer` trait bundles construction with async rendering
 **File:** `src/renderer.rs:7–12`  
-**Importance:** 6/10
+**Importance:** 6/10  
+**Status (2026-05-11):** Addressed (e755cb1). `fn new() -> Self` has been removed from the trait; `render` now takes `&impl RenderContext` instead of `&mut ListeriaList`. `get_new_wikitext` remains on the trait — the tabbed-data renderer has a real implementation, so a separate trait wasn't warranted.
 
 ```rust
 pub(crate) trait Renderer {
@@ -430,22 +440,22 @@ pub trait ProcessorTarget {
 
 | ID | Principle | File | Importance | Status |
 |----|-----------|------|------------|--------|
-| SRP-1 | S | `listeria_list.rs:38` | 9/10 | open |
+| SRP-1 | S | `listeria_list.rs:38` | 9/10 | partial — `ProfilingService` (5d2eb02) + `ProcessingState` (de957be) extracted; `ListProcessor` stage migration deferred |
 | DIP-1 | D | `result_cell_part.rs`, `result_cell.rs` | 8/10 | ✅ d86d474 |
 | OCP-1 | O | `result_cell.rs:47` | 8/10 | ✅ 676825c |
-| SRP-2 | S | `result_cell_part.rs` | 7/10 | open |
+| SRP-2 | S | `result_cell_part.rs` | 7/10 | ✅ split into 4 files (cdd0af4, 5402c91, 2c8a601): root 155 LoC + `types.rs` + `from_snak.rs` + `render.rs` |
 | OCP-2 | O | `result_cell_part.rs:524` | 7/10 | ✅ 676825c |
 | ISP-3 | I | `result_cell_part.rs` (ListeriaList param) | 7/10 | ✅ d86d474 |
 | DIP-2 | D | `sparql_results.rs:16,30` | 7/10 | ✅ 2176bb8 |
 | OCP-4 | O | `column_type.rs:64,132` | 6/10 | open |
-| SRP-3 | S | `wiki_apis.rs` | 6/10 | open |
-| ISP-1 | I | `renderer.rs:7` | 6/10 | open |
+| SRP-3 | S | `wiki_apis.rs` | 6/10 | partial — DB ops extracted to `WikiRepository` (ef63c00) and `fix_wiki_name` moved to `Configuration` (2c1cb81); API pooling + wiki discovery remain |
+| ISP-1 | I | `renderer.rs:7` | 6/10 | ✅ e755cb1 |
 | DIP-3 | D | `wiki_apis.rs:20` | 6/10 | open |
-| DIP-4 | D | `list_processor.rs` | 6/10 | open |
+| DIP-4 | D | `list_processor.rs` | 6/10 | partial — `ProcessingState` (de957be) gives stages a narrower mutation target; method-by-method migration deferred |
 | ISP-2 | I | `listeria_bot.rs:11` | 5/10 | open |
 | SRP-4 | S | `render_tabbed_data.rs` | 5/10 | open |
-| OCP-3 | O | `wiki_apis.rs:368` | 4/10 | open |
-| OCP-5 | O | `template_params.rs` | 4/10 | open |
+| OCP-3 | O | `wiki_apis.rs:368` | 4/10 | ✅ 2c1cb81 |
+| OCP-5 | O | `template_params.rs` | 4/10 | won't fix — adding an enum variant naturally requires updating its parser; the macro/derive alternative adds cognitive load |
 | DIP-5 | D | `entity_container_wrapper.rs` | 4/10 | open |
 
 ---
@@ -455,6 +465,6 @@ pub trait ProcessorTarget {
 1. ✅ **Extract `RenderContext` trait** (fixes DIP-1, ISP-3) — `ResultCellPart`, `ResultCell`, and `Reference` now accept `&impl RenderContext` instead of `&ListeriaList`. Commit d86d474.
 2. ✅ **Move column dispatch into `ColumnType::render_cell_parts()`** (fixes OCP-1, OCP-2) — `ResultCell::new()` now delegates to a single `.await` call; all `ct_*` logic lives in `ColumnType`. Commit 676825c.
 3. ✅ **Inject explicit semaphore via `Configuration`** (fixes DIP-2) — `Configuration` now owns an `Arc<Semaphore>` built from `max_sparql_simultaneous`; `SparqlResults` clones the `Arc` instead of touching a global. Commit 2176bb8.
-4. **Split `ListeriaList`** into `ListState` + `ListContext` + `ListPipeline` (fixes SRP-1) — the most impactful but also most invasive change.
-5. **Narrow `Renderer` trait and split `ListeriaBot`** (fixes ISP-1, ISP-2) — low risk, high clarity.
-6. **Drive `fix_wiki_name` exceptions from config** (fixes OCP-3) — tiny change, config file edit only.
+4. **Split `ListeriaList`** into `ListState` + `ListContext` + `ListPipeline` (fixes SRP-1) — partially done. `ProfilingService` extracted (5d2eb02), `ProcessingState` extracted (de957be). Remaining: migrate each `ListProcessor` sub-module (sort, sections, shadow_files, links, autodesc, regions, references) to take `&mut ProcessingState` instead of `&mut ListeriaList`. Requires split-borrow infrastructure on `ListeriaList`.
+5. ✅ **Narrow `Renderer` trait** (fixes ISP-1) — commit e755cb1. `ListeriaBot` split (ISP-2) still open.
+6. ✅ **Drive `fix_wiki_name` exceptions from config** (fixes OCP-3) — commit 2c1cb81.
