@@ -3,6 +3,57 @@ use crate::page_element::PageElement;
 use crate::wiki_page_result::WikiPageResult;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
+use std::future::Future;
+use std::time::Duration;
+
+/// Max MediaWiki API attempts per request (1 initial + retries).
+const MW_API_MAX_ATTEMPTS: u32 = 3;
+/// Initial backoff between MediaWiki API retries; doubles each attempt.
+const MW_API_INITIAL_BACKOFF_MS: u64 = 250;
+
+/// Retries an async fallible operation with exponential backoff.
+///
+/// Logs every failed-and-retried attempt via `tracing::warn!` carrying the
+/// `operation`, `attempt`, `backoff_ms`, and `error` fields, so retry behaviour
+/// is observable in production. The final failure is returned to the caller
+/// unchanged — callers decide how to surface it.
+///
+/// Used only for transport-level errors (network / timeout / 5xx) at the
+/// `post_query_api_json` boundary. API-level errors that arrive as `Ok(json)`
+/// with a populated `error` object are not retried — those are semantic
+/// failures (e.g. `missingtitle`) where retrying changes nothing.
+async fn retry_with_backoff<T, F, Fut, E>(
+    operation: &'static str,
+    max_attempts: u32,
+    initial_backoff: Duration,
+    mut f: F,
+) -> std::result::Result<T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: std::fmt::Display,
+{
+    let mut backoff = initial_backoff;
+    let mut attempt: u32 = 1;
+    loop {
+        match f().await {
+            Ok(value) => return Ok(value),
+            Err(e) if attempt < max_attempts => {
+                tracing::warn!(
+                    operation = operation,
+                    attempt = attempt,
+                    backoff_ms = backoff.as_millis() as u64,
+                    error = %e,
+                    "MediaWiki API call failed; retrying"
+                );
+                tokio::time::sleep(backoff).await;
+                backoff *= 2;
+                attempt += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
 
 /// Handles page loading, saving, and update operations for ListeriaPage
 #[derive(Debug, Clone, Copy)]
@@ -65,12 +116,19 @@ impl PageOperations {
                 params.insert("page".to_string(), page.page_params().page().to_string());
             }
         }
-        let result = page
-            .page_params()
-            .mw_api()
-            .post_query_api_json(&params)
-            .await
-            .map_err(|e| Self::fail(page, &e.to_string()))?;
+        let result = retry_with_backoff(
+            "load_page_as",
+            MW_API_MAX_ATTEMPTS,
+            Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
+            || async {
+                page.page_params()
+                    .mw_api()
+                    .post_query_api_json(&params)
+                    .await
+            },
+        )
+        .await
+        .map_err(|e| Self::fail(page, &e.to_string()))?;
         if let Some(error) = result["error"]["code"].as_str() {
             match error {
                 "missingtitle" => {
@@ -125,7 +183,13 @@ impl PageOperations {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let j = api.post_query_api_json(&params).await?;
+        let j = retry_with_backoff(
+            "save_wikitext_to_page",
+            MW_API_MAX_ATTEMPTS,
+            Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
+            || async { api.post_query_api_json(&params).await },
+        )
+        .await?;
         match j["error"].as_object() {
             Some(o) => {
                 let msg = o["info"].as_str().unwrap_or("Error while saving");
@@ -150,11 +214,18 @@ impl PageOperations {
                 .map(|x| (x.0.to_string(), x.1.to_string()))
                 .collect();
 
-        let _ = page
-            .page_params()
-            .mw_api()
-            .get_query_api_json(&params)
-            .await?;
+        let _ = retry_with_backoff(
+            "purge_page",
+            MW_API_MAX_ATTEMPTS,
+            Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
+            || async {
+                page.page_params()
+                    .mw_api()
+                    .get_query_api_json(&params)
+                    .await
+            },
+        )
+        .await?;
         Ok(())
     }
 
@@ -166,6 +237,89 @@ impl PageOperations {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    // ── retry_with_backoff ─────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_retry_with_backoff_returns_immediately_on_success() {
+        let calls = AtomicU32::new(0);
+        let result: std::result::Result<&'static str, &'static str> = retry_with_backoff(
+            "test",
+            3,
+            Duration::from_millis(1),
+            || async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Ok("done")
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap(), "done");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_backoff_retries_until_success() {
+        let calls = AtomicU32::new(0);
+        let result: std::result::Result<&'static str, &'static str> = retry_with_backoff(
+            "test",
+            3,
+            Duration::from_millis(1),
+            || async {
+                let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
+                if n < 3 { Err("transient") } else { Ok("done") }
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap(), "done");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "must call exactly until the first success"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_backoff_returns_last_error_after_max_attempts() {
+        let calls = AtomicU32::new(0);
+        let result: std::result::Result<(), &'static str> = retry_with_backoff(
+            "test",
+            3,
+            Duration::from_millis(1),
+            || async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Err("nope")
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "nope");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            3,
+            "must call exactly max_attempts times"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_backoff_max_attempts_one_does_not_retry() {
+        let calls = AtomicU32::new(0);
+        let result: std::result::Result<(), &'static str> = retry_with_backoff(
+            "test",
+            1,
+            Duration::from_millis(1),
+            || async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Err("first")
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "max_attempts=1 must mean a single try with no retries"
+        );
+    }
 
     async fn create_test_page() -> ListeriaPage {
         let api = crate::test_utils::cached_api("https://en.wikipedia.org/w/api.php").await;
