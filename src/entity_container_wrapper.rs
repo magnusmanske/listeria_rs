@@ -358,34 +358,41 @@ impl EntityContainerWrapper {
         Some(())
     }
 
+    /// Resolves a Wikidata formatter URL (property P1630) to a concrete external
+    /// URL by substituting `$1` with the percent-encoded `id`.
+    ///
+    /// When the property entity carries any Preferred-rank formatter claims,
+    /// they win over Normal-rank ones; Deprecated claims are always skipped.
+    /// Returns the first matching string-valued formatter — the upstream
+    /// Wikidata model permits multiple formatters but list rendering can only
+    /// use one, so the iteration short-circuits via `find_map`.
     pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
         let pi = self.get_entity(prop).await?;
-        let mut claims: Vec<_> = pi
-            .claims_with_property("P1630")
+        let claims = pi.claims_with_property("P1630");
+        let candidates: Vec<_> = claims
             .iter()
             .filter(|s| *s.rank() != StatementRank::Deprecated)
-            .cloned()
             .collect();
-        let has_preferred = claims.iter().any(|s| *s.rank() == StatementRank::Preferred);
-        if has_preferred {
-            claims.retain(|s| *s.rank() == StatementRank::Preferred);
-        }
-        let encoded_id = utf8_percent_encode(id, EXTERNAL_ID_ESCAPE).to_string();
-        claims
+        let has_preferred = candidates
             .iter()
-            .filter_map(|s| {
+            .any(|s| *s.rank() == StatementRank::Preferred);
+
+        let encoded_id = utf8_percent_encode(id, EXTERNAL_ID_ESCAPE).to_string();
+        candidates
+            .into_iter()
+            .filter(|s| !has_preferred || *s.rank() == StatementRank::Preferred)
+            .find_map(|s| {
                 let data_value = s.main_snak().data_value().to_owned()?;
                 match data_value.value() {
                     Value::StringValue(s2) => Some(s2.replace("$1", &encoded_id)),
-                    Value::Coordinate(_coordinate) => None,
-                    Value::MonoLingual(_mono_lingual_text) => None,
-                    Value::Entity(_entity_value) => None,
-                    Value::EntitySchema(_entity_value) => None,
-                    Value::Quantity(_quantity_value) => None,
-                    Value::Time(_time_value) => None,
+                    Value::Coordinate(_)
+                    | Value::MonoLingual(_)
+                    | Value::Entity(_)
+                    | Value::EntitySchema(_)
+                    | Value::Quantity(_)
+                    | Value::Time(_) => None,
                 }
             })
-            .next()
     }
 
     pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
