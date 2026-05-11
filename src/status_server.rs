@@ -332,8 +332,8 @@ mod tests {
     #[test]
     fn test_build_statistics_table_with_entries() {
         let mut stats = HashMap::new();
-        stats.insert("OK".to_string(), 42u64);
-        stats.insert("FAIL".to_string(), 3u64);
+        stats.insert("OK".to_string(), 42_u64);
+        stats.insert("FAIL".to_string(), 3_u64);
         let html = StatusServer::build_statistics_table(&stats);
         assert!(html.contains("OK"));
         assert!(html.contains("42"));
@@ -425,12 +425,12 @@ mod tests {
     #[test]
     fn test_server_statistics_from_state_zero_uptime() {
         let started = Instant::now();
-        let state = AppState {
+        let app_state = AppState {
             pages: Arc::new(RwLock::new(HashMap::new())),
             started,
             wiki_page_pattern: None,
         };
-        let stats = ServerStatistics::from_state(&state, started);
+        let stats = ServerStatistics::from_state(&app_state, started);
         assert_eq!(stats.uptime_days, 0);
         assert_eq!(stats.uptime_hours, 0);
         assert_eq!(stats.uptime_minutes, 0);

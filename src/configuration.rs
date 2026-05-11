@@ -822,16 +822,20 @@ mod tests {
 
     #[test]
     fn test_check_for_shadow_images_found() {
-        let mut config = Configuration::default();
-        config.shadow_images_check = vec!["enwiki".to_string(), "dewiki".to_string()];
+        let config = Configuration {
+            shadow_images_check: vec!["enwiki".to_string(), "dewiki".to_string()],
+            ..Default::default()
+        };
         assert!(config.check_for_shadow_images("enwiki"));
         assert!(config.check_for_shadow_images("dewiki"));
     }
 
     #[test]
     fn test_check_for_shadow_images_not_found() {
-        let mut config = Configuration::default();
-        config.shadow_images_check = vec!["enwiki".to_string()];
+        let config = Configuration {
+            shadow_images_check: vec!["enwiki".to_string()],
+            ..Default::default()
+        };
         assert!(!config.check_for_shadow_images("frwiki"));
         assert!(!config.check_for_shadow_images(""));
     }
@@ -983,8 +987,10 @@ mod tests {
 
     #[test]
     fn test_mysql_accessor_with_config() {
-        let mut config = Configuration::default();
-        config.mysql = Some(serde_json::json!({"host": "localhost", "port": 3306}));
+        let config = Configuration {
+            mysql: Some(serde_json::json!({"host": "localhost", "port": 3306})),
+            ..Default::default()
+        };
         assert_eq!(config.mysql("host").as_str(), Some("localhost"));
         assert_eq!(config.mysql("port").as_u64(), Some(3306));
         assert!(config.mysql("missing").is_null());
@@ -1008,8 +1014,10 @@ mod tests {
 
     #[test]
     fn test_default_thumbnail_size_custom() {
-        let mut config = Configuration::default();
-        config.default_thumbnail_size = Some(256);
+        let config = Configuration {
+            default_thumbnail_size: Some(256),
+            ..Default::default()
+        };
         assert_eq!(config.default_thumbnail_size(), 256);
     }
 
@@ -1017,8 +1025,10 @@ mod tests {
 
     #[test]
     fn test_api_timeout_as_duration() {
-        let mut config = Configuration::default();
-        config.api_timeout = 60;
+        let config = Configuration {
+            api_timeout: 60,
+            ..Default::default()
+        };
         assert_eq!(config.api_timeout(), Duration::from_secs(60));
     }
 
@@ -1242,8 +1252,10 @@ mod tests {
 
     #[test]
     fn test_with_profiling_false() {
-        let mut config = Configuration::default();
-        config.profiling = true;
+        let config = Configuration {
+            profiling: true,
+            ..Default::default()
+        };
         let config = config.with_profiling(false);
         assert!(!config.profiling());
     }

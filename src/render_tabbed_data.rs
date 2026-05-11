@@ -520,7 +520,7 @@ mod tests {
         // guard directly: a name > 250 chars must be rejected.
         // Verify the 250-byte limit constant is respected by the implementation.
         // (The constant is embedded in the source; this test documents the contract.)
-        let max = 250usize;
+        let max = 250_usize;
         let long: String = "x".repeat(max + 1);
         // A name this long must not be returned — only reachable via the real
         // function, so we just document the boundary condition here.
