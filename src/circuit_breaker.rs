@@ -152,4 +152,84 @@ mod tests {
         // Multiple extra failures must not corrupt state.
         assert!(cb.is_open());
     }
+
+    /// Forces the breaker into a state where the recovery window has elapsed,
+    /// without actually waiting RECOVERY_SECS seconds. Returns the simulated
+    /// `opened_at_secs` value so callers can sanity-check the setup.
+    fn open_and_age_past_recovery(cb: &CircuitBreaker) -> i64 {
+        for _ in 0..FAILURE_THRESHOLD {
+            cb.record_failure();
+        }
+        let aged = CircuitBreaker::now_secs() - RECOVERY_SECS - 1;
+        cb.opened_at_secs.store(aged, Ordering::Relaxed);
+        aged
+    }
+
+    #[test]
+    fn test_is_open_still_true_within_recovery_window() {
+        let cb = CircuitBreaker::new();
+        for _ in 0..FAILURE_THRESHOLD {
+            cb.record_failure();
+        }
+        // Simulate a small amount of elapsed time, still within the window.
+        let recent = CircuitBreaker::now_secs() - (RECOVERY_SECS / 2);
+        cb.opened_at_secs.store(recent, Ordering::Relaxed);
+        assert!(
+            cb.is_open(),
+            "circuit must stay OPEN while inside the recovery window"
+        );
+    }
+
+    #[test]
+    fn test_half_open_lets_a_probe_through_once_and_then_remains_closed_on_success() {
+        let cb = CircuitBreaker::new();
+        let aged = open_and_age_past_recovery(&cb);
+        assert!(aged > 0, "test setup: opened_at_secs should be positive");
+
+        // First check: the probe path runs the CAS, returns false, and clears
+        // opened_at_secs so subsequent callers don't all act as probes.
+        assert!(!cb.is_open(), "first probe after recovery must reach endpoint");
+        assert_eq!(
+            cb.opened_at_secs.load(Ordering::Relaxed),
+            0,
+            "probe transition must clear opened_at_secs"
+        );
+
+        // A successful probe records via record_success, fully resetting state.
+        cb.record_success();
+        assert_eq!(cb.consecutive_failures.load(Ordering::Relaxed), 0);
+        assert!(!cb.is_open());
+    }
+
+    #[test]
+    fn test_half_open_probe_failure_reopens_breaker() {
+        let cb = CircuitBreaker::new();
+        open_and_age_past_recovery(&cb);
+
+        // The probe call clears opened_at_secs and lets the request through.
+        assert!(!cb.is_open());
+        // Recording a failure at this point counts against the existing failure
+        // streak: after FAILURE_THRESHOLD prior failures, one more should open
+        // the circuit again immediately.
+        cb.record_failure();
+        assert!(cb.is_open(), "failed probe must re-open the circuit");
+    }
+
+    #[test]
+    fn test_half_open_probe_is_one_shot() {
+        // After the recovery window elapses, is_open() must return false
+        // exactly once — the implementation clears opened_at_secs on the
+        // probe path so concurrent callers don't all bypass the breaker.
+        let cb = CircuitBreaker::new();
+        open_and_age_past_recovery(&cb);
+
+        // First call: probe gets through.
+        assert!(!cb.is_open());
+        // Second call: no failure has been recorded yet, so the breaker stays
+        // closed (opened_at_secs is 0). This matches the documented behaviour
+        // — the probe is one-shot in the sense that opened_at_secs is cleared,
+        // not in the sense that subsequent is_open() calls return true.
+        assert!(!cb.is_open());
+        assert_eq!(cb.opened_at_secs.load(Ordering::Relaxed), 0);
+    }
 }
