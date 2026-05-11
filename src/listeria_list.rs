@@ -338,16 +338,34 @@ impl ListeriaList {
         Ok(())
     }
 
-    pub async fn load_entities(&mut self) -> Result<()> {
-        // Any columns that require entities to be loaded?
-        // TODO also force if self.links is redlinks etc.
-        let needs_entities = self.columns.iter().any(|c| {
+    /// Decides whether the entity cache must be populated before rendering.
+    ///
+    /// Returns `true` when **either** the column set needs entity data
+    /// (anything beyond plain `Number` / `Item` / `Field` columns) **or** the
+    /// link mode itself reads from the entity cache:
+    ///
+    /// - `LinksType::Local` filters rows via the entity's sitelinks
+    ///   (`EntityContainerWrapper::use_local_links`); with no entities loaded
+    ///   every row is silently dropped.
+    /// - `LinksType::RedOnly` filters rows via the entity's sitelinks in
+    ///   `ListProcessor::find_keep_flags`; same silent-empty failure mode.
+    ///
+    /// `Red`, `Text` and `Reasonator` only consult the entity cache when an
+    /// `Entity` part has `try_localize=true`, which Item/Field/Number columns
+    /// never produce. They therefore do not force a load on their own.
+    fn needs_entity_loading(columns: &[Column], links: &LinksType) -> bool {
+        let needs_for_columns = columns.iter().any(|c| {
             !matches!(
                 c.obj(),
                 ColumnType::Number | ColumnType::Item | ColumnType::Field(_)
             )
         });
-        if !needs_entities {
+        let needs_for_links = matches!(links, LinksType::Local | LinksType::RedOnly);
+        needs_for_columns || needs_for_links
+    }
+
+    pub async fn load_entities(&mut self) -> Result<()> {
+        if !Self::needs_entity_loading(&self.columns, self.params.links()) {
             return Ok(());
         }
 
@@ -905,5 +923,71 @@ mod tests {
     #[test]
     fn test_format_coordinate_zero() {
         assert_eq!(ListeriaList::format_coordinate(0.0), "0");
+    }
+
+    // --- needs_entity_loading ---
+
+    fn col(spec: &str) -> Column {
+        Column::new(spec).expect("column spec must parse")
+    }
+
+    #[test]
+    fn test_needs_entity_loading_item_only_with_all_links_is_false() {
+        // Baseline: pure Item/Number/Field columns + default links → no load.
+        let cols = vec![col("number"), col("item")];
+        assert!(!ListeriaList::needs_entity_loading(&cols, &LinksType::All));
+    }
+
+    #[test]
+    fn test_needs_entity_loading_item_only_with_local_links_forces_load() {
+        // Bug fix: links=Local needs the entity cache to evaluate the
+        // sitelink filter, even when no column reads entity data.
+        let cols = vec![col("item")];
+        assert!(ListeriaList::needs_entity_loading(
+            &cols,
+            &LinksType::Local
+        ));
+    }
+
+    #[test]
+    fn test_needs_entity_loading_item_only_with_red_only_links_forces_load() {
+        // Bug fix: links=RedOnly filters rows by entity sitelinks too.
+        let cols = vec![col("item")];
+        assert!(ListeriaList::needs_entity_loading(
+            &cols,
+            &LinksType::RedOnly
+        ));
+    }
+
+    #[test]
+    fn test_needs_entity_loading_item_only_with_red_links_does_not_force() {
+        // `Red` only colours existing Entity parts; with Item-only columns
+        // there is nothing to colour, so no entity load is required.
+        let cols = vec![col("item")];
+        assert!(!ListeriaList::needs_entity_loading(&cols, &LinksType::Red));
+    }
+
+    #[test]
+    fn test_needs_entity_loading_label_column_loads_regardless_of_links() {
+        let cols = vec![col("label")];
+        assert!(ListeriaList::needs_entity_loading(&cols, &LinksType::All));
+        assert!(ListeriaList::needs_entity_loading(&cols, &LinksType::Text));
+    }
+
+    #[test]
+    fn test_needs_entity_loading_property_column_loads_regardless_of_links() {
+        let cols = vec![col("P31")];
+        assert!(ListeriaList::needs_entity_loading(&cols, &LinksType::All));
+    }
+
+    #[test]
+    fn test_needs_entity_loading_empty_columns_with_local_links_forces_load() {
+        // Edge case: no columns at all but links=Local still needs the cache
+        // to make a row-keep decision in use_local_links.
+        let cols: Vec<Column> = Vec::new();
+        assert!(ListeriaList::needs_entity_loading(
+            &cols,
+            &LinksType::Local
+        ));
     }
 }
