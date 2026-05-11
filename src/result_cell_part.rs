@@ -541,7 +541,14 @@ impl ResultCellPart {
                     .await
             }
             ResultCellPart::EntitySchema(id) => {
-                format!("[[EntitySchema:{id}|{id}]]") // TODO use self.as_wikitext_entity ?
+                // `get_entity_label_with_fallback` returns the id itself when
+                // no label is available, so callers who never load the schema
+                // entity (the common case) see the same output as before.
+                let label = list
+                    .ecw()
+                    .get_entity_label_with_fallback(id, list.language())
+                    .await;
+                format!("[[EntitySchema:{id}|{label}]]")
             }
             ResultCellPart::LocalLink(link_info) => Self::as_wikitext_local_link(
                 list,
