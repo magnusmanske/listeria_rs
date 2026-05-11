@@ -13,6 +13,7 @@ use std::fs::read_to_string;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{RwLock, Semaphore};
+use tracing::Instrument;
 use wikimisc::{seppuku::Seppuku, wikibase::EntityTrait};
 
 const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 300;
@@ -128,18 +129,29 @@ impl MainCommands {
             );
             let bot = bot.clone();
             seppuku.alive();
-            tokio::spawn(async move {
-                let pagestatus_id = page.id();
-                let start_time = Instant::now();
-                if let Err(e) = bot.run_single_bot(page).await {
-                    log::error!("Bot run failed: {e}");
+            // Per-page span: every log line and trace event emitted inside
+            // run_single_bot inherits {wiki, page} fields, making concurrent
+            // bot output easy to attribute when many pages run in parallel.
+            let span = tracing::info_span!(
+                "page_process",
+                wiki = %page.wiki(),
+                page = %page.title(),
+            );
+            tokio::spawn(
+                async move {
+                    let pagestatus_id = page.id();
+                    let start_time = Instant::now();
+                    if let Err(e) = bot.run_single_bot(page).await {
+                        log::error!("Bot run failed: {e}");
+                    }
+                    let end_time = Instant::now();
+                    let diff = (end_time - start_time).as_secs();
+                    let _ = bot.set_runtime(pagestatus_id, diff).await;
+                    bot.release_running(pagestatus_id).await;
+                    drop(permit);
                 }
-                let end_time = Instant::now();
-                let diff = (end_time - start_time).as_secs();
-                let _ = bot.set_runtime(pagestatus_id, diff).await;
-                bot.release_running(pagestatus_id).await;
-                drop(permit);
-            });
+                .instrument(span),
+            );
         }
     }
 
@@ -180,7 +192,18 @@ impl MainCommands {
 
             seppuku.alive();
             let start_time = Instant::now();
-            let mut result = match bot.run_single_bot(page.clone()).await {
+            // Same span treatment as the multi-wiki bot — keeps log output
+            // attributable even though pages are processed sequentially here.
+            let span = tracing::info_span!(
+                "page_process",
+                wiki = %page.wiki(),
+                page = %page.title(),
+            );
+            let mut result = match bot
+                .run_single_bot(page.clone())
+                .instrument(span)
+                .await
+            {
                 Ok(result) => result,
                 Err(e) => WikiPageResult::new("wiki", page.title(), "Error", e.to_string()),
             };

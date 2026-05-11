@@ -33,6 +33,7 @@ enum Commands {
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
+    init_tracing();
     let cli = Args::parse();
 
     let config_file = cli.config;
@@ -56,6 +57,31 @@ async fn main() -> Result<()> {
         Commands::Wikidata => main.run_wikidata_bot().await,
         Commands::SingleWiki { once } => main.run_single_wiki_bot(once).await,
     }
+}
+
+/// Installs a `tracing` subscriber and a `log` → `tracing` bridge.
+///
+/// The bridge forwards every existing `log::info!` / `log::warn!` / ...
+/// call into the tracing pipeline, so library code that still uses the
+/// `log` macros keeps emitting visible output without modification. The
+/// filter defaults to `info` and can be overridden via the standard
+/// `RUST_LOG` env var (e.g. `RUST_LOG=listeria=debug`).
+fn init_tracing() {
+    use tracing_subscriber::{EnvFilter, fmt};
+
+    // Forward `log::*!` events into the tracing event pipeline. Failing
+    // here just means a previous logger was already installed in tests
+    // or by a host process — that's fine, drop on the floor.
+    let _ = tracing_log::LogTracer::init();
+
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    // `try_init` because some test harness paths may install a subscriber
+    // before this code runs; silently treat a re-install as a no-op.
+    let _ = fmt()
+        .with_env_filter(filter)
+        .with_target(true)
+        .try_init();
 }
 
 /*
