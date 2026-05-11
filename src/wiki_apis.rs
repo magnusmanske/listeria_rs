@@ -377,20 +377,9 @@ impl WikiApis {
         ".web.db.svc.eqiad.wmflabs"
     }
 
-    /// Adjusts the name of some wikis to work as a DB server name
-    #[must_use]
-    pub fn fix_wiki_name(&self, wiki: &str) -> String {
-        match wiki {
-            "be-taraskwiki" | "be-x-oldwiki" | "be_taraskwiki" | "be_x_oldwiki" => {
-                "be_x_oldwiki".to_string()
-            }
-            other => other.replace('-', "_"),
-        }
-    }
-
     /// Returns the server and database name for the wiki, as a tuple
     pub fn db_host_and_schema_for_wiki(&self, wiki: &str) -> Result<(String, String)> {
-        let wiki = self.fix_wiki_name(wiki);
+        let wiki = self.config.fix_wiki_name(wiki);
         let host = match self.config.mysql("host").as_str() {
             Some("127.0.0.1") => "127.0.0.1".to_string(),
             Some(_host) => wiki.to_owned() + self.get_db_server_group(),
@@ -414,18 +403,6 @@ impl WikiApis {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    #[ignore = "requires Toolforge MySQL tunnel on port 3308"]
-    async fn test_fix_wiki_name() {
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let wa = WikiApis::new(Arc::new(config)).await.unwrap();
-        assert_eq!(wa.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
-        assert_eq!(wa.fix_wiki_name("be_taraskwiki"), "be_x_oldwiki");
-        assert_eq!(wa.fix_wiki_name("be-x-oldwiki"), "be_x_oldwiki");
-        assert_eq!(wa.fix_wiki_name("be_x_oldwiki"), "be_x_oldwiki");
-        assert_eq!(wa.fix_wiki_name("dewiki"), "dewiki");
-    }
 
     #[tokio::test]
     #[ignore = "requires Toolforge MySQL tunnel on port 3308"]

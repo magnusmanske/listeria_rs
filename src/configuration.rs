@@ -77,6 +77,11 @@ pub struct Configuration {
     /// Per-endpoint circuit breakers. Shared across all `Configuration` clones
     /// so that failures recorded by one clone are visible to all others.
     sparql_circuit_breakers: Arc<DashMap<String, Arc<CircuitBreaker>>>,
+    /// Maps inbound wiki identifiers to their database/server names. Pre-seeded
+    /// with the historical `be_x_oldwiki` aliases (see Phabricator T11216); JSON
+    /// config can extend or override the map via the `wiki_name_aliases` key.
+    /// Names not present in the map fall through `replace('-', '_')`.
+    wiki_name_aliases: HashMap<String, String>,
 }
 
 impl Default for Configuration {
@@ -119,11 +124,39 @@ impl Default for Configuration {
             main_item_prefix: String::new(),
             sparql_semaphore: Arc::new(Semaphore::new(1)),
             sparql_circuit_breakers: Arc::new(DashMap::new()),
+            wiki_name_aliases: Self::default_wiki_name_aliases(),
         }
     }
 }
 
 impl Configuration {
+    /// Built-in wiki-name alias map.
+    ///
+    /// `be_x_oldwiki` has lived under four spellings ever since the Belarusian
+    /// (Taraškievica) Wikipedia rename (Phabricator T11216); both the old and
+    /// new identifiers — with `-` and `_` variants — must map to the same
+    /// database schema name. JSON config can add more entries via the
+    /// `wiki_name_aliases` key.
+    fn default_wiki_name_aliases() -> HashMap<String, String> {
+        ["be-taraskwiki", "be-x-oldwiki", "be_taraskwiki", "be_x_oldwiki"]
+            .into_iter()
+            .map(|name| (name.to_string(), "be_x_oldwiki".to_string()))
+            .collect()
+    }
+
+    /// Normalises a wiki identifier into its database/server name.
+    ///
+    /// Returns the configured alias when one is registered for the input;
+    /// otherwise replaces any hyphens with underscores (the Wikimedia
+    /// convention for converting site IDs to DB schema names).
+    #[must_use]
+    pub fn fix_wiki_name(&self, wiki: &str) -> String {
+        self.wiki_name_aliases
+            .get(wiki)
+            .cloned()
+            .unwrap_or_else(|| wiki.replace('-', "_"))
+    }
+
     /// Loads configuration from a JSON file.
     pub async fn new_from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
@@ -575,6 +608,16 @@ impl Configuration {
             .and_then(|u| u.try_into().ok());
         self.profiling = j["profiling"].as_bool().unwrap_or_default();
         self.quiet = j["quiet"].as_bool().unwrap_or_default();
+        if let Some(obj) = j["wiki_name_aliases"].as_object() {
+            // Merge over the built-in defaults so JSON entries can both
+            // extend the map and override individual defaults.
+            for (k, v) in obj {
+                if let Some(target) = v.as_str() {
+                    self.wiki_name_aliases
+                        .insert(k.clone(), target.to_string());
+                }
+            }
+        }
         self.wiki_page_pattern = j["wiki_page_pattern"].as_str().map(|s| s.to_string());
         self.pattern_string_start = j["pattern_string_start"]
             .as_str()
@@ -1013,6 +1056,58 @@ mod tests {
         assert_eq!(config.default_language, "fr");
         assert!(config.quiet);
         assert!(config.profiling);
+    }
+
+    // ── fix_wiki_name ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_fix_wiki_name_be_x_oldwiki_default_aliases() {
+        let config = Configuration::default();
+        // All four historical spellings collapse to be_x_oldwiki (T11216).
+        assert_eq!(config.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
+        assert_eq!(config.fix_wiki_name("be_taraskwiki"), "be_x_oldwiki");
+        assert_eq!(config.fix_wiki_name("be-x-oldwiki"), "be_x_oldwiki");
+        assert_eq!(config.fix_wiki_name("be_x_oldwiki"), "be_x_oldwiki");
+    }
+
+    #[test]
+    fn test_fix_wiki_name_no_alias_replaces_hyphens() {
+        let config = Configuration::default();
+        assert_eq!(config.fix_wiki_name("dewiki"), "dewiki");
+        assert_eq!(config.fix_wiki_name("zh-yuewiki"), "zh_yuewiki");
+        assert_eq!(config.fix_wiki_name("simple-en-wiki"), "simple_en_wiki");
+    }
+
+    #[test]
+    fn test_fix_wiki_name_empty_string() {
+        let config = Configuration::default();
+        assert_eq!(config.fix_wiki_name(""), "");
+    }
+
+    #[test]
+    fn test_fix_wiki_name_user_alias_extends_defaults() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({
+            "wiki_name_aliases": { "fake-old": "newname" }
+        }));
+        // The user-supplied alias resolves
+        assert_eq!(config.fix_wiki_name("fake-old"), "newname");
+        // The default be_x_oldwiki aliases are still in place
+        assert_eq!(config.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
+        // Unrelated wikis still hyphen-replace
+        assert_eq!(config.fix_wiki_name("dewiki"), "dewiki");
+    }
+
+    #[test]
+    fn test_fix_wiki_name_user_alias_overrides_default() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({
+            "wiki_name_aliases": { "be_x_oldwiki": "be_overridden" }
+        }));
+        // User entry for an existing key wins
+        assert_eq!(config.fix_wiki_name("be_x_oldwiki"), "be_overridden");
+        // Sibling defaults that the user didn't override remain
+        assert_eq!(config.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
     }
 
     // ── new_from_json_locations ────────────────────────────────────────────
