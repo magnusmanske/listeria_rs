@@ -32,6 +32,29 @@ use wikimisc::wikibase::{EntityTrait, SnakDataType, Statement, StatementRank, Va
 
 const AUTODESC_FALLBACK: &str = "FALLBACK";
 
+/// All mutable per-page state that the processing pipeline reads and writes.
+///
+/// Keeping this in its own struct (rather than as loose `ListeriaList` fields)
+/// makes the "what the pipeline mutates" set explicit and lets pipeline stages
+/// be passed `&mut ProcessingState` in the future without dragging the whole
+/// `ListeriaList` (config, API handles, profiler) along for the ride.
+#[derive(Debug, Clone, Default)]
+pub struct ProcessingState {
+    /// Result rows for the current page, built up across pipeline stages.
+    pub results: Vec<ResultRow>,
+    /// Local file titles that shadow Commons uploads — populated by the
+    /// shadow-files processor, consumed by the renderer.
+    pub shadow_files: HashSet<String>,
+    /// Per-page memoised "does this local page exist?" lookups, used by the
+    /// redlink-aware link rendering paths.
+    pub local_page_cache: HashMap<String, bool>,
+    /// Section-id → display-name map populated during the sections stage.
+    pub section_id_to_name: HashMap<usize, String>,
+    /// Set of reference IDs already emitted on the page, used to deduplicate
+    /// `<ref name="...">` definitions in the output wikitext.
+    pub reference_ids: HashSet<String>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ListeriaList {
     page_params: Arc<PageParams>,
@@ -40,13 +63,9 @@ pub struct ListeriaList {
     params: TemplateParams,
     sparql_table: Arc<SparqlTableVec>,
     ecw: EntityContainerWrapper,
-    results: Vec<ResultRow>,
-    shadow_files: HashSet<String>,
-    local_page_cache: HashMap<String, bool>,
-    section_id_to_name: HashMap<usize, String>,
+    state: ProcessingState,
     wb_api: Arc<Api>,
     language: String,
-    reference_ids: HashSet<String>,
     profiler: ProfilingService,
 }
 
@@ -68,13 +87,9 @@ impl ListeriaList {
             params: TemplateParams::new(),
             sparql_table: Arc::new(SparqlTableVec::new()),
             ecw: EntityContainerWrapper::new().await?,
-            results: Vec::new(),
-            shadow_files: HashSet::new(),
-            local_page_cache: HashMap::new(),
-            section_id_to_name: HashMap::new(),
+            state: ProcessingState::default(),
             wb_api,
             language: page_params.language().to_string(),
-            reference_ids: HashSet::new(),
             profiler,
         })
     }
@@ -129,11 +144,11 @@ impl ListeriaList {
     }
 
     pub const fn results(&self) -> &Vec<ResultRow> {
-        &self.results
+        &self.state.results
     }
 
     pub const fn results_mut(&mut self) -> &mut Vec<ResultRow> {
-        &mut self.results
+        &mut self.state.results
     }
 
     pub const fn columns(&self) -> &Vec<Column> {
@@ -141,19 +156,19 @@ impl ListeriaList {
     }
 
     pub const fn shadow_files(&self) -> &HashSet<String> {
-        &self.shadow_files
+        &self.state.shadow_files
     }
 
     pub const fn shadow_files_mut(&mut self) -> &mut HashSet<String> {
-        &mut self.shadow_files
+        &mut self.state.shadow_files
     }
 
     pub const fn local_page_cache_mut(&mut self) -> &mut HashMap<String, bool> {
-        &mut self.local_page_cache
+        &mut self.state.local_page_cache
     }
 
     pub const fn section_id_to_name_mut(&mut self) -> &mut HashMap<usize, String> {
-        &mut self.section_id_to_name
+        &mut self.state.section_id_to_name
     }
 
     pub const fn ecw(&self) -> &EntityContainerWrapper {
@@ -169,7 +184,7 @@ impl ListeriaList {
     }
 
     pub const fn reference_ids(&self) -> &HashSet<String> {
-        &self.reference_ids
+        &self.state.reference_ids
     }
 
     pub fn sparql_table(&self) -> &SparqlTableVec {
@@ -190,7 +205,7 @@ impl ListeriaList {
     }
 
     pub fn section_name(&self, id: usize) -> Option<&str> {
-        self.section_id_to_name.get(&id).map(|s| s.as_str())
+        self.state.section_id_to_name.get(&id).map(|s| s.as_str())
     }
 
     pub fn process_template(&mut self) -> Result<()> {
@@ -276,7 +291,7 @@ impl ListeriaList {
     }
 
     pub fn local_page_exists(&self, page: &str) -> bool {
-        *self.local_page_cache.get(page).unwrap_or(&false)
+        *self.state.local_page_cache.get(page).unwrap_or(&false)
     }
 
     pub fn normalize_page_title(s: &str) -> String {
@@ -421,6 +436,7 @@ impl ListeriaList {
 
     pub async fn load_row_entities(&mut self) -> Result<()> {
         let items_to_load: Vec<String> = self
+            .state
             .results
             .iter()
             .map(|row| row.entity_id().to_string())
@@ -490,7 +506,7 @@ impl ListeriaList {
 
     async fn gather_items_for_property(&mut self, prop: &str) -> Result<Vec<String>> {
         let mut entities_to_load = Vec::new();
-        for row in self.results.iter() {
+        for row in self.state.results.iter() {
             let Some(entity) = self.ecw.get_entity(row.entity_id()).await else {
                 continue;
             };
@@ -531,7 +547,7 @@ impl ListeriaList {
     async fn gather_and_load_items(&mut self) -> Result<()> {
         // Gather items to load
         let mut entities_to_load: Vec<String> = Vec::new();
-        for row in self.results.iter() {
+        for row in self.state.results.iter() {
             for cell in row.cells() {
                 entities_to_load.extend(
                     EntityContainerWrapper::gather_entities_and_external_properties(cell.parts()),
@@ -584,7 +600,7 @@ impl ListeriaList {
     }
 
     pub fn get_section_ids(&self) -> Vec<usize> {
-        let mut ret: Vec<usize> = self.results.iter().map(|row| row.section()).collect();
+        let mut ret: Vec<usize> = self.state.results.iter().map(|row| row.section()).collect();
         ret.sort_unstable();
         ret.dedup();
         ret
