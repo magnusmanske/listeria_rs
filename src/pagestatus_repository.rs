@@ -161,7 +161,9 @@ impl PageStatusRepository {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // Pure-logic tests below mirror the priority fragment the repository
+    // constructs inline; they don't reach into the repository itself, so no
+    // `use super::*` is needed.
 
     /// Verify that the priority SQL fragment is consistent with what the
     /// repository generates. This mirrors the logic previously tested in

@@ -91,7 +91,9 @@ impl super::ListProcessor {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // Tests reference items by full path (`super::super::ListProcessor::…`)
+    // and the SnakDataType / ResultRow types imported below, so there's no
+    // need to glob-import the enclosing module.
     use crate::result_row::ResultRow;
     use wikimisc::wikibase::SnakDataType;
 

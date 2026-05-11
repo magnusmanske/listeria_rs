@@ -30,7 +30,6 @@ pub struct ListProcessor;
 #[cfg(test)]
 mod tests {
     use super::ListProcessor;
-    use crate::configuration::Configuration;
     use crate::listeria_list::ListeriaList;
     use crate::page_params::PageParams;
     use crate::template::Template;

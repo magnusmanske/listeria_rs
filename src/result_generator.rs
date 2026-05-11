@@ -39,7 +39,11 @@ impl ResultGenerator {
             let v = row.get(var_index).map(|v| v.to_owned());
             if let Some(Some(SparqlValue::Entity(id))) = v {
                 let mut tmp_table = SparqlTableVec::from_table(list.sparql_table());
-                tmp_table.push(row.to_owned());
+                // SparqlTableVec is the in-memory `Vec`-backed alias whose
+                // `push` impl always returns `Ok(())`; the `?` is here to
+                // honour the fallible signature shared with the disk-spilling
+                // backend (see wikimisc::sparql_table::RowStorage).
+                tmp_table.push(row.to_owned())?;
                 if let Some(x) = list.ecw().get_result_row(&id, &tmp_table, list).await {
                     tmp_results.push(x);
                 }
@@ -64,7 +68,7 @@ impl ResultGenerator {
             };
         }
         for id in &sparql_row_ids {
-            let tmp_rows = Self::get_tmp_rows(list.sparql_table(), &id2rows, id);
+            let tmp_rows = Self::get_tmp_rows(list.sparql_table(), &id2rows, id)?;
             if let Some(row) = list.ecw().get_result_row(id, &tmp_rows, list).await {
                 tmp_results.push(row);
             }
@@ -123,15 +127,16 @@ impl ResultGenerator {
         sparql_table: &SparqlTableVec,
         id2rows: &HashMap<String, Vec<usize>>,
         id: &String,
-    ) -> SparqlTableVec {
+    ) -> Result<SparqlTableVec> {
         let row_ids = id2rows.get(id).map(|v| v.as_slice()).unwrap_or_default();
         let mut tmp_rows = SparqlTableVec::from_table(sparql_table);
         for &row_id in row_ids {
             if let Some(row) = sparql_table.get(row_id) {
-                tmp_rows.push(row);
+                // See note above on the in-memory backend's infallible push.
+                tmp_rows.push(row)?;
             }
         }
-        tmp_rows
+        Ok(tmp_rows)
     }
 }
 
