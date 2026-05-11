@@ -143,8 +143,8 @@ impl StatusServer {
                 html += &format!(
                     "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
                     link,
-                    result.result(),
-                    result.message()
+                    escape_html(result.result()),
+                    escape_html(result.message())
                 );
             }
             html += "</tbody></table></p></div></div>";
@@ -388,6 +388,36 @@ mod tests {
         );
         assert!(html.contains("&lt;b&gt;"));
         assert!(html.contains("&amp;"));
+    }
+
+    #[test]
+    fn test_build_problems_table_escapes_html_in_result_and_message() {
+        // Error messages bubble up from MediaWiki / anyhow strings and can
+        // contain arbitrary text. They must not be injected into the page raw.
+        let problems = vec![(
+            "page".to_string(),
+            WikiPageResult::new(
+                "enwiki",
+                "page",
+                "FAIL<script>",
+                "<img src=x onerror=\"alert('xss')\">".to_string(),
+            ),
+        )];
+        let html = StatusServer::build_problems_table(&problems, &None);
+        assert!(
+            !html.contains("FAIL<script>"),
+            "raw <script> tag must not appear in the result cell"
+        );
+        assert!(
+            !html.contains("<img src=x"),
+            "raw <img must not appear in the message cell"
+        );
+        assert!(
+            !html.contains("onerror=\"alert"),
+            "raw onerror handler must not appear unescaped"
+        );
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("&lt;img"));
     }
 
     // ── ServerStatistics::from_state ──────────────────────────────────────
