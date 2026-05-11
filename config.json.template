@@ -43,5 +43,7 @@
     "default_thumbnail_size" : 128 ,
     "shadow_images_check" : [ "enwiki" ] ,
     "template_start_q" : "Q19860885",
-    "template_end_q" : "Q19860887"
+    "template_end_q" : "Q19860887",
+    "wiki_name_aliases" : {},
+    "case_sensitive_wikis" : []
 }
