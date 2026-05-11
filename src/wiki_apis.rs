@@ -1,14 +1,17 @@
 //! MediaWiki API management and connection pooling for multiple wikis.
 
-use crate::{ApiArc, configuration::Configuration, database_pool::DatabasePool, wiki::Wiki};
+use crate::{
+    ApiArc, configuration::Configuration, database_pool::DatabasePool, wiki::Wiki,
+    wiki_repository::WikiRepository,
+};
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use log::info;
-use tokio::sync::OnceCell;
 use mysql_async::{Conn, Opts, OptsBuilder, from_row, prelude::*};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::OnceCell;
 use tokio::time::sleep;
 use wikimisc::{
     mediawiki::{api::Api, title::Title},
@@ -25,7 +28,10 @@ pub struct WikiApis {
     /// to each create their own TCP connection. The `DashMap` shard lock is
     /// held only for the map lookup/insert, not during the async API creation.
     apis: DashMap<String, Arc<OnceCell<ApiArc>>>,
-    pool: DatabasePool,
+    /// Owns the SQL that talks to the bot's `wikis` and `pagestatus` tables.
+    /// Kept as a separate type so the SQL strings live in one place and the
+    /// rest of `WikiApis` stays focused on API pooling and wiki discovery.
+    wiki_repo: WikiRepository,
 }
 
 impl WikiApis {
@@ -36,7 +42,7 @@ impl WikiApis {
             apis: DashMap::new(),
             config,
             site_matrix,
-            pool,
+            wiki_repo: WikiRepository::new(pool),
         })
     }
 
@@ -156,7 +162,10 @@ impl WikiApis {
             .filter(|wiki| !existing_wikis.contains(*wiki))
             .cloned()
             .collect();
-        self.add_new_wikis_to_database(new_wikis).await?;
+        if !new_wikis.is_empty() {
+            log::info!("Adding {new_wikis:?}");
+        }
+        self.wiki_repo.add_wikis(&new_wikis).await?;
         Ok(())
     }
 
@@ -167,24 +176,6 @@ impl WikiApis {
         let start_template_entity = self.load_entity_from_id(api, q).await?;
         let current_wikis: Vec<String> = Self::get_all_wikis_with_template(start_template_entity);
         Ok(current_wikis)
-    }
-
-    /// Adds new wikis to the database
-    async fn add_new_wikis_to_database(&self, new_wikis: Vec<String>) -> Result<()> {
-        if new_wikis.is_empty() {
-            return Ok(());
-        }
-        let placeholders = std::iter::repeat_n("(?,'ACTIVE')", new_wikis.len())
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
-        log::info!("Adding {new_wikis:?}");
-        self.pool
-            .get_conn()
-            .await?
-            .exec_drop(sql, new_wikis)
-            .await?;
-        Ok(())
     }
 
     /// Returns the Wikidata item for a given template
@@ -204,7 +195,8 @@ impl WikiApis {
     pub async fn update_pages_on_wiki(&self, wiki: &str) -> Result<()> {
         let current_pages = self.get_current_pages_on_wiki(wiki).await?;
         let existing_pages: HashSet<String> = self
-            .get_pages_for_wiki_in_database(wiki)
+            .wiki_repo
+            .get_pages_for_wiki(wiki)
             .await?
             .into_iter()
             .collect();
@@ -213,26 +205,10 @@ impl WikiApis {
             .filter(|page| !existing_pages.contains(*page))
             .cloned()
             .collect();
-        self.add_pages_to_wiki(new_pages, wiki).await?;
-        Ok(())
-    }
-
-    async fn add_pages_to_wiki(&self, new_pages: Vec<String>, wiki: &str) -> Result<()> {
-        if new_pages.is_empty() {
-            return Ok(());
-        }
-        let wiki_id = self.get_wiki_id(wiki).await?;
-        log::info!("Adding {} pages for {wiki}", new_pages.len());
-        for chunk in new_pages.chunks(10000) {
-            let chunk: Vec<String> = chunk.into();
-            let element = format!("({wiki_id},?,'WAITING','','')");
-            let placeholders = std::iter::repeat_n(element.as_str(), chunk.len())
-                .collect::<Vec<_>>()
-                .join(",");
-            let sql = format!(
-                "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`,`message`) VALUES {placeholders}"
-            );
-            self.pool.get_conn().await?.exec_drop(sql, chunk).await?;
+        if !new_pages.is_empty() {
+            let wiki_id = self.wiki_repo.get_wiki_id(wiki).await?;
+            log::info!("Adding {} pages for {wiki}", new_pages.len());
+            self.wiki_repo.add_pages_for_wiki(wiki_id, &new_pages).await?;
         }
         Ok(())
     }
@@ -278,54 +254,10 @@ impl WikiApis {
         Ok(())
     }
 
-    /// Returns all the wikis in the database
+    /// Returns all the wikis in the database (delegates to `WikiRepository`
+    /// so the public API stays stable; SQL lives in the repository).
     pub async fn get_all_wikis_in_database(&self) -> Result<HashMap<String, Wiki>> {
-        let ret = self
-            .pool
-            .get_conn()
-            .await?
-            .exec_iter(
-                "SELECT `id`,`name`,`status`,`timestamp`,`use_invoke`,`use_cite_web` FROM `wikis`",
-                (),
-            )
-            .await?
-            .map_and_drop(from_row::<(usize, String, String, String, bool, bool)>)
-            .await?;
-        let ret = ret
-            .into_iter()
-            .map(Wiki::from_row)
-            .filter_map(|wiki| wiki.ok())
-            .map(|wiki| (wiki.name().to_string(), wiki))
-            .collect();
-        Ok(ret)
-    }
-
-    /// Returns all the pages for a given wiki in the database
-    async fn get_pages_for_wiki_in_database(&self, wiki: &str) -> Result<Vec<String>> {
-        let sql =
-            "SELECT `page` FROM pagestatus,wikis WHERE wikis.id=pagestatus.wiki AND wikis.name=?";
-        Ok(self
-            .pool
-            .get_conn()
-            .await?
-            .exec_iter(sql, (wiki,))
-            .await?
-            .map_and_drop(from_row::<String>)
-            .await?)
-    }
-
-    /// Returns the numeric ID for a wiki in the database
-    async fn get_wiki_id(&self, wiki: &str) -> Result<u64> {
-        self.pool
-            .get_conn()
-            .await?
-            .exec_iter("SELECT `id` FROM `wikis` WHERE `name`=?", (wiki,))
-            .await?
-            .map_and_drop(from_row::<u64>)
-            .await?
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("Wiki {wiki} not known"))
+        self.wiki_repo.get_all_wikis().await
     }
 
     /// Helper method to extract a string value from MySQL configuration

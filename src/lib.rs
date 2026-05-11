@@ -90,6 +90,7 @@ pub mod template_params;
 pub mod wiki;
 pub mod wiki_apis;
 pub mod wiki_page_result;
+pub mod wiki_repository;
 
 #[cfg(test)]
 pub mod test_utils;
