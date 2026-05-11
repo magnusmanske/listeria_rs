@@ -1,8 +1,11 @@
 //! Individual parts that make up table cells, with rendering logic for different data types.
 
+mod types;
+
+pub use types::{AutoDesc, EntityInfo, ExternalIdInfo, LinkTarget, LocalLinkInfo, LocationInfo};
+
 use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::EntityContainerWrapper;
-use crate::my_entity::MyEntity;
 use crate::reference::Reference;
 use crate::render_context::{normalize_page_title, RenderContext};
 use crate::template_params::LinksType;
@@ -56,110 +59,6 @@ impl PartWithReference {
             String::new()
         };
         wikitext_part + &wikitext_reference
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AutoDesc {
-    entity_id: String,
-    desc: Option<String>,
-}
-
-impl PartialEq for AutoDesc {
-    fn eq(&self, other: &Self) -> bool {
-        self.entity_id == other.entity_id && self.desc == other.desc
-    }
-}
-
-impl AutoDesc {
-    pub fn new(entity: &MyEntity) -> Self {
-        Self {
-            entity_id: entity.id().to_owned(),
-            desc: None,
-        }
-    }
-
-    pub fn set_description(&mut self, description: &str) {
-        self.desc = Some(description.to_string());
-    }
-
-    pub fn entity_id(&self) -> &str {
-        &self.entity_id
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum LinkTarget {
-    Page,
-    Category,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct EntityInfo {
-    pub id: String,
-    pub try_localize: bool,
-}
-
-impl EntityInfo {
-    #[must_use]
-    pub const fn new(id: String, try_localize: bool) -> Self {
-        Self { id, try_localize }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LocalLinkInfo {
-    pub page: String,
-    pub label: String,
-    pub target: LinkTarget,
-}
-
-impl LocalLinkInfo {
-    #[must_use]
-    pub const fn new(page: String, label: String, target: LinkTarget) -> Self {
-        Self {
-            page,
-            label,
-            target,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct LocationInfo {
-    pub latitude: f64,
-    pub longitude: f64,
-    pub region: Option<String>,
-    /// Page-unique anchor name for this location, used as the `name=` parameter
-    /// in coordinate templates. Assigned during result processing so that
-    /// duplicate HTML anchors are avoided when the same item has multiple
-    /// coordinates or appears in multiple rows (see GitHub issue #136).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
-
-impl LocationInfo {
-    #[must_use]
-    pub const fn new(latitude: f64, longitude: f64, region: Option<String>) -> Self {
-        Self {
-            latitude,
-            longitude,
-            region,
-            name: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ExternalIdInfo {
-    pub property: String,
-    pub id: String,
-}
-
-impl ExternalIdInfo {
-    #[must_use]
-    pub const fn new(property: String, id: String) -> Self {
-        Self { property, id }
     }
 }
 
@@ -569,7 +468,7 @@ impl ResultCellPart {
             ResultCellPart::SnakList(v) => {
                 Self::as_wikitext_snak_list(v, list, rownum, colnum).await
             }
-            ResultCellPart::AutoDesc(ad) => ad.desc.as_deref().unwrap_or_default().to_string(),
+            ResultCellPart::AutoDesc(ad) => ad.desc().unwrap_or_default().to_string(),
             ResultCellPart::Quantity(amount, unit_id) => {
                 self.as_wikitext_quantity(list, *amount, unit_id.as_deref()).await
             }
@@ -723,13 +622,6 @@ mod tests {
         let pwr = PartWithReference::new(part.clone(), None);
         assert_eq!(pwr.part(), &part);
         assert!(pwr.references().is_none());
-    }
-
-    #[test]
-    fn test_link_target_equality() {
-        assert_eq!(LinkTarget::Page, LinkTarget::Page);
-        assert_eq!(LinkTarget::Category, LinkTarget::Category);
-        assert_ne!(LinkTarget::Page, LinkTarget::Category);
     }
 
     // --- from_snak ---
@@ -919,64 +811,6 @@ mod tests {
         }
     }
 
-    // --- EntityInfo / LocalLinkInfo / LocationInfo / ExternalIdInfo constructors ---
-
-    #[test]
-    fn test_entity_info_new() {
-        let info = EntityInfo::new("Q42".to_string(), true);
-        assert_eq!(info.id, "Q42");
-        assert!(info.try_localize);
-    }
-
-    #[test]
-    fn test_entity_info_no_localize() {
-        let info = EntityInfo::new("Q1".to_string(), false);
-        assert!(!info.try_localize);
-    }
-
-    #[test]
-    fn test_local_link_info_new() {
-        let info = LocalLinkInfo::new(
-            "Berlin".to_string(),
-            "Berlin label".to_string(),
-            LinkTarget::Page,
-        );
-        assert_eq!(info.page, "Berlin");
-        assert_eq!(info.label, "Berlin label");
-        assert_eq!(info.target, LinkTarget::Page);
-    }
-
-    #[test]
-    fn test_local_link_info_category() {
-        let info = LocalLinkInfo::new(
-            "Category:Cities".to_string(),
-            "Cities".to_string(),
-            LinkTarget::Category,
-        );
-        assert_eq!(info.target, LinkTarget::Category);
-    }
-
-    #[test]
-    fn test_location_info_new() {
-        let info = LocationInfo::new(48.8566, 2.3522, Some("FR-75".to_string()));
-        assert!((info.latitude - 48.8566).abs() < 0.0001);
-        assert!((info.longitude - 2.3522).abs() < 0.0001);
-        assert_eq!(info.region, Some("FR-75".to_string()));
-    }
-
-    #[test]
-    fn test_location_info_no_region() {
-        let info = LocationInfo::new(0.0, 0.0, None);
-        assert!(info.region.is_none());
-    }
-
-    #[test]
-    fn test_external_id_info_new() {
-        let info = ExternalIdInfo::new("P213".to_string(), "12345".to_string());
-        assert_eq!(info.property, "P213");
-        assert_eq!(info.id, "12345");
-    }
-
     // --- reduce_time via from_snak ---
 
     #[test]
@@ -1062,73 +896,6 @@ mod tests {
     fn test_time_sort_year_no_sign() {
         // Without leading '+', year should still parse
         assert_eq!(ResultCellPart::time_sort_year("1955-06-08T00:00:00Z"), Some(1955));
-    }
-
-    // --- AutoDesc ---
-
-    #[test]
-    fn test_autodesc_new_sets_entity_id_and_no_desc() {
-        use crate::my_entity::MyEntity;
-        use wikimisc::wikibase::Entity;
-
-        let json = serde_json::json!({
-            "type": "item",
-            "id": "Q42",
-            "labels": {},
-            "descriptions": {},
-            "aliases": {},
-            "claims": {},
-            "sitelinks": {}
-        });
-        let entity = Entity::new_from_json(&json).unwrap();
-        let my_entity = MyEntity(entity);
-        let ad = AutoDesc::new(&my_entity);
-        assert_eq!(ad.entity_id(), "Q42");
-        // description starts empty
-        assert!(ad.desc.is_none());
-    }
-
-    #[test]
-    fn test_autodesc_set_description() {
-        use crate::my_entity::MyEntity;
-        use wikimisc::wikibase::Entity;
-
-        let json = serde_json::json!({
-            "type": "item",
-            "id": "Q1",
-            "labels": {},
-            "descriptions": {},
-            "aliases": {},
-            "claims": {},
-            "sitelinks": {}
-        });
-        let entity = Entity::new_from_json(&json).unwrap();
-        let my_entity = MyEntity(entity);
-        let mut ad = AutoDesc::new(&my_entity);
-        ad.set_description("the universe");
-        assert_eq!(ad.desc, Some("the universe".to_string()));
-    }
-
-    #[test]
-    fn test_autodesc_equality() {
-        use crate::my_entity::MyEntity;
-        use wikimisc::wikibase::Entity;
-
-        let make = |id: &str| {
-            let json = serde_json::json!({
-                "type": "item", "id": id,
-                "labels": {}, "descriptions": {},
-                "aliases": {}, "claims": {}, "sitelinks": {}
-            });
-            let entity = Entity::new_from_json(&json).unwrap();
-            AutoDesc::new(&MyEntity(entity))
-        };
-
-        let a1 = make("Q5");
-        let a2 = make("Q5");
-        let a3 = make("Q6");
-        assert_eq!(a1, a2);
-        assert_ne!(a1, a3);
     }
 
     // --- PartWithReference::part_mut ---
