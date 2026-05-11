@@ -144,7 +144,7 @@ impl ListeriaBot for ListeriaBotWikidata {
             }
         };
         let mut wpr = bot.process_page(page.title()).await;
-        wpr.standardize_meassage();
+        wpr.standardize_message();
         self.pagestatus
             .update_page_status(wpr.page(), wpr.wiki(), wpr.result(), wpr.message())
             .await?;

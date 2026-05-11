@@ -65,7 +65,7 @@ impl ListeriaBot for ListeriaBotSingle {
             log::info!("Running bot on {}", page.title());
         }
         let mut wpr = bot.process_page(page.title()).await;
-        wpr.standardize_meassage();
+        wpr.standardize_message();
         Ok(wpr)
     }
 

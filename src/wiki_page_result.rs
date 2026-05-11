@@ -66,7 +66,7 @@ impl WikiPageResult {
         self.completed = Some(completed);
     }
 
-    pub fn standardize_meassage(&mut self) {
+    pub fn standardize_message(&mut self) {
         if self
             .message
             .contains("This page is a translation of the page")
@@ -175,7 +175,7 @@ mod tests {
             "This page is a translation of the page Foo".to_string(),
         );
 
-        result.standardize_meassage();
+        result.standardize_message();
 
         assert_eq!(result.result(), "TRANSLATION");
         assert_eq!(result.message(), "This page is a translation");
@@ -190,7 +190,7 @@ mod tests {
             "Connection reset by peer (os error 104)".to_string(),
         );
 
-        result.standardize_meassage();
+        result.standardize_message();
 
         assert_eq!(result.message(), "104_RESET_BY_PEER");
     }
@@ -204,7 +204,7 @@ mod tests {
             "Error calling api.php): operation timed out".to_string(),
         );
 
-        result.standardize_meassage();
+        result.standardize_message();
 
         assert_eq!(result.message(), "WIKI_TIMEOUT");
     }
@@ -218,7 +218,7 @@ mod tests {
             "Error calling /sparql): operation timed out".to_string(),
         );
 
-        result.standardize_meassage();
+        result.standardize_message();
 
         assert_eq!(result.message(), "SPARQL_TIMEOUT");
     }
@@ -232,7 +232,7 @@ mod tests {
             "expected value at line 1 column 1: SPARQL-QUERY: SELECT ...".to_string(),
         );
 
-        result.standardize_meassage();
+        result.standardize_message();
 
         assert_eq!(result.message(), "SPARQL_ERROR");
     }
@@ -246,7 +246,7 @@ mod tests {
             "No 'sparql' parameter in Template {{Foo}}".to_string(),
         );
 
-        result.standardize_meassage();
+        result.standardize_message();
 
         assert!(result.message().starts_with("SPARQL_ERROR"));
         assert!(
@@ -265,7 +265,7 @@ mod tests {
             "Could not determine SPARQL variable for item Q123".to_string(),
         );
 
-        result.standardize_meassage();
+        result.standardize_message();
 
         assert!(result.message().starts_with("SPARQL_ERROR"));
         assert!(
@@ -285,7 +285,7 @@ mod tests {
             "This page is a translation of the page Foo and Connection reset by peer (os error 104)".to_string(),
         );
 
-        result1.standardize_meassage();
+        result1.standardize_message();
 
         // Translation should be detected first
         assert_eq!(result1.result(), "TRANSLATION");
@@ -302,7 +302,7 @@ mod tests {
         );
 
         let original_message = result.message().to_string();
-        result.standardize_meassage();
+        result.standardize_message();
 
         // Message should remain unchanged
         assert_eq!(result.message(), original_message);
