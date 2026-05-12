@@ -1,0 +1,37 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { wd:Q80 wd:Q937 } }
+|columns=label:name,P569:born
+|row_template=some row
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable'
+! name
+! born
+|-
+{{some row
+| label = [[Tim Berners-Lee]]
+| p569 = 1955-06-08
+}}
+|-
+{{some row
+| label = [[Albert Einstein]]
+| p569 = 1879-03-14
+}}
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q80"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q937"}}]}}

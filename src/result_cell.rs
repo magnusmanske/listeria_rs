@@ -110,6 +110,14 @@ impl ResultCell {
     }
 
     fn get_cell_prefix(&self, list: &impl RenderContext) -> String {
+        // When a row template is in use, each cell becomes the value of a
+        // template parameter (`| pNNN = value`), not a wikitable cell. Emitting
+        // table-cell attributes like `data-sort-value="…" |` or `class='…' |`
+        // would corrupt those parameter values (issue #83), so suppress them.
+        if list.get_row_template().is_some() {
+            return " ".to_string();
+        }
+
         let time_sort_year = self.parts.first().and_then(|p| match p.part() {
             ResultCellPart::Time(_, year) => Some(*year),
             _ => None,

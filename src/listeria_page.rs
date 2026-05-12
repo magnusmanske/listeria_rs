@@ -330,6 +330,14 @@ mod tests {
         check_fixture_file(PathBuf::from("test_data/row_template_table.fixture")).await;
     }
 
+    /// Regression for issue #83: when `row_template` is used, table-cell
+    /// formatting attributes (`data-sort-value="…" |`, `class='…' |`) must not
+    /// be injected into template parameter values.
+    #[tokio::test]
+    async fn row_template_no_cell_attrs() {
+        check_fixture_file(PathBuf::from("test_data/row_template_no_cell_attrs.fixture")).await;
+    }
+
     #[tokio::test]
     async fn dewiki_sections_coordinates() {
         check_fixture_file(PathBuf::from("test_data/dewiki_sections_coordinates.fixture")).await;
