@@ -2,11 +2,23 @@
 
 use crate::listeria_error::ListeriaError;
 use crate::page_params::PageParams;
+use crate::retry::retry_with_backoff;
 use anyhow::Result;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use wikimisc::{
     mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table_vec::SparqlTableVec,
 };
+
+/// Max attempts for a single SPARQL query (1 initial + retries).
+///
+/// Wikidata Query Service routinely returns transient 5xx / connection-reset
+/// failures during load spikes; one or two retries converts most of these
+/// into successes without operator intervention.
+const SPARQL_MAX_ATTEMPTS: u32 = 3;
+/// Initial backoff between SPARQL retries; doubles each attempt.
+/// 500 ms → 1 s → 2 s gives the endpoint room to recover from a transient
+/// overload without monopolising the bot's wall-clock budget.
+const SPARQL_INITIAL_BACKOFF_MS: u64 = 500;
 
 #[derive(Debug, Clone)]
 pub struct SparqlResults {
@@ -95,26 +107,23 @@ impl SparqlResults {
             Some(prefix) => format!("{}\n{}", prefix, sparql),
             None => sparql.to_string(),
         };
-        let params = [("query", sparql.as_str()), ("format", "json")];
         let timeout = self.page_params.config().api_timeout();
-        let send_result = wb_api_sparql
-            .client()
-            .post(&query_api_url)
-            .header(reqwest::header::USER_AGENT, crate::LISTERIA_USER_AGENT)
-            .timeout(timeout)
-            .form(&params)
-            .send()
-            .await;
 
-        let response = match send_result {
-            Ok(r) => r,
-            Err(e) => {
-                circuit_breaker.record_failure();
-                return Err(e.into());
-            }
-        };
+        // Retry the send+decode loop so a single transient flake (5xx, broken
+        // connection, body decode error during a brief overload) doesn't fail
+        // the whole page. The circuit breaker is only updated by the *terminal*
+        // outcome of the retry budget — intermediate retry failures don't ding
+        // the breaker, so a flake recovered by retry leaves the breaker fully
+        // healthy.
+        let result = retry_with_backoff(
+            "sparql_query",
+            SPARQL_MAX_ATTEMPTS,
+            Duration::from_millis(SPARQL_INITIAL_BACKOFF_MS),
+            || Self::send_and_decode(wb_api_sparql, &query_api_url, &sparql, timeout),
+        )
+        .await;
 
-        match response.json::<SparqlApiResult>().await {
+        match result {
             Ok(result) => {
                 circuit_breaker.record_success();
                 self.set_main_variable(&result);
@@ -124,9 +133,31 @@ impl SparqlResults {
             }
             Err(e) => {
                 circuit_breaker.record_failure();
-                Err(e.into())
+                Err(e)
             }
         }
+    }
+
+    /// One SPARQL HTTP round-trip: POST the query, decode the JSON body.
+    /// Pure function (no `&self`, no breaker side effects) so it can be safely
+    /// re-invoked by [`retry_with_backoff`].
+    async fn send_and_decode(
+        wb_api_sparql: &Api,
+        query_api_url: &str,
+        sparql: &str,
+        timeout: Duration,
+    ) -> Result<SparqlApiResult> {
+        let params = [("query", sparql), ("format", "json")];
+        let response = wb_api_sparql
+            .client()
+            .post(query_api_url)
+            .header(reqwest::header::USER_AGENT, crate::LISTERIA_USER_AGENT)
+            .timeout(timeout)
+            .form(&params)
+            .send()
+            .await?;
+        let result = response.json::<SparqlApiResult>().await?;
+        Ok(result)
     }
 
     fn set_main_variable(&mut self, result: &SparqlApiResult) {
