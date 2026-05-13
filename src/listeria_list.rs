@@ -89,7 +89,12 @@ impl ListeriaList {
             ecw: EntityContainerWrapper::new(
                 page_params.config().max_concurrent_entry_queries(),
             )
-            .await?,
+            .await?
+            .with_circuit_breaker(
+                page_params
+                    .config()
+                    .mw_api_circuit_breaker(crate::configuration::MW_API_ENTITIES_KEY),
+            ),
             state: ProcessingState::default(),
             wb_api,
             language: page_params.language().to_string(),

@@ -1,3 +1,4 @@
+use crate::circuit_breaker::with_breaker;
 use crate::listeria_page::ListeriaPage;
 use crate::page_element::PageElement;
 use crate::retry::retry_with_backoff;
@@ -77,15 +78,25 @@ impl PageOperations {
                 params.insert("page".to_string(), page.page_params().page().to_string());
             }
         }
-        let result = retry_with_backoff(
-            "load_page_as",
-            MW_API_MAX_ATTEMPTS,
-            Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
+        let wiki = page.page_params().wiki().to_string();
+        let breaker = page.page_params().config().mw_api_circuit_breaker(&wiki);
+        let result = with_breaker(
+            &breaker,
+            || anyhow!("MW API circuit open for {wiki}"),
             || async {
-                page.page_params()
-                    .mw_api()
-                    .post_query_api_json(&params)
-                    .await
+                retry_with_backoff(
+                    "load_page_as",
+                    MW_API_MAX_ATTEMPTS,
+                    Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
+                    || async {
+                        page.page_params()
+                            .mw_api()
+                            .post_query_api_json(&params)
+                            .await
+                    },
+                )
+                .await
+                .map_err(anyhow::Error::from)
             },
         )
         .await
@@ -137,7 +148,16 @@ impl PageOperations {
         // Inline retry loop (rather than reusing retry_with_backoff) because
         // `get_edit_token` borrows `&mut api`, which an `FnMut`-returning-async
         // closure cannot express without escape-of-captured-variable errors.
-        let token = Self::get_edit_token_with_retries(&mut api).await?;
+        let wiki = page_params.wiki().to_string();
+        let breaker = page_params.config().mw_api_circuit_breaker(&wiki);
+        // Token fetch is inside the breaker — a flapping CSRF endpoint should
+        // count against the same wiki budget that the edit POST uses.
+        let token = with_breaker(
+            &breaker,
+            || anyhow!("MW API circuit open for {wiki}"),
+            || async { Self::get_edit_token_with_retries(&mut api).await },
+        )
+        .await?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", title),
@@ -149,11 +169,19 @@ impl PageOperations {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let j = retry_with_backoff(
-            "save_wikitext_to_page",
-            MW_API_MAX_ATTEMPTS,
-            Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
-            || async { api.post_query_api_json(&params).await },
+        let j = with_breaker(
+            &breaker,
+            || anyhow!("MW API circuit open for {wiki}"),
+            || async {
+                retry_with_backoff(
+                    "save_wikitext_to_page",
+                    MW_API_MAX_ATTEMPTS,
+                    Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
+                    || async { api.post_query_api_json(&params).await },
+                )
+                .await
+                .map_err(anyhow::Error::from)
+            },
         )
         .await?;
         match j["error"].as_object() {
@@ -210,15 +238,25 @@ impl PageOperations {
                 .map(|x| (x.0.to_string(), x.1.to_string()))
                 .collect();
 
-        let _ = retry_with_backoff(
-            "purge_page",
-            MW_API_MAX_ATTEMPTS,
-            Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
+        let wiki = page.page_params().wiki().to_string();
+        let breaker = page.page_params().config().mw_api_circuit_breaker(&wiki);
+        let _ = with_breaker(
+            &breaker,
+            || anyhow!("MW API circuit open for {wiki}"),
             || async {
-                page.page_params()
-                    .mw_api()
-                    .get_query_api_json(&params)
-                    .await
+                retry_with_backoff(
+                    "purge_page",
+                    MW_API_MAX_ATTEMPTS,
+                    Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
+                    || async {
+                        page.page_params()
+                            .mw_api()
+                            .get_query_api_json(&params)
+                            .await
+                    },
+                )
+                .await
+                .map_err(anyhow::Error::from)
             },
         )
         .await?;

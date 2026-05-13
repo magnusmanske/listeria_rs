@@ -1,5 +1,6 @@
 //! Wrapper for entity container with caching and batch loading.
 
+use crate::circuit_breaker::{CircuitBreaker, with_breaker};
 use crate::my_entity::MyEntity;
 use crate::render_context::RenderContext;
 
@@ -83,6 +84,11 @@ pub struct EntityContainerWrapper {
     /// `Configuration::max_concurrent_entry_queries` (default 5). A value of 1
     /// preserves the historical sequential behaviour.
     max_concurrent_entry_queries: usize,
+    /// Optional circuit breaker for the upstream entity API. When `None` the
+    /// wrapper behaves exactly as before (useful in tests). In production the
+    /// caller wires this from `Configuration::mw_api_circuit_breaker(MW_API_ENTITIES_KEY)`
+    /// so a flapping Wikidata API doesn't keep hammering every entity load.
+    circuit_breaker: Option<Arc<CircuitBreaker>>,
 }
 
 /// Parses `test_entities.json` exactly once for the entire test run.
@@ -119,6 +125,7 @@ impl EntityContainerWrapper {
         let ret = Self {
             entities: Arc::new(DashMap::new()),
             max_concurrent_entry_queries: max_concurrent_entry_queries.max(1),
+            circuit_breaker: None,
         };
         // Pre-cache test entities — clones Arc pointers from the once-parsed
         // static rather than re-reading the 8 MB JSON file.
@@ -126,6 +133,15 @@ impl EntityContainerWrapper {
         Self::load_test_entities(&ret.entities);
 
         Ok(ret)
+    }
+
+    /// Attaches a circuit breaker so a flapping upstream API trips into the
+    /// OPEN state after sustained failures and rejects new requests for the
+    /// recovery window. Builder-style so tests can omit it.
+    #[must_use]
+    pub fn with_circuit_breaker(mut self, breaker: Arc<CircuitBreaker>) -> Self {
+        self.circuit_breaker = Some(breaker);
+        self
     }
 
     #[cfg(test)]
@@ -290,7 +306,21 @@ impl EntityContainerWrapper {
             log::warn!("ATTENTION: Trying to load items {ids:?}");
         }
 
-        self.load_entities_into_entity_cache(api, &ids).await
+        // Gate the whole batch on the circuit breaker (if attached). Recording
+        // outcomes at the batch boundary — rather than per-chunk — matches how
+        // callers experience failures and avoids double-counting flakes that
+        // the chunk-level retry loop already absorbs.
+        match &self.circuit_breaker {
+            Some(breaker) => {
+                with_breaker(
+                    breaker,
+                    || anyhow!("entity-loading circuit open"),
+                    || async { self.load_entities_into_entity_cache(api, &ids).await },
+                )
+                .await
+            }
+            None => self.load_entities_into_entity_cache(api, &ids).await,
+        }
     }
 
     pub async fn get_entity(&self, entity_id: &str) -> Option<EntityEntry> {

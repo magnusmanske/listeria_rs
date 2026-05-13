@@ -66,7 +66,12 @@ impl MainCommands {
         items.push("Q4".to_string());
 
         self.config = Arc::new((*self.config).clone().with_max_local_cached_entities(1_000_000));
-        let ecw = EntityContainerWrapper::new(self.config.max_concurrent_entry_queries()).await?;
+        let ecw = EntityContainerWrapper::new(self.config.max_concurrent_entry_queries())
+            .await?
+            .with_circuit_breaker(
+                self.config
+                    .mw_api_circuit_breaker(crate::configuration::MW_API_ENTITIES_KEY),
+            );
         let api = wikimisc::mediawiki::api::Api::new("https://www.wikidata.org/w/api.php").await?;
         ecw.load_entities(&api, &items).await?;
 

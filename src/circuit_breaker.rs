@@ -9,6 +9,7 @@
 //! All state is stored in lock-free atomics, making `CircuitBreaker` cheap to
 //! clone behind an `Arc` and safe to share across async tasks.
 
+use std::future::Future;
 use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -83,6 +84,38 @@ impl CircuitBreaker {
                 Ordering::Relaxed,
                 Ordering::Relaxed,
             );
+        }
+    }
+}
+
+/// Wraps a fallible async operation with circuit-breaker semantics:
+///   1. If the breaker is OPEN, return `open_err()` without invoking `f`.
+///   2. Otherwise run `f().await`; record success or failure based on the
+///      terminal outcome so a retried-and-succeeded operation leaves the
+///      breaker fully healthy.
+///
+/// Generic over both `T` and `E` so it can be used uniformly across SPARQL
+/// (custom `ListeriaError`), MW API (anyhow), and entity-load call sites.
+pub async fn with_breaker<T, E, F, Fut>(
+    breaker: &CircuitBreaker,
+    open_err: impl FnOnce() -> E,
+    f: F,
+) -> Result<T, E>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    if breaker.is_open() {
+        return Err(open_err());
+    }
+    match f().await {
+        Ok(v) => {
+            breaker.record_success();
+            Ok(v)
+        }
+        Err(e) => {
+            breaker.record_failure();
+            Err(e)
         }
     }
 }
@@ -213,6 +246,60 @@ mod tests {
         // the circuit again immediately.
         cb.record_failure();
         assert!(cb.is_open(), "failed probe must re-open the circuit");
+    }
+
+    // ── with_breaker ──────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_with_breaker_short_circuits_when_open() {
+        let cb = CircuitBreaker::new();
+        open_and_age_past_recovery(&cb);
+        // Force the breaker back to OPEN with a recent timestamp so is_open()
+        // returns true without consuming the half-open probe.
+        cb.opened_at_secs
+            .store(CircuitBreaker::now_secs(), Ordering::Relaxed);
+        assert!(cb.is_open());
+
+        let called = std::sync::atomic::AtomicBool::new(false);
+        let res: Result<(), &str> = with_breaker(
+            &cb,
+            || "open",
+            || async {
+                called.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        )
+        .await;
+        assert_eq!(res.unwrap_err(), "open");
+        assert!(!called.load(Ordering::SeqCst), "f must not run when open");
+    }
+
+    #[tokio::test]
+    async fn test_with_breaker_records_success() {
+        let cb = CircuitBreaker::new();
+        // Pre-populate failures so we can prove record_success resets them.
+        for _ in 0..FAILURE_THRESHOLD - 1 {
+            cb.record_failure();
+        }
+        let res: Result<i32, &str> = with_breaker(&cb, || "open", || async { Ok(7) }).await;
+        assert_eq!(res.unwrap(), 7);
+        assert_eq!(
+            cb.consecutive_failures.load(Ordering::Relaxed),
+            0,
+            "successful call must reset failure counter"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_with_breaker_records_failure() {
+        let cb = CircuitBreaker::new();
+        let res: Result<(), &str> = with_breaker(&cb, || "open", || async { Err("boom") }).await;
+        assert_eq!(res.unwrap_err(), "boom");
+        assert_eq!(
+            cb.consecutive_failures.load(Ordering::Relaxed),
+            1,
+            "failed call must increment the failure counter"
+        );
     }
 
     #[test]

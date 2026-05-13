@@ -18,6 +18,11 @@ use wikimisc::mediawiki::api::Api;
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::entity_container::EntityContainer;
 
+/// Circuit-breaker key for the Wikidata entity-loading API (`wbgetentities`).
+/// Used by [`EntityContainerWrapper`] so a flapping Wikidata API doesn't keep
+/// hammering through every page's entity load.
+pub const MW_API_ENTITIES_KEY: &str = "wikidata_entities";
+
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
     All,            // All namespaces forbidden
@@ -84,6 +89,12 @@ pub struct Configuration {
     /// Per-endpoint circuit breakers. Shared across all `Configuration` clones
     /// so that failures recorded by one clone are visible to all others.
     sparql_circuit_breakers: Arc<DashMap<String, Arc<CircuitBreaker>>>,
+    /// Per-key circuit breakers for MediaWiki API calls (page reads, edits,
+    /// `wbgetentities`). Keyed by wiki name for per-wiki MW APIs; by an
+    /// arbitrary identifier (e.g. `"wikidata_entities"`) for the Wikidata
+    /// entity-loading API. Same `DashMap` lazy-creation pattern as
+    /// `sparql_circuit_breakers`.
+    mw_api_circuit_breakers: Arc<DashMap<String, Arc<CircuitBreaker>>>,
     /// Maps inbound wiki identifiers to their database/server names. Pre-seeded
     /// with the historical `be_x_oldwiki` aliases (see Phabricator T11216); JSON
     /// config can extend or override the map via the `wiki_name_aliases` key.
@@ -138,6 +149,7 @@ impl Default for Configuration {
             main_item_prefix: String::new(),
             sparql_semaphores: Arc::new(DashMap::new()),
             sparql_circuit_breakers: Arc::new(DashMap::new()),
+            mw_api_circuit_breakers: Arc::new(DashMap::new()),
             wiki_name_aliases: Self::default_wiki_name_aliases(),
             case_sensitive_wikis: HashSet::new(),
         }
@@ -321,6 +333,17 @@ impl Configuration {
     pub fn sparql_circuit_breaker(&self, endpoint: &str) -> Arc<CircuitBreaker> {
         self.sparql_circuit_breakers
             .entry(endpoint.to_owned())
+            .or_insert_with(|| Arc::new(CircuitBreaker::new()))
+            .clone()
+    }
+
+    /// Returns the circuit breaker for a MediaWiki API key, creating one on
+    /// first access. The `key` is the wiki name for per-wiki page reads/edits;
+    /// for the Wikidata entity-loading API pass a stable identifier such as
+    /// [`MW_API_ENTITIES_KEY`].
+    pub fn mw_api_circuit_breaker(&self, key: &str) -> Arc<CircuitBreaker> {
+        self.mw_api_circuit_breakers
+            .entry(key.to_owned())
             .or_insert_with(|| Arc::new(CircuitBreaker::new()))
             .clone()
     }
