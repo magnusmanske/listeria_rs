@@ -23,6 +23,60 @@ use wikimisc::wikibase::entity_container::EntityContainer;
 /// hammering through every page's entity load.
 pub const MW_API_ENTITIES_KEY: &str = "wikidata_entities";
 
+/// Boolean kill-switches for expensive pipeline sub-stages.
+///
+/// All flags default to `true` so behaviour is identical to pre-flag code
+/// unless an operator explicitly disables a stage. Disable a stage in an
+/// incident (e.g. Wikidata's `wbgetentities` is slow → turn off autodesc and
+/// references) without redeploying.
+#[derive(Debug, Clone, Copy)]
+pub struct FeatureFlags {
+    /// Loads autodesc descriptions for items lacking a label in the page's
+    /// language. Costs one extra `wbgetentities` round per missing label.
+    pub enable_autodesc: bool,
+    /// Compares local file titles against Commons to detect shadowed uploads.
+    /// Already opt-in per-wiki via `shadow_images_check`; this flag is the
+    /// global kill-switch.
+    pub enable_shadow_check: bool,
+    /// Resolves reference items ("stated in" claims) so they can be rendered
+    /// as proper citations rather than bare Q-ids. Loads extra entities.
+    pub enable_references: bool,
+    /// Computes geographic region names for `Location` cells on wikis that
+    /// declare a `location_regions` mapping.
+    pub enable_regions: bool,
+}
+
+impl Default for FeatureFlags {
+    fn default() -> Self {
+        Self {
+            enable_autodesc: true,
+            enable_shadow_check: true,
+            enable_references: true,
+            enable_regions: true,
+        }
+    }
+}
+
+impl FeatureFlags {
+    fn from_json(j: &Value) -> Self {
+        let defaults = Self::default();
+        Self {
+            enable_autodesc: j["enable_autodesc"]
+                .as_bool()
+                .unwrap_or(defaults.enable_autodesc),
+            enable_shadow_check: j["enable_shadow_check"]
+                .as_bool()
+                .unwrap_or(defaults.enable_shadow_check),
+            enable_references: j["enable_references"]
+                .as_bool()
+                .unwrap_or(defaults.enable_references),
+            enable_regions: j["enable_regions"]
+                .as_bool()
+                .unwrap_or(defaults.enable_regions),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum NamespaceGroup {
     All,            // All namespaces forbidden
@@ -110,6 +164,8 @@ pub struct Configuration {
     /// but don't match the wiktionary pattern (e.g. a custom MediaWiki
     /// installation in single-wiki mode).
     case_sensitive_wikis: HashSet<String>,
+    /// Per-stage feature flags — see [`FeatureFlags`].
+    feature_flags: FeatureFlags,
 }
 
 impl Default for Configuration {
@@ -157,6 +213,7 @@ impl Default for Configuration {
             mw_api_circuit_breakers: Arc::new(DashMap::new()),
             wiki_name_aliases: Self::default_wiki_name_aliases(),
             case_sensitive_wikis: HashSet::new(),
+            feature_flags: FeatureFlags::default(),
         }
     }
 }
@@ -400,6 +457,12 @@ impl Configuration {
     /// (connection checkout + query execution combined).
     pub const fn db_query_timeout(&self) -> Duration {
         Duration::from_secs(self.db_query_timeout_sec)
+    }
+
+    /// Per-stage feature flags — operators can disable individual pipeline
+    /// stages without a redeploy via the JSON config.
+    pub const fn feature_flags(&self) -> &FeatureFlags {
+        &self.feature_flags
     }
 
     pub fn oauth2_token(&self) -> &str {
@@ -735,6 +798,9 @@ impl Configuration {
             .unwrap_or_default()
             .to_string();
         self.sparql_prefix = j["sparql_prefix"].as_str().map(|s| s.to_string());
+        if let Some(obj) = j["feature_flags"].as_object() {
+            self.feature_flags = FeatureFlags::from_json(&Value::Object(obj.clone()));
+        }
         if let Some(sic) = j["shadow_images_check"].as_array() {
             self.shadow_images_check = sic
                 .iter()
@@ -1365,6 +1431,52 @@ mod tests {
     fn test_with_max_local_cached_entities() {
         let config = Configuration::default().with_max_local_cached_entities(42);
         assert_eq!(config.max_local_cached_entities(), 42);
+    }
+
+    // ── FeatureFlags ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_feature_flags_default_all_enabled() {
+        // Defaults preserve pre-flag behaviour: every stage runs.
+        let flags = FeatureFlags::default();
+        assert!(flags.enable_autodesc);
+        assert!(flags.enable_shadow_check);
+        assert!(flags.enable_references);
+        assert!(flags.enable_regions);
+    }
+
+    #[test]
+    fn test_feature_flags_from_json_overrides_named_fields() {
+        let flags = FeatureFlags::from_json(&serde_json::json!({
+            "enable_autodesc": false,
+            "enable_regions": false,
+        }));
+        assert!(!flags.enable_autodesc);
+        assert!(flags.enable_shadow_check, "unmentioned flag must keep its default");
+        assert!(flags.enable_references, "unmentioned flag must keep its default");
+        assert!(!flags.enable_regions);
+    }
+
+    #[test]
+    fn test_feature_flags_from_json_ignores_unknown_keys() {
+        // Unknown keys don't crash and don't affect known flags.
+        let flags = FeatureFlags::from_json(&serde_json::json!({
+            "enable_autodesc": false,
+            "garbage": 42,
+        }));
+        assert!(!flags.enable_autodesc);
+        assert!(flags.enable_shadow_check);
+    }
+
+    #[test]
+    fn test_new_from_json_misc_picks_up_feature_flags() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({
+            "feature_flags": { "enable_references": false }
+        }));
+        assert!(!config.feature_flags().enable_references);
+        // Other flags untouched.
+        assert!(config.feature_flags().enable_autodesc);
     }
 
     #[test]

@@ -462,9 +462,12 @@ impl ListeriaList {
         self.gather_and_load_items().await?;
         self.profile("AFTER list::process_results gather_and_load_items")
             .await;
-        ListProcessor::fill_autodesc(self).await?;
-        self.profile("AFTER list::process_results fill_autodesc")
-            .await;
+        let flags = *self.page_params.config().feature_flags();
+        if flags.enable_autodesc {
+            ListProcessor::fill_autodesc(self).await?;
+            self.profile("AFTER list::process_results fill_autodesc")
+                .await;
+        }
         ListProcessor::process_redlinks_only(self).await?;
         self.profile("AFTER list::process_results process_redlinks_only")
             .await;
@@ -474,22 +477,28 @@ impl ListeriaList {
         ListProcessor::process_redlinks(self).await?;
         self.profile("AFTER list::process_results process_redlinks")
             .await;
-        ListProcessor::process_remove_shadow_files(self).await?;
-        self.profile("AFTER list::process_results process_remove_shadow_files")
-            .await;
+        if flags.enable_shadow_check {
+            ListProcessor::process_remove_shadow_files(self).await?;
+            self.profile("AFTER list::process_results process_remove_shadow_files")
+                .await;
+        }
         ListProcessor::process_excess_files(self)?;
         self.profile("AFTER list::process_results process_excess_files")
             .await;
-        ListProcessor::process_reference_items(self).await?;
-        self.profile("AFTER list::process_results process_reference_items")
-            .await;
+        if flags.enable_references {
+            ListProcessor::process_reference_items(self).await?;
+            self.profile("AFTER list::process_results process_reference_items")
+                .await;
+        }
         ListProcessor::process_sort_results(self).await?;
         self.profile("AFTER list::process_results process_sort_results")
             .await;
         ListProcessor::process_assign_sections(self).await?;
         self.profile("AFTER list::process_results process_assign_sections")
             .await;
-        ListProcessor::process_regions(self).await?;
+        if flags.enable_regions {
+            ListProcessor::process_regions(self).await?;
+        }
         ListProcessor::process_assign_location_names(self);
         self.profile("AFTER list::process_results process_regions+location_names")
             .await;
