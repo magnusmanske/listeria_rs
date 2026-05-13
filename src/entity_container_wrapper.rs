@@ -43,6 +43,7 @@ use std::fs::File;
 #[cfg(test)]
 use std::io::BufReader;
 use std::sync::Arc;
+use tokio::sync::Semaphore;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::Entity;
@@ -76,6 +77,11 @@ const RETRY_BACKOFF_MS: u64 = 200;
 #[derive(Clone, Debug)]
 pub struct EntityContainerWrapper {
     entities: Arc<DashMap<String, Arc<MyEntity>>>,
+    /// Caps the number of outer `LOAD_CHUNK_SIZE` batches that may be in flight
+    /// concurrently against the upstream entity API. Configured from
+    /// `Configuration::max_concurrent_entry_queries` (default 5). A value of 1
+    /// preserves the historical sequential behaviour.
+    max_concurrent_entry_queries: usize,
 }
 
 /// Parses `test_entities.json` exactly once for the entire test run.
@@ -102,9 +108,16 @@ static TEST_ENTITIES_CACHE: std::sync::LazyLock<DashMap<String, Arc<MyEntity>>> 
     });
 
 impl EntityContainerWrapper {
-    pub async fn new() -> Result<Self> {
+    /// Constructs a wrapper.
+    ///
+    /// `max_concurrent_entry_queries` caps how many `LOAD_CHUNK_SIZE` batches
+    /// may be in flight against the upstream API at once. Pass `1` to keep the
+    /// sequential pre-2026-05 behaviour; the value is clamped to a minimum of
+    /// `1` to prevent the semaphore from deadlocking on a misconfigured `0`.
+    pub async fn new(max_concurrent_entry_queries: usize) -> Result<Self> {
         let ret = Self {
             entities: Arc::new(DashMap::new()),
+            max_concurrent_entry_queries: max_concurrent_entry_queries.max(1),
         };
         // Pre-cache test entities — clones Arc pointers from the once-parsed
         // static rather than re-reading the 8 MB JSON file.
@@ -132,10 +145,32 @@ impl EntityContainerWrapper {
     }
 
     async fn load_entities_into_entity_cache(&self, api: &Api, ids: &[String]) -> Result<()> {
-        let chunks = ids.chunks(LOAD_CHUNK_SIZE);
-        for chunk in chunks {
-            self.load_chunk_with_retries(api, chunk).await?;
+        let chunks: Vec<Vec<String>> =
+            ids.chunks(LOAD_CHUNK_SIZE).map(<[String]>::to_vec).collect();
+
+        // Fast path: a single chunk or concurrency-of-1 means no semaphore
+        // overhead and no extra task spawn — preserves the historical behaviour
+        // for the common small-page case.
+        if chunks.len() <= 1 || self.max_concurrent_entry_queries == 1 {
+            for chunk in &chunks {
+                self.load_chunk_with_retries(api, chunk).await?;
+            }
+            return Ok(());
         }
+
+        let semaphore = Arc::new(Semaphore::new(self.max_concurrent_entry_queries));
+        let futures = chunks.into_iter().map(|chunk| {
+            let semaphore = Arc::clone(&semaphore);
+            let this = self.clone();
+            async move {
+                let _permit = semaphore
+                    .acquire()
+                    .await
+                    .map_err(|e| anyhow!("semaphore closed: {e}"))?;
+                this.load_chunk_with_retries(api, &chunk).await
+            }
+        });
+        futures::future::try_join_all(futures).await?;
         Ok(())
     }
 
@@ -445,9 +480,17 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn test_new_clamps_zero_concurrency_to_one() {
+        // A misconfigured 0 would deadlock the semaphore — the constructor
+        // must clamp it to a working minimum rather than trust the caller.
+        let ecw = EntityContainerWrapper::new(0).await.unwrap();
+        assert_eq!(ecw.max_concurrent_entry_queries, 1);
+    }
+
+    #[tokio::test]
     #[ignore = "requires live Wikidata API access"]
     async fn test_entity_caching() {
-        let ecw = EntityContainerWrapper::new().await.unwrap();
+        let ecw = EntityContainerWrapper::new(5).await.unwrap();
         let api = Api::new("https://www.wikidata.org/w/api.php")
             .await
             .unwrap();
@@ -468,7 +511,7 @@ mod tests {
     /// from the fetch list and rendered as bare `[[Qxxx]]` in the output.
     #[tokio::test]
     async fn test_filter_ids_only_skips_actually_inserted_entities() {
-        let ecw = EntityContainerWrapper::new().await.unwrap();
+        let ecw = EntityContainerWrapper::new(5).await.unwrap();
 
         // Insert one entity directly via the JSON path (no network).
         let json = serde_json::json!({
@@ -494,7 +537,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_len_grows_with_inserts() {
-        let ecw = EntityContainerWrapper::new().await.unwrap();
+        let ecw = EntityContainerWrapper::new(5).await.unwrap();
         // `new()` pre-seeds the cache with test fixtures under cfg(test);
         // assert deltas from that baseline rather than absolute sizes.
         let baseline = ecw.len();
@@ -571,7 +614,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_inserted_entity_is_retrievable() {
-        let ecw = EntityContainerWrapper::new().await.unwrap();
+        let ecw = EntityContainerWrapper::new(5).await.unwrap();
         let json = serde_json::json!({
             "type": "item",
             "id": "Q12345",

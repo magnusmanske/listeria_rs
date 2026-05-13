@@ -86,7 +86,10 @@ impl ListeriaList {
             columns: Vec::new(),
             params: TemplateParams::new(),
             sparql_table: Arc::new(SparqlTableVec::new()),
-            ecw: EntityContainerWrapper::new().await?,
+            ecw: EntityContainerWrapper::new(
+                page_params.config().max_concurrent_entry_queries(),
+            )
+            .await?,
             state: ProcessingState::default(),
             wb_api,
             language: page_params.language().to_string(),

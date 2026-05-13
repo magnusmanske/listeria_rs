@@ -290,6 +290,14 @@ impl Configuration {
         self.max_sparql_simultaneous
     }
 
+    /// Maximum number of `wbgetentities` outer batches that may be in flight
+    /// concurrently. A value of `1` keeps loading sequential. Clamped to `1`
+    /// at the call site (see [`EntityContainerWrapper::new`]) so a misconfigured
+    /// `0` cannot deadlock the entity-loading semaphore.
+    pub const fn max_concurrent_entry_queries(&self) -> usize {
+        self.max_concurrent_entry_queries
+    }
+
     /// Returns the shared semaphore that limits concurrent SPARQL requests.
     pub const fn sparql_semaphore(&self) -> &Arc<Semaphore> {
         &self.sparql_semaphore
@@ -504,6 +512,9 @@ impl Configuration {
         }
         if self.api_timeout == 0 {
             return Err(anyhow!("api_timeout must be > 0"));
+        }
+        if self.max_concurrent_entry_queries == 0 {
+            return Err(anyhow!("max_concurrent_entry_queries must be > 0"));
         }
         Ok(())
     }
@@ -772,6 +783,7 @@ mod tests {
             max_sparql_simultaneous: 5,
             max_threads: 4,
             api_timeout: 60,
+            max_concurrent_entry_queries: 5,
             sparql_semaphore: Arc::new(Semaphore::new(5)),
             ..Default::default()
         }
@@ -815,6 +827,15 @@ mod tests {
     fn test_validate_zero_api_timeout() {
         let mut config = valid_config();
         config.api_timeout = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_zero_max_concurrent_entry_queries() {
+        // A value of 0 would deadlock the entity-loading semaphore — reject it
+        // at config validation time so the bot fails fast on startup.
+        let mut config = valid_config();
+        config.max_concurrent_entry_queries = 0;
         assert!(config.validate().is_err());
     }
 
