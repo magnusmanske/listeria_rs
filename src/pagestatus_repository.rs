@@ -21,14 +21,24 @@ impl PageStatusRepository {
     }
 
     /// Marks every RUNNING row as FAIL with a "bot restarted" message.
+    ///
+    /// The FAIL message embeds the row's pre-reset `timestamp` (the moment
+    /// it entered RUNNING) so operators can distinguish a row that hung
+    /// for hours from one that crashed almost immediately — without this,
+    /// every reset-time FAIL looked identical in the log (audit F5.4).
     pub async fn reset_running(&self) -> Result<()> {
         self.pool
             .with_timeout("reset_running", || async {
                 let now: DateTime<Utc> = Utc::now();
                 let timestamp = now.format("%Y%m%d%H%M%S").to_string();
+                // `timestamp` here is the original RUNNING-since value preserved
+                // inside the message via SQL CONCAT, while the row's `timestamp`
+                // column is bumped to NOW (consistent with every other status
+                // transition). Using the existing column avoids a schema change.
                 let sql = "UPDATE pagestatus \
                     SET status='FAIL', priority=0, \
-                    message='Bot restarted while page was processing', \
+                    message=CONCAT('Bot restarted while page was processing (running since ', \
+                                   `timestamp`, ')'), \
                     timestamp=:timestamp \
                     WHERE status='RUNNING'";
                 self.pool
