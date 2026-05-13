@@ -3671,7 +3671,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.0"
-source = "git+https://github.com/magnusmanske/wikimisc#d53e997b2858580d77bfe3f6e3e9827852e6f172"
+source = "git+https://github.com/magnusmanske/wikimisc#632bc39152b22c7a7b515fdf2e959b3ec4b39f74"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4129,9 +4129,9 @@ dependencies = [
 
 [[package]]
 name = "zerofrom"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69faa1f2a1ea75661980b013019ed6687ed0e83d069bc1114e2cc74c6c04c4df"
+checksum = "0ec05a11813ea801ff6d75110ad09cd0824ddba17dfe17128ea0d5f68e6c5272"
 dependencies = [
  "zerofrom-derive",
 ]
