@@ -25,14 +25,13 @@ pub struct ListeriaBotWikidata {
 impl ListeriaBotWikidata {
     pub async fn clear_log_table(&self) -> Result<()> {
         use mysql_async::prelude::Queryable;
-        let sql = "TRUNCATE `list_log`";
-        self.config
-            .pool()?
-            .get_conn()
-            .await?
-            .exec_iter(sql, ())
-            .await?;
-        Ok(())
+        let pool = self.config.pool()?;
+        pool.with_timeout("clear_log_table", || async {
+            let sql = "TRUNCATE `list_log`";
+            pool.get_conn().await?.exec_iter(sql, ()).await?;
+            Ok(())
+        })
+        .await
     }
 
     fn running_ids_string(&self) -> String {

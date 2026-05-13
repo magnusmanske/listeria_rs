@@ -22,30 +22,38 @@ impl PageStatusRepository {
 
     /// Marks every RUNNING row as FAIL with a "bot restarted" message.
     pub async fn reset_running(&self) -> Result<()> {
-        let now: DateTime<Utc> = Utc::now();
-        let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-        let sql = "UPDATE pagestatus \
-            SET status='FAIL', priority=0, \
-            message='Bot restarted while page was processing', \
-            timestamp=:timestamp \
-            WHERE status='RUNNING'";
         self.pool
-            .get_conn()
-            .await?
-            .exec_drop(sql, params! { timestamp })
-            .await?;
-        Ok(())
+            .with_timeout("reset_running", || async {
+                let now: DateTime<Utc> = Utc::now();
+                let timestamp = now.format("%Y%m%d%H%M%S").to_string();
+                let sql = "UPDATE pagestatus \
+                    SET status='FAIL', priority=0, \
+                    message='Bot restarted while page was processing', \
+                    timestamp=:timestamp \
+                    WHERE status='RUNNING'";
+                self.pool
+                    .get_conn()
+                    .await?
+                    .exec_drop(sql, params! { timestamp })
+                    .await?;
+                Ok(())
+            })
+            .await
     }
 
     /// Removes all DELETED rows from the queue.
     pub async fn clear_deleted(&self) -> Result<()> {
-        let sql = "DELETE FROM `pagestatus` WHERE `status`='DELETED'";
         self.pool
-            .get_conn()
-            .await?
-            .exec_iter(sql, ())
-            .await?;
-        Ok(())
+            .with_timeout("clear_deleted", || async {
+                let sql = "DELETE FROM `pagestatus` WHERE `status`='DELETED'";
+                self.pool
+                    .get_conn()
+                    .await?
+                    .exec_iter(sql, ())
+                    .await?;
+                Ok(())
+            })
+            .await
     }
 
     /// Resets all DEFERRED rows back to FAIL so they become eligible for
@@ -53,27 +61,35 @@ impl PageStatusRepository {
     /// pages that were deferred because a circuit was open are given a
     /// fresh chance the next time the bot runs.
     pub async fn clear_deferred(&self) -> Result<()> {
-        let sql = "UPDATE `pagestatus` SET `status`='FAIL', \
-                   `message`='cleared from DEFERRED on bot startup' \
-                   WHERE `status`='DEFERRED'";
         self.pool
-            .get_conn()
-            .await?
-            .exec_iter(sql, ())
-            .await?;
-        Ok(())
+            .with_timeout("clear_deferred", || async {
+                let sql = "UPDATE `pagestatus` SET `status`='FAIL', \
+                           `message`='cleared from DEFERRED on bot startup' \
+                           WHERE `status`='DEFERRED'";
+                self.pool
+                    .get_conn()
+                    .await?
+                    .exec_iter(sql, ())
+                    .await?;
+                Ok(())
+            })
+            .await
     }
 
     /// Records how many seconds a page took to process.
     pub async fn set_runtime(&self, pagestatus_id: u64, seconds: u64) -> Result<()> {
-        let sql =
-            "UPDATE `pagestatus` SET `last_runtime_sec`=:seconds WHERE `id`=:pagestatus_id";
         self.pool
-            .get_conn()
-            .await?
-            .exec_drop(sql, params! {seconds, pagestatus_id})
-            .await?;
-        Ok(())
+            .with_timeout("set_runtime", || async {
+                let sql =
+                    "UPDATE `pagestatus` SET `last_runtime_sec`=:seconds WHERE `id`=:pagestatus_id";
+                self.pool
+                    .get_conn()
+                    .await?
+                    .exec_drop(sql, params! {seconds, pagestatus_id})
+                    .await?;
+                Ok(())
+            })
+            .await
     }
 
     /// Transitions a page's status in the queue.
@@ -88,37 +104,41 @@ impl PageStatusRepository {
         status: &str,
         message: &str,
     ) -> Result<()> {
-        let now: DateTime<Utc> = Utc::now();
-        let timestamp = now.format("%Y%m%d%H%M%S").to_string();
-        let p = params! {
-            "wiki" => wiki,
-            "page" => page,
-            "timestamp" => timestamp,
-            "status" => status,
-            "message" => message.chars().take(200).collect::<String>(),
-        };
-        let priority = if status == "RUNNING" {
-            "`priority`"
-        } else {
-            "0"
-        };
-        let sql = format!(
-            "UPDATE `pagestatus` SET
-            `status`=:status,
-            `message`=:message,
-            `timestamp`=:timestamp,
-            `bot_version`=2,
-            `priority`={priority}
-            WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page"
-        );
         self.pool
-            .get_conn()
-            .await?
-            .exec_iter(sql.as_str(), p)
-            .await?
-            .map_and_drop(from_row::<String>)
-            .await?;
-        Ok(())
+            .with_timeout("update_page_status", || async {
+                let now: DateTime<Utc> = Utc::now();
+                let timestamp = now.format("%Y%m%d%H%M%S").to_string();
+                let p = params! {
+                    "wiki" => wiki,
+                    "page" => page,
+                    "timestamp" => timestamp,
+                    "status" => status,
+                    "message" => message.chars().take(200).collect::<String>(),
+                };
+                let priority = if status == "RUNNING" {
+                    "`priority`"
+                } else {
+                    "0"
+                };
+                let sql = format!(
+                    "UPDATE `pagestatus` SET
+                    `status`=:status,
+                    `message`=:message,
+                    `timestamp`=:timestamp,
+                    `bot_version`=2,
+                    `priority`={priority}
+                    WHERE `wiki`=(SELECT id FROM `wikis` WHERE `name`=:wiki) AND `page`=:page"
+                );
+                self.pool
+                    .get_conn()
+                    .await?
+                    .exec_iter(sql.as_str(), p)
+                    .await?
+                    .map_and_drop(from_row::<String>)
+                    .await?;
+                Ok(())
+            })
+            .await
     }
 
     /// Returns the highest-priority waiting page, if any.
@@ -161,17 +181,30 @@ impl PageStatusRepository {
     }
 
     async fn get_page_for_sql(&self, sql: &str) -> Option<PageToProcess> {
-        self.pool
-            .get_conn()
-            .await
-            .ok()?
-            .exec_iter(sql, ())
-            .await
-            .ok()?
-            .map_and_drop(PageToProcess::from_row)
-            .await
-            .ok()?
-            .pop()
+        // The Option-returning signature drops the error context; wrap in a
+        // timeout-aware closure so a wedged query at least gets logged before
+        // being converted to None.
+        let result: Result<Option<PageToProcess>> = self
+            .pool
+            .with_timeout("get_page_for_sql", || async {
+                let rows = self
+                    .pool
+                    .get_conn()
+                    .await?
+                    .exec_iter(sql, ())
+                    .await?
+                    .map_and_drop(PageToProcess::from_row)
+                    .await?;
+                Ok(rows.into_iter().next())
+            })
+            .await;
+        match result {
+            Ok(page) => page,
+            Err(e) => {
+                log::warn!("get_page_for_sql: {e}");
+                None
+            }
+        }
     }
 }
 

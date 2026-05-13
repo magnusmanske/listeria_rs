@@ -54,16 +54,18 @@ impl ProfilingService {
     async fn log2db(&self, ms: i64, timestamp: &str, msg: &str) -> anyhow::Result<()> {
         use mysql_async::prelude::Queryable;
         use mysql_async::params;
-        let sql = "REPLACE INTO list_log (wiki, page, timestamp, diff_ms, message) VALUES (:wiki, :page, :timestamp, :ms, :msg)";
+        let pool = self.config.pool()?;
         let wiki = self.wiki.as_str();
         let page = self.page.as_str();
-        self.config
-            .pool()?
-            .get_conn()
-            .await?
-            .exec_drop(sql, params! {wiki, page, timestamp, ms, msg})
-            .await?;
-        Ok(())
+        pool.with_timeout("log2db", || async {
+            let sql = "REPLACE INTO list_log (wiki, page, timestamp, diff_ms, message) VALUES (:wiki, :page, :timestamp, :ms, :msg)";
+            pool.get_conn()
+                .await?
+                .exec_drop(sql, params! {wiki, page, timestamp, ms, msg})
+                .await?;
+            Ok(())
+        })
+        .await
     }
 }
 

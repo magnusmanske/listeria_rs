@@ -229,12 +229,27 @@ impl WikiApis {
             WHERE page_id=t1.tl_from AND t1.tl_target_id=l1.lt_id AND l1.lt_title=? AND l1.lt_namespace=10
             AND page_id=t2.tl_from AND t2.tl_target_id=l2.lt_id AND l2.lt_title=? AND l2.lt_namespace=10" ;
         let opts = self.get_mysql_opts_for_wiki(wiki)?;
-        let current_pages: Vec<String> = Conn::new(opts)
-            .await?
-            .exec_iter(sql, (template_start, template_end))
-            .await?
-            .map_and_drop(from_row::<(i64, String)>)
-            .await?
+        // Per-wiki replica is a direct (non-pooled) connection, so the
+        // DatabasePool's with_timeout doesn't apply. Bound the whole
+        // (connect + query) chain explicitly using the configured budget.
+        let db_timeout = self.config.db_query_timeout();
+        let rows: Vec<(i64, String)> = tokio::time::timeout(db_timeout, async {
+            Conn::new(opts)
+                .await?
+                .exec_iter(sql, (template_start, template_end))
+                .await?
+                .map_and_drop(from_row::<(i64, String)>)
+                .await
+                .map_err(anyhow::Error::from)
+        })
+        .await
+        .map_err(|_| {
+            anyhow!(
+                "DB operation 'get_current_pages_on_wiki' timed out after {}s",
+                db_timeout.as_secs()
+            )
+        })??;
+        let current_pages: Vec<String> = rows
             .iter()
             .filter(|(nsid, _title)| self.config.can_edit_namespace(wiki, *nsid))
             .map(|(nsid, title)| Title::new(title, *nsid))

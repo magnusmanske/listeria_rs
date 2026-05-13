@@ -30,23 +30,27 @@ impl WikiRepository {
     /// Returns every wiki currently registered in the bot's `wikis` table,
     /// keyed by name.
     pub async fn get_all_wikis(&self) -> Result<HashMap<String, Wiki>> {
-        let rows = self
-            .pool
-            .get_conn()
-            .await?
-            .exec_iter(
-                "SELECT `id`,`name`,`status`,`timestamp`,`use_invoke`,`use_cite_web` FROM `wikis`",
-                (),
-            )
-            .await?
-            .map_and_drop(from_row::<(usize, String, String, String, bool, bool)>)
-            .await?;
-        Ok(rows
-            .into_iter()
-            .map(Wiki::from_row)
-            .filter_map(|wiki| wiki.ok())
-            .map(|wiki| (wiki.name().to_string(), wiki))
-            .collect())
+        self.pool
+            .with_timeout("get_all_wikis", || async {
+                let rows = self
+                    .pool
+                    .get_conn()
+                    .await?
+                    .exec_iter(
+                        "SELECT `id`,`name`,`status`,`timestamp`,`use_invoke`,`use_cite_web` FROM `wikis`",
+                        (),
+                    )
+                    .await?
+                    .map_and_drop(from_row::<(usize, String, String, String, bool, bool)>)
+                    .await?;
+                Ok(rows
+                    .into_iter()
+                    .map(Wiki::from_row)
+                    .filter_map(|wiki| wiki.ok())
+                    .map(|wiki| (wiki.name().to_string(), wiki))
+                    .collect())
+            })
+            .await
     }
 
     /// Inserts wikis that are not already in the `wikis` table.
@@ -58,45 +62,57 @@ impl WikiRepository {
         if new_wikis.is_empty() {
             return Ok(());
         }
-        let placeholders = std::iter::repeat_n("(?,'ACTIVE')", new_wikis.len())
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
         self.pool
-            .get_conn()
-            .await?
-            .exec_drop(sql, new_wikis.to_vec())
-            .await?;
-        Ok(())
+            .with_timeout("add_wikis", || async {
+                let placeholders = std::iter::repeat_n("(?,'ACTIVE')", new_wikis.len())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let sql =
+                    format!("INSERT IGNORE INTO `wikis` (`name`,`status`) VALUES {placeholders}");
+                self.pool
+                    .get_conn()
+                    .await?
+                    .exec_drop(sql, new_wikis.to_vec())
+                    .await?;
+                Ok(())
+            })
+            .await
     }
 
     /// Returns the numeric `wikis.id` for a wiki name, or an error if absent.
     pub async fn get_wiki_id(&self, wiki: &str) -> Result<u64> {
         self.pool
-            .get_conn()
-            .await?
-            .exec_iter("SELECT `id` FROM `wikis` WHERE `name`=?", (wiki,))
-            .await?
-            .map_and_drop(from_row::<u64>)
-            .await?
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow!("Wiki {wiki} not known"))
+            .with_timeout("get_wiki_id", || async {
+                self.pool
+                    .get_conn()
+                    .await?
+                    .exec_iter("SELECT `id` FROM `wikis` WHERE `name`=?", (wiki,))
+                    .await?
+                    .map_and_drop(from_row::<u64>)
+                    .await?
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| anyhow!("Wiki {wiki} not known"))
+            })
+            .await
     }
 
     /// Returns the full list of page titles currently enrolled in the queue
     /// for the given wiki.
     pub async fn get_pages_for_wiki(&self, wiki: &str) -> Result<Vec<String>> {
-        let sql =
-            "SELECT `page` FROM pagestatus,wikis WHERE wikis.id=pagestatus.wiki AND wikis.name=?";
-        Ok(self
-            .pool
-            .get_conn()
-            .await?
-            .exec_iter(sql, (wiki,))
-            .await?
-            .map_and_drop(from_row::<String>)
-            .await?)
+        self.pool
+            .with_timeout("get_pages_for_wiki", || async {
+                let sql = "SELECT `page` FROM pagestatus,wikis WHERE wikis.id=pagestatus.wiki AND wikis.name=?";
+                Ok(self
+                    .pool
+                    .get_conn()
+                    .await?
+                    .exec_iter(sql, (wiki,))
+                    .await?
+                    .map_and_drop(from_row::<String>)
+                    .await?)
+            })
+            .await
     }
 
     /// Inserts new page rows into `pagestatus` in chunks of 10 000 to keep
@@ -105,16 +121,27 @@ impl WikiRepository {
         if new_pages.is_empty() {
             return Ok(());
         }
+        // Each chunk gets its own timeout — a slow chunk shouldn't punish the
+        // next chunk's budget, and a wedged chunk fails this call cleanly.
         for chunk in new_pages.chunks(10000) {
             let chunk: Vec<String> = chunk.to_vec();
-            let element = format!("({wiki_id},?,'WAITING','','')");
-            let placeholders = std::iter::repeat_n(element.as_str(), chunk.len())
-                .collect::<Vec<_>>()
-                .join(",");
-            let sql = format!(
-                "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`,`message`) VALUES {placeholders}"
-            );
-            self.pool.get_conn().await?.exec_drop(sql, chunk).await?;
+            self.pool
+                .with_timeout("add_pages_for_wiki_chunk", || async {
+                    let element = format!("({wiki_id},?,'WAITING','','')");
+                    let placeholders = std::iter::repeat_n(element.as_str(), chunk.len())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let sql = format!(
+                        "INSERT IGNORE INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`,`message`) VALUES {placeholders}"
+                    );
+                    self.pool
+                        .get_conn()
+                        .await?
+                        .exec_drop(sql, chunk)
+                        .await?;
+                    Ok(())
+                })
+                .await?;
         }
         Ok(())
     }

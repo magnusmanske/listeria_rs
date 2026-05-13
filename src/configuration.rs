@@ -67,6 +67,10 @@ pub struct Configuration {
     /// dispatcher slot. On expiry the page is marked FAIL in the queue so it
     /// can be retried in a future pass rather than blocking forever.
     page_timeout_sec: u64,
+    /// Per-DB-operation wall-clock budget (seconds). A wedged replica or a
+    /// slow `pagestatus` UPDATE would otherwise hang the dispatcher hot path
+    /// (`prepare_next_single_page`) indefinitely.
+    db_query_timeout_sec: u64,
     ms_delay_after_edit: Option<u64>,
     max_threads: usize,
     pool: Option<Arc<DatabasePool>>,
@@ -133,6 +137,7 @@ impl Default for Configuration {
             max_concurrent_entry_queries: 0,
             api_timeout: 0,
             page_timeout_sec: 0,
+            db_query_timeout_sec: 0,
             ms_delay_after_edit: None,
             max_threads: 0,
             pool: None,
@@ -391,6 +396,12 @@ impl Configuration {
         Duration::from_secs(self.page_timeout_sec)
     }
 
+    /// Wall-clock budget for an individual DB operation
+    /// (connection checkout + query execution combined).
+    pub const fn db_query_timeout(&self) -> Duration {
+        Duration::from_secs(self.db_query_timeout_sec)
+    }
+
     pub fn oauth2_token(&self) -> &str {
         &self.oauth2_token
     }
@@ -561,6 +572,9 @@ impl Configuration {
         if self.page_timeout_sec == 0 {
             return Err(anyhow!("page_timeout_sec must be > 0"));
         }
+        if self.db_query_timeout_sec == 0 {
+            return Err(anyhow!("db_query_timeout_sec must be > 0"));
+        }
         Ok(())
     }
 
@@ -678,6 +692,7 @@ impl Configuration {
             .unwrap_or(5);
         self.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
         self.page_timeout_sec = j["page_timeout_sec"].as_u64().unwrap_or(600);
+        self.db_query_timeout_sec = j["db_query_timeout_sec"].as_u64().unwrap_or(30);
         self.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
         self.delay_after_page_check_sec = j["delay_after_page_check_sec"].as_u64();
         self.max_threads = j["max_threads"]
@@ -831,6 +846,7 @@ mod tests {
             api_timeout: 60,
             max_concurrent_entry_queries: 5,
             page_timeout_sec: 600,
+            db_query_timeout_sec: 30,
             ..Default::default()
         }
     }
@@ -891,6 +907,15 @@ mod tests {
         // instantly. Reject it at config validation time.
         let mut config = valid_config();
         config.page_timeout_sec = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_zero_db_query_timeout_sec() {
+        // Similarly, a DB-query timeout of 0 would cancel every DB op
+        // instantly. Reject it at config validation time.
+        let mut config = valid_config();
+        config.db_query_timeout_sec = 0;
         assert!(config.validate().is_err());
     }
 
