@@ -60,9 +60,10 @@ const LOAD_CHUNK_SIZE: usize = 500;
 /// Number of times to retry the subset of ids that the upstream silently
 /// omitted from a chunk's response (see [`Self::load_chunk_with_retries`]).
 const MAX_LOAD_RETRIES: usize = 3;
-/// Wait between retries — gives the upstream API a moment to recover from a
-/// transient overload (large response, brief network glitch).
-const RETRY_BACKOFF_MS: u64 = 200;
+/// Initial wait between retries — gives the upstream API a moment to recover
+/// from a transient overload. Doubles each attempt for consistency with the
+/// retry policy in `retry::retry_with_backoff`.
+const RETRY_INITIAL_BACKOFF_MS: u64 = 200;
 
 /// Per-page in-memory entity store.
 ///
@@ -189,9 +190,11 @@ impl EntityContainerWrapper {
     /// code accepted that silent partial result.
     async fn load_chunk_with_retries(&self, api: &Api, chunk: &[String]) -> Result<()> {
         let mut to_load: Vec<String> = chunk.to_vec();
+        let mut backoff = std::time::Duration::from_millis(RETRY_INITIAL_BACKOFF_MS);
         for attempt in 0..=MAX_LOAD_RETRIES {
             if attempt > 0 {
-                tokio::time::sleep(std::time::Duration::from_millis(RETRY_BACKOFF_MS)).await;
+                tokio::time::sleep(backoff).await;
+                backoff *= 2;
             }
             let entity_container = EntityContainer::new();
             if let Err(e) = entity_container.load_entities(api, &to_load).await {
