@@ -189,7 +189,20 @@ impl SparqlResults {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
-        let j = api.get_query_api_json(&params).await?;
+        // The underlying reqwest client is already configured with
+        // `api_timeout`, but a future refactor that swaps clients would
+        // silently regress that bound. Wrap the call in a defensive outer
+        // timeout so a hung MW API can never block the SPARQL pipeline
+        // indefinitely.
+        let timeout = self.page_params.config().api_timeout();
+        let j = tokio::time::timeout(timeout, api.get_query_api_json(&params))
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "expandtemplates timed out after {}s",
+                    timeout.as_secs()
+                )
+            })??;
         if let Some(s) = j["expandtemplates"]["wikitext"].as_str() {
             *sparql = s.to_string();
         }
