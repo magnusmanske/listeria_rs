@@ -139,13 +139,14 @@ impl PageOperations {
         page: &ListeriaPage,
         title: &str,
         wikitext: &str,
+        basetimestamp: Option<&str>,
     ) -> Result<()> {
         let page_params = page.page_params();
         let api_arc = page_params.mw_api();
         let mut api = (**api_arc).clone();
         // Token fetch is itself a network call — retry it on transient failure
         // so an edit isn't lost just because the CSRF endpoint flaked.
-        // Inline retry loop (rather than reusing retry_with_backoff) because
+        // Inline retry inside `get_edit_token_with_retries` because
         // `get_edit_token` borrows `&mut api`, which an `FnMut`-returning-async
         // closure cannot express without escape-of-captured-variable errors.
         let wiki = page_params.wiki().to_string();
@@ -158,7 +159,7 @@ impl PageOperations {
             || async { Self::get_edit_token_with_retries(&mut api).await },
         )
         .await?;
-        let params: HashMap<String, String> = vec![
+        let mut params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", title),
             ("text", wikitext),
@@ -169,6 +170,14 @@ impl PageOperations {
         .into_iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
+        // Lost-update guard: when basetimestamp is set, MediaWiki rejects the
+        // edit with an `editconflict` error if any other revision has been
+        // saved since we read the page. Without this, a human edit between
+        // our load and save would be silently overwritten, and a retried-but-
+        // already-landed POST could produce a duplicate edit (audit F2.4).
+        if let Some(ts) = basetimestamp {
+            params.insert("basetimestamp".to_string(), ts.to_string());
+        }
         let j = with_breaker(
             &breaker,
             || anyhow!("MW API circuit open for {wiki}"),
@@ -191,6 +200,43 @@ impl PageOperations {
             }
             None => Ok(()),
         }
+    }
+
+    /// Fetches the current revision's `timestamp` via
+    /// `action=query&prop=revisions&rvprop=timestamp`.
+    ///
+    /// Returns `None` when the field is unavailable (deleted page, API
+    /// quirk) — callers fall back to saving without a `basetimestamp`,
+    /// which preserves the historical no-guard behaviour rather than
+    /// failing the whole edit.
+    pub async fn load_revision_timestamp(page: &ListeriaPage) -> Option<String> {
+        // In simulate mode there is no real revision to compare against.
+        if page.page_params().simulate() {
+            return None;
+        }
+        let params: HashMap<String, String> = [
+            ("action", "query"),
+            ("prop", "revisions"),
+            ("titles", page.page_params().page()),
+            ("rvlimit", "1"),
+            ("rvprop", "timestamp"),
+        ]
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+        let result = page
+            .page_params()
+            .mw_api()
+            .get_query_api_json(&params)
+            .await
+            .ok()?;
+        let ts = result["query"]["pages"]
+            .as_object()?
+            .values()
+            .next()?["revisions"][0]["timestamp"]
+            .as_str()?
+            .to_string();
+        Some(ts)
     }
 
     /// Manual exponential-backoff retry for `Api::get_edit_token`.
@@ -284,6 +330,18 @@ mod tests {
     fn test_page_operations_is_debug() {
         // Verify that PageOperations implements Debug
         let _ = format!("{:?}", PageOperations);
+    }
+
+    #[tokio::test]
+    async fn test_load_revision_timestamp_returns_none_in_simulate_mode() {
+        // Simulate-mode pages have no real revision to query — the helper
+        // must short-circuit to None so the basetimestamp guard is omitted
+        // rather than firing a doomed network call.
+        let mut page = create_test_page().await;
+        page.do_simulate(Some("Test wikitext content".to_string()), None, None)
+            .unwrap();
+        let ts = PageOperations::load_revision_timestamp(&page).await;
+        assert!(ts.is_none(), "simulate mode must not yield a basetimestamp");
     }
 
     #[tokio::test]

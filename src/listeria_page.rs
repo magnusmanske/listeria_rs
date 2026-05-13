@@ -3,7 +3,6 @@
 use anyhow::{Result, anyhow};
 use chrono::Utc;
 use futures::future::try_join_all;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::{
@@ -132,31 +131,10 @@ impl ListeriaPage {
     }
 
     async fn get_last_edit_days_ago(&self) -> Option<u64> {
-        let params: HashMap<String, String> = [
-            ("action", "query"),
-            ("prop", "revisions"),
-            ("titles", self.page_params.page()),
-            ("rvlimit", "1"),
-            ("rvprop", "timestamp"),
-        ]
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()))
-        .collect();
-
-        let result = self
-            .page_params
-            .mw_api()
-            .get_query_api_json(&params)
-            .await
-            .ok()?;
-
-        let timestamp = result["query"]["pages"]
-            .as_object()?
-            .values()
-            .next()?["revisions"][0]["timestamp"]
-            .as_str()?;
-
-        let last_edit = chrono::DateTime::parse_from_rfc3339(timestamp).ok()?;
+        // Reuse the same revision-timestamp lookup used by the save-time
+        // basetimestamp guard, so both consumers see the same view.
+        let timestamp = PageOperations::load_revision_timestamp(self).await?;
+        let last_edit = chrono::DateTime::parse_from_rfc3339(&timestamp).ok()?;
         let days = Utc::now()
             .signed_duration_since(last_edit)
             .num_days()
@@ -176,6 +154,12 @@ impl ListeriaPage {
 
         let renderer = RendererWikitext::new();
         let mut edited = false;
+        // Capture the revision timestamp *before* loading the wikitext. If a
+        // human edit lands between this fetch and our save, MediaWiki rejects
+        // with an editconflict error rather than silently overwriting (F2.4).
+        // None on simulate / unreachable API → save without the guard, which
+        // matches the historical behaviour.
+        let basetimestamp = PageOperations::load_revision_timestamp(self).await;
         let old_wikitext = self.load_page_as("wikitext").await?;
         let new_wikitext = renderer
             .get_new_wikitext(&old_wikitext, self)
@@ -188,6 +172,7 @@ impl ListeriaPage {
                 self,
                 self.page_params.page(),
                 &new_wikitext,
+                basetimestamp.as_deref(),
             )
             .await
             .map_err(|e| self.fail(&e.to_string()))?;
