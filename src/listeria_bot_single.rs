@@ -47,6 +47,10 @@ impl ListeriaBot for ListeriaBotSingle {
         // No need
         Ok(())
     }
+    async fn clear_deferred(&self) -> Result<()> {
+        // No DB-backed queue in single-wiki mode; nothing to clear.
+        Ok(())
+    }
     async fn set_runtime(&self, _pagestatus_id: u64, _seconds: u64) -> Result<()> {
         // No need
         Ok(())

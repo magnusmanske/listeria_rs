@@ -18,6 +18,11 @@ pub trait ListeriaBot {
     fn config(&self) -> &Configuration;
     async fn reset_running(&self) -> Result<()>;
     async fn clear_deleted(&self) -> Result<()>;
+    /// Resets DEFERRED rows so they can be re-picked. DEFERRED is the status
+    /// assigned to pages whose processing was short-circuited by an open
+    /// circuit breaker — at bot startup we want those to become eligible
+    /// for retry rather than staying invisible to the dispatcher.
+    async fn clear_deferred(&self) -> Result<()>;
     async fn set_runtime(&self, pagestatus_id: u64, seconds: u64) -> Result<()>;
     async fn run_single_bot(&self, page: PageToProcess) -> Result<WikiPageResult>;
 

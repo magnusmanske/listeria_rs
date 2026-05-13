@@ -48,6 +48,22 @@ impl PageStatusRepository {
         Ok(())
     }
 
+    /// Resets all DEFERRED rows back to FAIL so they become eligible for
+    /// re-processing on the next dispatcher pass. Called at bot startup;
+    /// pages that were deferred because a circuit was open are given a
+    /// fresh chance the next time the bot runs.
+    pub async fn clear_deferred(&self) -> Result<()> {
+        let sql = "UPDATE `pagestatus` SET `status`='FAIL', \
+                   `message`='cleared from DEFERRED on bot startup' \
+                   WHERE `status`='DEFERRED'";
+        self.pool
+            .get_conn()
+            .await?
+            .exec_iter(sql, ())
+            .await?;
+        Ok(())
+    }
+
     /// Records how many seconds a page took to process.
     pub async fn set_runtime(&self, pagestatus_id: u64, seconds: u64) -> Result<()> {
         let sql =

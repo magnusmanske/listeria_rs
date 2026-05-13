@@ -67,6 +67,17 @@ impl WikiPageResult {
     }
 
     pub fn standardize_message(&mut self) {
+        // Circuit-open errors should NOT be marked FAIL: the page itself is
+        // fine, the upstream is just temporarily blocked. Use the DEFERRED
+        // status so the row sits out of the dispatcher queue until cleared
+        // on the next bot startup (PageStatusRepository::clear_deferred).
+        // Matched first so it wins over any of the more specific error
+        // patterns below.
+        if self.message.contains("circuit open") {
+            self.result = "DEFERRED".into();
+            self.message = "CIRCUIT_OPEN".into();
+            return;
+        }
         if self
             .message
             .contains("This page is a translation of the page")
@@ -290,6 +301,51 @@ mod tests {
         // Translation should be detected first
         assert_eq!(result1.result(), "TRANSLATION");
         assert_eq!(result1.message(), "This page is a translation");
+    }
+
+    #[test]
+    fn test_standardize_message_circuit_open_becomes_deferred() {
+        // SPARQL circuit-open message — full ListeriaError text
+        let mut result = WikiPageResult::new(
+            "enwiki",
+            "Test",
+            "FAIL",
+            "SPARQL circuit open — endpoint 'https://wdqs.example/sparql' is temporarily blocked"
+                .to_string(),
+        );
+        result.standardize_message();
+        assert_eq!(result.result(), "DEFERRED");
+        assert_eq!(result.message(), "CIRCUIT_OPEN");
+    }
+
+    #[test]
+    fn test_standardize_message_mw_circuit_open_becomes_deferred() {
+        // MW API circuit-open message — anyhow-formatted from page_operations
+        let mut result = WikiPageResult::new(
+            "enwiki",
+            "Test",
+            "FAIL",
+            "MW API circuit open for enwiki".to_string(),
+        );
+        result.standardize_message();
+        assert_eq!(result.result(), "DEFERRED");
+        assert_eq!(result.message(), "CIRCUIT_OPEN");
+    }
+
+    #[test]
+    fn test_standardize_message_circuit_open_wins_over_other_patterns() {
+        // Defensive: if a "circuit open" message also contained a timeout
+        // substring, circuit-open should win because the upstream is the
+        // root cause — not a per-page timeout.
+        let mut result = WikiPageResult::new(
+            "enwiki",
+            "Test",
+            "FAIL",
+            "circuit open after operation timed out".to_string(),
+        );
+        result.standardize_message();
+        assert_eq!(result.result(), "DEFERRED");
+        assert_eq!(result.message(), "CIRCUIT_OPEN");
     }
 
     #[test]

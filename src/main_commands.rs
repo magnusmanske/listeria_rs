@@ -110,6 +110,7 @@ impl MainCommands {
         log::info!("Starting {max_threads} bots");
         let _ = bot.reset_running().await;
         let _ = bot.clear_deleted().await;
+        let _ = bot.clear_deferred().await;
         let _ = bot.clear_log_table().await;
 
         let bot = Arc::new(bot);

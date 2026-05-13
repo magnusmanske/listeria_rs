@@ -82,6 +82,10 @@ impl ListeriaBot for ListeriaBotWikidata {
         self.pagestatus.clear_deleted().await
     }
 
+    async fn clear_deferred(&self) -> Result<()> {
+        self.pagestatus.clear_deferred().await
+    }
+
     /// Removes a pagestatus ID from the running list.
     async fn release_running(&self, pagestatus_id: u64) {
         self.running.remove(&pagestatus_id);
@@ -96,7 +100,10 @@ impl ListeriaBot for ListeriaBotWikidata {
     async fn prepare_next_single_page(&self) -> Result<PageToProcess> {
         let ids = self.running_ids_string();
         info!(target: "lock", "Getting next page, without {ids}");
-        const IGNORE_STATUS: &str = "'RUNNING','DELETED','TRANSLATION'";
+        // DEFERRED rows are pages whose processing hit an open circuit
+        // breaker; they are cleared at bot startup, so during steady state
+        // we want the dispatcher to leave them alone.
+        const IGNORE_STATUS: &str = "'RUNNING','DELETED','TRANSLATION','DEFERRED'";
 
         if let Some(page) = self.pagestatus.find_priority_page(&ids, IGNORE_STATUS).await? {
             info!(target: "lock", "Found a priority page: {:?}", &page);
