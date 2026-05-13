@@ -96,6 +96,11 @@ impl CircuitBreaker {
 ///
 /// Generic over both `T` and `E` so it can be used uniformly across SPARQL
 /// (custom `ListeriaError`), MW API (anyhow), and entity-load call sites.
+///
+/// A `tracing::warn!` is emitted each time the breaker short-circuits a call
+/// so operators have a real-time signal that requests are being shed —
+/// previously the only visibility was the DEFERRED row written to pagestatus
+/// many layers later (audit F5.2).
 pub async fn with_breaker<T, E, F, Fut>(
     breaker: &CircuitBreaker,
     open_err: impl FnOnce() -> E,
@@ -104,9 +109,15 @@ pub async fn with_breaker<T, E, F, Fut>(
 where
     F: FnOnce() -> Fut,
     Fut: Future<Output = Result<T, E>>,
+    E: std::fmt::Display,
 {
     if breaker.is_open() {
-        return Err(open_err());
+        let err = open_err();
+        tracing::warn!(
+            error = %err,
+            "circuit breaker is OPEN; short-circuiting request"
+        );
+        return Err(err);
     }
     match f().await {
         Ok(v) => {

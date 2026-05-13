@@ -106,6 +106,10 @@ impl SparqlResults {
             .config()
             .sparql_circuit_breaker(&query_api_url);
         if circuit_breaker.is_open() {
+            tracing::warn!(
+                endpoint = %query_api_url,
+                "SPARQL circuit OPEN; short-circuiting query (audit F5.2)"
+            );
             return Err(ListeriaError::SparqlCircuitOpen(query_api_url).into());
         }
 
