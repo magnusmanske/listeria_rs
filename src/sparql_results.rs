@@ -84,7 +84,13 @@ impl SparqlResults {
             Some(api) => api.clone(),
             None => return Err(ListeriaError::SparqlNoConfig(wikibase_key.clone()).into()),
         };
-        let semaphore = Arc::clone(self.page_params.config().sparql_semaphore());
+        // Acquire the per-endpoint permit so a slow endpoint can't starve
+        // concurrent calls to a healthy one.
+        let query_api_url = self.get_sparql_endpoint(&api);
+        let semaphore = self
+            .page_params
+            .config()
+            .sparql_semaphore_for(&query_api_url);
         let _permit = semaphore.acquire().await?;
         self.run_sparql_query_stream(&api, sparql).await
     }

@@ -76,9 +76,11 @@ pub struct Configuration {
     status_server_port: Option<u16>,         // For single wiki mode, the port for the status server
     sparql_prefix: Option<String>, // For single wiki mode, a prefix for all SPARQL queries
     main_item_prefix: String,      // For single wiki mode, the prefix for items
-    /// Shared semaphore that limits the number of concurrent SPARQL requests.
-    /// Initialized from `max_sparql_simultaneous` in `new_from_json`.
-    sparql_semaphore: Arc<Semaphore>,
+    /// Per-endpoint SPARQL semaphores. Each endpoint URL gets its own semaphore
+    /// of `max_sparql_simultaneous` permits, so a slow Commons-Query-Service
+    /// can't starve calls to the Wikidata-Query-Service of permits.
+    /// Shared across all `Configuration` clones via the same `Arc`.
+    sparql_semaphores: Arc<DashMap<String, Arc<Semaphore>>>,
     /// Per-endpoint circuit breakers. Shared across all `Configuration` clones
     /// so that failures recorded by one clone are visible to all others.
     sparql_circuit_breakers: Arc<DashMap<String, Arc<CircuitBreaker>>>,
@@ -134,7 +136,7 @@ impl Default for Configuration {
             status_server_port: None,
             sparql_prefix: None,
             main_item_prefix: String::new(),
-            sparql_semaphore: Arc::new(Semaphore::new(1)),
+            sparql_semaphores: Arc::new(DashMap::new()),
             sparql_circuit_breakers: Arc::new(DashMap::new()),
             wiki_name_aliases: Self::default_wiki_name_aliases(),
             case_sensitive_wikis: HashSet::new(),
@@ -239,7 +241,6 @@ impl Configuration {
             ..Default::default()
         };
         ret.new_from_json_misc(&j);
-        ret.sparql_semaphore = Arc::new(Semaphore::new(ret.max_sparql_simultaneous as usize));
         ret.new_from_json_locations(&j);
         ret.new_from_json_wikibase_apis(&j).await?;
         ret.new_from_json_namespace_blocks(&j)?;
@@ -304,9 +305,15 @@ impl Configuration {
         self.max_concurrent_entry_queries
     }
 
-    /// Returns the shared semaphore that limits concurrent SPARQL requests.
-    pub const fn sparql_semaphore(&self) -> &Arc<Semaphore> {
-        &self.sparql_semaphore
+    /// Returns the semaphore that gates concurrent SPARQL requests for the
+    /// given endpoint URL, creating one on first access with
+    /// `max_sparql_simultaneous` permits. Per-endpoint isolation means a slow
+    /// endpoint cannot starve calls to a healthy one.
+    pub fn sparql_semaphore_for(&self, endpoint: &str) -> Arc<Semaphore> {
+        self.sparql_semaphores
+            .entry(endpoint.to_owned())
+            .or_insert_with(|| Arc::new(Semaphore::new(self.max_sparql_simultaneous as usize)))
+            .clone()
     }
 
     /// Returns the circuit breaker for the given SPARQL endpoint URL, creating
@@ -801,7 +808,6 @@ mod tests {
             api_timeout: 60,
             max_concurrent_entry_queries: 5,
             page_timeout_sec: 600,
-            sparql_semaphore: Arc::new(Semaphore::new(5)),
             ..Default::default()
         }
     }
@@ -1311,6 +1317,39 @@ mod tests {
     fn test_with_max_local_cached_entities() {
         let config = Configuration::default().with_max_local_cached_entities(42);
         assert_eq!(config.max_local_cached_entities(), 42);
+    }
+
+    #[test]
+    fn test_sparql_semaphore_for_returns_same_handle_per_endpoint() {
+        // Two callers asking for the semaphore for the same endpoint must
+        // get handles to the same underlying Semaphore — otherwise the
+        // concurrency cap would be per-caller, not per-endpoint.
+        let config = Configuration {
+            max_sparql_simultaneous: 5,
+            ..Default::default()
+        };
+        let s1 = config.sparql_semaphore_for("https://example.org/sparql");
+        let s2 = config.sparql_semaphore_for("https://example.org/sparql");
+        assert!(
+            Arc::ptr_eq(&s1, &s2),
+            "same endpoint must return the same Semaphore Arc"
+        );
+    }
+
+    #[test]
+    fn test_sparql_semaphore_for_isolates_distinct_endpoints() {
+        // Distinct endpoints must get distinct Semaphores so a slow one
+        // can't starve a healthy one.
+        let config = Configuration {
+            max_sparql_simultaneous: 5,
+            ..Default::default()
+        };
+        let s1 = config.sparql_semaphore_for("https://wcqs.example.org/sparql");
+        let s2 = config.sparql_semaphore_for("https://wdqs.example.org/sparql");
+        assert!(
+            !Arc::ptr_eq(&s1, &s2),
+            "distinct endpoints must have isolated Semaphores"
+        );
     }
 
     #[test]
