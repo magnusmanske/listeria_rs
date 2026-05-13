@@ -132,7 +132,12 @@ impl PageOperations {
         let page_params = page.page_params();
         let api_arc = page_params.mw_api();
         let mut api = (**api_arc).clone();
-        let token = api.get_edit_token().await?;
+        // Token fetch is itself a network call — retry it on transient failure
+        // so an edit isn't lost just because the CSRF endpoint flaked.
+        // Inline retry loop (rather than reusing retry_with_backoff) because
+        // `get_edit_token` borrows `&mut api`, which an `FnMut`-returning-async
+        // closure cannot express without escape-of-captured-variable errors.
+        let token = Self::get_edit_token_with_retries(&mut api).await?;
         let params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", title),
@@ -157,6 +162,36 @@ impl PageOperations {
                 Err(anyhow!("{msg}"))
             }
             None => Ok(()),
+        }
+    }
+
+    /// Manual exponential-backoff retry for `Api::get_edit_token`.
+    ///
+    /// `get_edit_token` borrows `&mut Api`, so it cannot be expressed as an
+    /// `FnMut`-returning-async closure for the generic [`retry_with_backoff`]
+    /// helper without hitting "captured variable cannot escape FnMut closure
+    /// body". Mirrors the same policy: `MW_API_MAX_ATTEMPTS` total tries with
+    /// `MW_API_INITIAL_BACKOFF_MS` doubling each retry.
+    async fn get_edit_token_with_retries(api: &mut wikimisc::mediawiki::api::Api) -> Result<String> {
+        let mut backoff = Duration::from_millis(MW_API_INITIAL_BACKOFF_MS);
+        let mut attempt: u32 = 1;
+        loop {
+            match api.get_edit_token().await {
+                Ok(token) => return Ok(token),
+                Err(e) if attempt < MW_API_MAX_ATTEMPTS => {
+                    tracing::warn!(
+                        operation = "get_edit_token",
+                        attempt = attempt,
+                        backoff_ms = backoff.as_millis() as u64,
+                        error = %e,
+                        "MediaWiki API call failed; retrying"
+                    );
+                    tokio::time::sleep(backoff).await;
+                    backoff *= 2;
+                    attempt += 1;
+                }
+                Err(e) => return Err(e.into()),
+            }
         }
     }
 
