@@ -57,6 +57,11 @@ pub struct Configuration {
     max_local_cached_entities: usize,
     max_concurrent_entry_queries: usize,
     api_timeout: u64,
+    /// Wall-clock budget for processing a single page (seconds). Bounds the
+    /// worst-case time a slow SPARQL endpoint or hung MediaWiki API can hold a
+    /// dispatcher slot. On expiry the page is marked FAIL in the queue so it
+    /// can be retried in a future pass rather than blocking forever.
+    page_timeout_sec: u64,
     ms_delay_after_edit: Option<u64>,
     max_threads: usize,
     pool: Option<Arc<DatabasePool>>,
@@ -114,6 +119,7 @@ impl Default for Configuration {
             max_local_cached_entities: 0,
             max_concurrent_entry_queries: 0,
             api_timeout: 0,
+            page_timeout_sec: 0,
             ms_delay_after_edit: None,
             max_threads: 0,
             pool: None,
@@ -349,6 +355,12 @@ impl Configuration {
         Duration::from_secs(self.api_timeout)
     }
 
+    /// Wall-clock budget for processing one page end-to-end.
+    /// Used by the dispatch loop to abort and re-queue a stuck page.
+    pub const fn page_timeout(&self) -> Duration {
+        Duration::from_secs(self.page_timeout_sec)
+    }
+
     pub fn oauth2_token(&self) -> &str {
         &self.oauth2_token
     }
@@ -516,6 +528,9 @@ impl Configuration {
         if self.max_concurrent_entry_queries == 0 {
             return Err(anyhow!("max_concurrent_entry_queries must be > 0"));
         }
+        if self.page_timeout_sec == 0 {
+            return Err(anyhow!("page_timeout_sec must be > 0"));
+        }
         Ok(())
     }
 
@@ -632,6 +647,7 @@ impl Configuration {
             .and_then(|u| u.try_into().ok())
             .unwrap_or(5);
         self.api_timeout = j["api_timeout"].as_u64().unwrap_or(360);
+        self.page_timeout_sec = j["page_timeout_sec"].as_u64().unwrap_or(600);
         self.ms_delay_after_edit = j["ms_delay_after_edit"].as_u64();
         self.delay_after_page_check_sec = j["delay_after_page_check_sec"].as_u64();
         self.max_threads = j["max_threads"]
@@ -784,6 +800,7 @@ mod tests {
             max_threads: 4,
             api_timeout: 60,
             max_concurrent_entry_queries: 5,
+            page_timeout_sec: 600,
             sparql_semaphore: Arc::new(Semaphore::new(5)),
             ..Default::default()
         }
@@ -836,6 +853,15 @@ mod tests {
         // at config validation time so the bot fails fast on startup.
         let mut config = valid_config();
         config.max_concurrent_entry_queries = 0;
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn test_validate_zero_page_timeout_sec() {
+        // A page_timeout of 0 would mean every dispatched page times out
+        // instantly. Reject it at config validation time.
+        let mut config = valid_config();
+        config.page_timeout_sec = 0;
         assert!(config.validate().is_err());
     }
 

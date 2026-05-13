@@ -137,15 +137,33 @@ impl MainCommands {
                 wiki = %page.wiki(),
                 page = %page.title(),
             );
+            let page_timeout = bot.config().page_timeout();
+            // Snapshot identifiers before moving `page` into run_single_bot,
+            // so we can mark the row FAIL on timeout without owning the page.
+            let pagestatus_id = page.id();
+            let page_title = page.title().to_string();
+            let page_wiki = page.wiki().to_string();
             tokio::spawn(
                 async move {
-                    let pagestatus_id = page.id();
                     let start_time = Instant::now();
-                    if let Err(e) = bot.run_single_bot(page).await {
-                        log::error!("Bot run failed: {e}");
+                    match tokio::time::timeout(page_timeout, bot.run_single_bot(page)).await {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(e)) => log::error!("Bot run failed: {e}"),
+                        Err(_) => {
+                            let msg = format!(
+                                "Page processing exceeded {}s wall-clock budget",
+                                page_timeout.as_secs()
+                            );
+                            log::error!("{msg}: {page_wiki}/{page_title}");
+                            if let Err(e) = bot
+                                .mark_page_failed(&page_wiki, &page_title, &msg)
+                                .await
+                            {
+                                log::error!("Failed to mark timed-out page FAIL: {e}");
+                            }
+                        }
                     }
-                    let end_time = Instant::now();
-                    let diff = (end_time - start_time).as_secs();
+                    let diff = start_time.elapsed().as_secs();
                     let _ = bot.set_runtime(pagestatus_id, diff).await;
                     bot.release_running(pagestatus_id).await;
                     drop(permit);
@@ -199,13 +217,24 @@ impl MainCommands {
                 wiki = %page.wiki(),
                 page = %page.title(),
             );
-            let mut result = match bot
-                .run_single_bot(page.clone())
-                .instrument(span)
-                .await
+            let page_timeout = bot.config().page_timeout();
+            let mut result = match tokio::time::timeout(
+                page_timeout,
+                bot.run_single_bot(page.clone()).instrument(span),
+            )
+            .await
             {
-                Ok(result) => result,
-                Err(e) => WikiPageResult::new("wiki", page.title(), "Error", e.to_string()),
+                Ok(Ok(result)) => result,
+                Ok(Err(e)) => WikiPageResult::new("wiki", page.title(), "Error", e.to_string()),
+                Err(_) => WikiPageResult::new(
+                    "wiki",
+                    page.title(),
+                    "Error",
+                    format!(
+                        "Page processing exceeded {}s wall-clock budget",
+                        page_timeout.as_secs()
+                    ),
+                ),
             };
             let end_time = Instant::now();
             let diff = end_time - start_time;
