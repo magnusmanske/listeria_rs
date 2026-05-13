@@ -108,7 +108,7 @@ impl ListeriaBotSingle {
             return Some(Arc::clone(bot));
         }
         let mw_api = self.config.get_default_wbapi().ok()?;
-        let bot = ListeriaBotWiki::new(wiki, mw_api.clone(), self.config.clone());
+        let bot = ListeriaBotWiki::new_with_direct_api(wiki, mw_api.clone(), self.config.clone());
         let bot = Arc::new(bot);
         *the_bot = Some(Arc::clone(&bot));
         Some(bot)

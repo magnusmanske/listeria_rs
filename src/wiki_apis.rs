@@ -10,114 +10,149 @@ use log::info;
 use mysql_async::{Conn, Opts, OptsBuilder, from_row, prelude::*};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::sync::OnceCell;
-use tokio::time::sleep;
+use tokio::sync::{OnceCell, OwnedSemaphorePermit, Semaphore};
 use wikimisc::{
     mediawiki::{api::Api, title::Title},
     site_matrix::SiteMatrix,
     wikibase::{Entity, EntityTrait, entity_container::EntityContainer},
 };
 
-#[derive(Debug, Clone)]
+/// Cached per-wiki resources. The `api` is set up lazily on first use; the
+/// `semaphore` caps in-flight operations against that wiki to
+/// `max_mw_apis_per_wiki`. Both live in the same struct so the per-wiki
+/// `OnceCell` produces a paired (api, semaphore) atomically.
+struct WikiInner {
+    api: ApiArc,
+    /// Permits = `max_mw_apis_per_wiki` (or effectively unlimited when the
+    /// config value is unset). Permits are acquired by callers via
+    /// `acquire_wiki_api` and held for the duration of the operation.
+    semaphore: Arc<Semaphore>,
+}
+
+/// RAII guard returned by [`WikiApis::acquire_wiki_api`]. Holds the API plus
+/// the per-wiki and (optional) global permits; permits are released only
+/// when this guard is dropped, providing real backpressure instead of the
+/// strong-count poll the previous implementation relied on.
+#[derive(Debug)]
+pub struct WikiApiHandle {
+    api: ApiArc,
+    // Permits live here purely so Drop releases them. Their precise type isn't
+    // observable to callers, but we keep them named so it's obvious why they
+    // exist if someone reads this struct.
+    _per_wiki_permit: OwnedSemaphorePermit,
+    _total_permit: Option<OwnedSemaphorePermit>,
+}
+
+impl WikiApiHandle {
+    /// Borrow the API for the lifetime of this guard.
+    pub fn api(&self) -> &ApiArc {
+        &self.api
+    }
+}
+
+#[derive(Clone)]
 pub struct WikiApis {
     config: Arc<Configuration>,
     site_matrix: SiteMatrix,
-    /// Each entry is an `Arc<OnceCell<ApiArc>>` so that concurrent callers for
-    /// the same new wiki wait on a single `get_or_try_init` rather than racing
-    /// to each create their own TCP connection. The `DashMap` shard lock is
-    /// held only for the map lookup/insert, not during the async API creation.
-    apis: DashMap<String, Arc<OnceCell<ApiArc>>>,
+    /// Each entry is an `Arc<OnceCell<WikiInner>>` so that concurrent callers
+    /// for the same new wiki wait on a single `get_or_try_init` rather than
+    /// racing to each create their own TCP connection. The `DashMap` shard
+    /// lock is held only for the map lookup/insert, not during the async API
+    /// creation.
+    apis: Arc<DashMap<String, Arc<OnceCell<WikiInner>>>>,
+    /// Global cap across all wikis. `None` when the config doesn't set
+    /// `max_mw_apis_total` — in that case no global gate is applied.
+    total_semaphore: Option<Arc<Semaphore>>,
     /// Owns the SQL that talks to the bot's `wikis` and `pagestatus` tables.
     /// Kept as a separate type so the SQL strings live in one place and the
     /// rest of `WikiApis` stays focused on API pooling and wiki discovery.
     wiki_repo: WikiRepository,
 }
 
+impl std::fmt::Debug for WikiApis {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Avoid descending into the cached APIs (they don't implement Debug
+        // uniformly upstream); print just the bookkeeping fields that matter.
+        f.debug_struct("WikiApis")
+            .field("num_wikis_cached", &self.apis.len())
+            .field("has_total_gate", &self.total_semaphore.is_some())
+            .finish()
+    }
+}
+
 impl WikiApis {
     pub async fn new(config: Arc<Configuration>) -> Result<Self> {
         let pool = DatabasePool::new(&config)?;
         let site_matrix = SiteMatrix::new(config.get_default_wbapi()?).await?;
+        let total_semaphore = (*config.get_max_mw_apis_total())
+            .map(|n| Arc::new(Semaphore::new(n)));
         Ok(Self {
-            apis: DashMap::new(),
+            apis: Arc::new(DashMap::new()),
             config,
             site_matrix,
+            total_semaphore,
             wiki_repo: WikiRepository::new(pool),
         })
     }
 
-    /// Returns a MediaWiki API instance for the given wiki. Creates a new one and caches it, if required.
+    /// Acquires a guarded handle to a wiki's MediaWiki API.
     ///
-    /// Concurrent callers for the same previously-unseen wiki share a single
-    /// `OnceCell` initializer — only one TCP connection is opened even if many
-    /// tasks race to request the same wiki for the first time.
-    pub async fn get_or_create_wiki_api(&self, wiki: &str) -> Result<ApiArc> {
-        self.wait_for_max_mw_apis_total().await;
+    /// Replaces the legacy `Arc::strong_count`-polled gate (see #T356160) with
+    /// real semaphores:
+    ///  1. Optionally acquires a global permit (`max_mw_apis_total`).
+    ///  2. Lazily initialises the per-wiki API and a per-wiki semaphore sized
+    ///     to `max_mw_apis_per_wiki` (defaulting to effectively unlimited).
+    ///  3. Acquires a per-wiki permit.
+    ///
+    /// Both permits are stored on the returned [`WikiApiHandle`] and released
+    /// on drop, giving correct, non-polling backpressure that doesn't depend
+    /// on counting transient `Arc` clones.
+    pub async fn acquire_wiki_api(&self, wiki: &str) -> Result<WikiApiHandle> {
+        // Acquire the global permit first so we never hold a per-wiki permit
+        // while waiting on the global one — that ordering preserves liveness
+        // even when wikis fight for the same global budget.
+        let total_permit = match &self.total_semaphore {
+            Some(sem) => Some(
+                Arc::clone(sem)
+                    .acquire_owned()
+                    .await
+                    .map_err(|e| anyhow!("global mw_api semaphore closed: {e}"))?,
+            ),
+            None => None,
+        };
 
         // Get-or-create the OnceCell for this wiki, holding the DashMap shard
-        // lock only for the brief map operation, not during async API creation.
+        // lock only for the brief map operation, not during async init.
         let once = self
             .apis
             .entry(wiki.to_owned())
             .or_insert_with(|| Arc::new(OnceCell::new()))
             .clone();
 
-        // Initialize exactly once; any concurrent callers for the same wiki
-        // block here until the first caller's `create_wiki_api` completes.
-        let api = once
+        // Initialise exactly once; concurrent callers wait on the first init.
+        let inner = once
             .get_or_try_init(|| async {
                 let api = self.create_wiki_api(wiki).await?;
-                info!(target: "lock", "WikiApis::get_or_create_wiki_api: new wiki {wiki} created");
-                Ok::<ApiArc, anyhow::Error>(api)
+                let permits = (*self.config.get_max_mw_apis_per_wiki())
+                    .unwrap_or(Semaphore::MAX_PERMITS);
+                info!(target: "lock", "WikiApis::acquire_wiki_api: new wiki {wiki} created");
+                Ok::<WikiInner, anyhow::Error>(WikiInner {
+                    api,
+                    semaphore: Arc::new(Semaphore::new(permits)),
+                })
             })
             .await?;
 
-        self.wait_for_wiki_apis(api).await;
-        Ok(api.clone())
-    }
+        let per_wiki_permit = Arc::clone(&inner.semaphore)
+            .acquire_owned()
+            .await
+            .map_err(|e| anyhow!("per-wiki mw_api semaphore closed: {e}"))?;
 
-    async fn wait_with_condition<F>(&self, mut condition: F, message: String)
-    where
-        F: FnMut() -> bool,
-    {
-        if condition() {
-            log::warn!("{message}");
-            while condition() {
-                sleep(Duration::from_millis(100)).await;
-            }
-        }
-    }
-
-    async fn wait_for_wiki_apis(&self, api: &ApiArc) {
-        // Prevent many APIs in use, to limit the number of concurrent requests, to avoid 104 errors.
-        // See https://phabricator.wikimedia.org/T356160
-        if let Some(max) = self.config.get_max_mw_apis_per_wiki() {
-            let max = *max;
-            let api = Arc::clone(api);
-            self.wait_with_condition(
-                move || Arc::strong_count(&api) >= max,
-                format!("WikiApis::wait_for_wiki_apis: sleeping because per-wiki limit {max} was reached"),
-            )
-            .await;
-        }
-    }
-
-    async fn wait_for_max_mw_apis_total(&self) {
-        if let Some(max) = self.config.get_max_mw_apis_total() {
-            let max = *max;
-            self.wait_with_condition(
-                || {
-                    let current_strong_locks: usize = self
-                        .apis
-                        .iter()
-                        .filter_map(|entry| entry.value().get().map(Arc::strong_count))
-                        .sum();
-                    current_strong_locks >= max
-                },
-                format!("WikiApis::wait_for_max_mw_apis_total: sleeping because total limit {max} was reached"),
-            )
-            .await;
-        }
+        Ok(WikiApiHandle {
+            api: inner.api.clone(),
+            _per_wiki_permit: per_wiki_permit,
+            _total_permit: total_permit,
+        })
     }
 
     /// Creates a MediaWiki API instance for the given wiki
@@ -363,5 +398,27 @@ mod tests {
     fn test_placeholders() {
         let result = std::iter::repeat_n("?", 3).collect::<Vec<_>>().join(",");
         assert_eq!(result, "?,?,?");
+    }
+
+    /// `WikiApiHandle` is just a guard; the contract this test pins down is
+    /// that dropping it releases the per-wiki permit, so a second call to
+    /// `acquire_owned` on the same Semaphore can proceed. Mirrors the
+    /// acquisition pattern used in `acquire_wiki_api` without needing the
+    /// full `WikiApis` construction (which requires a live DB).
+    #[tokio::test]
+    async fn test_per_wiki_permit_releases_on_drop() {
+        let sem = Arc::new(Semaphore::new(1));
+
+        let p1 = Arc::clone(&sem).acquire_owned().await.unwrap();
+        // While p1 is alive, a non-blocking try should fail.
+        assert!(
+            Arc::clone(&sem).try_acquire_owned().is_err(),
+            "permit should be held"
+        );
+        drop(p1);
+        // Permit released — a fresh try should now succeed.
+        let _p2 = Arc::clone(&sem)
+            .try_acquire_owned()
+            .expect("permit should be available after drop");
     }
 }

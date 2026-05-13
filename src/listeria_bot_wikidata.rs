@@ -175,8 +175,11 @@ impl ListeriaBotWikidata {
             return Some(new_bot);
         }
         info!("Creating bot for {wiki}");
-        let mw_api = self.wiki_apis.get_or_create_wiki_api(wiki).await.ok()?;
-        let bot = ListeriaBotWiki::new(wiki, mw_api, self.config.clone());
+        // Cheap to construct — bot now holds an Arc<WikiApis> rather than an
+        // already-acquired ApiArc, so concurrency gating moves to where it
+        // belongs (per process_page call) rather than at construction time.
+        let bot =
+            ListeriaBotWiki::new(wiki, Arc::clone(&self.wiki_apis), self.config.clone());
         self.bot_per_wiki.insert(wiki.to_string(), bot.clone());
         info!("Created bot for {wiki}");
         Some(bot)
