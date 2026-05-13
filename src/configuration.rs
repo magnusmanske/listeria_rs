@@ -710,14 +710,20 @@ impl Configuration {
     }
 
     fn new_from_json_locations(&mut self, j: &Value) {
-        // Location regions
+        // Location regions — skip any non-string entries with a warning rather
+        // than panicking at startup. Other config-array fields use the same
+        // lenient pattern (audit F5.3).
         if let Some(lr) = j["location_regions"].as_array() {
             self.location_regions = lr
                 .iter()
-                .map(|s| {
-                    s.as_str()
-                        .expect("location_regions needs to be a string")
-                        .to_string()
+                .filter_map(|s| match s.as_str() {
+                    Some(s) => Some(s.to_string()),
+                    None => {
+                        log::warn!(
+                            "Ignoring non-string entry in location_regions config: {s}"
+                        );
+                        None
+                    }
                 })
                 .collect();
         }
@@ -804,10 +810,14 @@ impl Configuration {
         if let Some(sic) = j["shadow_images_check"].as_array() {
             self.shadow_images_check = sic
                 .iter()
-                .map(|s| {
-                    s.as_str()
-                        .expect("shadow_images_check needs to be a string")
-                        .to_string()
+                .filter_map(|s| match s.as_str() {
+                    Some(s) => Some(s.to_string()),
+                    None => {
+                        log::warn!(
+                            "Ignoring non-string entry in shadow_images_check config: {s}"
+                        );
+                        None
+                    }
                 })
                 .collect();
         }
@@ -1356,6 +1366,26 @@ mod tests {
     }
 
     // ── new_from_json_locations ────────────────────────────────────────────
+
+    #[test]
+    fn test_new_from_json_locations_skips_non_string_regions() {
+        // Bad config (a number in location_regions) used to panic at startup.
+        // Now it's silently skipped so the rest of the array parses fine.
+        let mut config = Configuration::default();
+        config.new_from_json_locations(&serde_json::json!({
+            "location_regions": ["US", 42, "DE", null]
+        }));
+        assert_eq!(config.location_regions, vec!["US", "DE"]);
+    }
+
+    #[test]
+    fn test_new_from_json_misc_skips_non_string_shadow_images_check() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({
+            "shadow_images_check": ["enwiki", 7, "dewiki"]
+        }));
+        assert_eq!(config.shadow_images_check, vec!["enwiki", "dewiki"]);
+    }
 
     #[test]
     fn test_new_from_json_locations_reads_templates() {
