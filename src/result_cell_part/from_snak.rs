@@ -90,8 +90,6 @@ impl ResultCellPart {
     }
 
     /// Returns `(display_string, sort_year)` for a Wikidata time value.
-    /// `sort_year` is the raw Wikidata year (before the century +1 correction)
-    /// so that all time cells can be sorted chronologically by a plain integer.
     pub fn reduce_time(v: &TimeValue) -> Option<(String, i32)> {
         let s = v.time();
         // Parse format: +?(-?\d+)-(\d{1,2})-(\d{1,2})T...
@@ -117,17 +115,7 @@ impl ResultCellPart {
         let precision_val: u8 = (*v.precision()).try_into().ok()?;
         let precision = Precision::try_from(precision_val).ok()?;
 
-        // Wikidata stores century-precision dates as the first year of the colloquial century
-        // (e.g. year 1900 = "20th century" = "the 1900s"). era_date uses the mathematical
-        // convention where year 1900 falls in the 19th century, so we add 1 for positive years.
-        let era_year = if precision == Precision::Century && year > 0 {
-            year + 1
-        } else {
-            year
-        };
-        let display = Era::new(era_year, month, day, precision).to_string();
-        // Use the raw Wikidata year (not era_year) as the numeric sort key so that
-        // century-precision dates (e.g. year=1900 → "20th century") sort correctly.
+        let display = Era::new(year, month, day, precision).to_string();
         Some((display, year))
     }
 }
@@ -353,28 +341,88 @@ mod tests {
         }
     }
 
+    // Wikidata renders century-precision dates using the mathematical convention
+    // (1st century = years 1-100, 19th century = years 1801-1900, etc.), which
+    // matches `era_date`. Issue #145 (comment 4434859636) reported that the bot
+    // displayed "20th century" for a Wikidata value that renders on-wiki as
+    // "19th century"; verified against the MediaWiki `wbformatvalue` API.
+
     #[test]
-    fn test_reduce_time_century_1900_is_20th_century() {
-        // Wikidata stores "20th century" (the 1900s) as year 1900 with precision 7.
+    fn test_reduce_time_century_1900_is_19th_century() {
+        // +1900-00-00T00:00:00Z with precision 7 is the LAST year of the 19th century
+        // in Wikidata's mathematical convention.
         let snak = Snak::new_time("P569", "+1900-00-00T00:00:00Z", 7);
         let part = ResultCellPart::from_snak(&snak);
         match part {
             ResultCellPart::Time(s, year) => {
-                assert_eq!(s, "20th century");
-                assert_eq!(year, 1900); // raw Wikidata year, not era_year
+                assert_eq!(s, "19th century");
+                assert_eq!(year, 1900);
             }
             other => panic!("Expected Time, got {:?}", other),
         }
     }
 
     #[test]
-    fn test_reduce_time_century_1800_is_19th_century() {
-        let snak = Snak::new_time("P569", "+1800-00-00T00:00:00Z", 7);
+    fn test_reduce_time_century_1901_is_20th_century() {
+        let snak = Snak::new_time("P569", "+1901-00-00T00:00:00Z", 7);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s, year) => {
+                assert_eq!(s, "20th century");
+                assert_eq!(year, 1901);
+            }
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_reduce_time_century_2000_is_20th_century() {
+        let snak = Snak::new_time("P569", "+2000-00-00T00:00:00Z", 7);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s, year) => {
+                assert_eq!(s, "20th century");
+                assert_eq!(year, 2000);
+            }
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_reduce_time_century_1801_is_19th_century() {
+        let snak = Snak::new_time("P569", "+1801-00-00T00:00:00Z", 7);
         let part = ResultCellPart::from_snak(&snak);
         match part {
             ResultCellPart::Time(s, year) => {
                 assert_eq!(s, "19th century");
-                assert_eq!(year, 1800); // raw Wikidata year
+                assert_eq!(year, 1801);
+            }
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_reduce_time_century_1800_is_18th_century() {
+        let snak = Snak::new_time("P569", "+1800-00-00T00:00:00Z", 7);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s, year) => {
+                assert_eq!(s, "18th century");
+                assert_eq!(year, 1800);
+            }
+            other => panic!("Expected Time, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_reduce_time_century_year_33_is_1st_century() {
+        // Year 33 with precision 7: original sort issue example from #145.
+        let snak = Snak::new_time("P569", "+0033-00-00T00:00:00Z", 7);
+        let part = ResultCellPart::from_snak(&snak);
+        match part {
+            ResultCellPart::Time(s, year) => {
+                assert_eq!(s, "1st century");
+                assert_eq!(year, 33);
             }
             other => panic!("Expected Time, got {:?}", other),
         }
