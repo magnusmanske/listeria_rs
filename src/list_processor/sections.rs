@@ -31,7 +31,9 @@ impl super::ListProcessor {
             Self::build_valid_section_names(section_count, list.template_params().min_section());
         list.profile("AFTER list::process_assign_sections 6").await;
 
-        let (name2id, id2name, misc_id) = Self::create_section_mappings(valid_section_names);
+        let misc_name = list.template_params().misc_section_name().to_string();
+        let (name2id, id2name, misc_id) =
+            Self::create_section_mappings(valid_section_names, &misc_name);
         list.profile("AFTER list::process_assign_sections 7").await;
 
         *list.section_id_to_name_mut() = id2name;
@@ -100,10 +102,11 @@ impl super::ListProcessor {
 
     pub(crate) fn create_section_mappings(
         valid_section_names: Vec<String>,
+        misc_name: &str,
     ) -> (HashMap<String, usize>, HashMap<usize, String>, usize) {
         let misc_id = valid_section_names.len();
         let mut names_with_misc = valid_section_names;
-        names_with_misc.push("Misc".to_string());
+        names_with_misc.push(misc_name.to_string());
 
         let mut name2id = HashMap::with_capacity(names_with_misc.len());
         let mut id2name = HashMap::with_capacity(names_with_misc.len());

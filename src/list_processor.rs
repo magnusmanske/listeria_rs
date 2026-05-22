@@ -256,7 +256,7 @@ mod tests {
     #[test]
     fn test_create_section_mappings_misc_always_appended() {
         let valid = vec!["human".to_string(), "state".to_string()];
-        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
         assert!(name2id.contains_key("Misc"));
         assert!(id2name.values().any(|v| v == "Misc"));
         assert_eq!(misc_id, 2);
@@ -265,7 +265,7 @@ mod tests {
 
     #[test]
     fn test_create_section_mappings_empty_input() {
-        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(vec![]);
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(vec![], "Misc");
         assert_eq!(name2id.len(), 1);
         assert_eq!(id2name.len(), 1);
         assert_eq!(misc_id, 0);
@@ -273,9 +273,22 @@ mod tests {
     }
 
     #[test]
+    fn test_create_section_mappings_custom_misc_name() {
+        // codeberg #73: the catch-all section label is user-configurable via
+        // the `misc=` template parameter. Custom name must replace "Misc"
+        // everywhere — both in name2id and id2name.
+        let valid = vec!["alpha".to_string()];
+        let (name2id, id2name, misc_id) =
+            ListProcessor::create_section_mappings(valid, "Autres");
+        assert!(name2id.contains_key("Autres"));
+        assert!(!name2id.contains_key("Misc"));
+        assert_eq!(id2name[&misc_id], "Autres");
+    }
+
+    #[test]
     fn test_create_section_mappings_bidirectional_consistency() {
         let valid = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
-        let (name2id, id2name, _misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, id2name, _misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
         for (name, id) in &name2id {
             assert_eq!(&id2name[id], name);
         }
@@ -287,7 +300,7 @@ mod tests {
     #[test]
     fn test_create_section_mappings_ids_are_unique() {
         let valid = vec!["a".to_string(), "b".to_string(), "c".to_string()];
-        let (name2id, _id2name, _misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, _id2name, _misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
         let mut ids: Vec<usize> = name2id.values().cloned().collect();
         ids.sort();
         ids.dedup();
@@ -301,7 +314,7 @@ mod tests {
         use crate::result_row::ResultRow;
 
         let valid = vec!["alpha".to_string(), "beta".to_string()];
-        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
 
         let mut rows = [
             ResultRow::new("Q1"),
@@ -331,7 +344,7 @@ mod tests {
         use crate::result_row::ResultRow;
 
         let valid = vec!["human".to_string()];
-        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
 
         let mut row = ResultRow::new("Q99");
         let section_id = name2id.get("unknown").copied().unwrap_or(misc_id);
@@ -344,7 +357,7 @@ mod tests {
         use crate::result_row::ResultRow;
 
         let valid = vec!["human".to_string()];
-        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
         let section_names: Vec<String> = vec![];
         let mut rows: Vec<ResultRow> = vec![];
 
@@ -624,7 +637,7 @@ mod tests {
         ];
 
         let valid = vec!["alpha".to_string(), "beta".to_string()];
-        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
         *list.section_id_to_name_mut() = id2name;
 
         let section_names = vec![
@@ -659,7 +672,7 @@ mod tests {
         ];
 
         let valid = vec!["alpha".to_string()];
-        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, _id2name, misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
 
         let section_names = vec!["alpha".to_string()];
         let result =
@@ -679,7 +692,7 @@ mod tests {
         ];
 
         let valid = vec!["alpha".to_string()];
-        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid);
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid, "Misc");
         *list.section_id_to_name_mut() = id2name;
 
         let section_names = vec![
@@ -726,7 +739,7 @@ mod tests {
         let section_count = ListProcessor::build_section_count(&section_names);
         let valid_section_names = ListProcessor::build_valid_section_names(section_count, 1);
         let (name2id, id2name, misc_id) =
-            ListProcessor::create_section_mappings(valid_section_names);
+            ListProcessor::create_section_mappings(valid_section_names, "Misc");
         *list.section_id_to_name_mut() = id2name;
 
         ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();
@@ -774,7 +787,7 @@ mod tests {
         assert!(valid_section_names.contains(&"Atari".to_string()));
 
         let (name2id, id2name, misc_id) =
-            ListProcessor::create_section_mappings(valid_section_names);
+            ListProcessor::create_section_mappings(valid_section_names, "Misc");
         *list.section_id_to_name_mut() = id2name;
 
         ListProcessor::assign_row_section_ids(&mut list, section_names, name2id, misc_id).unwrap();

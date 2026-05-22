@@ -157,6 +157,15 @@ pub struct TemplateParams {
     sort_order: SortOrder,
     wikibase: String,
     freq: u64,
+    /// Custom label for the catch-all "Misc" section produced by `min_section=`
+    /// grouping. `None` keeps the historic literal "Misc"; users localize via
+    /// the template parameter `misc=…` (codeberg #73).
+    misc_section_name: Option<String>,
+    /// Override for the table `width=` attribute (codeberg #32). `None` keeps
+    /// the historic `wikitable sortable` default (no explicit width — the
+    /// browser/Vector skin decides). An empty string is treated as `None`
+    /// so users can disable width by passing `tablewidth=`.
+    table_width: Option<String>,
 }
 
 impl Default for TemplateParams {
@@ -184,6 +193,8 @@ impl TemplateParams {
             sort_order: SortOrder::Ascending,
             wikibase: String::new(),
             freq: 0,
+            misc_section_name: None,
+            table_width: None,
         }
     }
 
@@ -205,6 +216,19 @@ impl TemplateParams {
             sort_order: SortOrder::new(template.params().get("sort_order")),
             wikibase: Self::parse_wikibase(template, config),
             freq: template.params().get("freq").and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0),
+            misc_section_name: Self::parse_optional_string(template, "misc"),
+            table_width: Self::parse_optional_string(template, "tablewidth"),
+        }
+    }
+
+    /// Trims whitespace and returns `None` for empty input so callers can use
+    /// `.unwrap_or` to substitute a default without re-checking for emptiness.
+    fn parse_optional_string(template: &Template, key: &str) -> Option<String> {
+        let value = template.params().get(key)?.trim();
+        if value.is_empty() {
+            None
+        } else {
+            Some(value.to_string())
         }
     }
 
@@ -314,6 +338,18 @@ impl TemplateParams {
 
     pub const fn freq(&self) -> u64 {
         self.freq
+    }
+
+    /// Section name to use for items that would otherwise fall into the
+    /// catch-all "Misc" bucket. Default `"Misc"` preserves historical behaviour.
+    pub fn misc_section_name(&self) -> &str {
+        self.misc_section_name.as_deref().unwrap_or("Misc")
+    }
+
+    /// Optional `width=` attribute for the rendered wikitable. `None` keeps
+    /// the historic default of no explicit width.
+    pub fn table_width(&self) -> Option<&str> {
+        self.table_width.as_deref()
     }
 }
 
@@ -629,6 +665,61 @@ mod tests {
     fn test_summary_label_default() {
         let params = TemplateParams::new();
         assert_eq!(params.summary_label(), "items");
+    }
+
+    #[test]
+    fn test_misc_section_name_default() {
+        let params = TemplateParams::new();
+        assert_eq!(params.misc_section_name(), "Misc");
+    }
+
+    #[test]
+    fn test_misc_section_name_custom() {
+        // codeberg #73: `misc=` allows localizing the catch-all section label.
+        let template = crate::template::Template::new_from_params("foo|misc=Sonstiges")
+            .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        let params = TemplateParams::new_from_params(&template, &config);
+        assert_eq!(params.misc_section_name(), "Sonstiges");
+    }
+
+    #[test]
+    fn test_misc_section_name_empty_falls_back_to_default() {
+        // Empty values are equivalent to omitting the parameter, so the
+        // historic "Misc" default is preserved.
+        let template = crate::template::Template::new_from_params("foo|misc=  ")
+            .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        let params = TemplateParams::new_from_params(&template, &config);
+        assert_eq!(params.misc_section_name(), "Misc");
+    }
+
+    #[test]
+    fn test_table_width_default_is_none() {
+        let params = TemplateParams::new();
+        assert!(params.table_width().is_none());
+    }
+
+    #[test]
+    fn test_table_width_custom() {
+        // codeberg #32: `tablewidth=` allows users to opt back in to width
+        // attributes (or pick a non-100% value) on the rendered table.
+        let template = crate::template::Template::new_from_params("foo|tablewidth=80%")
+            .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        let params = TemplateParams::new_from_params(&template, &config);
+        assert_eq!(params.table_width(), Some("80%"));
+    }
+
+    #[test]
+    fn test_table_width_empty_is_none() {
+        // `tablewidth=` (empty) lets users explicitly disable width, falling
+        // back to no width attribute on the wikitable.
+        let template = crate::template::Template::new_from_params("foo|tablewidth=")
+            .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        let params = TemplateParams::new_from_params(&template, &config);
+        assert!(params.table_width().is_none());
     }
 
     #[test]
