@@ -108,6 +108,13 @@ pub struct Configuration {
     location_regions: Vec<String>,
     mysql: Option<Value>,
     oauth2_token: String,
+    /// Username of the bot account performing edits. Read from
+    /// `wiki_login.user` in the JSON config. Used to filter the page-history
+    /// lookup so the `freq=` template parameter only counts the bot's own
+    /// edits (codeberg #84) — otherwise a brand-new list page edited by a
+    /// human within the last `freq` days would suppress the bot's first edit.
+    /// Empty string disables the freq guard (no filtering possible).
+    bot_username: String,
     template_start_q: String,
     pattern_string_start: String,
     pattern_string_end: String,
@@ -184,6 +191,7 @@ impl Default for Configuration {
             location_regions: Vec::new(),
             mysql: None,
             oauth2_token: String::new(),
+            bot_username: String::new(),
             template_start_q: String::new(),
             pattern_string_start: String::new(),
             pattern_string_end: String::new(),
@@ -469,6 +477,12 @@ impl Configuration {
         &self.oauth2_token
     }
 
+    /// Username of the bot account, used to filter page revisions when
+    /// evaluating the `freq=` template parameter. Empty if not configured.
+    pub fn bot_username(&self) -> &str {
+        &self.bot_username
+    }
+
     pub fn mysql(&self, key: &str) -> Value {
         match &self.mysql {
             Some(mysql) => mysql[key].clone(),
@@ -690,6 +704,13 @@ impl Configuration {
     async fn new_from_json_wikibase_apis(&mut self, j: &Value) -> Result<()> {
         self.oauth2_token = j["wiki_login"]["token"]
             .as_str()
+            .unwrap_or_default()
+            .to_string();
+        // Accept both `user` (current config.json) and `username` (more
+        // explicit alternative) so existing deployments keep working.
+        self.bot_username = j["wiki_login"]["user"]
+            .as_str()
+            .or_else(|| j["wiki_login"]["username"].as_str())
             .unwrap_or_default()
             .to_string();
         if j["mysql"].is_object() {
@@ -1507,6 +1528,48 @@ mod tests {
         assert!(!config.feature_flags().enable_references);
         // Other flags untouched.
         assert!(config.feature_flags().enable_autodesc);
+    }
+
+    // ── bot_username (codeberg #84) ────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_bot_username_reads_wiki_login_user() {
+        // The `freq=` guard filters revisions by the bot's account name.
+        // It must be picked up from the existing `wiki_login.user` field
+        // so deployments don't need a config change to get the fix.
+        let mut config = Configuration::default();
+        config
+            .new_from_json_wikibase_apis(&serde_json::json!({
+                "wiki_login": { "user": "ListeriaBot", "token": "tok" }
+            }))
+            .await
+            .unwrap();
+        assert_eq!(config.bot_username(), "ListeriaBot");
+    }
+
+    #[tokio::test]
+    async fn test_bot_username_falls_back_to_username_key() {
+        let mut config = Configuration::default();
+        config
+            .new_from_json_wikibase_apis(&serde_json::json!({
+                "wiki_login": { "username": "MyBot", "token": "tok" }
+            }))
+            .await
+            .unwrap();
+        assert_eq!(config.bot_username(), "MyBot");
+    }
+
+    #[tokio::test]
+    async fn test_bot_username_empty_when_absent() {
+        // No wiki_login.user → empty string. The freq guard then disables
+        // itself rather than filtering by an empty username (which would
+        // match anonymous edits on MediaWiki).
+        let mut config = Configuration::default();
+        config
+            .new_from_json_wikibase_apis(&serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(config.bot_username(), "");
     }
 
     #[test]

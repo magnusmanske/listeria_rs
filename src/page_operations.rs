@@ -210,11 +210,35 @@ impl PageOperations {
     /// which preserves the historical no-guard behaviour rather than
     /// failing the whole edit.
     pub async fn load_revision_timestamp(page: &ListeriaPage) -> Option<String> {
-        // In simulate mode there is no real revision to compare against.
+        Self::load_revision_timestamp_filtered(page, None).await
+    }
+
+    /// Fetches the timestamp of the most recent revision authored by
+    /// `bot_username` (from the configuration). Returns `None` when no
+    /// username is configured or when the bot has never edited the page.
+    ///
+    /// Used by the `freq=` template parameter guard so that a fresh page
+    /// with edits only from other users does not block the bot's first
+    /// run (codeberg #84). The save-time `basetimestamp` guard must keep
+    /// using the unfiltered [`load_revision_timestamp`] — it needs to
+    /// detect any concurrent edit, not just the bot's own.
+    pub async fn load_last_bot_revision_timestamp(page: &ListeriaPage) -> Option<String> {
+        let page_params = page.page_params();
+        let username = page_params.config().bot_username().to_string();
+        if username.is_empty() {
+            return None;
+        }
+        Self::load_revision_timestamp_filtered(page, Some(&username)).await
+    }
+
+    async fn load_revision_timestamp_filtered(
+        page: &ListeriaPage,
+        rvuser: Option<&str>,
+    ) -> Option<String> {
         if page.page_params().simulate() {
             return None;
         }
-        let params: HashMap<String, String> = [
+        let mut params: HashMap<String, String> = [
             ("action", "query"),
             ("prop", "revisions"),
             ("titles", page.page_params().page()),
@@ -224,6 +248,9 @@ impl PageOperations {
         .iter()
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
+        if let Some(user) = rvuser {
+            params.insert("rvuser".to_string(), user.to_string());
+        }
         let result = page
             .page_params()
             .mw_api()
@@ -342,6 +369,17 @@ mod tests {
             .unwrap();
         let ts = PageOperations::load_revision_timestamp(&page).await;
         assert!(ts.is_none(), "simulate mode must not yield a basetimestamp");
+    }
+
+    #[tokio::test]
+    async fn test_load_last_bot_revision_timestamp_returns_none_in_simulate_mode() {
+        // Same short-circuit as the unfiltered helper: simulate mode must
+        // not fire a network call even when a bot username is set.
+        let mut page = create_test_page().await;
+        page.do_simulate(Some("Test wikitext content".to_string()), None, None)
+            .unwrap();
+        let ts = PageOperations::load_last_bot_revision_timestamp(&page).await;
+        assert!(ts.is_none(), "simulate mode must not yield a bot timestamp");
     }
 
     #[tokio::test]

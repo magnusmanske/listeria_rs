@@ -131,9 +131,11 @@ impl ListeriaPage {
     }
 
     async fn get_last_edit_days_ago(&self) -> Option<u64> {
-        // Reuse the same revision-timestamp lookup used by the save-time
-        // basetimestamp guard, so both consumers see the same view.
-        let timestamp = PageOperations::load_revision_timestamp(self).await?;
+        // The `freq=` guard must only count the bot's own edits, not edits by
+        // other users (codeberg #84). Returns `None` when the bot has never
+        // edited the page or when no bot username is configured, so the caller
+        // proceeds to update rather than waiting on an unrelated human edit.
+        let timestamp = PageOperations::load_last_bot_revision_timestamp(self).await?;
         let last_edit = chrono::DateTime::parse_from_rfc3339(&timestamp).ok()?;
         let days = Utc::now()
             .signed_duration_since(last_edit)
