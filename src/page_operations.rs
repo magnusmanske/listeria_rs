@@ -159,11 +159,12 @@ impl PageOperations {
             || async { Self::get_edit_token_with_retries(&mut api).await },
         )
         .await?;
+        let summary = page_params.config().get_edit_summary(&wiki);
         let mut params: HashMap<String, String> = vec![
             ("action", "edit"),
             ("title", title),
             ("text", wikitext),
-            ("summary", "Wikidata list updated [V2]"),
+            ("summary", summary.as_str()),
             ("token", &token),
             ("bot", "1"),
         ]

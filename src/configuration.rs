@@ -103,6 +103,10 @@ pub struct Configuration {
     template_start_sites: HashMap<String, String>,
     template_end_sites: HashMap<String, String>,
     location_templates: HashMap<String, String>,
+    /// Per-wiki edit summary used by `PageOperations::save_wikitext_to_page`.
+    /// Keyed by wiki name with a `"default"` fallback; missing keys fall back
+    /// to the historic literal `"Wikidata list updated [V2]"` (codeberg #50).
+    edit_summaries: HashMap<String, String>,
     shadow_images_check: Vec<String>,
     default_thumbnail_size: Option<u64>,
     location_regions: Vec<String>,
@@ -186,6 +190,7 @@ impl Default for Configuration {
             template_start_sites: HashMap::new(),
             template_end_sites: HashMap::new(),
             location_templates: HashMap::new(),
+            edit_summaries: HashMap::new(),
             shadow_images_check: Vec::new(),
             default_thumbnail_size: None,
             location_regions: Vec::new(),
@@ -566,6 +571,18 @@ impl Configuration {
             .unwrap_or_default()
     }
 
+    /// Returns the configured edit summary for the given wiki, falling back to
+    /// the `"default"` entry, then to the hard-coded `"Wikidata list updated [V2]"`
+    /// (preserves historic behaviour when no map is configured). Codeberg #50.
+    #[must_use]
+    pub fn get_edit_summary(&self, wiki: &str) -> String {
+        self.edit_summaries
+            .get(wiki)
+            .or_else(|| self.edit_summaries.get("default"))
+            .cloned()
+            .unwrap_or_else(|| "Wikidata list updated [V2]".to_string())
+    }
+
     pub fn get_template_start_q(&self) -> String {
         self.template_start_q.clone()
     }
@@ -754,6 +771,15 @@ impl Configuration {
             for (k, v) in o.iter() {
                 if let (k, Some(v)) = (k.as_str(), v.as_str()) {
                     self.location_templates.insert(k.to_string(), v.to_string());
+                }
+            }
+        }
+
+        // Per-wiki edit summaries (codeberg #50).
+        if let Some(o) = j["edit_summaries"].as_object() {
+            for (k, v) in o.iter() {
+                if let (k, Some(v)) = (k.as_str(), v.as_str()) {
+                    self.edit_summaries.insert(k.to_string(), v.to_string());
                 }
             }
         }
@@ -1427,6 +1453,54 @@ mod tests {
             "{{Coord|$1|$2|display=title}}"
         );
         assert_eq!(config.location_regions, vec!["US", "DE"]);
+    }
+
+    // ── get_edit_summary (codeberg #50) ────────────────────────────────────
+
+    #[test]
+    fn test_get_edit_summary_falls_back_to_historic_default() {
+        // With no config provided, behaviour must match pre-#50 code so we
+        // don't change the on-wiki edit summary of any wiki by accident.
+        let config = Configuration::default();
+        assert_eq!(
+            config.get_edit_summary("enwiki"),
+            "Wikidata list updated [V2]"
+        );
+    }
+
+    #[test]
+    fn test_get_edit_summary_specific_wiki() {
+        let mut config = Configuration::default();
+        config.new_from_json_locations(&serde_json::json!({
+            "edit_summaries": {
+                "default": "Wikidata-Liste aktualisiert",
+                "dewiki": "Wikidata-Liste aktualisiert (dewiki)",
+                "frwiki": "Liste Wikidata mise à jour"
+            }
+        }));
+        assert_eq!(
+            config.get_edit_summary("dewiki"),
+            "Wikidata-Liste aktualisiert (dewiki)"
+        );
+        assert_eq!(
+            config.get_edit_summary("frwiki"),
+            "Liste Wikidata mise à jour"
+        );
+    }
+
+    #[test]
+    fn test_get_edit_summary_default_fallback() {
+        // Wikis without a specific summary use the "default" entry.
+        let mut config = Configuration::default();
+        config.new_from_json_locations(&serde_json::json!({
+            "edit_summaries": {
+                "default": "Wikidata-Liste aktualisiert"
+            }
+        }));
+        assert_eq!(
+            config.get_edit_summary("enwiki"),
+            "Wikidata-Liste aktualisiert"
+        );
     }
 
     // ── new_from_json_namespace_blocks ─────────────────────────────────────
