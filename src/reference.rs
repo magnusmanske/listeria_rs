@@ -11,6 +11,12 @@ pub struct Reference {
     title: Option<String>,
     date: Option<String>,
     stated_in: Option<String>, // Item
+    /// Archive URL (P1065). Codeberg #22.
+    #[serde(default)]
+    archive_url: Option<String>,
+    /// Archive date (P2960). Codeberg #22.
+    #[serde(default)]
+    archive_date: Option<String>,
 }
 
 impl PartialEq for Reference {
@@ -19,6 +25,8 @@ impl PartialEq for Reference {
             && self.title == other.title
             && self.date == other.date
             && self.stated_in == other.stated_in
+            && self.archive_url == other.archive_url
+            && self.archive_date == other.archive_date
     }
 }
 
@@ -36,6 +44,10 @@ impl Reference {
                 "P1476" => Self::extract_title(snak, language, &mut ret),
                 "P813" => Self::extract_timestamp(snak, &mut ret),
                 "P248" => Self::extract_stated_in(snak, &mut ret),
+                // Codeberg #22: archive URL (P1065) and archive date (P2960)
+                // produce `|archive-url=` / `|archive-date=` in cite-web output.
+                "P1065" => Self::extract_archive_url(snak, &mut ret),
+                "P2960" => Self::extract_archive_date(snak, &mut ret),
                 _ => {}
             }
         }
@@ -106,8 +118,37 @@ impl Reference {
         if let Some(date) = &self.date {
             ret += &format!("|access-date={}", &date);
         }
+        if let Some(archive_url) = &self.archive_url {
+            ret += &format!("|archive-url={archive_url}");
+        }
+        if let Some(archive_date) = &self.archive_date {
+            ret += &format!("|archive-date={archive_date}");
+        }
         ret += "}}";
         ret
+    }
+
+    /// Extracts the archive URL (P1065) from a snak. Codeberg #22.
+    fn extract_archive_url(snak: &Snak, ret: &mut Reference) {
+        if let Some(dv) = snak.data_value()
+            && let Value::StringValue(url) = dv.value()
+        {
+            ret.archive_url = Some(url.to_owned());
+        }
+    }
+
+    /// Extracts the archive date (P2960) from a snak. Codeberg #22.
+    /// Uses the same precision-aware formatting as access-date (P813).
+    fn extract_archive_date(snak: &Snak, ret: &mut Reference) {
+        if let Some(dv) = snak.data_value()
+            && let Value::Time(tv) = dv.value()
+            && let Some(pos_t) = tv.time().find('T')
+        {
+            let (date, _) = tv.time().split_at(pos_t);
+            let date = date.replace('+', "");
+            let year = Self::parse_year(&date);
+            ret.archive_date = Some(Self::format_date_by_precision(date, year, *tv.precision()));
+        }
     }
 
     /// Extracts the stated_in info from a snak
@@ -284,12 +325,14 @@ mod tests {
             title: Some("Example".to_string()),
             date: Some("2025-01-01".to_string()),
             stated_in: Some("Q123".to_string()),
+            ..Default::default()
         };
         let ref2 = Reference {
             url: Some("https://example.com".to_string()),
             title: Some("Example".to_string()),
             date: Some("2025-01-01".to_string()),
             stated_in: Some("Q123".to_string()),
+            ..Default::default()
         };
         assert_eq!(ref1, ref2);
     }
@@ -655,9 +698,88 @@ mod tests {
             title: Some("Test".to_string()),
             date: Some("2025-01-01".to_string()),
             stated_in: Some("Q42".to_string()),
+            archive_url: None,
+            archive_date: None,
         };
         let json = serde_json::to_string(&reference).unwrap();
         let deserialized: Reference = serde_json::from_str(&json).unwrap();
         assert_eq!(reference, deserialized);
+    }
+
+    // --- archive URL / date (codeberg #22) ---
+
+    #[test]
+    fn test_extract_archive_url() {
+        let snak = Snak::new_string("P1065", "https://web.archive.org/web/2020/https://x.example");
+        let mut reference = Reference::default();
+        Reference::extract_archive_url(&snak, &mut reference);
+        assert_eq!(
+            reference.archive_url,
+            Some("https://web.archive.org/web/2020/https://x.example".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_archive_url_wrong_type_ignored() {
+        // A non-string snak (e.g. accidental item value) must not populate
+        // archive_url — same defensive behaviour as the URL extractor.
+        let snak = Snak::new_item("P1065", "Q42");
+        let mut reference = Reference::default();
+        Reference::extract_archive_url(&snak, &mut reference);
+        assert_eq!(reference.archive_url, None);
+    }
+
+    #[test]
+    fn test_extract_archive_date_day_precision() {
+        let snak = Snak::new_time("P2960", "+2024-03-15T00:00:00Z", 11);
+        let mut reference = Reference::default();
+        Reference::extract_archive_date(&snak, &mut reference);
+        assert_eq!(reference.archive_date, Some("2024-03-15".to_string()));
+    }
+
+    #[test]
+    fn test_extract_archive_date_year_precision() {
+        // Lower-precision archive dates collapse the same way access-date does
+        // — no point pretending we have day precision when Wikidata says we
+        // don't.
+        let snak = Snak::new_time("P2960", "+2024-03-15T00:00:00Z", 9);
+        let mut reference = Reference::default();
+        Reference::extract_archive_date(&snak, &mut reference);
+        assert_eq!(reference.archive_date, Some("2024".to_string()));
+    }
+
+    #[test]
+    fn test_new_from_snaks_with_archive_url_and_date() {
+        let snaks = vec![
+            Snak::new_string("P854", "https://example.com"),
+            Snak::new_monolingual_text("P1476", "Test Title", "en"),
+            Snak::new_string("P1065", "https://web.archive.org/web/2020/x"),
+            Snak::new_time("P2960", "+2024-03-15T00:00:00Z", 11),
+        ];
+        let reference = Reference::new_from_snaks(&snaks, "en")
+            .expect("archive-url-bearing reference is not empty");
+        assert_eq!(
+            reference.archive_url,
+            Some("https://web.archive.org/web/2020/x".to_string())
+        );
+        assert_eq!(reference.archive_date, Some("2024-03-15".to_string()));
+    }
+
+    #[test]
+    fn test_reference_equality_different_archive_url() {
+        // Archive metadata must participate in equality so duplicate
+        // references with different archives aren't collapsed by the
+        // cell-level deduplication pass.
+        let ref1 = Reference {
+            url: Some("https://example.com".to_string()),
+            archive_url: Some("https://archive.example/a".to_string()),
+            ..Default::default()
+        };
+        let ref2 = Reference {
+            url: Some("https://example.com".to_string()),
+            archive_url: Some("https://archive.example/b".to_string()),
+            ..Default::default()
+        };
+        assert_ne!(ref1, ref2);
     }
 }
