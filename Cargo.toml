@@ -15,7 +15,11 @@ rand = "0.9"
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 percent-encoding = "2"
-wikimisc = { git = "https://github.com/magnusmanske/wikimisc" }
+wikimisc = { git = "https://github.com/magnusmanske/wikimisc", features = [
+	"seppuku",
+	"site-matrix",
+	"sparql-table",
+] }
 tokio = { version = "^1", features = ["full", "rt-multi-thread"] }
 futures = "0.3"
 mysql_async = "0.36"
