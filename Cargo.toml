@@ -6,6 +6,7 @@ edition = "2024"
 license = "Apache-2.0"
 
 [dependencies]
+mimalloc = { version = "0.1", features = ["secure"] }
 regex = "^1"
 chrono = "0.4"
 dashmap = "6"

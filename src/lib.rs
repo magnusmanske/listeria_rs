@@ -52,6 +52,9 @@
 #[macro_use]
 extern crate serde_json;
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 pub mod circuit_breaker;
 pub mod column;
 pub mod column_type;
