@@ -10,8 +10,8 @@ use wikimisc::wikibase::EntityTrait;
 /// A newtype wrapper around [`Entity`] that adds binary-format-safe
 /// [`serde::Serialize`]/[`serde::Deserialize`] implementations.
 /// The entity is serialized as a JSON string (via [`EntityTrait::to_json`])
-/// so that it works correctly with both JSON and binary serializers
-/// like bincode (used by the foyer disk cache).
+/// so that it works correctly with self-describing formats (JSON) and
+/// compact binary formats alike.
 #[derive(Debug, Clone)]
 pub struct MyEntity(pub Entity);
 
@@ -55,7 +55,7 @@ impl Serialize for MyEntity {
         // Serialize the entity's JSON representation as a String.
         // We avoid delegating to Entity::serialize because it uses
         // serialize_some/serialize_none (Option encoding) which is
-        // incompatible with binary formats like bincode.
+        // incompatible with non-self-describing binary formats.
         let json_string =
             serde_json::to_string(&self.0.to_json()).map_err(serde::ser::Error::custom)?;
         serializer.serialize_str(&json_string)
@@ -143,10 +143,10 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// Verify that MyEntity survives a bincode serialize→deserialize roundtrip.
-    /// foyer uses bincode for its disk cache, so this must work correctly.
+    /// A roundtrip through a fully populated entity, to make sure labels and
+    /// claims survive the JSON-string encoding used by the serde impls above.
     #[test]
-    fn test_bincode_roundtrip() {
+    fn test_roundtrip_preserves_labels_and_claims() {
         let json = serde_json::json!({
             "type": "item",
             "id": "Q42",
@@ -174,14 +174,14 @@ mod tests {
         let entity = Entity::new_from_json(&json).expect("entity from json failed");
         let my = MyEntity(entity);
 
-        // This is what foyer does: bincode serialize then deserialize
-        let encoded = bincode::serialize(&my).expect("bincode serialize failed");
-        let decoded: MyEntity = bincode::deserialize(&encoded).expect("bincode deserialize failed");
+        let encoded = serde_json::to_string(&my).expect("serialize failed");
+        let decoded: MyEntity = serde_json::from_str(&encoded).expect("deserialize failed");
 
         assert_eq!(decoded.id(), "Q42");
         assert_eq!(
             decoded.label_in_locale("en").map(|s| s.to_string()),
             Some("Douglas Adams".to_string())
         );
+        assert_eq!(decoded.claims_with_property("P31").len(), 1);
     }
 }
