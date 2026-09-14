@@ -3249,6 +3249,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 
 [[package]]
+name = "toolforge"
+version = "5.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd1446b1d6956ef67bd6c1b5a6e3007acde22561418627e6b30da991ee0ef198"
+
+[[package]]
 name = "tower"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3622,11 +3628,13 @@ name = "wikimisc"
 version = "0.1.0"
 source = "git+https://github.com/magnusmanske/wikimisc#eb28323bcc1cc24892005888edbe84fd1ed1b115"
 dependencies = [
+ "mysql_async",
  "regex",
  "serde",
  "serde_json",
  "thiserror 2.0.19",
  "tokio",
+ "toolforge",
  "urlencoding",
  "wikibase",
 ]
