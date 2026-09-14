@@ -1,13 +1,12 @@
 //! MediaWiki API management and connection pooling for multiple wikis.
 
 use crate::{
-    ApiArc, configuration::Configuration, database_pool::DatabasePool, wiki::Wiki,
-    wiki_repository::WikiRepository,
+    ApiArc, configuration::Configuration, database_pool::DatabasePool, replica_db::ReplicaDb,
+    wiki::Wiki, wiki_repository::WikiRepository,
 };
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use log::info;
-use mysql_async::{Conn, Opts, OptsBuilder, from_row, prelude::*};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{OnceCell, OwnedSemaphorePermit, Semaphore};
@@ -16,6 +15,12 @@ use wikimisc::{
     site_matrix::SiteMatrix,
     wikibase::{Entity, EntityTrait, entity_container::EntityContainer},
 };
+
+/// Tables read by [`WikiApis::get_current_pages_on_wiki`]. Named so the query
+/// can be routed to the replica cluster that holds them: on Commons that is
+/// the `links` cluster, which keeps the copy of `page` that makes the join
+/// possible there at all. See [`ReplicaDb`] for the background.
+const PAGES_ON_WIKI_TABLES: &[&str] = &["page", "templatelinks", "linktarget"];
 
 /// Cached per-wiki resources. The `api` is set up lazily on first use; the
 /// `semaphore` caps in-flight operations against that wiki to
@@ -67,6 +72,9 @@ pub struct WikiApis {
     /// Kept as a separate type so the SQL strings live in one place and the
     /// rest of `WikiApis` stays focused on API pooling and wiki discovery.
     wiki_repo: WikiRepository,
+    /// Reads the MediaWiki tables of the wikis themselves, routing each query
+    /// to the replica cluster that holds the tables it reads.
+    replica_db: ReplicaDb,
 }
 
 impl std::fmt::Debug for WikiApis {
@@ -88,6 +96,7 @@ impl WikiApis {
             .map(|n| Arc::new(Semaphore::new(n)));
         Ok(Self {
             apis: Arc::new(DashMap::new()),
+            replica_db: ReplicaDb::new(config.clone()),
             config,
             site_matrix,
             total_semaphore,
@@ -263,27 +272,16 @@ impl WikiApis {
             FROM page,templatelinks t1,templatelinks t2,linktarget l1,linktarget l2
             WHERE page_id=t1.tl_from AND t1.tl_target_id=l1.lt_id AND l1.lt_title=? AND l1.lt_namespace=10
             AND page_id=t2.tl_from AND t2.tl_target_id=l2.lt_id AND l2.lt_title=? AND l2.lt_namespace=10" ;
-        let opts = self.get_mysql_opts_for_wiki(wiki)?;
-        // Per-wiki replica is a direct (non-pooled) connection, so the
-        // DatabasePool's with_timeout doesn't apply. Bound the whole
-        // (connect + query) chain explicitly using the configured budget.
-        let db_timeout = self.config.db_query_timeout();
-        let rows: Vec<(i64, String)> = tokio::time::timeout(db_timeout, async {
-            Conn::new(opts)
-                .await?
-                .exec_iter(sql, (template_start, template_end))
-                .await?
-                .map_and_drop(from_row::<(i64, String)>)
-                .await
-                .map_err(anyhow::Error::from)
-        })
-        .await
-        .map_err(|_| {
-            anyhow!(
-                "DB operation 'get_current_pages_on_wiki' timed out after {}s",
-                db_timeout.as_secs()
+        let rows: Vec<(i64, String)> = self
+            .replica_db
+            .exec(
+                wiki,
+                PAGES_ON_WIKI_TABLES,
+                "get_current_pages_on_wiki",
+                sql,
+                (template_start, template_end),
             )
-        })??;
+            .await?;
         let current_pages: Vec<String> = rows
             .iter()
             .filter(|(nsid, _title)| self.config.can_edit_namespace(wiki, *nsid))
@@ -310,65 +308,24 @@ impl WikiApis {
         self.wiki_repo.get_all_wikis().await
     }
 
-    /// Helper method to extract a string value from MySQL configuration
-    fn get_mysql_config_string(&self, key: &str) -> Result<String> {
-        self.config
-            .mysql(key)
-            .as_str()
-            .ok_or_else(|| anyhow!("No MySQL {key} set"))
-            .map(|s| s.to_string())
-    }
-
-    /// Returns the database connection settings for a given wiki
-    fn get_mysql_user(&self) -> Result<String> {
-        self.get_mysql_config_string("user")
-    }
-
-    /// Returns the MySQL password from the configuration
-    fn get_mysql_password(&self) -> Result<String> {
-        self.get_mysql_config_string("password")
-    }
-
-    /// Returns the database connection settings for a given wiki
-    fn get_mysql_opts_for_wiki(&self, wiki: &str) -> Result<Opts> {
-        let user = self.get_mysql_user()?;
-        let pass = self.get_mysql_password()?;
-        let (host, schema) = self.db_host_and_schema_for_wiki(wiki)?;
-        let port: u16 = if host == "127.0.0.1" {
-            3307
-        } else {
-            self.config
-                .mysql("port")
-                .as_u64()
-                .and_then(|u| u.try_into().ok())
-                .unwrap_or(3306)
-        };
-        let opts = OptsBuilder::default()
-            .ip_or_hostname(host)
-            .db_name(Some(schema))
-            .user(Some(user))
-            .pass(Some(pass))
-            .tcp_port(port)
-            .into();
-        Ok(opts)
-    }
-
-    /// Returns the server group for the database
-    #[allow(clippy::unused_self)]
-    const fn get_db_server_group(&self) -> &str {
-        ".web.db.svc.eqiad.wmflabs"
-    }
-
-    /// Returns the server and database name for the wiki, as a tuple
+    /// Returns the server and database name for the wiki's core cluster, as a
+    /// tuple.
+    ///
+    /// Tables split off into an extension database — the Commons links tables
+    /// since September 2026 — are not readable on that host; ask
+    /// [`ReplicaDb`] for the cluster holding the tables a query reads instead.
     pub fn db_host_and_schema_for_wiki(&self, wiki: &str) -> Result<(String, String)> {
-        let wiki = self.config.fix_wiki_name(wiki);
-        let host = match self.config.mysql("host").as_str() {
-            Some("127.0.0.1") => "127.0.0.1".to_string(),
-            Some(_host) => wiki.to_owned() + self.get_db_server_group(),
-            None => return Err(anyhow!("No host for MySQL")),
-        };
-        let schema = format!("{wiki}_p");
-        Ok((host, schema))
+        let host_schema = self.replica_db.host_and_schema(wiki)?;
+        Ok((
+            host_schema.host().to_string(),
+            host_schema.schema().to_string(),
+        ))
+    }
+
+    /// The wikis' MediaWiki databases, for callers that need a query of their
+    /// own rather than the page lookup above.
+    pub const fn replica_db(&self) -> &ReplicaDb {
+        &self.replica_db
     }
 
     /// Returns the a list of all wikis with a start template
@@ -385,14 +342,6 @@ impl WikiApis {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test]
-    #[ignore = "requires Toolforge MySQL tunnel on port 3308"]
-    async fn test_get_db_server_group() {
-        let config = Configuration::new_from_file("config.json").await.unwrap();
-        let wa = WikiApis::new(Arc::new(config)).await.unwrap();
-        assert_eq!(wa.get_db_server_group(), ".web.db.svc.eqiad.wmflabs");
-    }
 
     #[test]
     fn test_placeholders() {

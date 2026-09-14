@@ -82,6 +82,7 @@ pub mod render_context;
 pub mod render_tabbed_data;
 pub mod render_wikitext;
 pub mod renderer;
+pub mod replica_db;
 pub mod result_cell;
 pub mod result_cell_part;
 pub mod result_generator;
