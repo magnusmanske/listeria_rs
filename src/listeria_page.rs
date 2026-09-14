@@ -338,6 +338,13 @@ mod tests {
         .await;
     }
 
+    /// Issue #55: `allow_empty=yes` lets a legitimately empty list render
+    /// instead of aborting the whole page.
+    #[tokio::test]
+    async fn allow_empty() {
+        check_fixture_file(PathBuf::from("test_data/allow_empty.fixture")).await;
+    }
+
     #[tokio::test]
     async fn dewiki_sections_coordinates() {
         check_fixture_file(PathBuf::from(

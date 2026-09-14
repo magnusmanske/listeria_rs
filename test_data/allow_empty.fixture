@@ -1,0 +1,27 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item { VALUES ?item { } }
+|columns=label:name,P569:born
+|allow_empty=yes
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable'
+! name
+! born
+
+|}
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item"]},"results":{"bindings":[]}}

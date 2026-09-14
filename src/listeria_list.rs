@@ -396,6 +396,12 @@ impl ListeriaList {
 
         let ids = ResultGenerator::get_ids_from_sparql_rows(self)?;
         if ids.is_empty() {
+            // Aborting is the safe default: an empty result is usually a
+            // transient SPARQL failure, and rendering it would blank the
+            // list. Lists that are legitimately empty opt out (issue #55).
+            if self.params.allow_empty() {
+                return Ok(());
+            }
             return Err(ListeriaError::NoItemsToShow.into());
         }
         self.ecw.load_entities(&self.wb_api, &ids).await?;

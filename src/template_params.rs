@@ -166,6 +166,12 @@ pub struct TemplateParams {
     /// browser/Vector skin decides). An empty string is treated as `None`
     /// so users can disable width by passing `tablewidth=`.
     table_width: Option<String>,
+    /// Opt-in to rendering a list whose query legitimately returns no rows
+    /// (issue #55). By default an empty result aborts the list — and with it
+    /// every other list on the page — because a transient SPARQL failure is
+    /// far more common than an intentionally empty report, and silently
+    /// blanking a list is destructive.
+    allow_empty: bool,
 }
 
 impl Default for TemplateParams {
@@ -195,6 +201,7 @@ impl TemplateParams {
             freq: 0,
             misc_section_name: None,
             table_width: None,
+            allow_empty: false,
         }
     }
 
@@ -234,6 +241,7 @@ impl TemplateParams {
                 .unwrap_or(0),
             misc_section_name: Self::parse_optional_string(template, "misc"),
             table_width: Self::parse_optional_string(template, "tablewidth"),
+            allow_empty: Self::parse_flag_yes(template, "allow_empty"),
         }
     }
 
@@ -302,6 +310,10 @@ impl TemplateParams {
 
     pub const fn wdedit(&self) -> bool {
         self.wdedit
+    }
+
+    pub const fn allow_empty(&self) -> bool {
+        self.allow_empty
     }
 
     pub const fn sort(&self) -> &SortMode {
@@ -732,6 +744,24 @@ mod tests {
         let config = crate::configuration::Configuration::default();
         let params = TemplateParams::new_from_params(&template, &config);
         assert!(params.table_width().is_none());
+    }
+
+    #[test]
+    fn test_allow_empty_defaults_to_false() {
+        // Issue #55: opting in is required, so a transient empty SPARQL
+        // result still aborts rather than blanking the list.
+        assert!(!TemplateParams::new().allow_empty());
+        let template = crate::template::Template::new_from_params("foo").expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        assert!(!TemplateParams::new_from_params(&template, &config).allow_empty());
+    }
+
+    #[test]
+    fn test_allow_empty_yes() {
+        let template = crate::template::Template::new_from_params("foo|allow_empty=yes")
+            .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        assert!(TemplateParams::new_from_params(&template, &config).allow_empty());
     }
 
     #[test]
