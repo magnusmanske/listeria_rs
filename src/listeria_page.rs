@@ -328,6 +328,16 @@ mod tests {
         .await;
     }
 
+    /// Regression for issue #175: the `number` column must not emit the
+    /// `style='text-align:right'|` cell attribute inside a row template.
+    #[tokio::test]
+    async fn row_template_number_column() {
+        check_fixture_file(PathBuf::from(
+            "test_data/row_template_number_column.fixture",
+        ))
+        .await;
+    }
+
     #[tokio::test]
     async fn dewiki_sections_coordinates() {
         check_fixture_file(PathBuf::from(

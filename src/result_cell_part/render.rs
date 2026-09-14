@@ -210,6 +210,10 @@ impl ResultCellPart {
         colnum: usize,
     ) -> String {
         match self {
+            // With a row template the number becomes a template parameter
+            // value, so the table-cell alignment attribute must be omitted
+            // (issue #175, same rationale as `ResultCell::get_cell_prefix`).
+            ResultCellPart::Number if list.get_row_template().is_some() => (rownum + 1).to_string(),
             ResultCellPart::Number => format!("style='text-align:right'| {}", rownum + 1),
             ResultCellPart::Entity(entity_info) => {
                 self.as_wikitext_entity(list, &entity_info.id, entity_info.try_localize, colnum)
@@ -261,11 +265,16 @@ impl ResultCellPart {
         let amount_str = amount.to_string();
         match unit_id {
             Some(uid) => {
-                let label = list
-                    .ecw()
-                    .get_entity_label_with_fallback(uid, list.language())
-                    .await;
-                format!("{amount_str} {label}")
+                let ecw = list.ecw();
+                // Prefer the unit symbol over the label (issue #174).
+                let unit = match ecw.get_unit_symbol(uid, list.language()).await {
+                    Some(symbol) => symbol,
+                    None => {
+                        ecw.get_entity_label_with_fallback(uid, list.language())
+                            .await
+                    }
+                };
+                format!("{amount_str} {unit}")
             }
             None => amount_str,
         }

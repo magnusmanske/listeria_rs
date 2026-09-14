@@ -65,6 +65,9 @@ const MAX_LOAD_RETRIES: usize = 3;
 /// from a transient overload. Doubles each attempt for consistency with the
 /// retry policy in `retry::retry_with_backoff`.
 const RETRY_INITIAL_BACKOFF_MS: u64 = 200;
+/// Wikidata property holding a unit's symbol as monolingual text, e.g. "km"
+/// for kilometre (Q828224).
+const UNIT_SYMBOL_PROPERTY: &str = "P5061";
 
 /// Per-page in-memory entity store.
 ///
@@ -465,6 +468,45 @@ impl EntityContainerWrapper {
             })
     }
 
+    /// Returns a unit's symbol (property P5061), preferring `language`, then
+    /// the language-agnostic `mul` value, then English.
+    ///
+    /// Symbols ("km") read more naturally than unit labels ("kilometre") and
+    /// sidestep the plural/grammar problems labels have in many languages
+    /// (issue #174). Callers fall back to the label when this returns `None`.
+    pub async fn get_unit_symbol(&self, unit_id: &str, language: &str) -> Option<String> {
+        let unit = self.get_entity(unit_id).await?;
+        let claims = unit.claims_with_property(UNIT_SYMBOL_PROPERTY);
+        let candidates: Vec<_> = claims
+            .iter()
+            .filter(|s| *s.rank() != StatementRank::Deprecated)
+            .collect();
+        let has_preferred = candidates
+            .iter()
+            .any(|s| *s.rank() == StatementRank::Preferred);
+
+        let symbols: Vec<(&str, &str)> = candidates
+            .into_iter()
+            .filter(|s| !has_preferred || *s.rank() == StatementRank::Preferred)
+            .filter_map(|s| match s.main_snak().data_value().as_ref()?.value() {
+                Value::MonoLingual(m) => Some((m.language(), m.text())),
+                Value::StringValue(_)
+                | Value::Coordinate(_)
+                | Value::Entity(_)
+                | Value::EntitySchema(_)
+                | Value::Quantity(_)
+                | Value::Time(_) => None,
+            })
+            .collect();
+
+        [language, "mul", "en"].iter().find_map(|wanted| {
+            symbols
+                .iter()
+                .find(|(lang, _)| lang == wanted)
+                .map(|(_, text)| (*text).to_string())
+        })
+    }
+
     pub async fn get_datatype_for_property(&self, prop: &str) -> SnakDataType {
         #[allow(clippy::collapsible_match)]
         match self.get_entity(prop).await {
@@ -674,5 +716,109 @@ mod tests {
             Some("test entity"),
             "label must be readable from the cached entity"
         );
+    }
+
+    /// Builds a unit entity carrying one P5061 symbol statement per
+    /// `(language, symbol, rank)` triple.
+    fn unit_symbol_json(id: &str, symbols: &[(&str, &str, &str)]) -> serde_json::Value {
+        let claims: Vec<serde_json::Value> = symbols
+            .iter()
+            .enumerate()
+            .map(|(i, (language, text, rank))| {
+                serde_json::json!({
+                    "id": format!("{id}$symbol-{i}"),
+                    "type": "statement",
+                    "rank": rank,
+                    "mainsnak": {
+                        "snaktype": "value",
+                        "property": UNIT_SYMBOL_PROPERTY,
+                        "datatype": "monolingualtext",
+                        "datavalue": {
+                            "type": "monolingualtext",
+                            "value": {"language": language, "text": text}
+                        }
+                    }
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "type": "item",
+            "id": id,
+            "labels": {"en": {"language": "en", "value": "kilometre"}},
+            "descriptions": {},
+            "aliases": {},
+            "claims": {UNIT_SYMBOL_PROPERTY: claims},
+            "sitelinks": {}
+        })
+    }
+
+    #[tokio::test]
+    async fn test_get_unit_symbol_prefers_requested_language() {
+        let ecw = EntityContainerWrapper::new(5).await.unwrap();
+        ecw.set_entity_from_json(&unit_symbol_json(
+            "Q828224",
+            &[
+                ("en", "km", "normal"),
+                ("ru", "км", "normal"),
+                ("mul", "KM", "normal"),
+            ],
+        ))
+        .unwrap();
+
+        assert_eq!(
+            ecw.get_unit_symbol("Q828224", "ru").await,
+            Some("км".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_unit_symbol_falls_back_to_mul_then_english() {
+        let ecw = EntityContainerWrapper::new(5).await.unwrap();
+        ecw.set_entity_from_json(&unit_symbol_json(
+            "Q828224",
+            &[("en", "km", "normal"), ("mul", "KM", "normal")],
+        ))
+        .unwrap();
+        ecw.set_entity_from_json(&unit_symbol_json("Q11573", &[("en", "m", "normal")]))
+            .unwrap();
+
+        // No `ca` symbol, so `mul` wins over English.
+        assert_eq!(
+            ecw.get_unit_symbol("Q828224", "ca").await,
+            Some("KM".to_string())
+        );
+        // Neither `ca` nor `mul`, so English is the last resort.
+        assert_eq!(
+            ecw.get_unit_symbol("Q11573", "ca").await,
+            Some("m".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_unit_symbol_respects_rank() {
+        let ecw = EntityContainerWrapper::new(5).await.unwrap();
+        ecw.set_entity_from_json(&unit_symbol_json(
+            "Q828224",
+            &[
+                ("en", "deprecated", "deprecated"),
+                ("en", "km", "preferred"),
+            ],
+        ))
+        .unwrap();
+
+        assert_eq!(
+            ecw.get_unit_symbol("Q828224", "en").await,
+            Some("km".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_unit_symbol_absent_without_p5061() {
+        let ecw = EntityContainerWrapper::new(5).await.unwrap();
+        ecw.set_entity_from_json(&unit_symbol_json("Q828224", &[]))
+            .unwrap();
+
+        assert_eq!(ecw.get_unit_symbol("Q828224", "en").await, None);
+        assert_eq!(ecw.get_unit_symbol("Q999999", "en").await, None);
     }
 }
