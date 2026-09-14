@@ -16,6 +16,12 @@ use std::time::Duration;
 const MW_API_MAX_ATTEMPTS: u32 = 3;
 /// Initial backoff between MediaWiki API retries; doubles each attempt.
 const MW_API_INITIAL_BACKOFF_MS: u64 = 250;
+/// MediaWiki's default `$wgMaxArticleSize` (2048 KiB). Edits above this are
+/// rejected by the API with an opaque error, and historically the page could
+/// end up truncated mid-wikitext, destroying content after
+/// `{{Wikidata list end}}` (issues #118, #179). Refusing to save keeps the
+/// existing page intact and surfaces an actionable message instead.
+const MAX_PAGE_BYTES: usize = 2048 * 1024;
 
 /// Handles page loading, saving, and update operations for ListeriaPage
 #[derive(Debug, Clone, Copy)]
@@ -135,12 +141,26 @@ impl PageOperations {
         }
     }
 
+    /// Rejects wikitext that MediaWiki would refuse to store (issues #118, #179).
+    fn check_page_size(wikitext: &str) -> Result<()> {
+        if wikitext.len() > MAX_PAGE_BYTES {
+            return Err(anyhow!(
+                "Page would be {} bytes, above the {MAX_PAGE_BYTES}-byte MediaWiki limit; \
+                 shorten the list (e.g. add a LIMIT to the SPARQL query, drop columns, \
+                 or split it across several pages)",
+                wikitext.len()
+            ));
+        }
+        Ok(())
+    }
+
     pub async fn save_wikitext_to_page(
         page: &ListeriaPage,
         title: &str,
         wikitext: &str,
         basetimestamp: Option<&str>,
     ) -> Result<()> {
+        Self::check_page_size(wikitext)?;
         let page_params = page.page_params();
         let api_arc = page_params.mw_api();
         let mut api = (**api_arc).clone();
@@ -427,5 +447,23 @@ mod tests {
         let result = PageOperations::load_page(&mut page).await;
         // The result may vary, but we're testing it doesn't panic
         let _ = result;
+    }
+
+    #[test]
+    fn test_check_page_size_accepts_page_at_the_limit() {
+        let wikitext = "x".repeat(MAX_PAGE_BYTES);
+        assert!(PageOperations::check_page_size(&wikitext).is_ok());
+    }
+
+    #[test]
+    fn test_check_page_size_rejects_oversized_page() {
+        // Issues #118/#179: saving must fail loudly rather than let MediaWiki
+        // reject or truncate the page and destroy content after the template.
+        let wikitext = "x".repeat(MAX_PAGE_BYTES + 1);
+        let err = PageOperations::check_page_size(&wikitext)
+            .expect_err("oversized page must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("MediaWiki limit"), "unexpected message: {msg}");
+        assert!(msg.contains("LIMIT"), "message must suggest a fix: {msg}");
     }
 }
