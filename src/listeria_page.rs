@@ -322,12 +322,18 @@ mod tests {
     /// be injected into template parameter values.
     #[tokio::test]
     async fn row_template_no_cell_attrs() {
-        check_fixture_file(PathBuf::from("test_data/row_template_no_cell_attrs.fixture")).await;
+        check_fixture_file(PathBuf::from(
+            "test_data/row_template_no_cell_attrs.fixture",
+        ))
+        .await;
     }
 
     #[tokio::test]
     async fn dewiki_sections_coordinates() {
-        check_fixture_file(PathBuf::from("test_data/dewiki_sections_coordinates.fixture")).await;
+        check_fixture_file(PathBuf::from(
+            "test_data/dewiki_sections_coordinates.fixture",
+        ))
+        .await;
     }
 
     #[tokio::test]
@@ -407,7 +413,10 @@ mod tests {
 
     #[tokio::test]
     async fn sort_label_case_insensitive() {
-        check_fixture_file(PathBuf::from("test_data/sort_label_case_insensitive.fixture")).await;
+        check_fixture_file(PathBuf::from(
+            "test_data/sort_label_case_insensitive.fixture",
+        ))
+        .await;
     }
 
     #[tokio::test]

@@ -221,12 +221,20 @@ impl Reference {
             8 => year.map_or(date, |y| format!("{}0s", y / 10)),
             // Century precision: "20th century".
             7 => year.map_or(date, |y| {
-                let century = if y > 0 { (y - 1) / 100 + 1 } else { y / 100 - 1 };
+                let century = if y > 0 {
+                    (y - 1) / 100 + 1
+                } else {
+                    y / 100 - 1
+                };
                 format!("{} century", Self::ordinal_suffix(century))
             }),
             // Millennium precision.
             6 => year.map_or(date, |y| {
-                let millennium = if y > 0 { (y - 1) / 1000 + 1 } else { y / 1000 - 1 };
+                let millennium = if y > 0 {
+                    (y - 1) / 1000 + 1
+                } else {
+                    y / 1000 - 1
+                };
                 format!("{} millennium", Self::ordinal_suffix(millennium))
             }),
             // Lower precisions: fall back to year only.
@@ -710,7 +718,10 @@ mod tests {
 
     #[test]
     fn test_extract_archive_url() {
-        let snak = Snak::new_string("P1065", "https://web.archive.org/web/2020/https://x.example");
+        let snak = Snak::new_string(
+            "P1065",
+            "https://web.archive.org/web/2020/https://x.example",
+        );
         let mut reference = Reference::default();
         Reference::extract_archive_url(&snak, &mut reference);
         assert_eq!(

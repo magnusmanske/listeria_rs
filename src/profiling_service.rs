@@ -52,8 +52,8 @@ impl ProfilingService {
     }
 
     async fn log2db(&self, ms: i64, timestamp: &str, msg: &str) -> anyhow::Result<()> {
-        use mysql_async::prelude::Queryable;
         use mysql_async::params;
+        use mysql_async::prelude::Queryable;
         let pool = self.config.pool()?;
         let wiki = self.wiki.as_str();
         let page = self.page.as_str();

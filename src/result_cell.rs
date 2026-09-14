@@ -83,7 +83,12 @@ impl ResultCell {
         futures::future::join_all(futures).await;
     }
 
-    pub async fn as_tabbed_data(&self, list: &impl RenderContext, rownum: usize, colnum: usize) -> Value {
+    pub async fn as_tabbed_data(
+        &self,
+        list: &impl RenderContext,
+        rownum: usize,
+        colnum: usize,
+    ) -> Value {
         let mut ret = Vec::with_capacity(self.parts.len());
         for part_with_reference in self.parts.iter() {
             ret.push(
@@ -96,7 +101,12 @@ impl ResultCell {
         json!(ret.join("<br/>"))
     }
 
-    pub async fn as_wikitext(&self, list: &impl RenderContext, rownum: usize, colnum: usize) -> String {
+    pub async fn as_wikitext(
+        &self,
+        list: &impl RenderContext,
+        rownum: usize,
+        colnum: usize,
+    ) -> String {
         let futures: Vec<_> = self
             .parts
             .iter()

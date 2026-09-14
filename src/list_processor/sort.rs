@@ -110,7 +110,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_apply_sort_ascending_string() {
-        let keys = vec!["banana".to_string(), "apple".to_string(), "cherry".to_string()];
+        let keys = vec![
+            "banana".to_string(),
+            "apple".to_string(),
+            "cherry".to_string(),
+        ];
         let mut results = rows_with_keys(&["banana", "apple", "cherry"]);
         super::super::ListProcessor::apply_sort(&mut results, keys, false, SnakDataType::String)
             .await
@@ -122,7 +126,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_apply_sort_descending_string() {
-        let keys = vec!["banana".to_string(), "apple".to_string(), "cherry".to_string()];
+        let keys = vec![
+            "banana".to_string(),
+            "apple".to_string(),
+            "cherry".to_string(),
+        ];
         let mut results = rows_with_keys(&["banana", "apple", "cherry"]);
         super::super::ListProcessor::apply_sort(&mut results, keys, true, SnakDataType::String)
             .await
@@ -136,10 +144,14 @@ mod tests {
     async fn test_apply_sort_length_mismatch_returns_err() {
         let keys = vec!["a".to_string(), "b".to_string()];
         let mut results = rows_with_keys(&["a"]);
-        let err =
-            super::super::ListProcessor::apply_sort(&mut results, keys, false, SnakDataType::String)
-                .await
-                .unwrap_err();
+        let err = super::super::ListProcessor::apply_sort(
+            &mut results,
+            keys,
+            false,
+            SnakDataType::String,
+        )
+        .await
+        .unwrap_err();
         assert!(err.to_string().contains("sortkeys length mismatch"));
     }
 

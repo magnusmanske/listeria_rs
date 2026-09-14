@@ -278,8 +278,7 @@ mod tests {
         // the `misc=` template parameter. Custom name must replace "Misc"
         // everywhere — both in name2id and id2name.
         let valid = vec!["alpha".to_string()];
-        let (name2id, id2name, misc_id) =
-            ListProcessor::create_section_mappings(valid, "Autres");
+        let (name2id, id2name, misc_id) = ListProcessor::create_section_mappings(valid, "Autres");
         assert!(name2id.contains_key("Autres"));
         assert!(!name2id.contains_key("Misc"));
         assert_eq!(id2name[&misc_id], "Autres");
@@ -993,5 +992,4 @@ mod tests {
             .collect();
         assert_eq!(first_run, second_run);
     }
-
 }

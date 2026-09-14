@@ -56,11 +56,7 @@ impl PageStatusRepository {
         self.pool
             .with_timeout("clear_deleted", || async {
                 let sql = "DELETE FROM `pagestatus` WHERE `status`='DELETED'";
-                self.pool
-                    .get_conn()
-                    .await?
-                    .exec_iter(sql, ())
-                    .await?;
+                self.pool.get_conn().await?.exec_iter(sql, ()).await?;
                 Ok(())
             })
             .await
@@ -76,11 +72,7 @@ impl PageStatusRepository {
                 let sql = "UPDATE `pagestatus` SET `status`='FAIL', \
                            `message`='cleared from DEFERRED on bot startup' \
                            WHERE `status`='DEFERRED'";
-                self.pool
-                    .get_conn()
-                    .await?
-                    .exec_iter(sql, ())
-                    .await?;
+                self.pool.get_conn().await?.exec_iter(sql, ()).await?;
                 Ok(())
             })
             .await

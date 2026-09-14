@@ -441,8 +441,7 @@ mod tests {
     #[test]
     fn test_process_template_marker_adds_tabbed_data() {
         let result =
-            RendererTabbedData::process_template_marker("{{Wikidata list|columns=label}}")
-                .unwrap();
+            RendererTabbedData::process_template_marker("{{Wikidata list|columns=label}}").unwrap();
         assert!(result.contains("tabbed_data=1"));
         assert!(result.ends_with("}}"));
     }
@@ -509,7 +508,10 @@ mod tests {
             .unwrap();
         let renderer = RendererTabbedData::new();
         let name = renderer.tabbed_data_page_name(&list).unwrap();
-        assert!(name.starts_with("Data:Listeria/"), "Expected Data:Listeria/ prefix, got: {name}");
+        assert!(
+            name.starts_with("Data:Listeria/"),
+            "Expected Data:Listeria/ prefix, got: {name}"
+        );
         assert!(name.ends_with(".tab"), "Expected .tab suffix, got: {name}");
         assert!(name.len() <= 250);
     }

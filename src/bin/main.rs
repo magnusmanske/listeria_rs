@@ -78,10 +78,7 @@ fn init_tracing() {
 
     // `try_init` because some test harness paths may install a subscriber
     // before this code runs; silently treat a re-install as a no-op.
-    let _ = fmt()
-        .with_env_filter(filter)
-        .with_target(true)
-        .try_init();
+    let _ = fmt().with_env_filter(filter).with_target(true).try_init();
 }
 
 /*

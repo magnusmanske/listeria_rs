@@ -104,7 +104,11 @@ impl ListeriaBot for ListeriaBotWikidata {
         // we want the dispatcher to leave them alone.
         const IGNORE_STATUS: &str = "'RUNNING','DELETED','TRANSLATION','DEFERRED'";
 
-        if let Some(page) = self.pagestatus.find_priority_page(&ids, IGNORE_STATUS).await? {
+        if let Some(page) = self
+            .pagestatus
+            .find_priority_page(&ids, IGNORE_STATUS)
+            .await?
+        {
             info!(target: "lock", "Found a priority page: {:?}", &page);
             self.pagestatus
                 .update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
@@ -178,8 +182,7 @@ impl ListeriaBotWikidata {
         // Cheap to construct — bot now holds an Arc<WikiApis> rather than an
         // already-acquired ApiArc, so concurrency gating moves to where it
         // belongs (per process_page call) rather than at construction time.
-        let bot =
-            ListeriaBotWiki::new(wiki, Arc::clone(&self.wiki_apis), self.config.clone());
+        let bot = ListeriaBotWiki::new(wiki, Arc::clone(&self.wiki_apis), self.config.clone());
         self.bot_per_wiki.insert(wiki.to_string(), bot.clone());
         info!("Created bot for {wiki}");
         Some(bot)

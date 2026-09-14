@@ -232,7 +232,10 @@ mod tests {
 
         // First check: the probe path runs the CAS, returns false, and clears
         // opened_at_secs so subsequent callers don't all act as probes.
-        assert!(!cb.is_open(), "first probe after recovery must reach endpoint");
+        assert!(
+            !cb.is_open(),
+            "first probe after recovery must reach endpoint"
+        );
         assert_eq!(
             cb.opened_at_secs.load(Ordering::Relaxed),
             0,

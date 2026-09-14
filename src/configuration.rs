@@ -240,10 +240,15 @@ impl Configuration {
     /// database schema name. JSON config can add more entries via the
     /// `wiki_name_aliases` key.
     fn default_wiki_name_aliases() -> HashMap<String, String> {
-        ["be-taraskwiki", "be-x-oldwiki", "be_taraskwiki", "be_x_oldwiki"]
-            .into_iter()
-            .map(|name| (name.to_string(), "be_x_oldwiki".to_string()))
-            .collect()
+        [
+            "be-taraskwiki",
+            "be-x-oldwiki",
+            "be_taraskwiki",
+            "be_x_oldwiki",
+        ]
+        .into_iter()
+        .map(|name| (name.to_string(), "be_x_oldwiki".to_string()))
+        .collect()
     }
 
     /// Normalises a wiki identifier into its database/server name.
@@ -295,7 +300,10 @@ impl Configuration {
     }
 
     #[must_use]
-    pub const fn with_max_local_cached_entities(mut self, max_local_cached_entities: usize) -> Self {
+    pub const fn with_max_local_cached_entities(
+        mut self,
+        max_local_cached_entities: usize,
+    ) -> Self {
         self.max_local_cached_entities = max_local_cached_entities;
         self
     }
@@ -757,9 +765,7 @@ impl Configuration {
                 .filter_map(|s| match s.as_str() {
                     Some(s) => Some(s.to_string()),
                     None => {
-                        log::warn!(
-                            "Ignoring non-string entry in location_regions config: {s}"
-                        );
+                        log::warn!("Ignoring non-string entry in location_regions config: {s}");
                         None
                     }
                 })
@@ -825,8 +831,7 @@ impl Configuration {
             // extend the map and override individual defaults.
             for (k, v) in obj {
                 if let Some(target) = v.as_str() {
-                    self.wiki_name_aliases
-                        .insert(k.clone(), target.to_string());
+                    self.wiki_name_aliases.insert(k.clone(), target.to_string());
                 }
             }
         }
@@ -860,9 +865,7 @@ impl Configuration {
                 .filter_map(|s| match s.as_str() {
                     Some(s) => Some(s.to_string()),
                     None => {
-                        log::warn!(
-                            "Ignoring non-string entry in shadow_images_check config: {s}"
-                        );
+                        log::warn!("Ignoring non-string entry in shadow_images_check config: {s}");
                         None
                     }
                 })
@@ -1078,10 +1081,7 @@ mod tests {
         config
             .location_templates
             .insert("enwiki".to_string(), "{{Coord|$1|$2}}".to_string());
-        assert_eq!(
-            config.get_location_template("enwiki"),
-            "{{Coord|$1|$2}}"
-        );
+        assert_eq!(config.get_location_template("enwiki"), "{{Coord|$1|$2}}");
     }
 
     #[test]
@@ -1140,10 +1140,9 @@ mod tests {
     #[test]
     fn test_can_edit_namespace_wiki_with_list_block() {
         let mut config = Configuration::default();
-        config.namespace_blocks.insert(
-            "enwiki".to_string(),
-            NamespaceGroup::List(vec![1, 3]),
-        );
+        config
+            .namespace_blocks
+            .insert("enwiki".to_string(), NamespaceGroup::List(vec![1, 3]));
         assert!(!config.can_edit_namespace("enwiki", 1));
         assert!(!config.can_edit_namespace("enwiki", 3));
         assert!(config.can_edit_namespace("enwiki", 0));
@@ -1173,9 +1172,10 @@ mod tests {
     #[test]
     fn test_get_local_template_title_end_with_namespace_prefix() {
         let mut config = Configuration::default();
-        config
-            .template_end_sites
-            .insert("enwiki".to_string(), "Template:Wikidata list end".to_string());
+        config.template_end_sites.insert(
+            "enwiki".to_string(),
+            "Template:Wikidata list end".to_string(),
+        );
         assert_eq!(
             config.get_local_template_title_end("enwiki").unwrap(),
             "Wikidata list end"
@@ -1577,8 +1577,14 @@ mod tests {
             "enable_regions": false,
         }));
         assert!(!flags.enable_autodesc);
-        assert!(flags.enable_shadow_check, "unmentioned flag must keep its default");
-        assert!(flags.enable_references, "unmentioned flag must keep its default");
+        assert!(
+            flags.enable_shadow_check,
+            "unmentioned flag must keep its default"
+        );
+        assert!(
+            flags.enable_references,
+            "unmentioned flag must keep its default"
+        );
         assert!(!flags.enable_regions);
     }
 
@@ -1691,8 +1697,7 @@ mod tests {
             true,
         ))
         .unwrap();
-        let config =
-            Configuration::default().with_wikis([("enwiki".to_string(), w)].into());
+        let config = Configuration::default().with_wikis([("enwiki".to_string(), w)].into());
         assert!(config.get_wiki("enwiki").is_some());
     }
 }

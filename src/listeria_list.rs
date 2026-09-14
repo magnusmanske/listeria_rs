@@ -28,7 +28,9 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table_vec::SparqlTableVec;
-use wikimisc::wikibase::{EntityTrait, SnakDataType, Statement, StatementRank, Value as WikibaseValue};
+use wikimisc::wikibase::{
+    EntityTrait, SnakDataType, Statement, StatementRank, Value as WikibaseValue,
+};
 
 const AUTODESC_FALLBACK: &str = "FALLBACK";
 
@@ -86,15 +88,13 @@ impl ListeriaList {
             columns: Vec::new(),
             params: TemplateParams::new(),
             sparql_table: Arc::new(SparqlTableVec::new()),
-            ecw: EntityContainerWrapper::new(
-                page_params.config().max_concurrent_entry_queries(),
-            )
-            .await?
-            .with_circuit_breaker(
-                page_params
-                    .config()
-                    .mw_api_circuit_breaker(crate::configuration::MW_API_ENTITIES_KEY),
-            ),
+            ecw: EntityContainerWrapper::new(page_params.config().max_concurrent_entry_queries())
+                .await?
+                .with_circuit_breaker(
+                    page_params
+                        .config()
+                        .mw_api_circuit_breaker(crate::configuration::MW_API_ENTITIES_KEY),
+                ),
             state: ProcessingState::default(),
             wb_api,
             language: page_params.language().to_string(),
@@ -314,9 +314,7 @@ impl ListeriaList {
     /// 6 decimals gives ~0.1 m precision, which is more than sufficient for geographic display.
     pub fn format_coordinate(val: f64) -> String {
         let s = format!("{:.6}", val);
-        s.trim_end_matches('0')
-            .trim_end_matches('.')
-            .to_string()
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
     }
 
     pub fn get_location_template(
@@ -595,7 +593,11 @@ impl ListeriaList {
         // Non-fatal: sub-entity labels are best-effort. If loading fails (e.g. because
         // the list is very large), cells degrade to bare QID links rather than aborting
         // the entire page update.
-        if let Err(e) = self.ecw.load_entities(&self.wb_api, &entities_to_load).await {
+        if let Err(e) = self
+            .ecw
+            .load_entities(&self.wb_api, &entities_to_load)
+            .await
+        {
             log::warn!("Could not load sub-entities, some cells may show bare QIDs: {e}");
         }
 
@@ -714,14 +716,12 @@ impl ListeriaList {
 
         // Stable-sort string-valued claims (external IDs, URLs, etc.) alphabetically
         // so the rendered output is deterministic regardless of API return order (#168).
-        ret.sort_by_key(|s| {
-            match s.main_snak().data_value() {
-                Some(dv) => match dv.value() {
-                    WikibaseValue::StringValue(v) => v.clone(),
-                    _ => String::new(),
-                },
-                None => String::new(),
-            }
+        ret.sort_by_key(|s| match s.main_snak().data_value() {
+            Some(dv) => match dv.value() {
+                WikibaseValue::StringValue(v) => v.clone(),
+                _ => String::new(),
+            },
+            None => String::new(),
         });
 
         ret
@@ -939,13 +939,19 @@ mod tests {
     #[test]
     fn test_format_coordinate_repeating_decimal() {
         // 50°55′27″ = 50 + 55/60 + 27/3600 = 50.924166... → rounded to 6 dp
-        assert_eq!(ListeriaList::format_coordinate(50.924_166_666_666_665), "50.924167");
+        assert_eq!(
+            ListeriaList::format_coordinate(50.924_166_666_666_665),
+            "50.924167"
+        );
     }
 
     #[test]
     fn test_format_coordinate_repeating_decimal_2() {
         // 4°06′39″ = 4 + 6/60 + 39/3600 = 4.110833... → 6 dp, no rounding needed
-        assert_eq!(ListeriaList::format_coordinate(4.110_833_333_333_334), "4.110833");
+        assert_eq!(
+            ListeriaList::format_coordinate(4.110_833_333_333_334),
+            "4.110833"
+        );
     }
 
     #[test]
@@ -986,10 +992,7 @@ mod tests {
         // Bug fix: links=Local needs the entity cache to evaluate the
         // sitelink filter, even when no column reads entity data.
         let cols = vec![col("item")];
-        assert!(ListeriaList::needs_entity_loading(
-            &cols,
-            &LinksType::Local
-        ));
+        assert!(ListeriaList::needs_entity_loading(&cols, &LinksType::Local));
     }
 
     #[test]
@@ -1028,9 +1031,6 @@ mod tests {
         // Edge case: no columns at all but links=Local still needs the cache
         // to make a row-keep decision in use_local_links.
         let cols: Vec<Column> = Vec::new();
-        assert!(ListeriaList::needs_entity_loading(
-            &cols,
-            &LinksType::Local
-        ));
+        assert!(ListeriaList::needs_entity_loading(&cols, &LinksType::Local));
     }
 }

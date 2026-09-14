@@ -258,12 +258,10 @@ impl PageOperations {
             .get_query_api_json(&params)
             .await
             .ok()?;
-        let ts = result["query"]["pages"]
-            .as_object()?
-            .values()
-            .next()?["revisions"][0]["timestamp"]
-            .as_str()?
-            .to_string();
+        let ts =
+            result["query"]["pages"].as_object()?.values().next()?["revisions"][0]["timestamp"]
+                .as_str()?
+                .to_string();
         Some(ts)
     }
 
@@ -274,7 +272,9 @@ impl PageOperations {
     /// helper without hitting "captured variable cannot escape FnMut closure
     /// body". Mirrors the same policy: `MW_API_MAX_ATTEMPTS` total tries with
     /// `MW_API_INITIAL_BACKOFF_MS` doubling each retry.
-    async fn get_edit_token_with_retries(api: &mut wikimisc::mediawiki::api::Api) -> Result<String> {
+    async fn get_edit_token_with_retries(
+        api: &mut wikimisc::mediawiki::api::Api,
+    ) -> Result<String> {
         let mut backoff = Duration::from_millis(MW_API_INITIAL_BACKOFF_MS);
         let mut attempt: u32 = 1;
         loop {

@@ -85,12 +85,11 @@ impl ResultRow {
     /// Remove shadow files from cells
     pub fn remove_shadow_files(&mut self, shadow_files: &HashSet<String>) {
         for cell in self.cells.iter_mut() {
-            cell.parts_mut().retain(|part_with_reference| {
-                match part_with_reference.part() {
+            cell.parts_mut()
+                .retain(|part_with_reference| match part_with_reference.part() {
                     ResultCellPart::File(file) => !shadow_files.contains(file),
                     _ => true,
-                }
-            });
+                });
         }
     }
 
@@ -112,7 +111,8 @@ impl ResultRow {
     /// Get the sortkey for the label of the entity
     pub async fn get_sortkey_label(&self, list: &impl RenderContext) -> String {
         if list.get_entity(self.entity_id()).await.is_some() {
-            list.get_label_with_fallback_lang(self.entity_id(), list.language()).await
+            list.get_label_with_fallback_lang(self.entity_id(), list.language())
+                .await
         } else {
             String::new()
         }
@@ -162,7 +162,10 @@ impl ResultRow {
         };
         // get_filtered_claims already restricts to `prop`, so no extra filter.
         match list.get_filtered_claims(&entity, prop).first() {
-            Some(statement) => self.get_sortkey_from_snak(statement.main_snak(), list).await,
+            Some(statement) => {
+                self.get_sortkey_from_snak(statement.main_snak(), list)
+                    .await
+            }
             None => Self::no_value(datatype),
         }
     }
@@ -202,7 +205,8 @@ impl ResultRow {
                     format!("{}:{}", m.language(), m.text())
                 }
                 wikimisc::wikibase::value::Value::Entity(entity) => {
-                    list.get_label_with_fallback_lang(entity.id(), list.language()).await
+                    list.get_label_with_fallback_lang(entity.id(), list.language())
+                        .await
                 }
                 wikimisc::wikibase::value::Value::Quantity(q) => format!("{}", q.amount()),
                 wikimisc::wikibase::value::Value::StringValue(s) => s.to_owned(),

@@ -1,10 +1,6 @@
 //! Renders results as MediaWiki wikitext tables.
 
-use crate::{
-    listeria_page::ListeriaPage,
-    render_context::RenderContext,
-    renderer::Renderer,
-};
+use crate::{listeria_page::ListeriaPage, render_context::RenderContext, renderer::Renderer};
 use anyhow::Result;
 use futures::future::join_all;
 

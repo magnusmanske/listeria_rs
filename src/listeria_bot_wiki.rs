@@ -42,11 +42,7 @@ impl ListeriaBotWiki {
     /// handle. No semaphore gating because single-wiki mode has only one
     /// upstream and there's no `WikiApis` to consult.
     #[must_use]
-    pub fn new_with_direct_api(
-        wiki: &str,
-        api: ApiArc,
-        config: Arc<Configuration>,
-    ) -> Self {
+    pub fn new_with_direct_api(wiki: &str, api: ApiArc, config: Arc<Configuration>) -> Self {
         Self {
             wiki: wiki.to_string(),
             api_source: ApiSource::Direct(api),
@@ -74,19 +70,18 @@ impl ListeriaBotWiki {
             },
             ApiSource::Direct(api) => (None, api.clone()),
         };
-        let mut listeria_page = match ListeriaPage::new(self.config.clone(), api, page.to_owned())
-            .await
-        {
-            Ok(p) => p,
-            Err(e) => {
-                return WikiPageResult::new(
-                    &self.wiki,
-                    page,
-                    "FAIL",
-                    format!("Could not open/parse page '{page}': {e}"),
-                );
-            }
-        };
+        let mut listeria_page =
+            match ListeriaPage::new(self.config.clone(), api, page.to_owned()).await {
+                Ok(p) => p,
+                Err(e) => {
+                    return WikiPageResult::new(
+                        &self.wiki,
+                        page,
+                        "FAIL",
+                        format!("Could not open/parse page '{page}': {e}"),
+                    );
+                }
+            };
         if let Err(wpr) = listeria_page.run().await {
             return wpr;
         }

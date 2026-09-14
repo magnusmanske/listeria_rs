@@ -92,8 +92,8 @@ impl WikiApis {
     pub async fn new(config: Arc<Configuration>) -> Result<Self> {
         let pool = DatabasePool::new(&config)?;
         let site_matrix = SiteMatrix::new(config.get_default_wbapi()?).await?;
-        let total_semaphore = (*config.get_max_mw_apis_total())
-            .map(|n| Arc::new(Semaphore::new(n)));
+        let total_semaphore =
+            (*config.get_max_mw_apis_total()).map(|n| Arc::new(Semaphore::new(n)));
         Ok(Self {
             apis: Arc::new(DashMap::new()),
             replica_db: ReplicaDb::new(config.clone()),
@@ -142,8 +142,8 @@ impl WikiApis {
         let inner = once
             .get_or_try_init(|| async {
                 let api = self.create_wiki_api(wiki).await?;
-                let permits = (*self.config.get_max_mw_apis_per_wiki())
-                    .unwrap_or(Semaphore::MAX_PERMITS);
+                let permits =
+                    (*self.config.get_max_mw_apis_per_wiki()).unwrap_or(Semaphore::MAX_PERMITS);
                 info!(target: "lock", "WikiApis::acquire_wiki_api: new wiki {wiki} created");
                 Ok::<WikiInner, anyhow::Error>(WikiInner {
                     api,
@@ -252,7 +252,9 @@ impl WikiApis {
         if !new_pages.is_empty() {
             let wiki_id = self.wiki_repo.get_wiki_id(wiki).await?;
             log::info!("Adding {} pages for {wiki}", new_pages.len());
-            self.wiki_repo.add_pages_for_wiki(wiki_id, &new_pages).await?;
+            self.wiki_repo
+                .add_pages_for_wiki(wiki_id, &new_pages)
+                .await?;
         }
         Ok(())
     }

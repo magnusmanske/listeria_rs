@@ -131,9 +131,7 @@ mod tests {
     #[tokio::test]
     async fn test_with_timeout_returns_success_when_under_budget() {
         let pool = pool_with_query_timeout(Duration::from_secs(5));
-        let result: Result<i32> = pool
-            .with_timeout("noop", || async { Ok(42) })
-            .await;
+        let result: Result<i32> = pool.with_timeout("noop", || async { Ok(42) }).await;
         assert_eq!(result.unwrap(), 42);
     }
 
@@ -161,9 +159,7 @@ mod tests {
     async fn test_with_timeout_propagates_inner_error() {
         let pool = pool_with_query_timeout(Duration::from_secs(5));
         let result: Result<()> = pool
-            .with_timeout("erroring_op", || async {
-                Err(anyhow!("inner failure"))
-            })
+            .with_timeout("erroring_op", || async { Err(anyhow!("inner failure")) })
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("inner failure"));

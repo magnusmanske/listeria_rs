@@ -6,7 +6,7 @@
 
 use super::{LinkTarget, LocationInfo, PartWithReference, ResultCellPart};
 use crate::column_type::ColumnType;
-use crate::render_context::{normalize_page_title, RenderContext};
+use crate::render_context::{RenderContext, normalize_page_title};
 use crate::template_params::LinksType;
 use futures::future::join_all;
 use wikimisc::wikibase::entity::EntityTrait;
@@ -241,10 +241,13 @@ impl ResultCellPart {
                 Self::as_wikitext_external_id(list, &ext_id_info.property, &ext_id_info.id).await
             }
             ResultCellPart::Text(text) => Self::as_wikitext_text(list, text, colnum),
-            ResultCellPart::SnakList(v) => Self::as_wikitext_snak_list(v, list, rownum, colnum).await,
+            ResultCellPart::SnakList(v) => {
+                Self::as_wikitext_snak_list(v, list, rownum, colnum).await
+            }
             ResultCellPart::AutoDesc(ad) => ad.desc().unwrap_or_default().to_string(),
             ResultCellPart::Quantity(amount, unit_id) => {
-                self.as_wikitext_quantity(list, *amount, unit_id.as_deref()).await
+                self.as_wikitext_quantity(list, *amount, unit_id.as_deref())
+                    .await
             }
         }
     }
@@ -403,8 +406,7 @@ mod tests {
 
     #[test]
     fn test_wikipedia_url_to_wikilink_non_wikipedia_url() {
-        let result =
-            ResultCellPart::wikipedia_url_to_wikilink("https://example.com/wiki/Foo");
+        let result = ResultCellPart::wikipedia_url_to_wikilink("https://example.com/wiki/Foo");
         assert_eq!(result, None);
     }
 

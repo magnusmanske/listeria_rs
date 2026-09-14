@@ -96,7 +96,11 @@ impl super::ListProcessor {
                 _ => continue,
             }
         }
-        if region.is_empty() { None } else { Some(region) }
+        if region.is_empty() {
+            None
+        } else {
+            Some(region)
+        }
     }
 
     async fn process_regions_get_entity_id2region(

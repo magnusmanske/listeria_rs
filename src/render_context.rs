@@ -136,7 +136,10 @@ mod tests {
 
     #[test]
     fn test_namespace_prefix_uppercased() {
-        assert_eq!(normalize_page_title("category:test", false), "Category:test");
+        assert_eq!(
+            normalize_page_title("category:test", false),
+            "Category:test"
+        );
     }
 
     #[test]

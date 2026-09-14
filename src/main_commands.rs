@@ -65,7 +65,11 @@ impl MainCommands {
         items.push("Q3".to_string());
         items.push("Q4".to_string());
 
-        self.config = Arc::new((*self.config).clone().with_max_local_cached_entities(1_000_000));
+        self.config = Arc::new(
+            (*self.config)
+                .clone()
+                .with_max_local_cached_entities(1_000_000),
+        );
         let ecw = EntityContainerWrapper::new(self.config.max_concurrent_entry_queries())
             .await?
             .with_circuit_breaker(
@@ -161,9 +165,8 @@ impl MainCommands {
                                 page_timeout.as_secs()
                             );
                             log::error!("{msg}: {page_wiki}/{page_title}");
-                            if let Err(e) = bot
-                                .mark_page_failed(&page_wiki, &page_title, &msg)
-                                .await
+                            if let Err(e) =
+                                bot.mark_page_failed(&page_wiki, &page_title, &msg).await
                             {
                                 log::error!("Failed to mark timed-out page FAIL: {e}");
                             }

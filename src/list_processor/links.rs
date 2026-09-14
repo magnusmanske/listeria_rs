@@ -202,5 +202,4 @@ impl super::ListProcessor {
             _ => LinkTarget::Page,
         };
     }
-
 }

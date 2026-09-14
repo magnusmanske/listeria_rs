@@ -56,16 +56,12 @@ mod tests {
     #[tokio::test]
     async fn test_retry_with_backoff_returns_immediately_on_success() {
         let calls = AtomicU32::new(0);
-        let result: std::result::Result<&'static str, &'static str> = retry_with_backoff(
-            "test",
-            3,
-            Duration::from_millis(1),
-            || async {
+        let result: std::result::Result<&'static str, &'static str> =
+            retry_with_backoff("test", 3, Duration::from_millis(1), || async {
                 calls.fetch_add(1, Ordering::SeqCst);
                 Ok("done")
-            },
-        )
-        .await;
+            })
+            .await;
         assert_eq!(result.unwrap(), "done");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
@@ -73,16 +69,12 @@ mod tests {
     #[tokio::test]
     async fn test_retry_with_backoff_retries_until_success() {
         let calls = AtomicU32::new(0);
-        let result: std::result::Result<&'static str, &'static str> = retry_with_backoff(
-            "test",
-            3,
-            Duration::from_millis(1),
-            || async {
+        let result: std::result::Result<&'static str, &'static str> =
+            retry_with_backoff("test", 3, Duration::from_millis(1), || async {
                 let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
                 if n < 3 { Err("transient") } else { Ok("done") }
-            },
-        )
-        .await;
+            })
+            .await;
         assert_eq!(result.unwrap(), "done");
         assert_eq!(
             calls.load(Ordering::SeqCst),
@@ -94,16 +86,12 @@ mod tests {
     #[tokio::test]
     async fn test_retry_with_backoff_returns_last_error_after_max_attempts() {
         let calls = AtomicU32::new(0);
-        let result: std::result::Result<(), &'static str> = retry_with_backoff(
-            "test",
-            3,
-            Duration::from_millis(1),
-            || async {
+        let result: std::result::Result<(), &'static str> =
+            retry_with_backoff("test", 3, Duration::from_millis(1), || async {
                 calls.fetch_add(1, Ordering::SeqCst);
                 Err("nope")
-            },
-        )
-        .await;
+            })
+            .await;
         assert_eq!(result.unwrap_err(), "nope");
         assert_eq!(
             calls.load(Ordering::SeqCst),
@@ -115,16 +103,12 @@ mod tests {
     #[tokio::test]
     async fn test_retry_with_backoff_max_attempts_one_does_not_retry() {
         let calls = AtomicU32::new(0);
-        let result: std::result::Result<(), &'static str> = retry_with_backoff(
-            "test",
-            1,
-            Duration::from_millis(1),
-            || async {
+        let result: std::result::Result<(), &'static str> =
+            retry_with_backoff("test", 1, Duration::from_millis(1), || async {
                 calls.fetch_add(1, Ordering::SeqCst);
                 Err("first")
-            },
-        )
-        .await;
+            })
+            .await;
         assert!(result.is_err());
         assert_eq!(
             calls.load(Ordering::SeqCst),

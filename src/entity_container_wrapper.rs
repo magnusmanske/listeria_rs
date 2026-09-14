@@ -162,8 +162,10 @@ impl EntityContainerWrapper {
     }
 
     async fn load_entities_into_entity_cache(&self, api: &Api, ids: &[String]) -> Result<()> {
-        let chunks: Vec<Vec<String>> =
-            ids.chunks(LOAD_CHUNK_SIZE).map(<[String]>::to_vec).collect();
+        let chunks: Vec<Vec<String>> = ids
+            .chunks(LOAD_CHUNK_SIZE)
+            .map(<[String]>::to_vec)
+            .collect();
 
         // Fast path: a single chunk or concurrency-of-1 means no semaphore
         // overhead and no extra task spawn — preserves the historical behaviour
@@ -559,13 +561,16 @@ mod tests {
         ecw.set_entity_from_json(&json).unwrap();
 
         let ids = vec![
-            "Q42".to_string(),     // already loaded → must be filtered out
-            "Q188451".to_string(), // never inserted → must remain
+            "Q42".to_string(),      // already loaded → must be filtered out
+            "Q188451".to_string(),  // never inserted → must remain
             "Q7777573".to_string(), // never inserted → must remain
         ];
         let mut filtered = ecw.filter_ids(&ids).await.unwrap();
         filtered.sort();
-        assert_eq!(filtered, vec!["Q188451".to_string(), "Q7777573".to_string()]);
+        assert_eq!(
+            filtered,
+            vec!["Q188451".to_string(), "Q7777573".to_string()]
+        );
     }
 
     #[tokio::test]
@@ -659,7 +664,10 @@ mod tests {
         });
         ecw.set_entity_from_json(&json).unwrap();
 
-        let got = ecw.get_entity("Q12345").await.expect("entity must be present");
+        let got = ecw
+            .get_entity("Q12345")
+            .await
+            .expect("entity must be present");
         assert_eq!(got.id(), "Q12345");
         assert_eq!(
             got.label_in_locale("en"),

@@ -517,6 +517,9 @@ mod tests {
         let result = PageElement::matches_from_separators(sep_start, text, sep_end);
         assert!(result.is_ok());
         let (_, _, single) = result.unwrap();
-        assert!(single, "missing end template must produce single_template=true");
+        assert!(
+            single,
+            "missing end template must produce single_template=true"
+        );
     }
 }

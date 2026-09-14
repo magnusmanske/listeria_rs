@@ -204,18 +204,34 @@ impl TemplateParams {
             sort: SortMode::new(template.params().get("sort")),
             section: SectionType::new_from_string_option(template.params().get("section")),
             min_section: Self::parse_min_section(template),
-            row_template: template.params().get("row_template").map(|s| s.trim().to_string()),
-            header_template: template.params().get("header_template").map(|s| s.trim().to_string()),
+            row_template: template
+                .params()
+                .get("row_template")
+                .map(|s| s.trim().to_string()),
+            header_template: template
+                .params()
+                .get("header_template")
+                .map(|s| s.trim().to_string()),
             autodesc: Self::parse_autodesc(template),
-            summary: template.params().get("summary").map(|s| s.trim().to_uppercase()),
-            summary_label: template.params().get("summary_label").map(|s| s.trim().to_string()),
+            summary: template
+                .params()
+                .get("summary")
+                .map(|s| s.trim().to_uppercase()),
+            summary_label: template
+                .params()
+                .get("summary_label")
+                .map(|s| s.trim().to_string()),
             skip_table: template.params().contains_key("skip_table"),
             one_row_per_item: Self::parse_one_row_per_item(template),
             wdedit: Self::parse_flag_yes(template, "wdedit"),
             references: ReferencesParameter::new(template.params().get("references")),
             sort_order: SortOrder::new(template.params().get("sort_order")),
             wikibase: Self::parse_wikibase(template, config),
-            freq: template.params().get("freq").and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0),
+            freq: template
+                .params()
+                .get("freq")
+                .and_then(|s| s.trim().parse::<u64>().ok())
+                .unwrap_or(0),
             misc_section_name: Self::parse_optional_string(template, "misc"),
             table_width: Self::parse_optional_string(template, "tablewidth"),
         }
@@ -257,11 +273,7 @@ impl TemplateParams {
     }
 
     fn parse_flag_yes(template: &Template, key: &str) -> bool {
-        template
-            .params()
-            .get(key)
-            .map(|s| s.trim().to_uppercase())
-            == Some("YES".to_string())
+        template.params().get(key).map(|s| s.trim().to_uppercase()) == Some("YES".to_string())
     }
 
     fn parse_wikibase(template: &Template, config: &Configuration) -> String {
@@ -687,8 +699,8 @@ mod tests {
     fn test_misc_section_name_empty_falls_back_to_default() {
         // Empty values are equivalent to omitting the parameter, so the
         // historic "Misc" default is preserved.
-        let template = crate::template::Template::new_from_params("foo|misc=  ")
-            .expect("template parses");
+        let template =
+            crate::template::Template::new_from_params("foo|misc=  ").expect("template parses");
         let config = crate::configuration::Configuration::default();
         let params = TemplateParams::new_from_params(&template, &config);
         assert_eq!(params.misc_section_name(), "Misc");
@@ -715,8 +727,8 @@ mod tests {
     fn test_table_width_empty_is_none() {
         // `tablewidth=` (empty) lets users explicitly disable width, falling
         // back to no width attribute on the wikitable.
-        let template = crate::template::Template::new_from_params("foo|tablewidth=")
-            .expect("template parses");
+        let template =
+            crate::template::Template::new_from_params("foo|tablewidth=").expect("template parses");
         let config = crate::configuration::Configuration::default();
         let params = TemplateParams::new_from_params(&template, &config);
         assert!(params.table_width().is_none());

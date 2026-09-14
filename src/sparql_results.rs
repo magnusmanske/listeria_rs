@@ -208,10 +208,7 @@ impl SparqlResults {
         let j = tokio::time::timeout(timeout, api.get_query_api_json(&params))
             .await
             .map_err(|_| {
-                anyhow::anyhow!(
-                    "expandtemplates timed out after {}s",
-                    timeout.as_secs()
-                )
+                anyhow::anyhow!("expandtemplates timed out after {}s", timeout.as_secs())
             })??;
         if let Some(s) = j["expandtemplates"]["wikitext"].as_str() {
             *sparql = s.to_string();

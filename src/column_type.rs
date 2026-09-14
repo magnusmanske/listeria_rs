@@ -8,7 +8,9 @@
 use crate::entity_container_wrapper::{EntityContainerWrapper, EntityEntry};
 use crate::reference::Reference;
 use crate::render_context::RenderContext;
-use crate::result_cell_part::{AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart};
+use crate::result_cell_part::{
+    AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart,
+};
 use crate::template_params::ReferencesParameter;
 use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::{Statement, entity::EntityTrait};
@@ -329,15 +331,15 @@ impl ColumnType {
         parts: &mut Vec<PartWithReference>,
     ) {
         let Some(e) = entity else { return };
-        let Some(sitelinks) = e.sitelinks().as_ref() else { return };
-        let Some(sl) = sitelinks.iter().find(|s| *s.site() == *wiki) else { return };
+        let Some(sitelinks) = e.sitelinks().as_ref() else {
+            return;
+        };
+        let Some(sl) = sitelinks.iter().find(|s| *s.site() == *wiki) else {
+            return;
+        };
         let title = sl.title().to_string();
         let part = if wiki == list.wiki() {
-            ResultCellPart::LocalLink(LocalLinkInfo::new(
-                title.clone(),
-                title,
-                LinkTarget::Page,
-            ))
+            ResultCellPart::LocalLink(LocalLinkInfo::new(title.clone(), title, LinkTarget::Page))
         } else {
             let prefix = Self::wiki_id_to_interwiki_prefix(wiki);
             let display = title.replace('_', " ");
@@ -507,7 +509,10 @@ mod tests {
 
     #[test]
     fn test_fix_wikitext_for_output_no_special_chars() {
-        assert_eq!(ColumnType::fix_wikitext_for_output("normal text"), "normal text");
+        assert_eq!(
+            ColumnType::fix_wikitext_for_output("normal text"),
+            "normal text"
+        );
     }
 
     #[test]
@@ -522,7 +527,10 @@ mod tests {
 
     #[test]
     fn test_fix_wikitext_for_output_multiple_apostrophes() {
-        assert_eq!(ColumnType::fix_wikitext_for_output("it's John's"), "it&#39;s John&#39;s");
+        assert_eq!(
+            ColumnType::fix_wikitext_for_output("it's John's"),
+            "it&#39;s John&#39;s"
+        );
     }
 
     #[test]
@@ -566,7 +574,10 @@ mod tests {
 
     #[test]
     fn test_fix_wikitext_for_output_consecutive_special() {
-        assert_eq!(ColumnType::fix_wikitext_for_output("'<'<"), "&#39;&lt;&#39;&lt;");
+        assert_eq!(
+            ColumnType::fix_wikitext_for_output("'<'<"),
+            "&#39;&lt;&#39;&lt;"
+        );
     }
 
     #[test]
@@ -576,7 +587,10 @@ mod tests {
 
     #[test]
     fn test_fix_wikitext_for_output_double_quote_unchanged() {
-        assert_eq!(ColumnType::fix_wikitext_for_output("\"quoted\""), "\"quoted\"");
+        assert_eq!(
+            ColumnType::fix_wikitext_for_output("\"quoted\""),
+            "\"quoted\""
+        );
     }
 
     #[test]
@@ -595,7 +609,10 @@ mod tests {
 
     #[test]
     fn test_wiki_id_to_interwiki_prefix_special() {
-        assert_eq!(ColumnType::wiki_id_to_interwiki_prefix("commonswiki"), "commons");
+        assert_eq!(
+            ColumnType::wiki_id_to_interwiki_prefix("commonswiki"),
+            "commons"
+        );
         assert_eq!(ColumnType::wiki_id_to_interwiki_prefix("wikidatawiki"), "d");
     }
 }
