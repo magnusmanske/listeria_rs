@@ -2,7 +2,6 @@
 
 use crate::listeria_list::ListeriaList;
 use crate::result_cell_part::ResultCellPart;
-use crate::sparql_results::SparqlResults;
 use anyhow::Result;
 use futures::future::join_all;
 use std::collections::HashMap;
@@ -79,9 +78,8 @@ impl super::ListProcessor {
     }
 
     async fn get_region_for_entity_id(list: &ListeriaList, entity_id: &str) -> Option<String> {
-        let wikibase_key = list.template_params().wikibase().to_lowercase();
         let sparql = format!("SELECT ?q ?x {{ wd:{entity_id} wdt:P131* ?q . ?q wdt:P300 ?x }}");
-        let mut sparql_results = SparqlResults::new(list.page_params().clone(), &wikibase_key);
+        let mut sparql_results = list.new_sparql_results().ok()?;
         sparql_results.set_simulate(false);
         let mut region = String::new();
         let sparql_table = sparql_results.run_query(sparql).await.ok()?;

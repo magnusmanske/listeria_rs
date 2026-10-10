@@ -2,11 +2,14 @@
 
 use crate::listeria_error::ListeriaError;
 use crate::page_params::PageParams;
-use crate::retry::retry_with_backoff;
+use crate::retry::retry_with_backoff_if;
 use anyhow::Result;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use wikimisc::{
-    mediawiki::api::Api, sparql_results::SparqlApiResult, sparql_table_vec::SparqlTableVec,
+    sparql_client::{SparqlClient, SparqlError},
+    sparql_endpoint::SparqlEndpoint,
+    sparql_results::SparqlApiResult,
+    sparql_table_vec::SparqlTableVec,
 };
 
 /// Max attempts for a single SPARQL query (1 initial + retries).
@@ -25,7 +28,8 @@ pub struct SparqlResults {
     page_params: Arc<PageParams>,
     sparql_main_variable: Option<String>,
     wikibase_key: String,
-    query_endpoint: Option<String>, // For single wiki mode, the SPARQL endpoint
+    /// Where to send queries; when `None`, see [`Self::resolve_endpoint`].
+    endpoint: Option<SparqlEndpoint>,
     simulate: bool,
 }
 
@@ -37,14 +41,15 @@ impl SparqlResults {
             page_params,
             wikibase_key: wikibase_key.to_string(),
             sparql_main_variable: None,
-            query_endpoint: None,
+            endpoint: None,
             simulate,
         }
     }
 
+    /// Sends queries to `endpoint` rather than the wikibase's default.
     #[must_use]
-    pub fn with_query_endpoint(mut self, query_endpoint: String) -> Self {
-        self.query_endpoint = Some(query_endpoint);
+    pub fn with_endpoint(mut self, endpoint: SparqlEndpoint) -> Self {
+        self.endpoint = Some(endpoint);
         self
     }
 
@@ -72,102 +77,100 @@ impl SparqlResults {
             return Ok(None);
         };
         let result: SparqlApiResult = serde_json::from_str(json_text)?;
+        Ok(Some(self.table_from_result(result)?))
+    }
+
+    fn table_from_result(&mut self, result: SparqlApiResult) -> Result<SparqlTableVec> {
         self.set_main_variable(&result);
         let mut table = SparqlTableVec::from_api_result(result)?;
         table.set_main_variable(self.sparql_main_variable());
-        Ok(Some(table))
+        Ok(table)
     }
 
     async fn run_sparql_query(&mut self, sparql: &str) -> Result<SparqlTableVec> {
-        let wikibase_key = &self.wikibase_key;
-        let api = match self.page_params.config().get_wbapi(wikibase_key) {
-            Some(api) => api.clone(),
-            None => return Err(ListeriaError::SparqlNoConfig(wikibase_key.clone()).into()),
-        };
+        let endpoint = self.resolve_endpoint()?;
+        let config = self.page_params.config();
         // Acquire the per-endpoint permit so a slow endpoint can't starve
         // concurrent calls to a healthy one.
-        let query_api_url = self.get_sparql_endpoint(&api);
-        let semaphore = self
-            .page_params
-            .config()
-            .sparql_semaphore_for(&query_api_url);
+        let semaphore = config.sparql_semaphore_for(endpoint.url());
         let _permit = semaphore.acquire().await?;
-        self.run_sparql_query_stream(&api, sparql).await
-    }
 
-    async fn run_sparql_query_stream(
-        &mut self,
-        wb_api_sparql: &Api,
-        sparql: &str,
-    ) -> Result<SparqlTableVec> {
-        let query_api_url = self.get_sparql_endpoint(wb_api_sparql);
-        let circuit_breaker = self
-            .page_params
-            .config()
-            .sparql_circuit_breaker(&query_api_url);
+        let circuit_breaker = config.sparql_circuit_breaker(endpoint.url());
         if circuit_breaker.is_open() {
             tracing::warn!(
-                endpoint = %query_api_url,
+                endpoint = %endpoint.url(),
                 "SPARQL circuit OPEN; short-circuiting query (audit F5.2)"
             );
-            return Err(ListeriaError::SparqlCircuitOpen(query_api_url).into());
+            return Err(ListeriaError::SparqlCircuitOpen(endpoint.url().to_string()).into());
         }
 
-        let sparql = match self.page_params.config().sparql_prefix() {
+        let sparql = match config.sparql_prefix() {
             Some(prefix) => format!("{}\n{}", prefix, sparql),
             None => sparql.to_string(),
         };
-        let timeout = self.page_params.config().api_timeout();
+        // The client adds the endpoint's own prefixes, if it has any.
+        let client = SparqlClient::with_client(endpoint, config.sparql_http_client()?);
 
-        // Retry the send+decode loop so a single transient flake (5xx, broken
-        // connection, body decode error during a brief overload) doesn't fail
-        // the whole page. The circuit breaker is only updated by the *terminal*
+        // Retry so a single transient flake (5xx, broken connection, body
+        // decode error during a brief overload) doesn't fail the whole page;
+        // a malformed query fails the same way every time, so it is not
+        // retried. The circuit breaker is only updated by the *terminal*
         // outcome of the retry budget — intermediate retry failures don't ding
         // the breaker, so a flake recovered by retry leaves the breaker fully
         // healthy.
-        let result = retry_with_backoff(
+        let result = retry_with_backoff_if(
             "sparql_query",
             SPARQL_MAX_ATTEMPTS,
             Duration::from_millis(SPARQL_INITIAL_BACKOFF_MS),
-            || Self::send_and_decode(wb_api_sparql, &query_api_url, &sparql, timeout),
+            |e| !Self::is_query_error(e),
+            || client.query(&sparql),
         )
         .await;
 
         match result {
             Ok(result) => {
                 circuit_breaker.record_success();
-                self.set_main_variable(&result);
-                let mut ret = SparqlTableVec::from_api_result(result)?;
-                ret.set_main_variable(self.sparql_main_variable());
-                Ok(ret)
+                self.table_from_result(result)
             }
             Err(e) => {
-                circuit_breaker.record_failure();
-                Err(e)
+                if Self::is_query_error(&e) {
+                    // The endpoint answered, so it is healthy.
+                    circuit_breaker.record_success();
+                } else {
+                    circuit_breaker.record_failure();
+                }
+                Err(e.into())
             }
         }
     }
 
-    /// One SPARQL HTTP round-trip: POST the query, decode the JSON body.
-    /// Pure function (no `&self`, no breaker side effects) so it can be safely
-    /// re-invoked by [`retry_with_backoff`].
-    async fn send_and_decode(
-        wb_api_sparql: &Api,
-        query_api_url: &str,
-        sparql: &str,
-        timeout: Duration,
-    ) -> Result<SparqlApiResult> {
-        let params = [("query", sparql), ("format", "json")];
-        let response = wb_api_sparql
-            .client()
-            .post(query_api_url)
-            .header(reqwest::header::USER_AGENT, crate::LISTERIA_USER_AGENT)
-            .timeout(timeout)
-            .form(&params)
-            .send()
-            .await?;
-        let result = response.json::<SparqlApiResult>().await?;
-        Ok(result)
+    /// Whether the endpoint rejected the query itself (HTTP 400, e.g. a
+    /// syntax error or an unknown prefix), as opposed to failing to answer
+    /// it. Such an error recurs on every attempt and says nothing about the
+    /// endpoint's health.
+    const fn is_query_error(error: &SparqlError) -> bool {
+        matches!(error, SparqlError::Endpoint { status: 400, .. })
+    }
+
+    /// The endpoint queries go to, in order of precedence:
+    /// 1. the one set with [`Self::with_endpoint`];
+    /// 2. the one `default_sparql_endpoints` assigns to this wikibase;
+    /// 3. the one the wikibase advertises in its siteinfo (`wikibase-sparql`).
+    fn resolve_endpoint(&self) -> Result<SparqlEndpoint> {
+        if let Some(endpoint) = &self.endpoint {
+            return Ok(endpoint.clone());
+        }
+        let config = self.page_params.config();
+        if let Some(endpoint) = config.default_sparql_endpoint(&self.wikibase_key) {
+            return Ok(endpoint.clone());
+        }
+        let api = config
+            .get_wbapi(&self.wikibase_key)
+            .ok_or_else(|| ListeriaError::SparqlNoConfig(self.wikibase_key.clone()))?;
+        let url = api
+            .get_site_info_string("general", "wikibase-sparql")
+            .map_err(|_| ListeriaError::SparqlNoEndpoint(self.wikibase_key.clone()))?;
+        Ok(SparqlEndpoint::new(url))
     }
 
     fn set_main_variable(&mut self, result: &SparqlApiResult) {
@@ -214,16 +217,6 @@ impl SparqlResults {
             *sparql = s.to_string();
         }
         Ok(())
-    }
-
-    fn get_sparql_endpoint(&self, wb_api_sparql: &Api) -> String {
-        if let Some(endpoint) = &self.query_endpoint {
-            return endpoint.to_owned();
-        }
-        wb_api_sparql
-            .get_site_info_string("general", "wikibase-sparql")
-            .unwrap_or("https://wcqs-beta.wmflabs.org/sparql")
-            .to_string()
     }
 
     #[must_use]
@@ -483,5 +476,172 @@ mod tests {
             result.is_none(),
             "Expected None when no simulated SPARQL results are configured"
         );
+    }
+
+    // ── endpoint selection and transport ──────────────────────────────────
+
+    use crate::configuration::Configuration;
+    use crate::test_utils::{cached_config_clone, sent_sparql_query};
+    use wikimisc::sparql_value::SparqlValue;
+    use wiremock::matchers::{header, method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const MOCK_PATH: &str = "/sparql";
+    const QUERY: &str = "SELECT ?item ?coord WHERE { ?item wdt:P625 ?coord }";
+    /// A QLever result, which spells coordinates `POINT(…)`.
+    const QLEVER_RESULT: &str = r#"{"head":{"vars":["item","coord"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q64"},"coord":{"datatype":"http://www.opengis.net/ont/geosparql#wktLiteral","type":"literal","value":"POINT(13.383333 52.516667)"}}]},"meta":{"query-time-ms":9,"result-size-total":1}}"#;
+    const QLEVER_SYNTAX_ERROR: &str = r#"{"exception":"Invalid SPARQL query: Prefix wdt was not registered using a PREFIX declaration","status":"ERROR"}"#;
+
+    async fn page_params_with(config: Configuration) -> Arc<PageParams> {
+        let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
+        Arc::new(
+            PageParams::new(Arc::new(config), api, "Test".to_string())
+                .await
+                .unwrap(),
+        )
+    }
+
+    fn mock_endpoint(server: &MockServer) -> SparqlEndpoint {
+        SparqlEndpoint::new(format!("{}{MOCK_PATH}", server.uri()))
+    }
+
+    async fn mount(server: &MockServer, response: ResponseTemplate, expected_calls: u64) {
+        Mock::given(method("POST"))
+            .and(path(MOCK_PATH))
+            .respond_with(response)
+            .expect(expected_calls)
+            .mount(server)
+            .await;
+    }
+
+    #[tokio::test]
+    async fn test_current_config_uses_the_wikibase_endpoint() {
+        // With today's config (no `sparql_endpoints`), Wikidata lists must
+        // keep going to WDQS, with nothing added to the query.
+        let page_params = page_params_with(cached_config_clone().await).await;
+        let endpoint = SparqlResults::new(page_params, "wikidata")
+            .resolve_endpoint()
+            .unwrap();
+        assert_eq!(endpoint, SparqlEndpoint::wdqs());
+    }
+
+    #[tokio::test]
+    async fn test_resolve_endpoint_precedence() {
+        let a = SparqlEndpoint::new("https://a.example/sparql");
+        let b = SparqlEndpoint::new("https://b.example/sparql");
+        let config = cached_config_clone()
+            .await
+            .with_sparql_endpoint("a", a.clone())
+            .with_sparql_endpoint("b", b.clone())
+            .with_default_sparql_endpoint("wikidata", "a");
+        let page_params = page_params_with(config).await;
+
+        let configured_default = SparqlResults::new(page_params.clone(), "wikidata");
+        assert_eq!(configured_default.resolve_endpoint().unwrap(), a);
+        let explicit = configured_default.with_endpoint(b.clone());
+        assert_eq!(explicit.resolve_endpoint().unwrap(), b);
+    }
+
+    #[tokio::test]
+    async fn test_resolve_endpoint_errors() {
+        let page_params = page_params_with(cached_config_clone().await).await;
+        // Commons advertises no SPARQL endpoint in its siteinfo.
+        let no_endpoint = SparqlResults::new(page_params.clone(), "commons")
+            .resolve_endpoint()
+            .unwrap_err();
+        assert!(
+            no_endpoint.to_string().contains("No SPARQL endpoint"),
+            "{no_endpoint}"
+        );
+        let no_wikibase = SparqlResults::new(page_params, "nosuchwikibase")
+            .resolve_endpoint()
+            .unwrap_err();
+        assert!(
+            no_wikibase.to_string().contains("No wikibase setup"),
+            "{no_wikibase}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_query_is_sent_with_headers_and_endpoint_prefixes() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(MOCK_PATH))
+            .and(header("accept", "application/sparql-results+json"))
+            .and(header("user-agent", crate::LISTERIA_USER_AGENT))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(QLEVER_RESULT, "application/sparql-results+json"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let endpoint =
+            mock_endpoint(&server).with_prefix("wdt", "http://www.wikidata.org/prop/direct/");
+        let page_params = page_params_with(cached_config_clone().await).await;
+        let mut sparql_results =
+            SparqlResults::new(page_params, "wikidata").with_endpoint(endpoint);
+
+        let table = sparql_results.run_query(QUERY.to_string()).await.unwrap();
+
+        assert_eq!(table.len(), 1);
+        assert_eq!(
+            sparql_results.sparql_main_variable(),
+            Some("item".to_string())
+        );
+        let coord = table.get_var_index("coord").unwrap();
+        assert!(matches!(
+            table.get_row_col(0, coord),
+            Some(SparqlValue::Location(_))
+        ));
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(
+            sent_sparql_query(&requests[0]),
+            format!("PREFIX wdt: <http://www.wikidata.org/prop/direct/>\n{QUERY}")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_malformed_query_is_reported_and_not_retried() {
+        let server = MockServer::start().await;
+        let attempts = 5; // Enough to open the breaker if each counted.
+        mount(
+            &server,
+            ResponseTemplate::new(400).set_body_string(QLEVER_SYNTAX_ERROR),
+            attempts,
+        )
+        .await;
+        let page_params = page_params_with(cached_config_clone().await).await;
+
+        for _ in 0..attempts {
+            let mut sparql_results = SparqlResults::new(page_params.clone(), "wikidata")
+                .with_endpoint(mock_endpoint(&server));
+            let err = sparql_results
+                .run_query(QUERY.to_string())
+                .await
+                .unwrap_err();
+            assert!(
+                err.to_string().contains("Prefix wdt was not registered"),
+                "{err}"
+            );
+        }
+        let url = mock_endpoint(&server).url().to_string();
+        assert!(!page_params.config().sparql_circuit_breaker(&url).is_open());
+    }
+
+    #[tokio::test]
+    async fn test_server_error_is_retried() {
+        let server = MockServer::start().await;
+        mount(
+            &server,
+            ResponseTemplate::new(503).set_body_string("Service Unavailable"),
+            u64::from(SPARQL_MAX_ATTEMPTS),
+        )
+        .await;
+        let page_params = page_params_with(cached_config_clone().await).await;
+        let mut sparql_results =
+            SparqlResults::new(page_params, "wikidata").with_endpoint(mock_endpoint(&server));
+
+        assert!(sparql_results.run_query(QUERY.to_string()).await.is_err());
     }
 }

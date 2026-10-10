@@ -23,6 +23,12 @@ pub enum ListeriaError {
 
     #[error("SPARQL circuit open — endpoint '{0}' is temporarily blocked after repeated failures")]
     SparqlCircuitOpen(String),
+
+    #[error("Unknown SPARQL endpoint '{0}' — it is not configured for this bot")]
+    SparqlUnknownEndpoint(String),
+
+    #[error("No SPARQL endpoint known for wikibase '{0}'")]
+    SparqlNoEndpoint(String),
 }
 
 #[cfg(test)]

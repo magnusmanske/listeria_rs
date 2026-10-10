@@ -52,3 +52,22 @@ pub async fn cached_config() -> Arc<Configuration> {
         .await
         .clone()
 }
+
+/// A clone of [`cached_config`], for tests that adjust the configuration.
+pub async fn cached_config_clone() -> Configuration {
+    (*cached_config().await).clone()
+}
+
+/// The `query` field of a form-encoded SPARQL request received by a mock.
+pub fn sent_sparql_query(request: &wiremock::Request) -> String {
+    String::from_utf8_lossy(&request.body)
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("query="))
+        .map(|value| {
+            // `+` is a space in form encoding; a literal `+` arrives as `%2B`.
+            percent_encoding::percent_decode_str(&value.replace('+', " "))
+                .decode_utf8_lossy()
+                .into_owned()
+        })
+        .unwrap_or_default()
+}

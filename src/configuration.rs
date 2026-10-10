@@ -10,11 +10,12 @@ use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
 use tokio::sync::Semaphore;
 use wikimisc::mediawiki::api::Api;
+use wikimisc::sparql_endpoint::{SparqlEndpoint, WIKIDATA_PREFIXES};
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::entity_container::EntityContainer;
 
@@ -150,6 +151,15 @@ pub struct Configuration {
     status_server_port: Option<u16>,         // For single wiki mode, the port for the status server
     sparql_prefix: Option<String>, // For single wiki mode, a prefix for all SPARQL queries
     main_item_prefix: String,      // For single wiki mode, the prefix for items
+    /// Named SPARQL endpoints (lower-case name → endpoint), selectable per
+    /// list with the template parameter `sparql_endpoint=`.
+    sparql_endpoints: HashMap<String, SparqlEndpoint>,
+    /// Wikibase key (e.g. `wikidata`) → name of the `sparql_endpoints` entry
+    /// its lists use when the template names none. A wikibase not listed here
+    /// uses the endpoint its siteinfo advertises.
+    default_sparql_endpoints: HashMap<String, String>,
+    /// HTTP client for SPARQL requests, built on first use.
+    sparql_http_client: OnceLock<reqwest::Client>,
     /// Per-endpoint SPARQL semaphores. Each endpoint URL gets its own semaphore
     /// of `max_sparql_simultaneous` permits, so a slow Commons-Query-Service
     /// can't starve calls to the Wikidata-Query-Service of permits.
@@ -221,6 +231,9 @@ impl Default for Configuration {
             status_server_port: None,
             sparql_prefix: None,
             main_item_prefix: String::new(),
+            sparql_endpoints: HashMap::new(),
+            default_sparql_endpoints: HashMap::new(),
+            sparql_http_client: OnceLock::new(),
             sparql_semaphores: Arc::new(DashMap::new()),
             sparql_circuit_breakers: Arc::new(DashMap::new()),
             mw_api_circuit_breakers: Arc::new(DashMap::new()),
@@ -336,6 +349,7 @@ impl Configuration {
             ..Default::default()
         };
         ret.new_from_json_misc(&j);
+        ret.new_from_json_sparql_endpoints(&j)?;
         ret.new_from_json_locations(&j);
         ret.new_from_json_wikibase_apis(&j).await?;
         ret.new_from_json_namespace_blocks(&j)?;
@@ -354,6 +368,39 @@ impl Configuration {
 
     pub fn sparql_prefix(&self) -> Option<&str> {
         self.sparql_prefix.as_deref()
+    }
+
+    /// The endpoint configured under `name` in `sparql_endpoints`; the name
+    /// is case-insensitive.
+    pub fn sparql_endpoint(&self, name: &str) -> Option<&SparqlEndpoint> {
+        self.sparql_endpoints.get(&name.to_lowercase())
+    }
+
+    /// The endpoint `default_sparql_endpoints` assigns to `wikibase_key`, if
+    /// any.
+    pub fn default_sparql_endpoint(&self, wikibase_key: &str) -> Option<&SparqlEndpoint> {
+        let name = self
+            .default_sparql_endpoints
+            .get(&wikibase_key.to_lowercase())?;
+        self.sparql_endpoints.get(name)
+    }
+
+    /// The HTTP client all SPARQL requests go through. It carries the bot's
+    /// user agent, which Wikimedia's user-agent policy requires of WDQS
+    /// clients, and `api_timeout` as its request timeout. Built once and
+    /// shared, so connections to an endpoint are reused.
+    pub fn sparql_http_client(&self) -> Result<reqwest::Client> {
+        if let Some(client) = self.sparql_http_client.get() {
+            return Ok(client.clone());
+        }
+        let client = reqwest::Client::builder()
+            .user_agent(crate::LISTERIA_USER_AGENT)
+            .timeout(self.api_timeout())
+            .gzip(true)
+            .deflate(true)
+            .brotli(true)
+            .build()?;
+        Ok(self.sparql_http_client.get_or_init(|| client).clone())
     }
 
     fn new_from_json_namespace_blocks(&mut self, j: &Value) -> Result<()> {
@@ -755,6 +802,69 @@ impl Configuration {
         Ok(())
     }
 
+    /// Reads the optional SPARQL endpoint configuration:
+    ///
+    /// ```json
+    /// "sparql_endpoints": {
+    ///     "qlever": {
+    ///         "url": "https://qlever.dev/api/wikidata",
+    ///         "wikidata_prefixes": true,
+    ///         "prefixes": { "ex": "http://example.org/" }
+    ///     }
+    /// },
+    /// "default_sparql_endpoints": { "wikidata": "qlever" }
+    /// ```
+    ///
+    /// `wikidata_prefixes` declares the prefixes WDQS predeclares, which an
+    /// engine like QLever lacks; `prefixes` adds others. A prefix a query
+    /// declares itself is never added again. Without these keys every query
+    /// goes to the endpoint the wikibase advertises, as before.
+    fn new_from_json_sparql_endpoints(&mut self, j: &Value) -> Result<()> {
+        if let Some(o) = j["sparql_endpoints"].as_object() {
+            for (name, v) in o {
+                self.sparql_endpoints
+                    .insert(name.to_lowercase(), Self::parse_sparql_endpoint(name, v)?);
+            }
+        }
+        if let Some(o) = j["default_sparql_endpoints"].as_object() {
+            for (wikibase_key, name) in o {
+                let name = name
+                    .as_str()
+                    .ok_or_else(|| {
+                        anyhow!("default_sparql_endpoints.{wikibase_key} must be a string")
+                    })?
+                    .to_lowercase();
+                if !self.sparql_endpoints.contains_key(&name) {
+                    return Err(anyhow!(
+                        "default_sparql_endpoints.{wikibase_key} names unknown endpoint '{name}'"
+                    ));
+                }
+                self.default_sparql_endpoints
+                    .insert(wikibase_key.to_lowercase(), name);
+            }
+        }
+        Ok(())
+    }
+
+    fn parse_sparql_endpoint(name: &str, j: &Value) -> Result<SparqlEndpoint> {
+        let url = j["url"]
+            .as_str()
+            .ok_or_else(|| anyhow!("sparql_endpoints.{name} needs a \"url\""))?;
+        let mut endpoint = SparqlEndpoint::new(url);
+        if j["wikidata_prefixes"].as_bool().unwrap_or_default() {
+            endpoint = endpoint.with_prefixes(WIKIDATA_PREFIXES.iter().copied());
+        }
+        if let Some(prefixes) = j["prefixes"].as_object() {
+            for (prefix, iri) in prefixes {
+                let iri = iri.as_str().ok_or_else(|| {
+                    anyhow!("sparql_endpoints.{name}.prefixes.{prefix} must be a string")
+                })?;
+                endpoint = endpoint.with_prefix(prefix.as_str(), iri);
+            }
+        }
+        Ok(endpoint)
+    }
+
     fn new_from_json_locations(&mut self, j: &Value) {
         // Location regions — skip any non-string entries with a warning rather
         // than panicking at startup. Other config-array fields use the same
@@ -871,6 +981,29 @@ impl Configuration {
                 })
                 .collect();
         }
+    }
+}
+
+/// Builders for tests that need SPARQL settings without a JSON config file.
+#[cfg(test)]
+impl Configuration {
+    pub fn with_sparql_endpoint(mut self, name: &str, endpoint: SparqlEndpoint) -> Self {
+        self.sparql_endpoints.insert(name.to_lowercase(), endpoint);
+        self
+    }
+
+    pub fn with_default_sparql_endpoint(mut self, wikibase_key: &str, name: &str) -> Self {
+        self.default_sparql_endpoints
+            .insert(wikibase_key.to_lowercase(), name.to_lowercase());
+        self
+    }
+
+    /// Single-wiki mode with its `query_endpoint` and `sparql_prefix`.
+    pub fn with_single_wiki_sparql(mut self, query_endpoint: &str, sparql_prefix: &str) -> Self {
+        self.is_single_wiki = true;
+        self.query_endpoint = Some(query_endpoint.to_string());
+        self.sparql_prefix = Some(sparql_prefix.to_string());
+        self
     }
 }
 
@@ -1699,5 +1832,82 @@ mod tests {
         .unwrap();
         let config = Configuration::default().with_wikis([("enwiki".to_string(), w)].into());
         assert!(config.get_wiki("enwiki").is_some());
+    }
+
+    // ── SPARQL endpoints ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_sparql_endpoints_absent_by_default() {
+        // Existing configs have neither key; nothing may change for them.
+        let mut config = Configuration::default();
+        config
+            .new_from_json_sparql_endpoints(&serde_json::json!({}))
+            .unwrap();
+        assert!(config.sparql_endpoint("qlever").is_none());
+        assert!(config.default_sparql_endpoint("wikidata").is_none());
+    }
+
+    #[test]
+    fn test_sparql_endpoints_parse_url_and_prefixes() {
+        let mut config = Configuration::default();
+        config
+            .new_from_json_sparql_endpoints(&serde_json::json!({
+                "sparql_endpoints": {
+                    "QLever": {
+                        "url": "https://qlever.example/api/wikidata",
+                        "wikidata_prefixes": true,
+                        "prefixes": { "ex": "http://example.org/" }
+                    },
+                    "plain": { "url": "https://plain.example/sparql" }
+                },
+                "default_sparql_endpoints": { "Wikidata": "qlever" }
+            }))
+            .unwrap();
+
+        // Names are case-insensitive.
+        let qlever = config.sparql_endpoint("qlever").unwrap();
+        assert_eq!(config.sparql_endpoint("QLEVER"), Some(qlever));
+        assert_eq!(qlever.url(), "https://qlever.example/api/wikidata");
+        let prepared = qlever.prepare_query("ASK {}");
+        assert!(prepared.contains("PREFIX wdt: <http://www.wikidata.org/prop/direct/>\n"));
+        assert!(prepared.contains("PREFIX ex: <http://example.org/>\n"));
+
+        let plain = config.sparql_endpoint("plain").unwrap();
+        assert_eq!(plain.prepare_query("ASK {}"), "ASK {}");
+
+        assert_eq!(config.default_sparql_endpoint("wikidata"), Some(qlever));
+        assert!(config.default_sparql_endpoint("commons").is_none());
+    }
+
+    #[test]
+    fn test_sparql_endpoint_without_url_is_rejected() {
+        let mut config = Configuration::default();
+        let result = config.new_from_json_sparql_endpoints(&serde_json::json!({
+            "sparql_endpoints": { "broken": { "wikidata_prefixes": true } }
+        }));
+        assert!(result.unwrap_err().to_string().contains("broken"));
+    }
+
+    #[test]
+    fn test_default_sparql_endpoint_must_exist() {
+        // A typo here would otherwise silently send every list to the
+        // wikibase's own endpoint.
+        let mut config = Configuration::default();
+        let result = config.new_from_json_sparql_endpoints(&serde_json::json!({
+            "sparql_endpoints": { "qlever": { "url": "https://qlever.example/" } },
+            "default_sparql_endpoints": { "wikidata": "qlevr" }
+        }));
+        assert!(result.unwrap_err().to_string().contains("qlevr"));
+    }
+
+    #[test]
+    fn test_sparql_http_client_is_built_once() {
+        let config = Configuration {
+            api_timeout: 10,
+            ..Default::default()
+        };
+        assert!(config.sparql_http_client().is_ok());
+        assert!(config.sparql_http_client.get().is_some());
+        assert!(config.sparql_http_client().is_ok());
     }
 }

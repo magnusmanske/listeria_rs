@@ -172,6 +172,10 @@ pub struct TemplateParams {
     /// far more common than an intentionally empty report, and silently
     /// blanking a list is destructive.
     allow_empty: bool,
+    /// Name of a configured SPARQL endpoint to send this list's queries to
+    /// (`sparql_endpoint=qlever`), instead of the wikibase's default. Only
+    /// names from the bot's configuration are accepted, never URLs.
+    sparql_endpoint: Option<String>,
 }
 
 impl Default for TemplateParams {
@@ -202,6 +206,7 @@ impl TemplateParams {
             misc_section_name: None,
             table_width: None,
             allow_empty: false,
+            sparql_endpoint: None,
         }
     }
 
@@ -242,6 +247,8 @@ impl TemplateParams {
             misc_section_name: Self::parse_optional_string(template, "misc"),
             table_width: Self::parse_optional_string(template, "tablewidth"),
             allow_empty: Self::parse_flag_yes(template, "allow_empty"),
+            sparql_endpoint: Self::parse_optional_string(template, "sparql_endpoint")
+                .map(|s| s.to_lowercase()),
         }
     }
 
@@ -294,6 +301,10 @@ impl TemplateParams {
 
     pub fn wikibase(&self) -> &str {
         &self.wikibase
+    }
+
+    pub fn sparql_endpoint(&self) -> Option<&str> {
+        self.sparql_endpoint.as_deref()
     }
 
     pub fn autodesc(&self) -> Option<String> {
@@ -762,6 +773,32 @@ mod tests {
             .expect("template parses");
         let config = crate::configuration::Configuration::default();
         assert!(TemplateParams::new_from_params(&template, &config).allow_empty());
+    }
+
+    #[test]
+    fn test_sparql_endpoint_defaults_to_none() {
+        assert!(TemplateParams::new().sparql_endpoint().is_none());
+        let config = crate::configuration::Configuration::default();
+        for params in ["foo", "foo|sparql_endpoint= "] {
+            let template = crate::template::Template::new_from_params(params).expect("parses");
+            assert!(
+                TemplateParams::new_from_params(&template, &config)
+                    .sparql_endpoint()
+                    .is_none(),
+                "{params}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sparql_endpoint_is_trimmed_and_lowercased() {
+        let template = crate::template::Template::new_from_params("foo|sparql_endpoint= QLever ")
+            .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        assert_eq!(
+            TemplateParams::new_from_params(&template, &config).sparql_endpoint(),
+            Some("qlever")
+        );
     }
 
     #[test]

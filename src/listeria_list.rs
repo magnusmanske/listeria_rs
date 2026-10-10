@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use wikimisc::mediawiki::api::Api;
+use wikimisc::sparql_endpoint::SparqlEndpoint;
 use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::{
     EntityTrait, SnakDataType, Statement, StatementRank, Value as WikibaseValue,
@@ -345,17 +346,34 @@ impl ListeriaList {
             .unwrap_or(default)
     }
 
-    pub async fn run_query(&mut self) -> Result<()> {
+    /// A `SparqlResults` for queries of this list, sent to the endpoint the
+    /// template names with `sparql_endpoint=`, if any. An unknown name is an
+    /// error rather than a silent fallback, so a typo is visible on the page.
+    pub fn new_sparql_results(&self) -> Result<SparqlResults> {
         let wikibase_key = self.params.wikibase().to_lowercase();
+        let sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
+        let Some(name) = self.params.sparql_endpoint() else {
+            return Ok(sparql_results);
+        };
+        let endpoint = self
+            .page_params
+            .config()
+            .sparql_endpoint(name)
+            .ok_or_else(|| ListeriaError::SparqlUnknownEndpoint(name.to_string()))?;
+        Ok(sparql_results.with_endpoint(endpoint.clone()))
+    }
+
+    pub async fn run_query(&mut self) -> Result<()> {
         let sparql = match self.template.get_value("sparql") {
             Some(s) => s,
             None => return Err(ListeriaError::MissingSparqlParam.into()),
         };
-        let mut sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
-        if self.page_params.config().is_single_wiki()
-            && let Some(endpoint) = self.page_params.config().query_endpoint()
+        let mut sparql_results = self.new_sparql_results()?;
+        if self.params.sparql_endpoint().is_none()
+            && self.page_params.config().is_single_wiki()
+            && let Some(url) = self.page_params.config().query_endpoint()
         {
-            sparql_results = sparql_results.with_query_endpoint(endpoint);
+            sparql_results = sparql_results.with_endpoint(SparqlEndpoint::new(url));
         }
         let mut sparql_table = sparql_results.run_query(sparql).await?;
         sparql_table.set_main_variable(sparql_results.sparql_main_variable());
@@ -1038,5 +1056,112 @@ mod tests {
         // to make a row-keep decision in use_local_links.
         let cols: Vec<Column> = Vec::new();
         assert!(ListeriaList::needs_entity_loading(&cols, &LinksType::Local));
+    }
+
+    // --- SPARQL endpoint selection ---
+
+    mod sparql_endpoint {
+        use super::*;
+        use crate::configuration::Configuration;
+        use crate::test_utils::{cached_config_clone, sent_sparql_query};
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        const MOCK_PATH: &str = "/query/sparql";
+        const QUERY: &str = "SELECT ?item WHERE { ?item mt:P1 m:Q1 }";
+        const RESULT: &str = r#"{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"https://example.wikibase.cloud/entity/Q2"}}]}}"#;
+
+        async fn mock_server() -> MockServer {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path(MOCK_PATH))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .set_body_raw(RESULT, "application/sparql-results+json"),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            server
+        }
+
+        async fn list_with(config: Configuration, extra_params: &str) -> ListeriaList {
+            let api = crate::test_utils::cached_api("https://www.wikidata.org/w/api.php").await;
+            let page_params = Arc::new(
+                PageParams::new(Arc::new(config), api, "Test:Page".to_string())
+                    .await
+                    .unwrap(),
+            );
+            let template = Template::new_from_params(&format!(
+                "Wikidata list|columns=item|sparql={QUERY}{extra_params}"
+            ))
+            .unwrap();
+            let mut list = ListeriaList::new(template, page_params).await.unwrap();
+            list.process_template().unwrap();
+            list
+        }
+
+        async fn only_sent_query(server: &MockServer) -> String {
+            let requests = server.received_requests().await.unwrap();
+            assert_eq!(requests.len(), 1);
+            sent_sparql_query(&requests[0])
+        }
+
+        #[tokio::test]
+        async fn test_single_wiki_query_endpoint_and_prefix_unchanged() {
+            // Single-wiki mode must send exactly what it always sent: the
+            // configured prefix, a newline, the query — to `query_endpoint`.
+            let server = mock_server().await;
+            let prefix = "PREFIX m: <https://example.wikibase.cloud/entity/>\nPREFIX mt: <https://example.wikibase.cloud/prop/direct/>";
+            let config = cached_config_clone()
+                .await
+                .with_single_wiki_sparql(&format!("{}{MOCK_PATH}", server.uri()), prefix);
+            let mut list = list_with(config, "").await;
+
+            list.run_query().await.unwrap();
+
+            assert_eq!(only_sent_query(&server).await, format!("{prefix}\n{QUERY}"));
+            assert_eq!(list.sparql_table.len(), 1);
+        }
+
+        #[tokio::test]
+        async fn test_template_selects_configured_endpoint() {
+            let server = mock_server().await;
+            let endpoint = SparqlEndpoint::new(format!("{}{MOCK_PATH}", server.uri()))
+                .with_prefix("m", "http://m/");
+            let config = cached_config_clone()
+                .await
+                .with_sparql_endpoint("mock", endpoint);
+            let mut list = list_with(config, "|sparql_endpoint=Mock").await;
+
+            list.run_query().await.unwrap();
+
+            assert_eq!(
+                only_sent_query(&server).await,
+                format!("PREFIX m: <http://m/>\n{QUERY}")
+            );
+        }
+
+        #[tokio::test]
+        async fn test_template_endpoint_overrides_single_wiki_query_endpoint() {
+            let server = mock_server().await;
+            let endpoint = SparqlEndpoint::new(format!("{}{MOCK_PATH}", server.uri()));
+            let config = cached_config_clone()
+                .await
+                .with_single_wiki_sparql("http://127.0.0.1:9/unused", "")
+                .with_sparql_endpoint("mock", endpoint);
+            let mut list = list_with(config, "|sparql_endpoint=mock").await;
+
+            list.run_query().await.unwrap();
+
+            assert_eq!(only_sent_query(&server).await, format!("\n{QUERY}"));
+        }
+
+        #[tokio::test]
+        async fn test_unknown_template_endpoint_is_an_error() {
+            let mut list = list_with(cached_config_clone().await, "|sparql_endpoint=nope").await;
+            let err = list.run_query().await.unwrap_err();
+            assert!(err.to_string().contains("'nope'"), "{err}");
+        }
     }
 }
