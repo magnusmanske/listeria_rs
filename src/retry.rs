@@ -19,19 +19,38 @@ pub(crate) async fn retry_with_backoff<T, F, Fut, E>(
     operation: &'static str,
     max_attempts: u32,
     initial_backoff: Duration,
-    mut f: F,
+    f: F,
 ) -> std::result::Result<T, E>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = std::result::Result<T, E>>,
     E: std::fmt::Display,
 {
+    retry_with_backoff_if(operation, max_attempts, initial_backoff, |_| true, f).await
+}
+
+/// Like [`retry_with_backoff`], but only retries errors for which
+/// `is_retryable` returns `true`; any other error is returned at once. Use it
+/// where some failures cannot go away on their own, such as a malformed query.
+pub(crate) async fn retry_with_backoff_if<T, F, Fut, E, R>(
+    operation: &'static str,
+    max_attempts: u32,
+    initial_backoff: Duration,
+    is_retryable: R,
+    mut f: F,
+) -> std::result::Result<T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = std::result::Result<T, E>>,
+    E: std::fmt::Display,
+    R: Fn(&E) -> bool,
+{
     let mut backoff = initial_backoff;
     let mut attempt: u32 = 1;
     loop {
         match f().await {
             Ok(value) => return Ok(value),
-            Err(e) if attempt < max_attempts => {
+            Err(e) if attempt < max_attempts && is_retryable(&e) => {
                 tracing::warn!(
                     operation = operation,
                     attempt = attempt,
@@ -115,5 +134,45 @@ mod tests {
             1,
             "max_attempts=1 must mean a single try with no retries"
         );
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_backoff_if_stops_on_non_retryable_error() {
+        let calls = AtomicU32::new(0);
+        let result: std::result::Result<(), &'static str> = retry_with_backoff_if(
+            "test",
+            3,
+            Duration::from_millis(1),
+            |e| *e != "permanent",
+            || async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Err("permanent")
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "permanent");
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "a non-retryable error must not be retried"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retry_with_backoff_if_retries_retryable_error() {
+        let calls = AtomicU32::new(0);
+        let result: std::result::Result<&'static str, &'static str> = retry_with_backoff_if(
+            "test",
+            3,
+            Duration::from_millis(1),
+            |e| *e != "permanent",
+            || async {
+                let n = calls.fetch_add(1, Ordering::SeqCst) + 1;
+                if n < 2 { Err("transient") } else { Ok("done") }
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap(), "done");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }
