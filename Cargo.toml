@@ -19,6 +19,7 @@ wikimisc = { git = "https://github.com/magnusmanske/wikimisc", features = [
 	"database",
 	"seppuku",
 	"site-matrix",
+	"sparql-client",
 	"sparql-table",
 ] }
 tokio = { version = "^1", features = ["full", "rt-multi-thread"] }
