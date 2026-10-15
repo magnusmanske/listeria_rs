@@ -12,12 +12,35 @@ use anyhow::{Result, anyhow};
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::sync::{RwLock, Semaphore};
 use tracing::Instrument;
 use wikimisc::{seppuku::Seppuku, wikibase::EntityTrait};
 
-const MAX_INACTIVITY_BEFORE_SEPPUKU_SEC: u64 = 300;
+/// How much longer than `page_timeout` the watchdog waits; see [`watchdog_window`].
+const WATCHDOG_MARGIN: Duration = Duration::from_secs(120);
+/// Pause before asking the queue again after it failed to hand out a page, so
+/// a database problem does not turn into a tight loop hammering the database.
+const DISPATCH_RETRY_DELAY: Duration = Duration::from_secs(5);
+
+/// How long the inactivity watchdog waits for a page to start or finish.
+///
+/// A page may legitimately run for up to `page_timeout`, so the window has to
+/// be longer than that: with a shorter one, a bot whose every worker is busy
+/// with slow pages (e.g. while WDQS is slow) starts no page for a while and
+/// is killed although it is working. Every page ends within `page_timeout`,
+/// so a working bot always shows activity within the window; if it does not,
+/// it is wedged, and exiting lets the job be restarted.
+fn watchdog_window(page_timeout: Duration) -> Duration {
+    page_timeout + WATCHDOG_MARGIN
+}
+
+/// The inactivity watchdog, armed; see [`watchdog_window`].
+fn watchdog(page_timeout: Duration) -> Seppuku {
+    let seppuku = Seppuku::new(watchdog_window(page_timeout).as_secs());
+    seppuku.arm();
+    seppuku
+}
 
 #[derive(Debug, Clone)]
 pub struct MainCommands {
@@ -122,13 +145,13 @@ impl MainCommands {
         static THREADS_SEMAPHORE: Semaphore = Semaphore::const_new(0);
         THREADS_SEMAPHORE.add_permits(max_threads);
         telemetry::set_max_threads(max_threads);
-        let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
-        seppuku.arm();
+        let seppuku = watchdog(bot.config().page_timeout());
         loop {
             let page = match bot.prepare_next_single_page().await {
                 Ok(page) => page,
                 Err(e) => {
                     log::warn!("Trying to get next page to process: {e}");
+                    tokio::time::sleep(DISPATCH_RETRY_DELAY).await;
                     continue;
                 }
             };
@@ -142,6 +165,7 @@ impl MainCommands {
             );
             let bot = bot.clone();
             seppuku.alive();
+            let seppuku = seppuku.clone();
             // Per-page span: every log line and trace event emitted inside
             // run_single_bot inherits {wiki, page} fields, making concurrent
             // bot output easy to attribute when many pages run in parallel.
@@ -161,6 +185,7 @@ impl MainCommands {
                     let start_time = Instant::now();
                     let outcome =
                         tokio::time::timeout(page_timeout, bot.run_single_bot(page)).await;
+                    seppuku.alive();
                     let runtime = start_time.elapsed();
                     match outcome {
                         Ok(Ok(result)) => telemetry::record_page(result.result(), runtime),
@@ -208,8 +233,7 @@ impl MainCommands {
         }
         let config = Arc::new((*self.config).clone());
         let bot = ListeriaBotSingle::new_from_config(config).await?;
-        let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
-        seppuku.arm();
+        let seppuku = watchdog(bot.config().page_timeout());
         loop {
             let page = match bot.prepare_next_single_page().await {
                 Ok(page) => page,
@@ -242,6 +266,7 @@ impl MainCommands {
                 bot.run_single_bot(page.clone()).instrument(span),
             )
             .await;
+            seppuku.alive();
             let runtime = start_time.elapsed();
             let mut result = match outcome {
                 Ok(Ok(result)) => {
@@ -284,6 +309,16 @@ impl MainCommands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_watchdog_window_outlasts_the_longest_page() {
+        // A page may run for the whole page_timeout without any other page
+        // starting or finishing; the watchdog must not fire before that.
+        for secs in [30, 600, 3600] {
+            let page_timeout = Duration::from_secs(secs);
+            assert!(watchdog_window(page_timeout) > page_timeout, "{secs}");
+        }
+    }
     use std::fs;
     use wiremock::matchers::{body_string_contains, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
