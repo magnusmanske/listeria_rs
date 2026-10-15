@@ -351,7 +351,8 @@ impl ListeriaList {
     /// error rather than a silent fallback, so a typo is visible on the page.
     pub fn new_sparql_results(&self) -> Result<SparqlResults> {
         let wikibase_key = self.params.wikibase().to_lowercase();
-        let sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key);
+        let sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key)
+            .with_used_variables(self.sparql_variables_used());
         let Some(name) = self.params.sparql_endpoint() else {
             return Ok(sparql_results);
         };
@@ -361,6 +362,26 @@ impl ListeriaList {
             .sparql_endpoint(name)
             .ok_or_else(|| ListeriaError::SparqlUnknownEndpoint(name.to_string()))?;
         Ok(sparql_results.with_endpoint(endpoint.clone()))
+    }
+
+    /// The SPARQL result variables this list reads by name: `?var` columns,
+    /// `sort=?var` and `section=@var`.
+    fn sparql_variables_used(&self) -> HashSet<String> {
+        let columns = self.columns.iter().filter_map(|c| match c.obj() {
+            ColumnType::Field(variable) => Some(variable.clone()),
+            _ => None,
+        });
+        let sort = match self.params.sort() {
+            SortMode::SparqlVariable(variable) => Some(variable.clone()),
+            _ => None,
+        };
+        let section = match self.params.section() {
+            SectionType::SparqlVariable(variable) => {
+                Some(variable.trim_start_matches('@').to_string())
+            }
+            _ => None,
+        };
+        columns.chain(sort).chain(section).collect()
     }
 
     pub async fn run_query(&mut self) -> Result<()> {
@@ -1155,6 +1176,21 @@ mod tests {
             list.run_query().await.unwrap();
 
             assert_eq!(only_sent_query(&server).await, format!("\n{QUERY}"));
+        }
+
+        #[tokio::test]
+        async fn test_sparql_variables_used() {
+            let list = list_with(
+                cached_config_clone().await,
+                "|columns=item,label,?itemLabel:Name,P18,?dob|sort=?dob|section=@Region",
+            )
+            .await;
+            let used = list.sparql_variables_used();
+            let expected: HashSet<String> = ["ITEMLABEL", "DOB", "REGION"]
+                .into_iter()
+                .map(String::from)
+                .collect();
+            assert_eq!(used, expected);
         }
 
         #[tokio::test]

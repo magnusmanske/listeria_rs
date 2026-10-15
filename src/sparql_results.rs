@@ -4,11 +4,17 @@ use crate::listeria_error::ListeriaError;
 use crate::page_params::PageParams;
 use crate::retry::retry_with_backoff_if;
 use anyhow::Result;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    borrow::Cow,
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use wikimisc::{
     sparql_client::{SparqlClient, SparqlError},
     sparql_endpoint::SparqlEndpoint,
     sparql_results::SparqlApiResult,
+    sparql_rewrite::{LabelServiceRewrite, rewrite_label_service},
     sparql_table_vec::SparqlTableVec,
 };
 
@@ -30,6 +36,9 @@ pub struct SparqlResults {
     wikibase_key: String,
     /// Where to send queries; when `None`, see [`Self::resolve_endpoint`].
     endpoint: Option<SparqlEndpoint>,
+    /// Upper-cased names of the result variables the caller reads, so a
+    /// query rewrite knows which label outputs it must keep.
+    used_variables: HashSet<String>,
     simulate: bool,
 }
 
@@ -42,6 +51,7 @@ impl SparqlResults {
             wikibase_key: wikibase_key.to_string(),
             sparql_main_variable: None,
             endpoint: None,
+            used_variables: HashSet::new(),
             simulate,
         }
     }
@@ -50,6 +60,13 @@ impl SparqlResults {
     #[must_use]
     pub fn with_endpoint(mut self, endpoint: SparqlEndpoint) -> Self {
         self.endpoint = Some(endpoint);
+        self
+    }
+
+    /// The result variables the caller reads, in any case.
+    #[must_use]
+    pub fn with_used_variables(mut self, variables: impl IntoIterator<Item = String>) -> Self {
+        self.used_variables = variables.into_iter().map(|v| v.to_uppercase()).collect();
         self
     }
 
@@ -104,9 +121,10 @@ impl SparqlResults {
             return Err(ListeriaError::SparqlCircuitOpen(endpoint.url().to_string()).into());
         }
 
+        let sparql = self.adapted_to(endpoint.url(), sparql);
         let sparql = match config.sparql_prefix() {
             Some(prefix) => format!("{}\n{}", prefix, sparql),
-            None => sparql.to_string(),
+            None => sparql.into_owned(),
         };
         // The client adds the endpoint's own prefixes, if it has any.
         let http_client = config.sparql_http_client(endpoint.url())?;
@@ -141,6 +159,33 @@ impl SparqlResults {
                     circuit_breaker.record_failure();
                 }
                 Err(e.into())
+            }
+        }
+    }
+
+    /// `sparql` as the endpoint at `endpoint_url` needs it: with
+    /// Blazegraph-only features rewritten into standard SPARQL, if the
+    /// endpoint is configured for that. A query the rewrite does not support
+    /// is sent as it is, and the endpoint reports why it fails.
+    fn adapted_to<'q>(&self, endpoint_url: &str, sparql: &'q str) -> Cow<'q, str> {
+        if !self
+            .page_params
+            .config()
+            .rewrites_blazegraph_queries(endpoint_url)
+        {
+            return Cow::Borrowed(sparql);
+        }
+        let is_used = |variable: &str| self.used_variables.contains(&variable.to_uppercase());
+        match rewrite_label_service(sparql, is_used) {
+            LabelServiceRewrite::Rewritten(query) => Cow::Owned(query),
+            LabelServiceRewrite::Unchanged => Cow::Borrowed(sparql),
+            LabelServiceRewrite::Unsupported(reason) => {
+                tracing::info!(
+                    endpoint = endpoint_url,
+                    %reason,
+                    "label service not rewritten; sending the query unchanged"
+                );
+                Cow::Borrowed(sparql)
             }
         }
     }
@@ -625,6 +670,57 @@ mod tests {
             SparqlResults::new(page_params, "wikidata").with_endpoint(endpoint);
 
         assert!(sparql_results.run_query(QUERY.to_string()).await.is_ok());
+    }
+
+    const LABEL_QUERY: &str = "SELECT ?item ?itemLabel WHERE { ?item wdt:P31 wd:Q5 . SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\" } }";
+
+    /// Runs `LABEL_QUERY` against a mock and returns the query it received.
+    async fn sent_label_query(rewrite: bool, used: &[&str]) -> String {
+        let server = MockServer::start().await;
+        mount(
+            &server,
+            ResponseTemplate::new(200)
+                .set_body_raw(QLEVER_RESULT, "application/sparql-results+json"),
+            1,
+        )
+        .await;
+        let endpoint = mock_endpoint(&server);
+        let mut config = cached_config_clone().await;
+        if rewrite {
+            config = config.with_blazegraph_rewrite(endpoint.url());
+        }
+        let page_params = page_params_with(config).await;
+        let mut sparql_results = SparqlResults::new(page_params, "wikidata")
+            .with_endpoint(endpoint)
+            .with_used_variables(used.iter().map(|v| v.to_string()));
+        sparql_results
+            .run_query(LABEL_QUERY.to_string())
+            .await
+            .unwrap();
+        sent_sparql_query(&server.received_requests().await.unwrap()[0])
+    }
+
+    #[tokio::test]
+    async fn test_queries_are_sent_unchanged_without_blazegraph_rewrite() {
+        // WDQS v1 and any endpoint not opted in get the query verbatim.
+        assert_eq!(sent_label_query(false, &["ITEMLABEL"]).await, LABEL_QUERY);
+    }
+
+    #[tokio::test]
+    async fn test_unused_label_service_is_removed_for_rewriting_endpoint() {
+        let sent = sent_label_query(true, &[]).await;
+        assert_eq!(
+            sent,
+            "SELECT ?item ?itemLabel WHERE { ?item wdt:P31 wd:Q5 .  }"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_used_label_is_rewritten_for_rewriting_endpoint() {
+        // Column names are matched case-insensitively, as everywhere else.
+        let sent = sent_label_query(true, &["ITEMLABEL"]).await;
+        assert!(!sent.contains("SERVICE"), "{sent}");
+        assert!(sent.contains("AS ?itemLabel)"), "{sent}");
     }
 
     #[tokio::test]

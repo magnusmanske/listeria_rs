@@ -94,6 +94,17 @@ impl NamespaceGroup {
     }
 }
 
+/// How to talk to one SPARQL endpoint URL, from its `sparql_endpoints` entry.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct SparqlEndpointSettings {
+    /// Sent instead of the bot's own user agent. WDQS v2 admits only
+    /// allow-listed user agents during its pilot.
+    user_agent: Option<String>,
+    /// Rewrite Blazegraph-only query features (WDQS v1) into standard SPARQL
+    /// before sending a query there.
+    rewrite_blazegraph: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct Configuration {
     wb_apis: HashMap<String, Arc<Api>>,
@@ -158,9 +169,8 @@ pub struct Configuration {
     /// its lists use when the template names none. A wikibase not listed here
     /// uses the endpoint its siteinfo advertises.
     default_sparql_endpoints: HashMap<String, String>,
-    /// Endpoint URL → user agent to send it instead of the bot's own. WDQS
-    /// v2 admits only allow-listed user agents during its pilot.
-    sparql_user_agents: HashMap<String, String>,
+    /// Endpoint URL → how to talk to it, from `sparql_endpoints`.
+    sparql_endpoint_settings: HashMap<String, SparqlEndpointSettings>,
     /// HTTP clients for SPARQL requests, one per user agent, built on first
     /// use. Shared across all `Configuration` clones.
     sparql_http_clients: Arc<DashMap<String, reqwest::Client>>,
@@ -237,7 +247,7 @@ impl Default for Configuration {
             main_item_prefix: String::new(),
             sparql_endpoints: HashMap::new(),
             default_sparql_endpoints: HashMap::new(),
-            sparql_user_agents: HashMap::new(),
+            sparql_endpoint_settings: HashMap::new(),
             sparql_http_clients: Arc::new(DashMap::new()),
             sparql_semaphores: Arc::new(DashMap::new()),
             sparql_circuit_breakers: Arc::new(DashMap::new()),
@@ -394,9 +404,18 @@ impl Configuration {
     /// configured for it, else the bot's own, which Wikimedia's user-agent
     /// policy requires of WDQS clients.
     pub fn sparql_user_agent(&self, endpoint_url: &str) -> &str {
-        self.sparql_user_agents
+        self.sparql_endpoint_settings
             .get(endpoint_url)
-            .map_or(crate::LISTERIA_USER_AGENT, String::as_str)
+            .and_then(|s| s.user_agent.as_deref())
+            .unwrap_or(crate::LISTERIA_USER_AGENT)
+    }
+
+    /// Whether queries to the SPARQL endpoint at `endpoint_url` get their
+    /// Blazegraph-only features rewritten into standard SPARQL first.
+    pub fn rewrites_blazegraph_queries(&self, endpoint_url: &str) -> bool {
+        self.sparql_endpoint_settings
+            .get(endpoint_url)
+            .is_some_and(|s| s.rewrite_blazegraph)
     }
 
     /// The HTTP client for requests to the SPARQL endpoint at `endpoint_url`.
@@ -831,7 +850,8 @@ impl Configuration {
     ///     },
     ///     "wdqs-v2": {
     ///         "url": "https://query-next.wikidata.org/sparql",
-    ///         "user_agent": "ListeriaBot/v2pilot (<mail@example.org>)"
+    ///         "user_agent": "ListeriaBot/v2pilot (<mail@example.org>)",
+    ///         "rewrite_blazegraph": true
     ///     }
     /// },
     /// "default_sparql_endpoints": { "wikidata": "qlever" }
@@ -840,15 +860,19 @@ impl Configuration {
     /// `wikidata_prefixes` declares the prefixes WDQS predeclares, which an
     /// engine like QLever lacks; `prefixes` adds others. A prefix a query
     /// declares itself is never added again. `user_agent` replaces the bot's
-    /// own for requests to that URL. Without these keys every query goes to
-    /// the endpoint the wikibase advertises, as before.
+    /// own for requests to that URL; `rewrite_blazegraph` rewrites queries
+    /// written for Blazegraph (WDQS v1) into standard SPARQL before sending
+    /// them there. Without these keys every query goes to the endpoint the
+    /// wikibase advertises, unchanged, as before.
     fn new_from_json_sparql_endpoints(&mut self, j: &Value) -> Result<()> {
         if let Some(o) = j["sparql_endpoints"].as_object() {
             for (name, v) in o {
                 let endpoint = Self::parse_sparql_endpoint(name, v)?;
-                if let Some(user_agent) = v["user_agent"].as_str() {
-                    self.set_sparql_user_agent(name, endpoint.url(), user_agent)?;
-                }
+                let settings = SparqlEndpointSettings {
+                    user_agent: v["user_agent"].as_str().map(str::to_string),
+                    rewrite_blazegraph: v["rewrite_blazegraph"].as_bool().unwrap_or_default(),
+                };
+                self.set_sparql_endpoint_settings(name, endpoint.url(), settings)?;
                 self.sparql_endpoints.insert(name.to_lowercase(), endpoint);
             }
         }
@@ -872,16 +896,21 @@ impl Configuration {
         Ok(())
     }
 
-    /// Records `user_agent` for `url`. The user agent belongs to the URL, so
-    /// two endpoints sharing a URL cannot ask for different ones.
-    fn set_sparql_user_agent(&mut self, name: &str, url: &str, user_agent: &str) -> Result<()> {
-        match self.sparql_user_agents.get(url) {
-            Some(existing) if existing != user_agent => Err(anyhow!(
-                "sparql_endpoints.{name}: another endpoint already sets a different user_agent for {url}"
+    /// Records `settings` for `url`. Settings belong to the URL, so two
+    /// endpoints sharing a URL cannot ask for different ones.
+    fn set_sparql_endpoint_settings(
+        &mut self,
+        name: &str,
+        url: &str,
+        settings: SparqlEndpointSettings,
+    ) -> Result<()> {
+        match self.sparql_endpoint_settings.get(url) {
+            Some(existing) if *existing != settings => Err(anyhow!(
+                "sparql_endpoints.{name}: another endpoint with url {url} sets different user_agent/rewrite_blazegraph"
             )),
             _ => {
-                self.sparql_user_agents
-                    .insert(url.to_string(), user_agent.to_string());
+                self.sparql_endpoint_settings
+                    .insert(url.to_string(), settings);
                 Ok(())
             }
         }
@@ -1034,8 +1063,18 @@ impl Configuration {
     }
 
     pub fn with_sparql_user_agent(mut self, endpoint_url: &str, user_agent: &str) -> Self {
-        self.sparql_user_agents
-            .insert(endpoint_url.to_string(), user_agent.to_string());
+        self.sparql_endpoint_settings
+            .entry(endpoint_url.to_string())
+            .or_default()
+            .user_agent = Some(user_agent.to_string());
+        self
+    }
+
+    pub fn with_blazegraph_rewrite(mut self, endpoint_url: &str) -> Self {
+        self.sparql_endpoint_settings
+            .entry(endpoint_url.to_string())
+            .or_default()
+            .rewrite_blazegraph = true;
         self
     }
 
@@ -2002,6 +2041,26 @@ mod tests {
     }
 
     #[test]
+    fn test_blazegraph_rewrite_is_opt_in_per_endpoint_url() {
+        let mut config = Configuration::default();
+        config
+            .new_from_json_sparql_endpoints(&serde_json::json!({
+                "sparql_endpoints": {
+                    "v2": { "url": "https://v2.example/sparql", "rewrite_blazegraph": true },
+                    "other": { "url": "https://other.example/sparql" }
+                }
+            }))
+            .unwrap();
+        assert!(config.rewrites_blazegraph_queries("https://v2.example/sparql"));
+        for url in [
+            "https://other.example/sparql",
+            "https://query.wikidata.org/sparql",
+        ] {
+            assert!(!config.rewrites_blazegraph_queries(url), "{url}");
+        }
+    }
+
+    #[test]
     fn test_config_template_sparql_endpoints_parse() {
         // The template documents the WDQS v2 endpoints as opt-in only: they
         // must parse, and must not become any wikibase's default.
@@ -2017,6 +2076,7 @@ mod tests {
                 .sparql_user_agent(v2.url())
                 .starts_with("ListeriaBot/v2pilot")
         );
+        assert!(config.rewrites_blazegraph_queries(v2.url()));
         assert!(config.sparql_endpoint("wdqs-v2-scholarly").is_some());
         assert!(config.default_sparql_endpoint("wikidata").is_none());
     }

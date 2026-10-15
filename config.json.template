@@ -34,11 +34,13 @@
     "sparql_endpoints": {
         "wdqs-v2": {
             "url": "https://query-next.wikidata.org/sparql",
-            "user_agent": "ListeriaBot/v2pilot (<XXX>)"
+            "user_agent": "ListeriaBot/v2pilot (<XXX>)",
+            "rewrite_blazegraph": true
         },
         "wdqs-v2-scholarly": {
             "url": "https://query-scholarly-next.wikidata.org/sparql",
-            "user_agent": "ListeriaBot/v2pilot (<XXX>)"
+            "user_agent": "ListeriaBot/v2pilot (<XXX>)",
+            "rewrite_blazegraph": true
         }
     },
     "profiling":false,
