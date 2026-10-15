@@ -3682,7 +3682,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.1"
-source = "git+https://github.com/magnusmanske/wikimisc#3b70eeee8285248c3b8b7ae9e7954f808e74fde6"
+source = "git+https://github.com/magnusmanske/wikimisc#6f6fd92cb1fed4cb406d975a337a729796fe46c1"
 dependencies = [
  "csv",
  "mysql_async",
