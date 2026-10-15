@@ -90,6 +90,7 @@ pub mod result_row;
 pub mod retry;
 pub mod sparql_results;
 pub mod status_server;
+pub mod telemetry;
 pub mod template;
 pub mod template_params;
 pub mod wiki;

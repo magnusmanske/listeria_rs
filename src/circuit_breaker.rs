@@ -9,6 +9,7 @@
 //! All state is stored in lock-free atomics, making `CircuitBreaker` cheap to
 //! clone behind an `Arc` and safe to share across async tasks.
 
+use crate::telemetry;
 use std::future::Future;
 use std::sync::atomic::{AtomicI64, AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,15 +24,22 @@ const RECOVERY_SECS: i64 = 60;
 /// State is encoded in two atomics:
 /// - `consecutive_failures`: incremented on each failure, reset to 0 on success.
 /// - `opened_at_secs`: unix-second timestamp when the circuit was opened; 0 = closed.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct CircuitBreaker {
+    /// What the breaker protects (e.g. [`telemetry::BREAKER_SPARQL`]); the
+    /// label its trips are counted under.
+    kind: &'static str,
     consecutive_failures: AtomicU32,
     opened_at_secs: AtomicI64,
 }
 
 impl CircuitBreaker {
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new(kind: &'static str) -> Self {
+        Self {
+            kind,
+            consecutive_failures: AtomicU32::new(0),
+            opened_at_secs: AtomicI64::new(0),
+        }
     }
 
     fn now_secs() -> i64 {
@@ -78,12 +86,13 @@ impl CircuitBreaker {
         let failures = self.consecutive_failures.fetch_add(1, Ordering::Relaxed) + 1;
         if failures >= FAILURE_THRESHOLD {
             // Open the circuit only if it is not already open.
-            let _ = self.opened_at_secs.compare_exchange(
-                0,
-                Self::now_secs(),
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            );
+            let opened = self
+                .opened_at_secs
+                .compare_exchange(0, Self::now_secs(), Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok();
+            if opened {
+                telemetry::record_circuit_breaker_trip(self.kind);
+            }
         }
     }
 }
@@ -137,13 +146,13 @@ mod tests {
 
     #[test]
     fn test_closed_by_default() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         assert!(!cb.is_open());
     }
 
     #[test]
     fn test_opens_after_threshold() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         for _ in 0..FAILURE_THRESHOLD {
             cb.record_failure();
         }
@@ -152,7 +161,7 @@ mod tests {
 
     #[test]
     fn test_does_not_open_below_threshold() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         for _ in 0..FAILURE_THRESHOLD - 1 {
             cb.record_failure();
         }
@@ -161,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_success_resets_circuit() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         for _ in 0..FAILURE_THRESHOLD {
             cb.record_failure();
         }
@@ -172,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_success_resets_failure_counter() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         // Record failures below threshold, then succeed, then fail again.
         for _ in 0..FAILURE_THRESHOLD - 1 {
             cb.record_failure();
@@ -189,7 +198,7 @@ mod tests {
 
     #[test]
     fn test_idempotent_open() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         for _ in 0..FAILURE_THRESHOLD * 2 {
             cb.record_failure();
         }
@@ -211,7 +220,7 @@ mod tests {
 
     #[test]
     fn test_is_open_still_true_within_recovery_window() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         for _ in 0..FAILURE_THRESHOLD {
             cb.record_failure();
         }
@@ -226,7 +235,7 @@ mod tests {
 
     #[test]
     fn test_half_open_lets_a_probe_through_once_and_then_remains_closed_on_success() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         let aged = open_and_age_past_recovery(&cb);
         assert!(aged > 0, "test setup: opened_at_secs should be positive");
 
@@ -250,7 +259,7 @@ mod tests {
 
     #[test]
     fn test_half_open_probe_failure_reopens_breaker() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         open_and_age_past_recovery(&cb);
 
         // The probe call clears opened_at_secs and lets the request through.
@@ -266,7 +275,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_breaker_short_circuits_when_open() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         open_and_age_past_recovery(&cb);
         // Force the breaker back to OPEN with a recent timestamp so is_open()
         // returns true without consuming the half-open probe.
@@ -290,7 +299,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_breaker_records_success() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         // Pre-populate failures so we can prove record_success resets them.
         for _ in 0..FAILURE_THRESHOLD - 1 {
             cb.record_failure();
@@ -306,7 +315,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_breaker_records_failure() {
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         let res: Result<(), &str> = with_breaker(&cb, || "open", || async { Err("boom") }).await;
         assert_eq!(res.unwrap_err(), "boom");
         assert_eq!(
@@ -321,7 +330,7 @@ mod tests {
         // After the recovery window elapses, is_open() must return false
         // exactly once — the implementation clears opened_at_secs on the
         // probe path so concurrent callers don't all bypass the breaker.
-        let cb = CircuitBreaker::new();
+        let cb = CircuitBreaker::new("test");
         open_and_age_past_recovery(&cb);
 
         // First call: probe gets through.

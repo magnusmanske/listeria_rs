@@ -2,6 +2,7 @@ use crate::circuit_breaker::with_breaker;
 use crate::listeria_page::ListeriaPage;
 use crate::page_element::PageElement;
 use crate::retry::retry_with_backoff;
+use crate::telemetry;
 use crate::wiki_page_result::WikiPageResult;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
@@ -219,7 +220,10 @@ impl PageOperations {
                 let msg = o["info"].as_str().unwrap_or("Error while saving");
                 Err(anyhow!("{msg}"))
             }
-            None => Ok(()),
+            None => {
+                telemetry::record_edit();
+                Ok(())
+            }
         }
     }
 

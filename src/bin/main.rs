@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use listeria::{configuration::Configuration, main_commands::MainCommands};
+use listeria::{configuration::Configuration, main_commands::MainCommands, telemetry};
 use std::sync::Arc;
 
 #[derive(Parser)]
@@ -31,6 +31,17 @@ enum Commands {
     },
 }
 
+impl Commands {
+    /// The dashboard component of a long-running mode; `None` for one-off commands.
+    const fn service_component(&self) -> Option<&'static str> {
+        match self {
+            Self::Wikidata => Some("bot"),
+            Self::SingleWiki { .. } => Some("single-wiki"),
+            Self::UpdateWikis | Self::LoadTestEntities | Self::Page { .. } => None,
+        }
+    }
+}
+
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     init_tracing();
@@ -39,10 +50,13 @@ async fn main() -> Result<()> {
     let config_file = cli.config;
     let config = Configuration::new_from_file(&config_file).await?;
 
-    // Enable profiling for single-use commands (page, update-wikis, load-test-entities).
-    let config = match cli.cmd {
-        Commands::Wikidata | Commands::SingleWiki { once: _ } => config,
-        _ => config.with_profiling(true),
+    let config = match cli.cmd.service_component() {
+        Some(component) => {
+            telemetry::install(component, &config);
+            config
+        }
+        // Enable profiling for single-use commands (page, update-wikis, load-test-entities).
+        None => config.with_profiling(true),
     };
 
     let mut main = MainCommands {
@@ -50,13 +64,15 @@ async fn main() -> Result<()> {
         config_file,
     };
 
-    match cli.cmd {
+    let result = match cli.cmd {
         Commands::UpdateWikis => main.update_wikis().await,
         Commands::LoadTestEntities => main.load_test_entities().await,
         Commands::Page { server, page } => main.process_page(&server, &page).await,
         Commands::Wikidata => main.run_wikidata_bot().await,
         Commands::SingleWiki { once } => main.run_single_wiki_bot(once).await,
-    }
+    };
+    telemetry::shutdown(&result).await;
+    result
 }
 
 /// Installs a `tracing` subscriber and a `log` → `tracing` bridge.

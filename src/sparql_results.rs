@@ -3,6 +3,7 @@
 use crate::listeria_error::ListeriaError;
 use crate::page_params::PageParams;
 use crate::retry::retry_with_backoff_if;
+use crate::telemetry;
 use anyhow::Result;
 use std::{
     borrow::Cow,
@@ -157,6 +158,7 @@ impl SparqlResults {
                     circuit_breaker.record_success();
                 } else {
                     circuit_breaker.record_failure();
+                    telemetry::record_sparql_failure();
                 }
                 Err(e.into())
             }

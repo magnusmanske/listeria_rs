@@ -31,6 +31,7 @@ If you specify a `status_server_port`, Listeria will start a status server on th
 ## Extended parameters
 Optionally, you can use some extended parameters to fine-tune Listeria to your wiki setup.
 This should not be necessary for an initial test.
+`telemetry` pushes Listeria's health and metrics (pages processed, edits, memory, ...) to a [Buggregator service dashboard](https://magnustools.toolforge.org/buggregator/#/dashboard) once a minute. Both fields are optional: `token` falls back to the `DASHBOARD_TOKEN` environment variable, `url` to that dashboard. Without a token, telemetry is off; leave the block out unless you have one.
 ```json
 {
 	"quiet": false,
@@ -49,7 +50,11 @@ This should not be necessary for an initial test.
 	"ms_delay_after_edit": 100,
 	"location_regions": [],
 	"default_thumbnail_size": 128,
-	"shadow_images_check": []
+	"shadow_images_check": [],
+	"telemetry": {
+		"url": "https://magnustools.toolforge.org/buggregator/ingest.php",
+		"token": "DASHBOARD_TOKEN"
+	}
 }
 ```
 

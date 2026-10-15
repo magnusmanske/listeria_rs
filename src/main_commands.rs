@@ -1,6 +1,7 @@
 //! CLI command implementations for the bot's operation modes.
 
 use crate::status_server::{AppState, StatusServer};
+use crate::telemetry;
 use crate::wiki_page_result::WikiPageResult;
 use crate::{
     configuration::Configuration, entity_container_wrapper::EntityContainerWrapper,
@@ -120,6 +121,7 @@ impl MainCommands {
         let bot = Arc::new(bot);
         static THREADS_SEMAPHORE: Semaphore = Semaphore::const_new(0);
         THREADS_SEMAPHORE.add_permits(max_threads);
+        telemetry::set_max_threads(max_threads);
         let seppuku = Seppuku::new(MAX_INACTIVITY_BEFORE_SEPPUKU_SEC);
         seppuku.arm();
         loop {
@@ -132,6 +134,7 @@ impl MainCommands {
             };
 
             let permit = THREADS_SEMAPHORE.acquire().await?;
+            let running = telemetry::RunningBot::start();
             log::info!(
                 "Starting new bot, {} running, {} available",
                 max_threads - THREADS_SEMAPHORE.available_permits(),
@@ -156,10 +159,17 @@ impl MainCommands {
             tokio::spawn(
                 async move {
                     let start_time = Instant::now();
-                    match tokio::time::timeout(page_timeout, bot.run_single_bot(page)).await {
-                        Ok(Ok(_)) => {}
-                        Ok(Err(e)) => log::error!("Bot run failed: {e}"),
+                    let outcome =
+                        tokio::time::timeout(page_timeout, bot.run_single_bot(page)).await;
+                    let runtime = start_time.elapsed();
+                    match outcome {
+                        Ok(Ok(result)) => telemetry::record_page(result.result(), runtime),
+                        Ok(Err(e)) => {
+                            log::error!("Bot run failed: {e}");
+                            telemetry::record_page(telemetry::STATUS_ERROR, runtime);
+                        }
                         Err(_) => {
+                            telemetry::record_page_timeout(runtime);
                             let msg = format!(
                                 "Page processing exceeded {}s wall-clock budget",
                                 page_timeout.as_secs()
@@ -172,9 +182,9 @@ impl MainCommands {
                             }
                         }
                     }
-                    let diff = start_time.elapsed().as_secs();
-                    let _ = bot.set_runtime(pagestatus_id, diff).await;
+                    let _ = bot.set_runtime(pagestatus_id, runtime.as_secs()).await;
                     bot.release_running(pagestatus_id).await;
+                    drop(running);
                     drop(permit);
                 }
                 .instrument(span),
@@ -227,27 +237,35 @@ impl MainCommands {
                 page = %page.title(),
             );
             let page_timeout = bot.config().page_timeout();
-            let mut result = match tokio::time::timeout(
+            let outcome = tokio::time::timeout(
                 page_timeout,
                 bot.run_single_bot(page.clone()).instrument(span),
             )
-            .await
-            {
-                Ok(Ok(result)) => result,
-                Ok(Err(e)) => WikiPageResult::new("wiki", page.title(), "Error", e.to_string()),
-                Err(_) => WikiPageResult::new(
-                    "wiki",
-                    page.title(),
-                    "Error",
-                    format!(
-                        "Page processing exceeded {}s wall-clock budget",
-                        page_timeout.as_secs()
-                    ),
-                ),
+            .await;
+            let runtime = start_time.elapsed();
+            let mut result = match outcome {
+                Ok(Ok(result)) => {
+                    telemetry::record_page(result.result(), runtime);
+                    result
+                }
+                Ok(Err(e)) => {
+                    telemetry::record_page(telemetry::STATUS_ERROR, runtime);
+                    WikiPageResult::new("wiki", page.title(), "Error", e.to_string())
+                }
+                Err(_) => {
+                    telemetry::record_page_timeout(runtime);
+                    WikiPageResult::new(
+                        "wiki",
+                        page.title(),
+                        "Error",
+                        format!(
+                            "Page processing exceeded {}s wall-clock budget",
+                            page_timeout.as_secs()
+                        ),
+                    )
+                }
             };
-            let end_time = Instant::now();
-            let diff = end_time - start_time;
-            result.set_runtime(diff);
+            result.set_runtime(runtime);
             result.set_completed(Instant::now());
             state
                 .pages

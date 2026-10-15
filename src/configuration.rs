@@ -5,6 +5,7 @@
 
 use crate::circuit_breaker::CircuitBreaker;
 use crate::database_pool::DatabasePool;
+use crate::telemetry;
 use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;
@@ -16,6 +17,7 @@ use std::{fs::File, io::BufReader, path::Path};
 use tokio::sync::Semaphore;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_endpoint::{SparqlEndpoint, WIKIDATA_PREFIXES};
+use wikimisc::telemetry::TelemetryConfig;
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::entity_container::EntityContainer;
 
@@ -201,6 +203,9 @@ pub struct Configuration {
     case_sensitive_wikis: HashSet<String>,
     /// Per-stage feature flags — see [`FeatureFlags`].
     feature_flags: FeatureFlags,
+    /// Where to push service-dashboard telemetry, from the optional
+    /// `telemetry` block (`{"url": …, "token": …}`, both optional).
+    telemetry: TelemetryConfig,
 }
 
 impl Default for Configuration {
@@ -255,6 +260,7 @@ impl Default for Configuration {
             wiki_name_aliases: Self::default_wiki_name_aliases(),
             case_sensitive_wikis: HashSet::new(),
             feature_flags: FeatureFlags::default(),
+            telemetry: TelemetryConfig::default(),
         }
     }
 }
@@ -500,7 +506,7 @@ impl Configuration {
     pub fn sparql_circuit_breaker(&self, endpoint: &str) -> Arc<CircuitBreaker> {
         self.sparql_circuit_breakers
             .entry(endpoint.to_owned())
-            .or_insert_with(|| Arc::new(CircuitBreaker::new()))
+            .or_insert_with(|| Arc::new(CircuitBreaker::new(telemetry::BREAKER_SPARQL)))
             .clone()
     }
 
@@ -511,7 +517,7 @@ impl Configuration {
     pub fn mw_api_circuit_breaker(&self, key: &str) -> Arc<CircuitBreaker> {
         self.mw_api_circuit_breakers
             .entry(key.to_owned())
-            .or_insert_with(|| Arc::new(CircuitBreaker::new()))
+            .or_insert_with(|| Arc::new(CircuitBreaker::new(telemetry::BREAKER_MW_API)))
             .clone()
     }
 
@@ -772,6 +778,10 @@ impl Configuration {
         self.status_server_port
     }
 
+    pub const fn telemetry(&self) -> &TelemetryConfig {
+        &self.telemetry
+    }
+
     pub fn wiki_page_pattern(&self) -> Option<String> {
         self.wiki_page_pattern.clone()
     }
@@ -971,6 +981,18 @@ impl Configuration {
         }
     }
 
+    /// Reads the optional `telemetry` block. A malformed one only disables
+    /// its settings: telemetry must never keep the bot from starting.
+    fn parse_telemetry(j: &Value) -> TelemetryConfig {
+        if j.is_null() {
+            return TelemetryConfig::default();
+        }
+        serde_json::from_value(j.clone()).unwrap_or_else(|e| {
+            log::warn!("Ignoring malformed telemetry config: {e}");
+            TelemetryConfig::default()
+        })
+    }
+
     fn new_from_json_misc(&mut self, j: &Value) {
         self.max_mw_apis_total = j["max_mw_apis_total"]
             .as_u64()
@@ -1039,6 +1061,7 @@ impl Configuration {
         if let Some(obj) = j["feature_flags"].as_object() {
             self.feature_flags = FeatureFlags::from_json(&Value::Object(obj.clone()));
         }
+        self.telemetry = Self::parse_telemetry(&j["telemetry"]);
         if let Some(sic) = j["shadow_images_check"].as_array() {
             self.shadow_images_check = sic
                 .iter()
@@ -1827,6 +1850,37 @@ mod tests {
         assert!(!config.feature_flags().enable_references);
         // Other flags untouched.
         assert!(config.feature_flags().enable_autodesc);
+    }
+
+    // ── telemetry ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_telemetry_config_absent_is_default() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({}));
+        assert!(config.telemetry().url.is_none());
+        assert!(config.telemetry().token.is_none());
+    }
+
+    #[test]
+    fn test_telemetry_config_parsed() {
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({
+            "telemetry": { "url": "https://dash.example/ingest", "token": "secret" }
+        }));
+        assert_eq!(
+            config.telemetry().url.as_deref(),
+            Some("https://dash.example/ingest")
+        );
+        assert_eq!(config.telemetry().token.as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn test_telemetry_config_malformed_is_ignored() {
+        // Telemetry must never keep the bot from starting.
+        let mut config = Configuration::default();
+        config.new_from_json_misc(&serde_json::json!({ "telemetry": "yes please" }));
+        assert!(config.telemetry().token.is_none());
     }
 
     // ── bot_username (codeberg #84) ────────────────────────────────────────
