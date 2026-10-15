@@ -31,6 +31,16 @@
         "max_connections":8
     },
     "max_sparql_simultaneous": 5,
+    "sparql_endpoints": {
+        "wdqs-v2": {
+            "url": "https://query-next.wikidata.org/sparql",
+            "user_agent": "ListeriaBot/v2pilot (<XXX>)"
+        },
+        "wdqs-v2-scholarly": {
+            "url": "https://query-scholarly-next.wikidata.org/sparql",
+            "user_agent": "ListeriaBot/v2pilot (<XXX>)"
+        }
+    },
     "profiling":false,
     "max_threads":64,
     "pattern_string_start":"\\{\\{(Wikidata[ _]list[^\\|]*|",

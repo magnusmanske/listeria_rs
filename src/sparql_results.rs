@@ -109,7 +109,8 @@ impl SparqlResults {
             None => sparql.to_string(),
         };
         // The client adds the endpoint's own prefixes, if it has any.
-        let client = SparqlClient::with_client(endpoint, config.sparql_http_client()?);
+        let http_client = config.sparql_http_client(endpoint.url())?;
+        let client = SparqlClient::with_client(endpoint, http_client);
 
         // Retry so a single transient flake (5xx, broken connection, body
         // decode error during a brief overload) doesn't fail the whole page;
@@ -599,6 +600,31 @@ mod tests {
             sent_sparql_query(&requests[0]),
             format!("PREFIX wdt: <http://www.wikidata.org/prop/direct/>\n{QUERY}")
         );
+    }
+
+    #[tokio::test]
+    async fn test_configured_user_agent_is_sent() {
+        // WDQS v2 admits only allow-listed user agents during its pilot.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(MOCK_PATH))
+            .and(header("user-agent", "ListeriaBot/v2pilot"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(QLEVER_RESULT, "application/sparql-results+json"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let endpoint = mock_endpoint(&server);
+        let config = cached_config_clone()
+            .await
+            .with_sparql_user_agent(endpoint.url(), "ListeriaBot/v2pilot");
+        let page_params = page_params_with(config).await;
+        let mut sparql_results =
+            SparqlResults::new(page_params, "wikidata").with_endpoint(endpoint);
+
+        assert!(sparql_results.run_query(QUERY.to_string()).await.is_ok());
     }
 
     #[tokio::test]

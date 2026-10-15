@@ -10,7 +10,7 @@ use anyhow::{Result, anyhow};
 use dashmap::DashMap;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::Duration;
 use std::{fs::File, io::BufReader, path::Path};
 use tokio::sync::Semaphore;
@@ -158,8 +158,12 @@ pub struct Configuration {
     /// its lists use when the template names none. A wikibase not listed here
     /// uses the endpoint its siteinfo advertises.
     default_sparql_endpoints: HashMap<String, String>,
-    /// HTTP client for SPARQL requests, built on first use.
-    sparql_http_client: OnceLock<reqwest::Client>,
+    /// Endpoint URL → user agent to send it instead of the bot's own. WDQS
+    /// v2 admits only allow-listed user agents during its pilot.
+    sparql_user_agents: HashMap<String, String>,
+    /// HTTP clients for SPARQL requests, one per user agent, built on first
+    /// use. Shared across all `Configuration` clones.
+    sparql_http_clients: Arc<DashMap<String, reqwest::Client>>,
     /// Per-endpoint SPARQL semaphores. Each endpoint URL gets its own semaphore
     /// of `max_sparql_simultaneous` permits, so a slow Commons-Query-Service
     /// can't starve calls to the Wikidata-Query-Service of permits.
@@ -233,7 +237,8 @@ impl Default for Configuration {
             main_item_prefix: String::new(),
             sparql_endpoints: HashMap::new(),
             default_sparql_endpoints: HashMap::new(),
-            sparql_http_client: OnceLock::new(),
+            sparql_user_agents: HashMap::new(),
+            sparql_http_clients: Arc::new(DashMap::new()),
             sparql_semaphores: Arc::new(DashMap::new()),
             sparql_circuit_breakers: Arc::new(DashMap::new()),
             mw_api_circuit_breakers: Arc::new(DashMap::new()),
@@ -385,22 +390,35 @@ impl Configuration {
         self.sparql_endpoints.get(name)
     }
 
-    /// The HTTP client all SPARQL requests go through. It carries the bot's
-    /// user agent, which Wikimedia's user-agent policy requires of WDQS
-    /// clients, and `api_timeout` as its request timeout. Built once and
-    /// shared, so connections to an endpoint are reused.
-    pub fn sparql_http_client(&self) -> Result<reqwest::Client> {
-        if let Some(client) = self.sparql_http_client.get() {
+    /// The user agent sent to the SPARQL endpoint at `endpoint_url`: the one
+    /// configured for it, else the bot's own, which Wikimedia's user-agent
+    /// policy requires of WDQS clients.
+    pub fn sparql_user_agent(&self, endpoint_url: &str) -> &str {
+        self.sparql_user_agents
+            .get(endpoint_url)
+            .map_or(crate::LISTERIA_USER_AGENT, String::as_str)
+    }
+
+    /// The HTTP client for requests to the SPARQL endpoint at `endpoint_url`.
+    /// It carries [`Self::sparql_user_agent`] and `api_timeout` as its
+    /// request timeout. Clients are shared, so connections are reused.
+    pub fn sparql_http_client(&self, endpoint_url: &str) -> Result<reqwest::Client> {
+        let user_agent = self.sparql_user_agent(endpoint_url);
+        if let Some(client) = self.sparql_http_clients.get(user_agent) {
             return Ok(client.clone());
         }
         let client = reqwest::Client::builder()
-            .user_agent(crate::LISTERIA_USER_AGENT)
+            .user_agent(user_agent)
             .timeout(self.api_timeout())
             .gzip(true)
             .deflate(true)
             .brotli(true)
             .build()?;
-        Ok(self.sparql_http_client.get_or_init(|| client).clone())
+        Ok(self
+            .sparql_http_clients
+            .entry(user_agent.to_string())
+            .or_insert(client)
+            .clone())
     }
 
     fn new_from_json_namespace_blocks(&mut self, j: &Value) -> Result<()> {
@@ -810,6 +828,10 @@ impl Configuration {
     ///         "url": "https://qlever.dev/api/wikidata",
     ///         "wikidata_prefixes": true,
     ///         "prefixes": { "ex": "http://example.org/" }
+    ///     },
+    ///     "wdqs-v2": {
+    ///         "url": "https://query-next.wikidata.org/sparql",
+    ///         "user_agent": "ListeriaBot/v2pilot (<mail@example.org>)"
     ///     }
     /// },
     /// "default_sparql_endpoints": { "wikidata": "qlever" }
@@ -817,13 +839,17 @@ impl Configuration {
     ///
     /// `wikidata_prefixes` declares the prefixes WDQS predeclares, which an
     /// engine like QLever lacks; `prefixes` adds others. A prefix a query
-    /// declares itself is never added again. Without these keys every query
-    /// goes to the endpoint the wikibase advertises, as before.
+    /// declares itself is never added again. `user_agent` replaces the bot's
+    /// own for requests to that URL. Without these keys every query goes to
+    /// the endpoint the wikibase advertises, as before.
     fn new_from_json_sparql_endpoints(&mut self, j: &Value) -> Result<()> {
         if let Some(o) = j["sparql_endpoints"].as_object() {
             for (name, v) in o {
-                self.sparql_endpoints
-                    .insert(name.to_lowercase(), Self::parse_sparql_endpoint(name, v)?);
+                let endpoint = Self::parse_sparql_endpoint(name, v)?;
+                if let Some(user_agent) = v["user_agent"].as_str() {
+                    self.set_sparql_user_agent(name, endpoint.url(), user_agent)?;
+                }
+                self.sparql_endpoints.insert(name.to_lowercase(), endpoint);
             }
         }
         if let Some(o) = j["default_sparql_endpoints"].as_object() {
@@ -844,6 +870,21 @@ impl Configuration {
             }
         }
         Ok(())
+    }
+
+    /// Records `user_agent` for `url`. The user agent belongs to the URL, so
+    /// two endpoints sharing a URL cannot ask for different ones.
+    fn set_sparql_user_agent(&mut self, name: &str, url: &str, user_agent: &str) -> Result<()> {
+        match self.sparql_user_agents.get(url) {
+            Some(existing) if existing != user_agent => Err(anyhow!(
+                "sparql_endpoints.{name}: another endpoint already sets a different user_agent for {url}"
+            )),
+            _ => {
+                self.sparql_user_agents
+                    .insert(url.to_string(), user_agent.to_string());
+                Ok(())
+            }
+        }
     }
 
     fn parse_sparql_endpoint(name: &str, j: &Value) -> Result<SparqlEndpoint> {
@@ -989,6 +1030,12 @@ impl Configuration {
 impl Configuration {
     pub fn with_sparql_endpoint(mut self, name: &str, endpoint: SparqlEndpoint) -> Self {
         self.sparql_endpoints.insert(name.to_lowercase(), endpoint);
+        self
+    }
+
+    pub fn with_sparql_user_agent(mut self, endpoint_url: &str, user_agent: &str) -> Self {
+        self.sparql_user_agents
+            .insert(endpoint_url.to_string(), user_agent.to_string());
         self
     }
 
@@ -1901,13 +1948,76 @@ mod tests {
     }
 
     #[test]
-    fn test_sparql_http_client_is_built_once() {
-        let config = Configuration {
+    fn test_sparql_user_agent_per_endpoint_url() {
+        let mut config = Configuration {
             api_timeout: 10,
             ..Default::default()
         };
-        assert!(config.sparql_http_client().is_ok());
-        assert!(config.sparql_http_client.get().is_some());
-        assert!(config.sparql_http_client().is_ok());
+        config
+            .new_from_json_sparql_endpoints(&serde_json::json!({
+                "sparql_endpoints": {
+                    "pilot": {
+                        "url": "https://pilot.example/sparql",
+                        "user_agent": "ListeriaBot/pilot"
+                    },
+                    "plain": { "url": "https://plain.example/sparql" }
+                }
+            }))
+            .unwrap();
+        assert_eq!(
+            config.sparql_user_agent("https://pilot.example/sparql"),
+            "ListeriaBot/pilot"
+        );
+        // Every other endpoint, configured or not, gets the bot's own.
+        for url in [
+            "https://plain.example/sparql",
+            "https://query.wikidata.org/sparql",
+        ] {
+            assert_eq!(config.sparql_user_agent(url), crate::LISTERIA_USER_AGENT);
+        }
+
+        // One client per user agent, reused across calls.
+        config
+            .sparql_http_client("https://pilot.example/sparql")
+            .unwrap();
+        config
+            .sparql_http_client("https://plain.example/sparql")
+            .unwrap();
+        config
+            .sparql_http_client("https://query.wikidata.org/sparql")
+            .unwrap();
+        assert_eq!(config.sparql_http_clients.len(), 2);
+    }
+
+    #[test]
+    fn test_conflicting_sparql_user_agents_are_rejected() {
+        let mut config = Configuration::default();
+        let result = config.new_from_json_sparql_endpoints(&serde_json::json!({
+            "sparql_endpoints": {
+                "a": { "url": "https://same.example/sparql", "user_agent": "A" },
+                "b": { "url": "https://same.example/sparql", "user_agent": "B" }
+            }
+        }));
+        assert!(result.unwrap_err().to_string().contains("user_agent"));
+    }
+
+    #[test]
+    fn test_config_template_sparql_endpoints_parse() {
+        // The template documents the WDQS v2 endpoints as opt-in only: they
+        // must parse, and must not become any wikibase's default.
+        let j: Value =
+            serde_json::from_str(&std::fs::read_to_string("config.json.template").unwrap())
+                .unwrap();
+        let mut config = Configuration::default();
+        config.new_from_json_sparql_endpoints(&j).unwrap();
+        let v2 = config.sparql_endpoint("wdqs-v2").unwrap();
+        assert_eq!(v2.url(), "https://query-next.wikidata.org/sparql");
+        assert!(
+            config
+                .sparql_user_agent(v2.url())
+                .starts_with("ListeriaBot/v2pilot")
+        );
+        assert!(config.sparql_endpoint("wdqs-v2-scholarly").is_some());
+        assert!(config.default_sparql_endpoint("wikidata").is_none());
     }
 }
