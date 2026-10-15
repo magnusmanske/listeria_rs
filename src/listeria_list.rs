@@ -249,8 +249,29 @@ impl ListeriaList {
             Some(api) => api.clone(),
             None => return Err(ListeriaError::SparqlNoConfig(wikibase.to_string()).into()),
         };
+        self.ecw.keep_statements_only_for(self.properties_read());
 
         Ok(())
+    }
+
+    /// The properties whose statements this list reads: those its columns
+    /// show, and those it sorts and sections by.
+    fn properties_read(&self) -> HashSet<String> {
+        let columns = self.columns.iter().filter_map(|c| match c.obj() {
+            ColumnType::Property(p)
+            | ColumnType::PropertyQualifier((p, _))
+            | ColumnType::PropertyQualifierValue((p, _, _)) => Some(p.clone()),
+            _ => None,
+        });
+        let sort = match self.params.sort() {
+            SortMode::Property(p) => Some(p.clone()),
+            _ => None,
+        };
+        let section = match self.params.section() {
+            SectionType::Property(p) => Some(p.clone()),
+            _ => None,
+        };
+        columns.chain(sort).chain(section).collect()
     }
 
     pub fn language(&self) -> &str {
@@ -1176,6 +1197,20 @@ mod tests {
             list.run_query().await.unwrap();
 
             assert_eq!(only_sent_query(&server).await, format!("\n{QUERY}"));
+        }
+
+        #[tokio::test]
+        async fn test_properties_read() {
+            let list = list_with(
+                cached_config_clone().await,
+                "|columns=item,label,P18,P39/P580,P39/Q41582/P582,?x|sort=P569|section=P27",
+            )
+            .await;
+            let expected: HashSet<String> = ["P18", "P39", "P569", "P27"]
+                .into_iter()
+                .map(String::from)
+                .collect();
+            assert_eq!(list.properties_read(), expected);
         }
 
         #[tokio::test]

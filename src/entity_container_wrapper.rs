@@ -39,6 +39,7 @@ const EXTERNAL_ID_ESCAPE: &AsciiSet = &CONTROLS
     .add(b'+')
     .add(b'%');
 use rand::seq::SliceRandom;
+use std::collections::HashSet;
 #[cfg(test)]
 use std::fs::File;
 #[cfg(test)]
@@ -54,10 +55,17 @@ use wikimisc::wikibase::Value;
 use wikimisc::wikibase::entity_container::EntityContainer;
 use wikimisc::wikibase::snak::SnakDataType;
 
-/// Maximum number of ids to hand to a single upstream `load_entities` call.
-/// The upstream then sub-chunks this into individual `wbgetentities` API
-/// requests (size 100 in bot mode).
-const LOAD_CHUNK_SIZE: usize = 500;
+/// Maximum number of ids to hand to a single upstream `load_entities` call,
+/// which fetches them with one `wbgetentities` request (the upstream would
+/// split larger chunks into requests of 100, or 50 when not logged in as a
+/// bot).
+///
+/// Kept small for memory: the response is parsed into a JSON tree several
+/// times its size before entities are built and pruned, and large items
+/// (countries, cities) run to megabytes each, so a 100-entity response alone
+/// could take a gigabyte. `max_concurrent_entry_queries` runs chunks in
+/// parallel, so throughput comes from concurrency rather than chunk size.
+const LOAD_CHUNK_SIZE: usize = 20;
 /// Number of times to retry the subset of ids that the upstream silently
 /// omitted from a chunk's response (see [`Self::load_chunk_with_retries`]).
 const MAX_LOAD_RETRIES: usize = 3;
@@ -68,6 +76,9 @@ const RETRY_INITIAL_BACKOFF_MS: u64 = 200;
 /// Wikidata property holding a unit's symbol as monolingual text, e.g. "km"
 /// for kilometre (Q828224).
 const UNIT_SYMBOL_PROPERTY: &str = "P5061";
+/// Property holding an external-ID property's formatter URL, read by
+/// [`EntityContainerWrapper::external_id_url`].
+const FORMATTER_URL_PROPERTY: &str = "P1630";
 
 /// Per-page in-memory entity store.
 ///
@@ -92,6 +103,9 @@ pub struct EntityContainerWrapper {
     /// caller wires this from `Configuration::mw_api_circuit_breaker(MW_API_ENTITIES_KEY)`
     /// so a flapping Wikidata API doesn't keep hammering every entity load.
     circuit_breaker: Option<Arc<CircuitBreaker>>,
+    /// If set, loaded entities keep only statements for these properties;
+    /// see [`Self::keep_statements_only_for`].
+    kept_properties: Option<Arc<HashSet<String>>>,
 }
 
 /// Parses `test_entities.json` exactly once for the entire test run.
@@ -129,6 +143,7 @@ impl EntityContainerWrapper {
             entities: Arc::new(DashMap::new()),
             max_concurrent_entry_queries: max_concurrent_entry_queries.max(1),
             circuit_breaker: None,
+            kept_properties: None,
         };
         // Pre-cache test entities — clones Arc pointers from the once-parsed
         // static rather than re-reading the 8 MB JSON file.
@@ -145,6 +160,22 @@ impl EntityContainerWrapper {
     pub fn with_circuit_breaker(mut self, breaker: Arc<CircuitBreaker>) -> Self {
         self.circuit_breaker = Some(breaker);
         self
+    }
+
+    /// From now on, entities keep only their statements for `properties`
+    /// (and the ones this cache reads itself: unit symbols, formatter URLs);
+    /// all others are dropped as the entities are loaded.
+    ///
+    /// Statements are by far the largest part of an entity — a country has
+    /// thousands — and a list only reads those for the properties its
+    /// columns, sorting and sections name. Keeping all of them made a list
+    /// of ~9,000 airports, with their countries and regions, take over 3 GiB
+    /// (enough to get the bot OOM-killed).
+    pub fn keep_statements_only_for(&mut self, properties: impl IntoIterator<Item = String>) {
+        let mut kept: HashSet<String> = properties.into_iter().collect();
+        kept.insert(UNIT_SYMBOL_PROPERTY.to_string());
+        kept.insert(FORMATTER_URL_PROPERTY.to_string());
+        self.kept_properties = Some(Arc::new(kept));
     }
 
     #[cfg(test)]
@@ -226,7 +257,7 @@ impl EntityContainerWrapper {
                 }
                 continue;
             }
-            self.store_entity_chunk(&to_load, entity_container).await?;
+            self.store_entity_chunk(&to_load, entity_container);
 
             let missing: Vec<String> = to_load
                 .iter()
@@ -250,24 +281,22 @@ impl EntityContainerWrapper {
         Ok(())
     }
 
-    async fn store_entity_chunk(
-        &self,
-        chunk: &[String],
-        entity_container: EntityContainer,
-    ) -> Result<()> {
-        let self2 = self.clone();
-        let chunk = chunk.to_vec();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            for entity_id in &chunk {
-                if let Some(entity) = entity_container.get_entity(entity_id) {
-                    let json: serde_json::Value = entity.to_json();
-                    self2.set_entity_from_json(&json)?;
+    /// Moves the loaded entities out of `entity_container` into the cache.
+    /// Taking them out (rather than cloning, or round-tripping through JSON)
+    /// means each entity exists once: a large item such as a country can
+    /// take tens of megabytes, and a chunk holds hundreds of them.
+    fn store_entity_chunk(&self, chunk: &[String], entity_container: EntityContainer) {
+        for entity_id in chunk {
+            if let Some(mut entity) = entity_container.remove_entity(entity_id) {
+                if let Some(kept) = &self.kept_properties {
+                    let claims = entity.claims_mut();
+                    claims.retain(|statement| kept.contains(statement.property()));
+                    claims.shrink_to_fit();
                 }
+                self.entities
+                    .insert(entity_id.to_owned(), Arc::new(MyEntity(entity)));
             }
-            Ok(())
-        })
-        .await
-        .map_err(|e| anyhow!("spawn_blocking join error: {e}"))?
+        }
     }
 
     /// Removes IDs that are already loaded, removes duplicates, and shuffles
@@ -441,7 +470,7 @@ impl EntityContainerWrapper {
     /// use one, so the iteration short-circuits via `find_map`.
     pub async fn external_id_url(&self, prop: &str, id: &str) -> Option<String> {
         let pi = self.get_entity(prop).await?;
-        let claims = pi.claims_with_property("P1630");
+        let claims = pi.claims_with_property(FORMATTER_URL_PROPERTY);
         let candidates: Vec<_> = claims
             .iter()
             .filter(|s| *s.rank() != StatementRank::Deprecated)
@@ -820,5 +849,64 @@ mod tests {
 
         assert_eq!(ecw.get_unit_symbol("Q828224", "en").await, None);
         assert_eq!(ecw.get_unit_symbol("Q999999", "en").await, None);
+    }
+
+    /// An item with one statement for each of `properties`.
+    fn item_with_statements(id: &str, properties: &[&str]) -> serde_json::Value {
+        let claims: serde_json::Map<String, serde_json::Value> = properties
+            .iter()
+            .map(|p| {
+                let statement = serde_json::json!({
+                    "type": "statement", "rank": "normal", "id": format!("{id}${p}"),
+                    "mainsnak": { "snaktype": "value", "property": p, "datatype": "string",
+                                  "datavalue": { "type": "string", "value": "x" } }
+                });
+                ((*p).to_string(), serde_json::json!([statement]))
+            })
+            .collect();
+        serde_json::json!({
+            "type": "item", "id": id, "labels": {}, "descriptions": {}, "aliases": {},
+            "sitelinks": {}, "claims": claims
+        })
+    }
+
+    fn container_with(items: &[serde_json::Value]) -> EntityContainer {
+        let container = EntityContainer::new();
+        for item in items {
+            container.set_entity_from_json(item).unwrap();
+        }
+        container
+    }
+
+    fn properties_of(entity: &MyEntity) -> Vec<String> {
+        let mut properties: Vec<String> = entity
+            .claims()
+            .iter()
+            .map(|s| s.property().to_string())
+            .collect();
+        properties.sort();
+        properties
+    }
+
+    #[tokio::test]
+    async fn test_entities_keep_all_statements_by_default() {
+        // Without a property list (e.g. `load-test-entities`) nothing is dropped.
+        let ecw = EntityContainerWrapper::new(1).await.unwrap();
+        let item = item_with_statements("Q1000001", &["P17", "P31"]);
+        ecw.store_entity_chunk(&["Q1000001".to_string()], container_with(&[item]));
+        let entity = ecw.get_entity("Q1000001").await.unwrap();
+        assert_eq!(properties_of(&entity), ["P17", "P31"]);
+    }
+
+    #[tokio::test]
+    async fn test_entities_keep_only_statements_that_are_read() {
+        let mut ecw = EntityContainerWrapper::new(1).await.unwrap();
+        ecw.keep_statements_only_for(["P17".to_string()]);
+        let item = item_with_statements("Q1000002", &["P17", "P31", "P1630", "P5061"]);
+        ecw.store_entity_chunk(&["Q1000002".to_string()], container_with(&[item]));
+        let entity = ecw.get_entity("Q1000002").await.unwrap();
+        // P1630 and P5061 are read by the cache itself, so they stay too.
+        assert_eq!(properties_of(&entity), ["P1630", "P17", "P5061"]);
+        assert_eq!(entity.id(), "Q1000002");
     }
 }
