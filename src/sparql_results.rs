@@ -129,7 +129,8 @@ impl SparqlResults {
         };
         // The client adds the endpoint's own prefixes, if it has any.
         let http_client = config.sparql_http_client(endpoint.url())?;
-        let client = SparqlClient::with_client(endpoint, http_client);
+        let client = SparqlClient::with_client(endpoint, http_client)
+            .with_max_response_bytes(config.max_sparql_response_bytes());
 
         // Retry so a single transient flake (5xx, broken connection, body
         // decode error during a brief overload) doesn't fail the whole page;
@@ -192,12 +193,16 @@ impl SparqlResults {
         }
     }
 
-    /// Whether the endpoint rejected the query itself (HTTP 400, e.g. a
-    /// syntax error or an unknown prefix), as opposed to failing to answer
-    /// it. Such an error recurs on every attempt and says nothing about the
-    /// endpoint's health.
+    /// Whether the query itself is at fault, as opposed to the endpoint
+    /// failing to answer it: the endpoint rejected it (HTTP 400, e.g. a
+    /// syntax error or an unknown prefix), or its result is too large to
+    /// read. Such an error recurs on every attempt and says nothing about
+    /// the endpoint's health.
     const fn is_query_error(error: &SparqlError) -> bool {
-        matches!(error, SparqlError::Endpoint { status: 400, .. })
+        matches!(
+            error,
+            SparqlError::Endpoint { status: 400, .. } | SparqlError::ResponseTooLarge { .. }
+        )
     }
 
     /// The endpoint queries go to, in order of precedence:
@@ -748,6 +753,35 @@ mod tests {
                 err.to_string().contains("Prefix wdt was not registered"),
                 "{err}"
             );
+        }
+        let url = mock_endpoint(&server).url().to_string();
+        assert!(!page_params.config().sparql_circuit_breaker(&url).is_open());
+    }
+
+    #[tokio::test]
+    async fn test_oversized_result_is_refused_and_not_retried() {
+        // A runaway query can make WDQS stream hundreds of megabytes; reading
+        // stops at the limit, and asking again would only repeat that.
+        let server = MockServer::start().await;
+        let attempts = 5; // Enough to open the breaker if each counted.
+        let padded = format!("{QLEVER_RESULT}{}", " ".repeat(1024 * 1024));
+        mount(
+            &server,
+            ResponseTemplate::new(200).set_body_raw(padded, "application/sparql-results+json"),
+            attempts,
+        )
+        .await;
+        let config = cached_config_clone().await.with_max_sparql_response_mb(1);
+        let page_params = page_params_with(config).await;
+
+        for _ in 0..attempts {
+            let mut sparql_results = SparqlResults::new(page_params.clone(), "wikidata")
+                .with_endpoint(mock_endpoint(&server));
+            let err = sparql_results
+                .run_query(QUERY.to_string())
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("larger than"), "{err}");
         }
         let url = mock_endpoint(&server).url().to_string();
         assert!(!page_params.config().sparql_circuit_breaker(&url).is_open());

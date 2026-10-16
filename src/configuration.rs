@@ -21,6 +21,9 @@ use wikimisc::telemetry::TelemetryConfig;
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::entity_container::EntityContainer;
 
+/// Default for `max_sparql_response_mb`.
+const DEFAULT_MAX_SPARQL_RESPONSE_MB: u64 = 50;
+
 /// Circuit-breaker key for the Wikidata entity-loading API (`wbgetentities`).
 /// Used by [`EntityContainerWrapper`] so a flapping Wikidata API doesn't keep
 /// hammering through every page's entity load.
@@ -154,6 +157,8 @@ pub struct Configuration {
     max_threads: usize,
     pool: Option<Arc<DatabasePool>>,
     max_sparql_simultaneous: u64,
+    /// Largest SPARQL result read, in MiB; see [`Self::max_sparql_response_bytes`].
+    max_sparql_response_mb: u64,
     profiling: bool,
     wikis: HashMap<String, Wiki>,
     is_single_wiki: bool, // Set single wiki mode
@@ -240,6 +245,7 @@ impl Default for Configuration {
             max_threads: 0,
             pool: None,
             max_sparql_simultaneous: 0,
+            max_sparql_response_mb: DEFAULT_MAX_SPARQL_RESPONSE_MB,
             profiling: false,
             wikis: HashMap::new(),
             is_single_wiki: false,
@@ -480,6 +486,16 @@ impl Configuration {
 
     pub const fn max_sparql_simultaneous(&self) -> u64 {
         self.max_sparql_simultaneous
+    }
+
+    /// The largest SPARQL result, in bytes, that is read at all. A query
+    /// with a runaway join can make WDQS stream hundreds of megabytes before
+    /// its timeout truncates them, and parsing that takes several times as
+    /// much memory; no list that big could be saved anyway, as MediaWiki
+    /// refuses pages over 2 MB.
+    pub fn max_sparql_response_bytes(&self) -> usize {
+        usize::try_from(self.max_sparql_response_mb.saturating_mul(1024 * 1024))
+            .unwrap_or(usize::MAX)
     }
 
     /// Maximum number of `wbgetentities` outer batches that may be in flight
@@ -752,6 +768,9 @@ impl Configuration {
         if self.max_sparql_simultaneous == 0 {
             return Err(anyhow!("max_sparql_simultaneous must be > 0"));
         }
+        if self.max_sparql_response_mb == 0 {
+            return Err(anyhow!("max_sparql_response_mb must be > 0"));
+        }
         if self.max_threads == 0 {
             return Err(anyhow!("max_threads must be > 0"));
         }
@@ -1005,6 +1024,9 @@ impl Configuration {
             .to_string();
         self.prefer_preferred = j["prefer_preferred"].as_bool().unwrap_or_default();
         self.max_sparql_simultaneous = j["max_sparql_simultaneous"].as_u64().unwrap_or(10);
+        self.max_sparql_response_mb = j["max_sparql_response_mb"]
+            .as_u64()
+            .unwrap_or(DEFAULT_MAX_SPARQL_RESPONSE_MB);
         self.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
         self.max_local_cached_entities = j["max_local_cached_entities"]
             .as_u64()
@@ -1090,6 +1112,11 @@ impl Configuration {
             .entry(endpoint_url.to_string())
             .or_default()
             .user_agent = Some(user_agent.to_string());
+        self
+    }
+
+    pub const fn with_max_sparql_response_mb(mut self, mb: u64) -> Self {
+        self.max_sparql_response_mb = mb;
         self
     }
 
@@ -2133,5 +2160,15 @@ mod tests {
         assert!(config.rewrites_blazegraph_queries(v2.url()));
         assert!(config.sparql_endpoint("wdqs-v2-scholarly").is_some());
         assert!(config.default_sparql_endpoint("wikidata").is_none());
+    }
+
+    #[test]
+    fn test_max_sparql_response_size() {
+        let mut config = Configuration::default();
+        assert_eq!(config.max_sparql_response_bytes(), 50 * 1024 * 1024);
+        config.new_from_json_misc(&serde_json::json!({ "max_sparql_response_mb": 3 }));
+        assert_eq!(config.max_sparql_response_bytes(), 3 * 1024 * 1024);
+        config.new_from_json_misc(&serde_json::json!({}));
+        assert_eq!(config.max_sparql_response_bytes(), 50 * 1024 * 1024);
     }
 }
