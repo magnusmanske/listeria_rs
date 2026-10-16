@@ -11,12 +11,12 @@
 use crate::configuration::Configuration;
 use std::time::Duration;
 use wikimisc::metrics::{counter, gauge, histogram};
-use wikimisc::telemetry::{ExitReason, Telemetry, TelemetryError};
+use wikimisc::telemetry::{ExitReason, Level, Telemetry, TelemetryError, event};
 
 /// Status of a page whose processing returned an error instead of a result.
 pub const STATUS_ERROR: &str = "ERROR";
-/// Status of a page that ran out of its wall-clock budget; the queue marks it FAIL.
-const STATUS_TIMEOUT: &str = "FAIL";
+/// Status of a page that timed out or panicked; the queue marks it FAIL.
+const STATUS_FAIL: &str = "FAIL";
 /// Statuses counted as they are; anything else is counted as `OTHER`.
 const PAGE_STATUSES: &[&str] = &[
     "OK",
@@ -68,7 +68,18 @@ pub fn record_page(status: &str, duration: Duration) {
 /// page, and in `listeria_page_timeouts_total`.
 pub fn record_page_timeout(duration: Duration) {
     counter!("listeria_page_timeouts_total").increment(1);
-    record_page(STATUS_TIMEOUT, duration);
+    record_page(STATUS_FAIL, duration);
+}
+
+/// Records a page whose processing panicked: counted as a failed page, and
+/// reported as a dashboard event naming the page. (wikimisc counts the panic
+/// itself in `process_panics_total`, but does not know the page.)
+pub fn record_page_panic(wiki: &str, title: &str, message: &str, duration: Duration) {
+    event(
+        Level::Error,
+        format!("page panicked: {wiki}/{title}: {message}"),
+    );
+    record_page(STATUS_FAIL, duration);
 }
 
 /// Records a saved edit (`listeria_edits_total`).
@@ -146,6 +157,7 @@ mod tests {
     fn test_recording_without_telemetry_is_a_noop() {
         record_page("OK", Duration::from_secs(1));
         record_page_timeout(Duration::from_secs(600));
+        record_page_panic("enwiki", "Some page", "boom", Duration::from_secs(1));
         record_edit();
         record_sparql_failure();
         record_circuit_breaker_trip(BREAKER_SPARQL);

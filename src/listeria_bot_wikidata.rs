@@ -164,7 +164,7 @@ impl ListeriaBot for ListeriaBotWikidata {
 
 impl ListeriaBotWikidata {
     /// Marks a page as FAIL in the pagestatus queue. Used by the dispatcher
-    /// when an outer wall-clock timeout aborts `run_single_bot` before its
+    /// when a wall-clock timeout or a panic ends `run_single_bot` before its
     /// own status update can run — without this, the row would stay RUNNING
     /// until the next `reset_running` on bot restart.
     pub async fn mark_page_failed(&self, wiki: &str, page: &str, message: &str) -> Result<()> {

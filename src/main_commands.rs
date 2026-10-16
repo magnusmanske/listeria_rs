@@ -42,6 +42,84 @@ fn watchdog(page_timeout: Duration) -> Seppuku {
     seppuku
 }
 
+/// How processing one page ended; see [`run_page`].
+#[derive(Debug)]
+enum PageOutcome {
+    /// Processing returned a result, after recording the page's status.
+    Done(WikiPageResult),
+    /// Processing returned an error.
+    Failed(anyhow::Error),
+    /// Processing was cut short, before it could record the page's status.
+    Aborted(PageAbort),
+}
+
+#[derive(Debug)]
+enum PageAbort {
+    TimedOut(Duration),
+    /// The panic message.
+    Panicked(String),
+}
+
+impl std::fmt::Display for PageAbort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TimedOut(budget) => write!(
+                f,
+                "Page processing exceeded {}s wall-clock budget",
+                budget.as_secs()
+            ),
+            Self::Panicked(message) => write!(f, "Page processing panicked: {message}"),
+        }
+    }
+}
+
+impl PageOutcome {
+    fn record_telemetry(&self, wiki: &str, title: &str, runtime: Duration) {
+        match self {
+            Self::Done(result) => telemetry::record_page(result.result(), runtime),
+            Self::Failed(_) => telemetry::record_page(telemetry::STATUS_ERROR, runtime),
+            Self::Aborted(PageAbort::TimedOut(_)) => telemetry::record_page_timeout(runtime),
+            Self::Aborted(PageAbort::Panicked(message)) => {
+                telemetry::record_page_panic(wiki, title, message, runtime);
+            }
+        }
+    }
+}
+
+/// Processes one page (`processing`) within `page_timeout`, in a task of its
+/// own, so that a panic fails only this page: tokio catches it at the task
+/// boundary and it comes back as [`PageAbort::Panicked`].
+///
+/// The task also keeps the panic off the main thread, which matters even
+/// where the caller runs on it (single-wiki mode): wikimisc's telemetry takes
+/// a panic on the main thread for the end of the process. Spawned tasks run
+/// on the multi-thread runtime's worker threads, never on the main thread.
+async fn run_page<F>(page_timeout: Duration, processing: F) -> PageOutcome
+where
+    F: Future<Output = Result<WikiPageResult>> + Send + 'static,
+{
+    let task = tokio::spawn(tokio::time::timeout(page_timeout, processing).in_current_span());
+    match task.await {
+        Ok(Ok(Ok(result))) => PageOutcome::Done(result),
+        Ok(Ok(Err(e))) => PageOutcome::Failed(e),
+        Ok(Err(_elapsed)) => PageOutcome::Aborted(PageAbort::TimedOut(page_timeout)),
+        Err(e) if e.is_panic() => {
+            PageOutcome::Aborted(PageAbort::Panicked(panic_message(&*e.into_panic())))
+        }
+        // The task is never aborted, so this happens at runtime shutdown at most.
+        Err(e) => PageOutcome::Failed(anyhow!("page task ended: {e}")),
+    }
+}
+
+/// The message of a panic, from its payload.
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| (*s).to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "(non-string panic payload)".to_string())
+}
+
 #[derive(Debug, Clone)]
 pub struct MainCommands {
     pub config: Arc<Configuration>,
@@ -176,34 +254,30 @@ impl MainCommands {
             );
             let page_timeout = bot.config().page_timeout();
             // Snapshot identifiers before moving `page` into run_single_bot,
-            // so we can mark the row FAIL on timeout without owning the page.
+            // so we can mark the row FAIL on timeout or panic without owning
+            // the page.
             let pagestatus_id = page.id();
             let page_title = page.title().to_string();
             let page_wiki = page.wiki().to_string();
             tokio::spawn(
                 async move {
                     let start_time = Instant::now();
-                    let outcome =
-                        tokio::time::timeout(page_timeout, bot.run_single_bot(page)).await;
+                    let page_bot = Arc::clone(&bot);
+                    let processing = async move { page_bot.run_single_bot(page).await };
+                    let outcome = run_page(page_timeout, processing).await;
                     seppuku.alive();
                     let runtime = start_time.elapsed();
+                    outcome.record_telemetry(&page_wiki, &page_title, runtime);
                     match outcome {
-                        Ok(Ok(result)) => telemetry::record_page(result.result(), runtime),
-                        Ok(Err(e)) => {
-                            log::error!("Bot run failed: {e}");
-                            telemetry::record_page(telemetry::STATUS_ERROR, runtime);
-                        }
-                        Err(_) => {
-                            telemetry::record_page_timeout(runtime);
-                            let msg = format!(
-                                "Page processing exceeded {}s wall-clock budget",
-                                page_timeout.as_secs()
-                            );
+                        PageOutcome::Done(_) => {}
+                        PageOutcome::Failed(e) => log::error!("Bot run failed: {e}"),
+                        PageOutcome::Aborted(abort) => {
+                            let msg = abort.to_string();
                             log::error!("{msg}: {page_wiki}/{page_title}");
                             if let Err(e) =
                                 bot.mark_page_failed(&page_wiki, &page_title, &msg).await
                             {
-                                log::error!("Failed to mark timed-out page FAIL: {e}");
+                                log::error!("Failed to mark aborted page FAIL: {e}");
                             }
                         }
                     }
@@ -232,7 +306,7 @@ impl MainCommands {
             });
         }
         let config = Arc::new((*self.config).clone());
-        let bot = ListeriaBotSingle::new_from_config(config).await?;
+        let bot = Arc::new(ListeriaBotSingle::new_from_config(config).await?);
         let seppuku = watchdog(bot.config().page_timeout());
         loop {
             let page = match bot.prepare_next_single_page().await {
@@ -261,33 +335,19 @@ impl MainCommands {
                 page = %page.title(),
             );
             let page_timeout = bot.config().page_timeout();
-            let outcome = tokio::time::timeout(
-                page_timeout,
-                bot.run_single_bot(page.clone()).instrument(span),
-            )
-            .await;
+            let (page_bot, page_to_run) = (Arc::clone(&bot), page.clone());
+            let processing = async move { page_bot.run_single_bot(page_to_run).await };
+            let outcome = run_page(page_timeout, processing).instrument(span).await;
             seppuku.alive();
             let runtime = start_time.elapsed();
+            outcome.record_telemetry(page.wiki(), page.title(), runtime);
             let mut result = match outcome {
-                Ok(Ok(result)) => {
-                    telemetry::record_page(result.result(), runtime);
-                    result
-                }
-                Ok(Err(e)) => {
-                    telemetry::record_page(telemetry::STATUS_ERROR, runtime);
+                PageOutcome::Done(result) => result,
+                PageOutcome::Failed(e) => {
                     WikiPageResult::new("wiki", page.title(), "Error", e.to_string())
                 }
-                Err(_) => {
-                    telemetry::record_page_timeout(runtime);
-                    WikiPageResult::new(
-                        "wiki",
-                        page.title(),
-                        "Error",
-                        format!(
-                            "Page processing exceeded {}s wall-clock budget",
-                            page_timeout.as_secs()
-                        ),
-                    )
+                PageOutcome::Aborted(abort) => {
+                    WikiPageResult::new("wiki", page.title(), "Error", abort.to_string())
                 }
             };
             result.set_runtime(runtime);
@@ -318,6 +378,52 @@ mod tests {
             let page_timeout = Duration::from_secs(secs);
             assert!(watchdog_window(page_timeout) > page_timeout, "{secs}");
         }
+    }
+
+    const NO_TIMEOUT: Duration = Duration::from_secs(60);
+
+    async fn panicking_page(message: &'static str) -> Result<WikiPageResult> {
+        panic!("{message}")
+    }
+
+    async fn panicking_page_with_str() -> Result<WikiPageResult> {
+        panic!("boom")
+    }
+
+    #[tokio::test]
+    async fn test_run_page_turns_a_panic_into_an_abort() {
+        // A formatted panic carries a String payload, a literal one a &str.
+        for outcome in [
+            run_page(NO_TIMEOUT, panicking_page("boom")).await,
+            run_page(NO_TIMEOUT, panicking_page_with_str()).await,
+        ] {
+            match outcome {
+                PageOutcome::Aborted(abort @ PageAbort::Panicked(_)) => {
+                    assert_eq!(abort.to_string(), "Page processing panicked: boom");
+                }
+                other => panic!("Expected a panic, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_run_page_times_out() {
+        let outcome = run_page(Duration::from_millis(10), std::future::pending()).await;
+        assert!(matches!(
+            outcome,
+            PageOutcome::Aborted(PageAbort::TimedOut(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_run_page_passes_results_and_errors_through() {
+        let done = run_page(NO_TIMEOUT, async {
+            Ok(WikiPageResult::new("wiki", "Page", "OK", String::new()))
+        })
+        .await;
+        assert!(matches!(done, PageOutcome::Done(result) if result.result() == "OK"));
+        let failed = run_page(NO_TIMEOUT, async { Err(anyhow!("nope")) }).await;
+        assert!(matches!(failed, PageOutcome::Failed(e) if e.to_string() == "nope"));
     }
     use std::fs;
     use wiremock::matchers::{body_string_contains, method, path, query_param};

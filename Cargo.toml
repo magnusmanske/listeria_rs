@@ -55,9 +55,10 @@ tower = { version = "0.5", features = ["util"] }
 name = "benchmarks"
 harness = false
 
+# No `panic = 'abort'`: a panic must fail only the page it happens in, not
+# the whole bot (see `run_page` in src/main_commands.rs).
 [profile.release]
 lto = 'thin'
-panic = 'abort'
 codegen-units = 1
 
 [profile.bench]
