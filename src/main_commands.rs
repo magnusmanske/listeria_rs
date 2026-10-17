@@ -74,14 +74,12 @@ impl std::fmt::Display for PageAbort {
 }
 
 impl PageOutcome {
-    fn record_telemetry(&self, wiki: &str, title: &str, runtime: Duration) {
+    fn record_telemetry(&self, runtime: Duration) {
         match self {
             Self::Done(result) => telemetry::record_page(result.result(), runtime),
             Self::Failed(_) => telemetry::record_page(telemetry::STATUS_ERROR, runtime),
             Self::Aborted(PageAbort::TimedOut(_)) => telemetry::record_page_timeout(runtime),
-            Self::Aborted(PageAbort::Panicked(message)) => {
-                telemetry::record_page_panic(wiki, title, message, runtime);
-            }
+            Self::Aborted(PageAbort::Panicked(_)) => telemetry::record_page_panic(runtime),
         }
     }
 }
@@ -267,7 +265,7 @@ impl MainCommands {
                     let outcome = run_page(page_timeout, processing).await;
                     seppuku.alive();
                     let runtime = start_time.elapsed();
-                    outcome.record_telemetry(&page_wiki, &page_title, runtime);
+                    outcome.record_telemetry(runtime);
                     match outcome {
                         PageOutcome::Done(_) => {}
                         PageOutcome::Failed(e) => log::error!("Bot run failed: {e}"),
@@ -340,7 +338,7 @@ impl MainCommands {
             let outcome = run_page(page_timeout, processing).instrument(span).await;
             seppuku.alive();
             let runtime = start_time.elapsed();
-            outcome.record_telemetry(page.wiki(), page.title(), runtime);
+            outcome.record_telemetry(runtime);
             let mut result = match outcome {
                 PageOutcome::Done(result) => result,
                 PageOutcome::Failed(e) => {

@@ -11,7 +11,7 @@
 use crate::configuration::Configuration;
 use std::time::Duration;
 use wikimisc::metrics::{counter, gauge, histogram};
-use wikimisc::telemetry::{ExitReason, Level, Telemetry, TelemetryError, event};
+use wikimisc::telemetry::{ExitReason, Telemetry, TelemetryError};
 
 /// Status of a page whose processing returned an error instead of a result.
 pub const STATUS_ERROR: &str = "ERROR";
@@ -49,10 +49,12 @@ pub fn install(component: &str, config: &Configuration) {
 
 /// Sends the final push, reporting how the run ended; a no-op without
 /// telemetry. Signals and watchdog kills are reported by wikimisc itself.
+/// The error itself is only logged: its text can name pages or users, and the
+/// dashboard shows exit details publicly.
 pub async fn shutdown(result: &anyhow::Result<()>) {
     let reason = match result {
         Ok(()) => ExitReason::Exit,
-        Err(e) => ExitReason::Other(e.to_string()),
+        Err(_) => ExitReason::Other("stopped with an error (see the log)".to_string()),
     };
     wikimisc::telemetry::shutdown(reason).await;
 }
@@ -71,14 +73,10 @@ pub fn record_page_timeout(duration: Duration) {
     record_page(STATUS_FAIL, duration);
 }
 
-/// Records a page whose processing panicked: counted as a failed page, and
-/// reported as a dashboard event naming the page. (wikimisc counts the panic
-/// itself in `process_panics_total`, but does not know the page.)
-pub fn record_page_panic(wiki: &str, title: &str, message: &str, duration: Duration) {
-    event(
-        Level::Error,
-        format!("page panicked: {wiki}/{title}: {message}"),
-    );
+/// Records a page whose processing panicked as a failed page. The panic itself
+/// is reported by wikimisc, by source location only: page titles stay out of
+/// telemetry, as lists often live in user space (`User:Name/…`).
+pub fn record_page_panic(duration: Duration) {
     record_page(STATUS_FAIL, duration);
 }
 
@@ -157,7 +155,7 @@ mod tests {
     fn test_recording_without_telemetry_is_a_noop() {
         record_page("OK", Duration::from_secs(1));
         record_page_timeout(Duration::from_secs(600));
-        record_page_panic("enwiki", "Some page", "boom", Duration::from_secs(1));
+        record_page_panic(Duration::from_secs(1));
         record_edit();
         record_sparql_failure();
         record_circuit_breaker_trip(BREAKER_SPARQL);
