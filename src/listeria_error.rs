@@ -21,6 +21,11 @@ pub enum ListeriaError {
     #[error("No items to show")]
     NoItemsToShow,
 
+    #[error(
+        "The query returned {count} items, more than the {max} a list can have; add a LIMIT or narrow the query"
+    )]
+    TooManyItems { count: usize, max: usize },
+
     #[error("SPARQL circuit open — endpoint '{0}' is temporarily blocked after repeated failures")]
     SparqlCircuitOpen(String),
 
@@ -57,6 +62,17 @@ mod tests {
     fn test_no_items_to_show_message() {
         let e = ListeriaError::NoItemsToShow;
         assert_eq!(e.to_string(), "No items to show");
+    }
+
+    #[test]
+    fn test_too_many_items_message() {
+        let e = ListeriaError::TooManyItems {
+            count: 432_628,
+            max: 50_000,
+        };
+        let msg = e.to_string();
+        assert!(msg.contains("432628 items"), "{msg}");
+        assert!(msg.contains("50000"), "{msg}");
     }
 
     #[test]

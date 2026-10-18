@@ -76,7 +76,34 @@ impl ResultGenerator {
         Ok(())
     }
 
+    /// The items of the SPARQL result rows, then the properties the columns
+    /// name (for their headers).
     pub fn get_ids_from_sparql_rows(list: &ListeriaList) -> Result<Vec<String>> {
+        let mut ids = Self::get_item_ids_from_sparql_rows(list)?;
+
+        // Column headers
+        list.columns().iter().for_each(|c| match c.obj() {
+            ColumnType::Property(prop) => {
+                ids.push(prop.to_owned());
+            }
+            ColumnType::PropertyQualifier((prop, qual)) => {
+                ids.push(prop.to_owned());
+                ids.push(qual.to_owned());
+            }
+            ColumnType::PropertyQualifierValue((prop1, qual, prop2)) => {
+                ids.push(prop1.to_owned());
+                ids.push(qual.to_owned());
+                ids.push(prop2.to_owned());
+            }
+            _ => {}
+        });
+
+        Ok(ids)
+    }
+
+    /// The distinct items of the SPARQL result rows, in order of first
+    /// appearance.
+    pub fn get_item_ids_from_sparql_rows(list: &ListeriaList) -> Result<Vec<String>> {
         let var_index = Self::get_var_index(list)?;
         let mut ids_tmp = Vec::new();
         for row_id in 0..list.sparql_table().len() {
@@ -96,24 +123,6 @@ impl ResultGenerator {
                 ids.push(id.clone());
             }
         }
-
-        // Column headers
-        list.columns().iter().for_each(|c| match c.obj() {
-            ColumnType::Property(prop) => {
-                ids.push(prop.to_owned());
-            }
-            ColumnType::PropertyQualifier((prop, qual)) => {
-                ids.push(prop.to_owned());
-                ids.push(qual.to_owned());
-            }
-            ColumnType::PropertyQualifierValue((prop1, qual, prop2)) => {
-                ids.push(prop1.to_owned());
-                ids.push(qual.to_owned());
-                ids.push(prop2.to_owned());
-            }
-            _ => {}
-        });
-
         Ok(ids)
     }
 

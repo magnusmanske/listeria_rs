@@ -24,6 +24,9 @@ use wikimisc::wikibase::entity_container::EntityContainer;
 /// Default for `max_sparql_response_mb`.
 const DEFAULT_MAX_SPARQL_RESPONSE_MB: u64 = 50;
 
+/// Default for `max_list_items`.
+const DEFAULT_MAX_LIST_ITEMS: usize = 50_000;
+
 /// Circuit-breaker key for the Wikidata entity-loading API (`wbgetentities`).
 /// Used by [`EntityContainerWrapper`] so a flapping Wikidata API doesn't keep
 /// hammering through every page's entity load.
@@ -159,6 +162,8 @@ pub struct Configuration {
     max_sparql_simultaneous: u64,
     /// Largest SPARQL result read, in MiB; see [`Self::max_sparql_response_bytes`].
     max_sparql_response_mb: u64,
+    /// Most items a list's query may return; see [`Self::max_list_items`].
+    max_list_items: usize,
     profiling: bool,
     wikis: HashMap<String, Wiki>,
     is_single_wiki: bool, // Set single wiki mode
@@ -246,6 +251,7 @@ impl Default for Configuration {
             pool: None,
             max_sparql_simultaneous: 0,
             max_sparql_response_mb: DEFAULT_MAX_SPARQL_RESPONSE_MB,
+            max_list_items: DEFAULT_MAX_LIST_ITEMS,
             profiling: false,
             wikis: HashMap::new(),
             is_single_wiki: false,
@@ -496,6 +502,16 @@ impl Configuration {
     pub fn max_sparql_response_bytes(&self) -> usize {
         usize::try_from(self.max_sparql_response_mb.saturating_mul(1024 * 1024))
             .unwrap_or(usize::MAX)
+    }
+
+    /// The most distinct items a list's query may return; a list with more
+    /// is refused before any of them are loaded. A loaded item takes around
+    /// 10 KiB even with only the statements the list reads, so a query for
+    /// hundreds of thousands of them takes gigabytes (well within
+    /// [`Self::max_sparql_response_bytes`], as a row of a single `?item`
+    /// is ~100 bytes); and no list that long could be saved anyway.
+    pub const fn max_list_items(&self) -> usize {
+        self.max_list_items
     }
 
     /// Maximum number of `wbgetentities` outer batches that may be in flight
@@ -771,6 +787,9 @@ impl Configuration {
         if self.max_sparql_response_mb == 0 {
             return Err(anyhow!("max_sparql_response_mb must be > 0"));
         }
+        if self.max_list_items == 0 {
+            return Err(anyhow!("max_list_items must be > 0"));
+        }
         if self.max_threads == 0 {
             return Err(anyhow!("max_threads must be > 0"));
         }
@@ -1027,6 +1046,10 @@ impl Configuration {
         self.max_sparql_response_mb = j["max_sparql_response_mb"]
             .as_u64()
             .unwrap_or(DEFAULT_MAX_SPARQL_RESPONSE_MB);
+        self.max_list_items = j["max_list_items"]
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(DEFAULT_MAX_LIST_ITEMS);
         self.default_thumbnail_size = j["default_thumbnail_size"].as_u64();
         self.max_local_cached_entities = j["max_local_cached_entities"]
             .as_u64()
@@ -1117,6 +1140,11 @@ impl Configuration {
 
     pub const fn with_max_sparql_response_mb(mut self, mb: u64) -> Self {
         self.max_sparql_response_mb = mb;
+        self
+    }
+
+    pub const fn with_max_list_items(mut self, max: usize) -> Self {
+        self.max_list_items = max;
         self
     }
 
@@ -2170,5 +2198,21 @@ mod tests {
         assert_eq!(config.max_sparql_response_bytes(), 3 * 1024 * 1024);
         config.new_from_json_misc(&serde_json::json!({}));
         assert_eq!(config.max_sparql_response_bytes(), 50 * 1024 * 1024);
+    }
+
+    #[test]
+    fn test_max_list_items() {
+        let mut config = Configuration::default();
+        assert_eq!(config.max_list_items(), DEFAULT_MAX_LIST_ITEMS);
+        config.new_from_json_misc(&serde_json::json!({ "max_list_items": 7 }));
+        assert_eq!(config.max_list_items(), 7);
+        config.new_from_json_misc(&serde_json::json!({}));
+        assert_eq!(config.max_list_items(), DEFAULT_MAX_LIST_ITEMS);
+    }
+
+    #[test]
+    fn test_validate_zero_max_list_items() {
+        let config = valid_config().with_max_list_items(0);
+        assert!(config.validate().is_err());
     }
 }

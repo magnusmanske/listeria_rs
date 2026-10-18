@@ -430,6 +430,18 @@ impl ListeriaList {
         let mut sparql_table = sparql_results.run_query(sparql).await?;
         sparql_table.set_main_variable(sparql_results.sparql_main_variable());
         self.sparql_table = Arc::new(sparql_table);
+        self.check_item_count()
+    }
+
+    /// Refuses a list whose query returned more items than `max_list_items`,
+    /// before any of them are loaded: enwiki's list of all ~430,000 items
+    /// with a DOI took the bot past its 5 GiB memory limit within minutes.
+    fn check_item_count(&self) -> Result<()> {
+        let max = self.page_params.config().max_list_items();
+        let count = ResultGenerator::get_item_ids_from_sparql_rows(self)?.len();
+        if count > max {
+            return Err(ListeriaError::TooManyItems { count, max }.into());
+        }
         Ok(())
     }
 
@@ -1122,14 +1134,20 @@ mod tests {
         const MOCK_PATH: &str = "/query/sparql";
         const QUERY: &str = "SELECT ?item WHERE { ?item mt:P1 m:Q1 }";
         const RESULT: &str = r#"{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"https://example.wikibase.cloud/entity/Q2"}}]}}"#;
+        /// Three rows, but only two distinct items.
+        const RESULT_TWO_ITEMS: &str = r#"{"head":{"vars":["item"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q2"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q3"}},{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q2"}}]}}"#;
 
         async fn mock_server() -> MockServer {
+            mock_server_returning(RESULT).await
+        }
+
+        async fn mock_server_returning(result: &str) -> MockServer {
             let server = MockServer::start().await;
             Mock::given(method("POST"))
                 .and(path(MOCK_PATH))
                 .respond_with(
                     ResponseTemplate::new(200)
-                        .set_body_raw(RESULT, "application/sparql-results+json"),
+                        .set_body_raw(result.to_owned(), "application/sparql-results+json"),
                 )
                 .expect(1)
                 .mount(&server)
@@ -1264,6 +1282,34 @@ mod tests {
             let mut list = list_with(cached_config_clone().await, "|sparql_endpoint=nope").await;
             let err = list.run_query().await.unwrap_err();
             assert!(err.to_string().contains("'nope'"), "{err}");
+        }
+
+        async fn run_query_with_max_list_items(max: usize) -> Result<()> {
+            let server = mock_server_returning(RESULT_TWO_ITEMS).await;
+            let endpoint = SparqlEndpoint::new(format!("{}{MOCK_PATH}", server.uri()));
+            let config = cached_config_clone()
+                .await
+                .with_sparql_endpoint("mock", endpoint)
+                .with_max_list_items(max);
+            let mut list = list_with(config, "|sparql_endpoint=mock").await;
+            list.run_query().await
+        }
+
+        #[tokio::test]
+        async fn test_too_many_items_is_an_error() {
+            let err = run_query_with_max_list_items(1).await.unwrap_err();
+            assert!(
+                matches!(
+                    err.downcast_ref::<ListeriaError>(),
+                    Some(ListeriaError::TooManyItems { count: 2, max: 1 })
+                ),
+                "{err}"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_item_limit_counts_distinct_items() {
+            run_query_with_max_list_items(2).await.unwrap();
         }
     }
 }
