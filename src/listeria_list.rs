@@ -5,6 +5,7 @@
 use crate::column::Column;
 use crate::column_type::ColumnType;
 use crate::entity_container_wrapper::{EntityContainerWrapper, EntityEntry};
+use crate::entity_projection::EntityProjection;
 use crate::list_processor::ListProcessor;
 use crate::listeria_error::ListeriaError;
 use crate::my_entity::MyEntity;
@@ -249,9 +250,44 @@ impl ListeriaList {
             Some(api) => api.clone(),
             None => return Err(ListeriaError::SparqlNoConfig(wikibase.to_string()).into()),
         };
-        self.ecw.keep_statements_only_for(self.properties_read());
+        self.ecw.keep_only(self.entity_projection());
 
         Ok(())
+    }
+
+    /// What this list reads from its entities: statements for the properties
+    /// [`Self::properties_read`] names, the qualifiers its qualifier columns
+    /// show, references with `references=all`, labels and descriptions in its
+    /// language (labels also in the default one, which entity links fall back
+    /// to), and those its `label/xx`, `description/xx` and `alias/xx` columns
+    /// name, and sitelinks to its wiki and those its sitelink columns name.
+    fn entity_projection(&self) -> EntityProjection {
+        let mut labels = vec![self.language.clone(), self.default_language()];
+        let mut descriptions = vec![self.language.clone()];
+        let mut aliases = Vec::new();
+        let mut sites = vec![self.wiki().to_string()];
+        let mut qualifiers = Vec::new();
+        for column in &self.columns {
+            match column.obj() {
+                ColumnType::LabelLang(language) => labels.push(language.clone()),
+                ColumnType::Description(languages) => descriptions.extend(languages.clone()),
+                ColumnType::AliasLang(language) => aliases.push(language.clone()),
+                ColumnType::Sitelink(wiki) => sites.push(wiki.clone()),
+                ColumnType::PropertyQualifier((_, qualifier))
+                | ColumnType::PropertyQualifierValue((_, _, qualifier)) => {
+                    qualifiers.push(qualifier.clone());
+                }
+                _ => {}
+            }
+        }
+        EntityProjection::default()
+            .with_properties(self.properties_read())
+            .with_qualifiers(qualifiers)
+            .with_references(*self.params.references() == ReferencesParameter::All)
+            .with_label_languages(labels)
+            .with_description_languages(descriptions)
+            .with_alias_languages(aliases)
+            .with_sites(sites)
     }
 
     /// The properties whose statements this list reads: those its columns
@@ -1260,6 +1296,40 @@ mod tests {
                 .map(String::from)
                 .collect();
             assert_eq!(list.properties_read(), expected);
+        }
+
+        #[tokio::test]
+        async fn test_entity_projection() {
+            let list = list_with(
+                cached_config_clone().await,
+                "|columns=item,label/ja,description/fr/de,alias/es,sitelink/frwikisource,P39/P580,P39/Q41582/P582,P18|references=all|language=nl",
+            )
+            .await;
+            let strings = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+            let expected = EntityProjection::default()
+                .with_properties(strings(&["P39", "P18"]))
+                .with_qualifiers(strings(&["P580", "P582"]))
+                .with_references(true)
+                .with_label_languages(strings(&["nl", "ja", &list.default_language()]))
+                .with_description_languages(strings(&["nl", "fr", "de"]))
+                .with_alias_languages(strings(&["es"]))
+                .with_sites(strings(&[list.wiki(), "frwikisource"]));
+            assert_eq!(list.entity_projection(), expected);
+        }
+
+        #[tokio::test]
+        async fn test_entity_projection_defaults() {
+            // No language/sitelink columns: the list's own language and wiki;
+            // no references unless asked for.
+            let list = list_with(cached_config_clone().await, "|columns=label,P31").await;
+            let strings = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+            let language = list.language().to_string();
+            let expected = EntityProjection::default()
+                .with_properties(strings(&["P31"]))
+                .with_label_languages(strings(&[&language, &list.default_language()]))
+                .with_description_languages(strings(&[&language]))
+                .with_sites(strings(&[list.wiki()]));
+            assert_eq!(list.entity_projection(), expected);
         }
 
         #[tokio::test]

@@ -61,6 +61,7 @@ pub mod column_type;
 pub mod configuration;
 pub mod database_pool;
 pub mod entity_container_wrapper;
+pub mod entity_projection;
 pub mod list_processor;
 pub mod listeria_bot;
 pub mod listeria_bot_single;

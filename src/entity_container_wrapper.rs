@@ -1,6 +1,7 @@
 //! Wrapper for entity container with caching and batch loading.
 
 use crate::circuit_breaker::{CircuitBreaker, with_breaker};
+use crate::entity_projection::EntityProjection;
 use crate::my_entity::MyEntity;
 use crate::render_context::RenderContext;
 
@@ -39,7 +40,6 @@ const EXTERNAL_ID_ESCAPE: &AsciiSet = &CONTROLS
     .add(b'+')
     .add(b'%');
 use rand::seq::SliceRandom;
-use std::collections::HashSet;
 #[cfg(test)]
 use std::fs::File;
 #[cfg(test)]
@@ -79,6 +79,9 @@ const UNIT_SYMBOL_PROPERTY: &str = "P5061";
 /// Property holding an external-ID property's formatter URL, read by
 /// [`EntityContainerWrapper::external_id_url`].
 const FORMATTER_URL_PROPERTY: &str = "P1630";
+/// Languages whose labels [`EntityContainerWrapper::label_with_fallback_from_entity`]
+/// falls back to, in order, when an entity has none in the language asked for.
+const LABEL_FALLBACK_LANGUAGES: [&str; 8] = ["mul", "en", "de", "fr", "es", "it", "el", "nl"];
 
 /// Per-page in-memory entity store.
 ///
@@ -103,9 +106,8 @@ pub struct EntityContainerWrapper {
     /// caller wires this from `Configuration::mw_api_circuit_breaker(MW_API_ENTITIES_KEY)`
     /// so a flapping Wikidata API doesn't keep hammering every entity load.
     circuit_breaker: Option<Arc<CircuitBreaker>>,
-    /// If set, loaded entities keep only statements for these properties;
-    /// see [`Self::keep_statements_only_for`].
-    kept_properties: Option<Arc<HashSet<String>>>,
+    /// If set, loaded entities keep only what it names; see [`Self::keep_only`].
+    projection: Option<Arc<EntityProjection>>,
 }
 
 /// Parses `test_entities.json` exactly once for the entire test run.
@@ -143,7 +145,7 @@ impl EntityContainerWrapper {
             entities: Arc::new(DashMap::new()),
             max_concurrent_entry_queries: max_concurrent_entry_queries.max(1),
             circuit_breaker: None,
-            kept_properties: None,
+            projection: None,
         };
         // Pre-cache test entities — clones Arc pointers from the once-parsed
         // static rather than re-reading the 8 MB JSON file.
@@ -162,20 +164,31 @@ impl EntityContainerWrapper {
         self
     }
 
-    /// From now on, entities keep only their statements for `properties`
-    /// (and the ones this cache reads itself: unit symbols, formatter URLs);
-    /// all others are dropped as the entities are loaded.
+    /// From now on, the cached entities keep only what `projection` names
+    /// (and what this cache reads itself: unit symbols, formatter URLs and
+    /// fallback labels); everything else is dropped, from the entities
+    /// already cached and from those loaded later.
     ///
-    /// Statements are by far the largest part of an entity — a country has
-    /// thousands — and a list only reads those for the properties its
-    /// columns, sorting and sections name. Keeping all of them made a list
-    /// of ~9,000 airports, with their countries and regions, take over 3 GiB
-    /// (enough to get the bot OOM-killed).
-    pub fn keep_statements_only_for(&mut self, properties: impl IntoIterator<Item = String>) {
-        let mut kept: HashSet<String> = properties.into_iter().collect();
-        kept.insert(UNIT_SYMBOL_PROPERTY.to_string());
-        kept.insert(FORMATTER_URL_PROPERTY.to_string());
-        self.kept_properties = Some(Arc::new(kept));
+    /// An entity is mostly data a list never reads — a country has thousands
+    /// of statements, and labels and sitelinks in hundreds of languages and
+    /// wikis. Keeping all of it made a list of ~9,000 airports, with their
+    /// countries and regions, take over 3 GiB (enough to get the bot
+    /// OOM-killed).
+    pub fn keep_only(&mut self, projection: EntityProjection) {
+        let projection = Arc::new(
+            projection
+                .with_properties([UNIT_SYMBOL_PROPERTY, FORMATTER_URL_PROPERTY].map(String::from))
+                .with_label_languages(LABEL_FALLBACK_LANGUAGES.map(String::from)),
+        );
+        // Entities are shared (see `EntityEntry`), so replace rather than
+        // change them. There are none yet in production: lists set this up
+        // before loading anything; tests preload entities, though.
+        for mut entry in self.entities.iter_mut() {
+            let mut entity = MyEntity::clone(entry.value());
+            projection.apply(&mut entity);
+            *entry.value_mut() = Arc::new(entity);
+        }
+        self.projection = Some(projection);
     }
 
     #[cfg(test)]
@@ -288,10 +301,8 @@ impl EntityContainerWrapper {
     fn store_entity_chunk(&self, chunk: &[String], entity_container: EntityContainer) {
         for entity_id in chunk {
             if let Some(mut entity) = entity_container.remove_entity(entity_id) {
-                if let Some(kept) = &self.kept_properties {
-                    let claims = entity.claims_mut();
-                    claims.retain(|statement| kept.contains(statement.property()));
-                    claims.shrink_to_fit();
+                if let Some(projection) = &self.projection {
+                    projection.apply(&mut entity);
                 }
                 self.entities
                     .insert(entity_id.to_owned(), Arc::new(MyEntity(entity)));
@@ -393,7 +404,7 @@ impl EntityContainerWrapper {
             return label.to_string();
         }
 
-        for lang in ["mul", "en", "de", "fr", "es", "it", "el", "nl"] {
+        for lang in LABEL_FALLBACK_LANGUAGES {
             if let Some(label) = entity.label_in_locale(lang) {
                 return label.to_string();
             }
@@ -901,12 +912,52 @@ mod tests {
     #[tokio::test]
     async fn test_entities_keep_only_statements_that_are_read() {
         let mut ecw = EntityContainerWrapper::new(1).await.unwrap();
-        ecw.keep_statements_only_for(["P17".to_string()]);
+        ecw.keep_only(EntityProjection::default().with_properties(["P17".to_string()]));
         let item = item_with_statements("Q1000002", &["P17", "P31", "P1630", "P5061"]);
         ecw.store_entity_chunk(&["Q1000002".to_string()], container_with(&[item]));
         let entity = ecw.get_entity("Q1000002").await.unwrap();
         // P1630 and P5061 are read by the cache itself, so they stay too.
         assert_eq!(properties_of(&entity), ["P1630", "P17", "P5061"]);
         assert_eq!(entity.id(), "Q1000002");
+    }
+
+    #[tokio::test]
+    async fn test_keep_only_keeps_the_fallback_labels() {
+        let mut ecw = EntityContainerWrapper::new(1).await.unwrap();
+        ecw.keep_only(EntityProjection::default().with_label_languages(["ja".to_string()]));
+        let labels: serde_json::Map<String, serde_json::Value> = ["ar", "ja", "nl", "xx"]
+            .iter()
+            .map(|l| {
+                (
+                    (*l).to_string(),
+                    serde_json::json!({ "language": l, "value": l }),
+                )
+            })
+            .collect();
+        let mut item = item_with_statements("Q1000003", &[]);
+        item["labels"] = labels.into();
+        ecw.store_entity_chunk(&["Q1000003".to_string()], container_with(&[item]));
+        let entity = ecw.get_entity("Q1000003").await.unwrap();
+        // "ar" is the first label, "nl" a fallback language, "ja" was asked for.
+        let languages: Vec<&str> = entity.labels().iter().map(|l| l.language()).collect();
+        assert_eq!(languages, ["ar", "ja", "nl"]);
+        assert_eq!(
+            EntityContainerWrapper::label_with_fallback_from_entity(&entity, "en", "Q1000003"),
+            "nl"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_keep_only_applies_to_cached_entities_without_changing_shared_ones() {
+        // Test entities are preloaded from a shared cache (Q42 among them).
+        let mut ecw = EntityContainerWrapper::new(1).await.unwrap();
+        let before = ecw.get_entity("Q42").await.unwrap();
+        assert!(before.claims().len() > 1);
+        ecw.keep_only(EntityProjection::default());
+        assert!(ecw.get_entity("Q42").await.unwrap().claims().is_empty());
+        // The entity handed out before, and other caches, are untouched.
+        assert!(before.claims().len() > 1);
+        let other = EntityContainerWrapper::new(1).await.unwrap();
+        assert!(other.get_entity("Q42").await.unwrap().claims().len() > 1);
     }
 }
