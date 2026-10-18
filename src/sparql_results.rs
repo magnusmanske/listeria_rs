@@ -2,7 +2,6 @@
 
 use crate::listeria_error::ListeriaError;
 use crate::page_params::PageParams;
-use crate::retry::retry_with_backoff_if;
 use crate::telemetry;
 use anyhow::Result;
 use std::{
@@ -15,6 +14,7 @@ use wikimisc::{
     sparql_client::{SparqlClient, SparqlError},
     sparql_endpoint::SparqlEndpoint,
     sparql_results::SparqlApiResult,
+    sparql_retry::{Retry, RetryPolicy},
     sparql_rewrite::{LabelServiceRewrite, rewrite_label_service},
     sparql_table_vec::SparqlTableVec,
 };
@@ -128,25 +128,22 @@ impl SparqlResults {
             None => sparql.into_owned(),
         };
         // The client adds the endpoint's own prefixes, if it has any.
+        //
+        // It retries so a single transient flake (5xx, rate limiting, broken
+        // connection) doesn't fail the whole page; a malformed query or a
+        // timeout fails the same way every time, so it is not retried. The
+        // circuit breaker is only updated by the *terminal* outcome of the
+        // retry budget — intermediate retry failures don't ding the breaker,
+        // so a flake recovered by retry leaves the breaker fully healthy.
         let http_client = config.sparql_http_client(endpoint.url())?;
         let client = SparqlClient::with_client(endpoint, http_client)
-            .with_max_response_bytes(config.max_sparql_response_bytes());
-
-        // Retry so a single transient flake (5xx, broken connection, body
-        // decode error during a brief overload) doesn't fail the whole page;
-        // a malformed query fails the same way every time, so it is not
-        // retried. The circuit breaker is only updated by the *terminal*
-        // outcome of the retry budget — intermediate retry failures don't ding
-        // the breaker, so a flake recovered by retry leaves the breaker fully
-        // healthy.
-        let result = retry_with_backoff_if(
-            "sparql_query",
-            SPARQL_MAX_ATTEMPTS,
-            Duration::from_millis(SPARQL_INITIAL_BACKOFF_MS),
-            |e| !Self::is_query_error(e),
-            || client.query(&sparql),
-        )
-        .await;
+            .with_max_response_bytes(config.max_sparql_response_bytes())
+            .with_retry_policy(
+                RetryPolicy::new(SPARQL_MAX_ATTEMPTS - 1)
+                    .with_initial_backoff(Duration::from_millis(SPARQL_INITIAL_BACKOFF_MS))
+                    .on_retry(log_retry),
+            );
+        let result = client.query(&sparql).await;
 
         match result {
             Ok(result) => {
@@ -276,6 +273,18 @@ impl SparqlResults {
     pub fn sparql_main_variable(&self) -> Option<String> {
         self.sparql_main_variable.to_owned()
     }
+}
+
+/// Logs a SPARQL retry, as `retry::retry_with_backoff` logs its own.
+fn log_retry(retry: &Retry<'_>) {
+    tracing::warn!(
+        operation = "sparql_query",
+        endpoint = retry.endpoint,
+        attempt = retry.retry,
+        backoff_ms = u64::try_from(retry.wait.as_millis()).unwrap_or(u64::MAX),
+        error = %retry.error,
+        "external call failed; retrying"
+    );
 }
 
 #[cfg(test)]
