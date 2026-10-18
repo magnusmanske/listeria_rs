@@ -79,7 +79,8 @@ impl super::ListProcessor {
 
     async fn get_region_for_entity_id(list: &ListeriaList, entity_id: &str) -> Option<String> {
         let sparql = format!("SELECT ?q ?x {{ wd:{entity_id} wdt:P131* ?q . ?q wdt:P300 ?x }}");
-        let mut sparql_results = list.new_sparql_results().ok()?;
+        // Places are in the main graph, whatever graph the list queries.
+        let mut sparql_results = list.new_wikibase_sparql_results();
         sparql_results.set_simulate(false);
         let mut region = String::new();
         let sparql_table = sparql_results.run_query(sparql).await.ok()?;

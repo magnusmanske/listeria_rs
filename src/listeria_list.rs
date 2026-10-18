@@ -371,8 +371,8 @@ impl ListeriaList {
     /// template names with `sparql_endpoint=`, if any. An unknown name is an
     /// error rather than a silent fallback, so a typo is visible on the page.
     pub fn new_sparql_results(&self) -> Result<SparqlResults> {
-        let wikibase_key = self.params.wikibase().to_lowercase();
-        let sparql_results = SparqlResults::new(self.page_params.clone(), &wikibase_key)
+        let sparql_results = self
+            .new_wikibase_sparql_results()
             .with_used_variables(self.sparql_variables_used());
         let Some(name) = self.params.sparql_endpoint() else {
             return Ok(sparql_results);
@@ -383,6 +383,16 @@ impl ListeriaList {
             .sparql_endpoint(name)
             .ok_or_else(|| ListeriaError::SparqlUnknownEndpoint(name.to_string()))?;
         Ok(sparql_results.with_endpoint(endpoint.clone()))
+    }
+
+    /// A SPARQL runner for queries about the wikibase's own data, such as
+    /// regions: it ignores the list's `sparql_endpoint=`, which may name a
+    /// graph that lacks that data (e.g. Wikidata's scholarly articles).
+    pub fn new_wikibase_sparql_results(&self) -> SparqlResults {
+        SparqlResults::new(
+            self.page_params.clone(),
+            &self.params.wikibase().to_lowercase(),
+        )
     }
 
     /// The SPARQL result variables this list reads by name: `?var` columns,
@@ -1182,6 +1192,27 @@ mod tests {
                 only_sent_query(&server).await,
                 format!("PREFIX m: <http://m/>\n{QUERY}")
             );
+        }
+
+        #[tokio::test]
+        async fn test_wikibase_queries_ignore_the_lists_endpoint() {
+            // A list on the scholarly graph still looks up regions in the main one.
+            let main = mock_server().await;
+            let scholarly = MockServer::start().await;
+            let at =
+                |server: &MockServer| SparqlEndpoint::new(format!("{}{MOCK_PATH}", server.uri()));
+            let config = cached_config_clone()
+                .await
+                .with_sparql_endpoint("scholarly", at(&scholarly))
+                .with_sparql_endpoint("main", at(&main))
+                .with_default_sparql_endpoint("wikidata", "main");
+            let list = list_with(config, "|sparql_endpoint=scholarly").await;
+
+            let mut sparql_results = list.new_wikibase_sparql_results();
+            sparql_results.run_query(QUERY.to_string()).await.unwrap();
+
+            assert_eq!(only_sent_query(&main).await, QUERY);
+            assert!(scholarly.received_requests().await.unwrap().is_empty());
         }
 
         #[tokio::test]

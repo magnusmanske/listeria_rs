@@ -3765,7 +3765,7 @@ dependencies = [
 [[package]]
 name = "wikimisc"
 version = "0.1.3"
-source = "git+https://github.com/magnusmanske/wikimisc#77ec22f1df9090b91e31ef185bfd4f0121bd111d"
+source = "git+https://github.com/magnusmanske/wikimisc#d3a4875a10b45bc3f7e50d2cf37f324176b1f7b4"
 dependencies = [
  "csv",
  "metrics",

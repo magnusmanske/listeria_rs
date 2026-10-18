@@ -15,7 +15,9 @@ use wikimisc::{
     sparql_endpoint::SparqlEndpoint,
     sparql_results::SparqlApiResult,
     sparql_retry::{Retry, RetryPolicy},
-    sparql_rewrite::{LabelServiceRewrite, rewrite_label_service},
+    sparql_rewrite::{
+        LabelServiceRewrite, NamedSubqueryRewrite, rewrite_label_service, rewrite_named_subqueries,
+    },
     sparql_table_vec::SparqlTableVec,
 };
 
@@ -175,17 +177,30 @@ impl SparqlResults {
         {
             return Cow::Borrowed(sparql);
         }
+        // Named subqueries first: the label service rewrite does not look into them.
+        let sparql = match rewrite_named_subqueries(sparql) {
+            NamedSubqueryRewrite::Rewritten(query) => Cow::Owned(query),
+            NamedSubqueryRewrite::Unchanged => Cow::Borrowed(sparql),
+            NamedSubqueryRewrite::Unsupported(reason) => {
+                tracing::info!(
+                    endpoint = endpoint_url,
+                    %reason,
+                    "named subqueries not rewritten; sending the query unchanged"
+                );
+                return Cow::Borrowed(sparql);
+            }
+        };
         let is_used = |variable: &str| self.used_variables.contains(&variable.to_uppercase());
-        match rewrite_label_service(sparql, is_used) {
+        match rewrite_label_service(&sparql, is_used) {
             LabelServiceRewrite::Rewritten(query) => Cow::Owned(query),
-            LabelServiceRewrite::Unchanged => Cow::Borrowed(sparql),
+            LabelServiceRewrite::Unchanged => sparql,
             LabelServiceRewrite::Unsupported(reason) => {
                 tracing::info!(
                     endpoint = endpoint_url,
                     %reason,
-                    "label service not rewritten; sending the query unchanged"
+                    "label service not rewritten; sending the query with it as written"
                 );
-                Cow::Borrowed(sparql)
+                sparql
             }
         }
     }
@@ -692,6 +707,10 @@ mod tests {
 
     /// Runs `LABEL_QUERY` against a mock and returns the query it received.
     async fn sent_label_query(rewrite: bool, used: &[&str]) -> String {
+        sent_query(LABEL_QUERY, rewrite, used).await
+    }
+
+    async fn sent_query(query: &str, rewrite: bool, used: &[&str]) -> String {
         let server = MockServer::start().await;
         mount(
             &server,
@@ -709,11 +728,25 @@ mod tests {
         let mut sparql_results = SparqlResults::new(page_params, "wikidata")
             .with_endpoint(endpoint)
             .with_used_variables(used.iter().map(|v| v.to_string()));
-        sparql_results
-            .run_query(LABEL_QUERY.to_string())
-            .await
-            .unwrap();
+        sparql_results.run_query(query.to_string()).await.unwrap();
         sent_sparql_query(&server.received_requests().await.unwrap()[0])
+    }
+
+    #[tokio::test]
+    async fn test_named_subqueries_are_inlined_for_rewriting_endpoint() {
+        let query = "SELECT ?item ?itemLabel WITH { SELECT ?item WHERE { ?item wdt:P31 wd:Q5 } } AS %people \
+                     WHERE { INCLUDE %people SERVICE wikibase:label { bd:serviceParam wikibase:language \"en\" } }";
+        let sent = sent_query(query, true, &["ITEMLABEL"]).await;
+        assert!(
+            !sent.contains("INCLUDE") && !sent.contains("SERVICE"),
+            "{sent}"
+        );
+        assert!(
+            sent.contains("{ SELECT ?item WHERE { ?item wdt:P31 wd:Q5 } }"),
+            "{sent}"
+        );
+        // Not rewritten for an endpoint that is not opted in.
+        assert_eq!(sent_query(query, false, &["ITEMLABEL"]).await, query);
     }
 
     #[tokio::test]
