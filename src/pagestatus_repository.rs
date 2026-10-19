@@ -8,7 +8,7 @@ use crate::database_pool::DatabasePool;
 use crate::page_to_process::PageToProcess;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use mysql_async::{from_row, params, prelude::*};
+use wikimisc::mysql_async::{from_row, params, prelude::*};
 
 #[derive(Debug, Clone)]
 pub struct PageStatusRepository {

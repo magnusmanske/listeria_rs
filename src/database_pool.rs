@@ -1,14 +1,18 @@
-//! MySQL database connection pooling.
+//! MySQL database connection pooling for the bot's own database.
 
 use crate::configuration::Configuration;
 use anyhow::{Result, anyhow};
-use mysql_async::{Conn, OptsBuilder, Pool, PoolConstraints, PoolOpts};
 use std::future::Future;
 use std::time::Duration;
+use wikimisc::mysql_async::Conn;
+use wikimisc::toolforge::pool::CustomPool;
+
+/// Pool size when the config sets no `max_connections`.
+const DEFAULT_MAX_CONNECTIONS: usize = 8;
 
 #[derive(Debug, Clone)]
 pub struct DatabasePool {
-    pool: mysql_async::Pool,
+    pool: CustomPool,
     query_timeout: Duration,
 }
 
@@ -16,14 +20,14 @@ impl DatabasePool {
     /// Creates a new connection pool from configuration settings.
     pub fn new(config: &Configuration) -> Result<Self> {
         Ok(Self {
-            pool: Pool::new(Self::pool_opts_from_config(config)?),
+            pool: Self::pool_from_config(config)?,
             query_timeout: config.db_query_timeout(),
         })
     }
 
     /// Gets a database connection from the pool.
     pub async fn get_conn(&self) -> Result<Conn> {
-        let ret = self.pool.get_conn().await?;
+        let ret = self.pool.connect().await?;
         Ok(ret)
     }
 
@@ -48,17 +52,13 @@ impl DatabasePool {
             })?
     }
 
-    // Use toolforge crate, does not work right now
-    // fn pool_opts_from_toolforge(config: &Configuration) -> Result<String> {
-    //     let schema = config
-    //         .mysql("schema")
-    //         .as_str()
-    //         .ok_or(anyhow!("No schema in config"))?
-    //         .to_string();
-    //     Ok(toolforge::db::toolsdb(schema)?.to_string())
-    // }
-
-    fn pool_opts_from_config(config: &Configuration) -> Result<OptsBuilder> {
+    /// Builds the pool from the `mysql` config object.
+    ///
+    /// The server and credentials come from the config rather than from
+    /// Toolforge's own lookup, so the same config works on Toolforge and
+    /// through a local SSH tunnel (`host` `127.0.0.1` with the tunnel's
+    /// `port`).
+    fn pool_from_config(config: &Configuration) -> Result<CustomPool> {
         let host = config
             .mysql("host")
             .as_str()
@@ -89,21 +89,14 @@ impl DatabasePool {
             .mysql("max_connections")
             .as_u64()
             .and_then(|u| u.try_into().ok())
-            .unwrap_or(8);
-        let constraints = PoolConstraints::new(0, max_connections)
-            .ok_or(anyhow!("Could not get pool constraints"))?;
-        let pool_opts = PoolOpts::default().with_constraints(constraints);
-        // .with_inactive_connection_ttl(Duration::from_secs(60));
+            .unwrap_or(DEFAULT_MAX_CONNECTIONS);
 
-        let opts = OptsBuilder::default()
-            .ip_or_hostname(host.to_owned())
-            .db_name(Some(schema))
-            .user(Some(user))
-            .pass(Some(password))
-            .tcp_port(port)
-            .pool_opts(pool_opts);
-
-        Ok(opts)
+        let pool = CustomPool::builder(host, user, password)
+            .port(port)
+            .database(schema)
+            .pool_max(max_connections)
+            .build()?;
+        Ok(pool)
     }
 }
 
@@ -116,14 +109,11 @@ mod tests {
     /// require an actual MySQL server.
     fn pool_with_query_timeout(timeout: Duration) -> DatabasePool {
         DatabasePool {
-            pool: Pool::new(
-                OptsBuilder::default()
-                    .ip_or_hostname("127.0.0.1")
-                    .tcp_port(1) // unreachable
-                    .db_name(Some("_test_"))
-                    .user(Some("_test_"))
-                    .pass(Some("_test_")),
-            ),
+            pool: CustomPool::builder("127.0.0.1", "_test_", "_test_")
+                .port(1) // unreachable
+                .database("_test_")
+                .build()
+                .unwrap(),
             query_timeout: timeout,
         }
     }

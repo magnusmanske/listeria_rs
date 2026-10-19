@@ -24,7 +24,7 @@ pub struct ListeriaBotWikidata {
 
 impl ListeriaBotWikidata {
     pub async fn clear_log_table(&self) -> Result<()> {
-        use mysql_async::prelude::Queryable;
+        use wikimisc::mysql_async::prelude::Queryable;
         let pool = self.config.pool()?;
         pool.with_timeout("clear_log_table", || async {
             let sql = "TRUNCATE `list_log`";

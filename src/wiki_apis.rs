@@ -1,8 +1,8 @@
 //! MediaWiki API management and connection pooling for multiple wikis.
 
 use crate::{
-    ApiArc, configuration::Configuration, database_pool::DatabasePool, replica_db::ReplicaDb,
-    wiki::Wiki, wiki_repository::WikiRepository,
+    ApiArc, configuration::Configuration, replica_db::ReplicaDb, wiki::Wiki,
+    wiki_repository::WikiRepository,
 };
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;
@@ -17,9 +17,9 @@ use wikimisc::{
 };
 
 /// Tables read by [`WikiApis::get_current_pages_on_wiki`]. Named so the query
-/// can be routed to the replica cluster that holds them: on Commons that is
-/// the `links` cluster, which keeps the copy of `page` that makes the join
-/// possible there at all. See [`ReplicaDb`] for the background.
+/// can be routed to the replica database that holds them: on Commons that is
+/// the `links` extension database, which keeps the copy of `page` that makes
+/// the join possible there at all. See [`ReplicaDb`] for the background.
 const PAGES_ON_WIKI_TABLES: &[&str] = &["page", "templatelinks", "linktarget"];
 
 /// Cached per-wiki resources. The `api` is set up lazily on first use; the
@@ -73,7 +73,7 @@ pub struct WikiApis {
     /// rest of `WikiApis` stays focused on API pooling and wiki discovery.
     wiki_repo: WikiRepository,
     /// Reads the MediaWiki tables of the wikis themselves, routing each query
-    /// to the replica cluster that holds the tables it reads.
+    /// to the replica database that holds the tables it reads.
     replica_db: ReplicaDb,
 }
 
@@ -90,7 +90,9 @@ impl std::fmt::Debug for WikiApis {
 
 impl WikiApis {
     pub async fn new(config: Arc<Configuration>) -> Result<Self> {
-        let pool = DatabasePool::new(&config)?;
+        // Shares the configuration's pool rather than opening a second one
+        // to the same database.
+        let pool = config.pool()?.as_ref().clone();
         let site_matrix = SiteMatrix::new(config.get_default_wbapi()?).await?;
         let total_semaphore =
             (*config.get_max_mw_apis_total()).map(|n| Arc::new(Semaphore::new(n)));
@@ -310,20 +312,6 @@ impl WikiApis {
         self.wiki_repo.get_all_wikis().await
     }
 
-    /// Returns the server and database name for the wiki's core cluster, as a
-    /// tuple.
-    ///
-    /// Tables split off into an extension database — the Commons links tables
-    /// since September 2026 — are not readable on that host; ask
-    /// [`ReplicaDb`] for the cluster holding the tables a query reads instead.
-    pub fn db_host_and_schema_for_wiki(&self, wiki: &str) -> Result<(String, String)> {
-        let host_schema = self.replica_db.host_and_schema(wiki)?;
-        Ok((
-            host_schema.host().to_string(),
-            host_schema.schema().to_string(),
-        ))
-    }
-
     /// The wikis' MediaWiki databases, for callers that need a query of their
     /// own rather than the page lookup above.
     pub const fn replica_db(&self) -> &ReplicaDb {
@@ -344,6 +332,38 @@ impl WikiApis {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The page-finding query lands on the links extension database for
+    /// Commons and on the core database everywhere else. `page` exists on
+    /// both, which is what keeps this a single-connection join after the
+    /// split.
+    #[test]
+    fn test_pages_on_wiki_query_database_per_wiki() {
+        use wikimisc::toolforge::db::ExtensionDb;
+        assert_eq!(
+            ExtensionDb::for_tables("commonswiki", PAGES_ON_WIKI_TABLES).unwrap(),
+            Some(ExtensionDb::Links)
+        );
+        assert_eq!(
+            ExtensionDb::for_tables("enwiki", PAGES_ON_WIKI_TABLES).unwrap(),
+            None
+        );
+    }
+
+    /// The bot's page-finding query, end to end: on Commons it has to reach
+    /// the links extension database. Needs `config.json` with the bot's
+    /// database (locally the Toolforge tunnel on port 3308) and Wiki Replica
+    /// access (see `replica_db`).
+    #[tokio::test]
+    #[ignore = "requires the bot's database and Wiki Replica access"]
+    async fn test_live_get_current_pages_on_wiki() {
+        let config = Configuration::new_from_file("config.json").await.unwrap();
+        let wiki_apis = WikiApis::new(Arc::new(config)).await.unwrap();
+        for wiki in ["enwiki", "commonswiki"] {
+            let pages = wiki_apis.get_current_pages_on_wiki(wiki).await.unwrap();
+            assert!(!pages.is_empty(), "{wiki}");
+        }
+    }
 
     #[test]
     fn test_placeholders() {

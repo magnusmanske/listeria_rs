@@ -13,8 +13,8 @@
 use crate::database_pool::DatabasePool;
 use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
-use mysql_async::{from_row, prelude::*};
 use std::collections::HashMap;
+use wikimisc::mysql_async::{from_row, prelude::*};
 
 #[derive(Debug, Clone)]
 pub struct WikiRepository {

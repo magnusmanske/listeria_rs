@@ -1,7 +1,7 @@
 //! Wiki configuration and database operations.
 
 use anyhow::{Result, anyhow};
-use mysql_async::{Conn, from_row, prelude::*};
+use wikimisc::mysql_async::{Conn, from_row, prelude::*};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum WikiStatus {

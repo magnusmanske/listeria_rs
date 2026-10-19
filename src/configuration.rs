@@ -18,6 +18,7 @@ use tokio::sync::Semaphore;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_endpoint::{SparqlEndpoint, WIKIDATA_PREFIXES};
 use wikimisc::telemetry::TelemetryConfig;
+use wikimisc::toolforge::db::normalize_dbname;
 use wikimisc::wikibase::EntityTrait;
 use wikimisc::wikibase::entity_container::EntityContainer;
 
@@ -200,10 +201,9 @@ pub struct Configuration {
     /// entity-loading API. Same `DashMap` lazy-creation pattern as
     /// `sparql_circuit_breakers`.
     mw_api_circuit_breakers: Arc<DashMap<String, Arc<CircuitBreaker>>>,
-    /// Maps inbound wiki identifiers to their database/server names. Pre-seeded
-    /// with the historical `be_x_oldwiki` aliases (see Phabricator T11216); JSON
-    /// config can extend or override the map via the `wiki_name_aliases` key.
-    /// Names not present in the map fall through `replace('-', '_')`.
+    /// Maps inbound wiki identifiers to their database names, from the JSON
+    /// config's `wiki_name_aliases` key. Names not present in the map go
+    /// through [`normalize_dbname`].
     wiki_name_aliases: HashMap<String, String>,
     /// Explicit list of wikis whose `general.case` is `case-sensitive`.
     /// Wiktionary projects (`*wiktionary`) are detected by suffix and don't
@@ -269,7 +269,7 @@ impl Default for Configuration {
             sparql_semaphores: Arc::new(DashMap::new()),
             sparql_circuit_breakers: Arc::new(DashMap::new()),
             mw_api_circuit_breakers: Arc::new(DashMap::new()),
-            wiki_name_aliases: Self::default_wiki_name_aliases(),
+            wiki_name_aliases: HashMap::new(),
             case_sensitive_wikis: HashSet::new(),
             feature_flags: FeatureFlags::default(),
             telemetry: TelemetryConfig::default(),
@@ -278,36 +278,18 @@ impl Default for Configuration {
 }
 
 impl Configuration {
-    /// Built-in wiki-name alias map.
-    ///
-    /// `be_x_oldwiki` has lived under four spellings ever since the Belarusian
-    /// (Taraškievica) Wikipedia rename (Phabricator T11216); both the old and
-    /// new identifiers — with `-` and `_` variants — must map to the same
-    /// database schema name. JSON config can add more entries via the
-    /// `wiki_name_aliases` key.
-    fn default_wiki_name_aliases() -> HashMap<String, String> {
-        [
-            "be-taraskwiki",
-            "be-x-oldwiki",
-            "be_taraskwiki",
-            "be_x_oldwiki",
-        ]
-        .into_iter()
-        .map(|name| (name.to_string(), "be_x_oldwiki".to_string()))
-        .collect()
-    }
-
-    /// Normalises a wiki identifier into its database/server name.
+    /// Normalises a wiki identifier into its database name.
     ///
     /// Returns the configured alias when one is registered for the input;
-    /// otherwise replaces any hyphens with underscores (the Wikimedia
-    /// convention for converting site IDs to DB schema names).
+    /// otherwise applies `toolforge`'s [`normalize_dbname`]: lowercase, strip
+    /// a `_p` suffix, hyphens to underscores, and `be_taraskwiki` to the
+    /// `be_x_oldwiki` database it still lives in (Phabricator T11216).
     #[must_use]
     pub fn fix_wiki_name(&self, wiki: &str) -> String {
         self.wiki_name_aliases
             .get(wiki)
             .cloned()
-            .unwrap_or_else(|| wiki.replace('-', "_"))
+            .unwrap_or_else(|| normalize_dbname(wiki))
     }
 
     /// Returns `true` when `wiki` treats page titles as case-sensitive
@@ -1074,8 +1056,6 @@ impl Configuration {
         self.profiling = j["profiling"].as_bool().unwrap_or_default();
         self.quiet = j["quiet"].as_bool().unwrap_or_default();
         if let Some(obj) = j["wiki_name_aliases"].as_object() {
-            // Merge over the built-in defaults so JSON entries can both
-            // extend the map and override individual defaults.
             for (k, v) in obj {
                 if let Some(target) = v.as_str() {
                     self.wiki_name_aliases.insert(k.clone(), target.to_string());
@@ -1122,7 +1102,8 @@ impl Configuration {
     }
 }
 
-/// Builders for tests that need SPARQL settings without a JSON config file.
+/// Builders for tests that need SPARQL or database settings without a JSON
+/// config file.
 #[cfg(test)]
 impl Configuration {
     pub fn with_sparql_endpoint(mut self, name: &str, endpoint: SparqlEndpoint) -> Self {
@@ -1145,6 +1126,11 @@ impl Configuration {
 
     pub const fn with_max_list_items(mut self, max: usize) -> Self {
         self.max_list_items = max;
+        self
+    }
+
+    pub const fn with_db_query_timeout_sec(mut self, seconds: u64) -> Self {
+        self.db_query_timeout_sec = seconds;
         self
     }
 
@@ -1623,7 +1609,7 @@ mod tests {
     // ── fix_wiki_name ──────────────────────────────────────────────────────
 
     #[test]
-    fn test_fix_wiki_name_be_x_oldwiki_default_aliases() {
+    fn test_fix_wiki_name_be_x_oldwiki_spellings() {
         let config = Configuration::default();
         // All four historical spellings collapse to be_x_oldwiki (T11216).
         assert_eq!(config.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
@@ -1641,34 +1627,41 @@ mod tests {
     }
 
     #[test]
+    fn test_fix_wiki_name_lowercases_and_strips_p_suffix() {
+        let config = Configuration::default();
+        assert_eq!(config.fix_wiki_name("enwiki_p"), "enwiki");
+        assert_eq!(config.fix_wiki_name("DeWiki"), "dewiki");
+    }
+
+    #[test]
     fn test_fix_wiki_name_empty_string() {
         let config = Configuration::default();
         assert_eq!(config.fix_wiki_name(""), "");
     }
 
     #[test]
-    fn test_fix_wiki_name_user_alias_extends_defaults() {
+    fn test_fix_wiki_name_user_alias() {
         let mut config = Configuration::default();
         config.new_from_json_misc(&serde_json::json!({
             "wiki_name_aliases": { "fake-old": "newname" }
         }));
         // The user-supplied alias resolves
         assert_eq!(config.fix_wiki_name("fake-old"), "newname");
-        // The default be_x_oldwiki aliases are still in place
+        // The be_x_oldwiki normalisation still applies
         assert_eq!(config.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
         // Unrelated wikis still hyphen-replace
         assert_eq!(config.fix_wiki_name("dewiki"), "dewiki");
     }
 
     #[test]
-    fn test_fix_wiki_name_user_alias_overrides_default() {
+    fn test_fix_wiki_name_user_alias_overrides_normalisation() {
         let mut config = Configuration::default();
         config.new_from_json_misc(&serde_json::json!({
             "wiki_name_aliases": { "be_x_oldwiki": "be_overridden" }
         }));
-        // User entry for an existing key wins
+        // The user's entry wins over normalisation
         assert_eq!(config.fix_wiki_name("be_x_oldwiki"), "be_overridden");
-        // Sibling defaults that the user didn't override remain
+        // Other spellings are still normalised
         assert_eq!(config.fix_wiki_name("be-taraskwiki"), "be_x_oldwiki");
     }
 

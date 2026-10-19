@@ -17,44 +17,46 @@
 //! serves those tables from its core cluster.
 //!
 //! A caller therefore states which tables its SQL reads, and [`ReplicaDb`]
-//! resolves the host from that: [`DbCluster`] holds wikimisc's knowledge of
-//! the current splits, so the next one arrives with a wikimisc bump rather
-//! than an edit here. Tables spread over more than one cluster are refused
-//! with [`wikimisc::toolforge_db::DatabaseError::TablesSpanClusters`] — no
-//! single connection can join them, and such a query has to be taken apart
-//! and joined in code instead.
+//! resolves the host from that via the `toolforge` crate's [`ExtensionDb`],
+//! which holds the knowledge of the current splits, so the next one arrives
+//! with a `toolforge` bump rather than an edit here. Tables spread over more
+//! than one database are refused with
+//! [`wikimisc::toolforge::Error::TablesSpanDatabases`] — no single connection
+//! can join them, and such a query has to be taken apart and joined in code
+//! instead.
 //!
-//! ## Local development
+//! ## Connections, credentials and local development
 //!
-//! A `mysql.host` of `127.0.0.1` means the replicas are reached through an SSH
-//! tunnel, and every wiki and cluster then shares that one host and port. A
-//! single tunnel only reaches a single cluster, so querying the Commons links
-//! tables locally needs the tunnel pointed at
-//! `links.commonswiki.web.db.svc.wikimedia.cloud`.
+//! Connections come from one `toolforge` [`WikiPool`], which validates the
+//! database name against `meta_p`, shares connections between the wikis on
+//! one database section, and releases idle ones as the Toolforge
+//! [connection handling policy](https://wikitech.wikimedia.org/wiki/Help:Wiki_Replicas#Connection_handling_policy)
+//! asks. Host names and credentials come from the `toolforge` crate as well:
+//! the `TOOL_REPLICA_USER` / `TOOL_REPLICA_PASSWORD` environment variables,
+//! or else the tool's `replica.my.cnf`.
+//!
+//! To develop locally, copy `replica.my.cnf` to your machine, add
+//! `local='true'` to its `[client]` section and open SSH tunnels with
+//! `toolforge-tunnel`. The pool expects database section `sN` on the port
+//! configured for it in the file's `[tunnels]` section (e.g. `s1 = 3401`), or
+//! on 3306 + N, and an extension database on its own entry there (e.g.
+//! `links.commonswiki = 3378`), or on 3306. Section `s7` is always needed, as
+//! it holds `meta_p`.
+//!
+//! [`ExtensionDb`]: wikimisc::toolforge::db::ExtensionDb
 
 use crate::configuration::Configuration;
 use anyhow::{Result, anyhow};
-use mysql_async::{Conn, Opts, OptsBuilder, Params, from_row, prelude::*};
 use std::sync::Arc;
-use wikimisc::toolforge_db::{DbCluster, DbServerGroup, HostSchema};
+use tokio::sync::OnceCell;
+use wikimisc::mysql_async::{Params, from_row, prelude::*};
+use wikimisc::toolforge::db::Cluster;
+use wikimisc::toolforge::pool::WikiPool;
 
-/// Domain shared by every Wiki Replica service name.
-const REPLICA_DOMAIN: &str = "db.svc.wikimedia.cloud";
-
-/// The replica service name to build host names from. `web` kills a query
-/// after five minutes, which is ample for the one query Listeria runs against
-/// the replicas, and leaves the slower `analytics` service to batch jobs.
-const REPLICA_SERVICE: DbServerGroup = DbServerGroup::Web;
-
-/// The `mysql.host` value that means "everything is reached through a local
-/// SSH tunnel", i.e. a development machine rather than Toolforge.
-const LOCAL_HOST: &str = "127.0.0.1";
-
-/// Port the local SSH tunnel to the replicas is expected on.
-const LOCAL_TUNNEL_PORT: u16 = 3307;
-
-/// Port of every Toolforge database service.
-const DEFAULT_PORT: u16 = 3306;
+/// The replica service to connect to. `web` kills a query after five
+/// minutes, which is ample for the one query Listeria runs against the
+/// replicas, and leaves the slower `analytics` service to batch jobs.
+const REPLICA_CLUSTER: Cluster = Cluster::Web;
 
 /// Reads the MediaWiki tables of the wikis Listeria edits.
 ///
@@ -63,25 +65,35 @@ const DEFAULT_PORT: u16 = 3306;
 #[derive(Debug, Clone)]
 pub struct ReplicaDb {
     config: Arc<Configuration>,
+    /// Built on first use, so that work not touching the replicas does not
+    /// depend on finding their credentials. Shared by all clones.
+    pool: Arc<OnceCell<WikiPool>>,
 }
 
 impl ReplicaDb {
-    pub const fn new(config: Arc<Configuration>) -> Self {
-        Self { config }
+    pub fn new(config: Arc<Configuration>) -> Self {
+        Self {
+            config,
+            pool: Arc::new(OnceCell::new()),
+        }
     }
 
-    /// Runs `sql` against the replica cluster that holds all of `tables` for
-    /// `wiki`, and collects the rows.
+    /// Runs `sql` against the replica database that holds all of `tables`
+    /// for `wiki`, and collects the rows.
     ///
     /// `op_name` only names the operation in the timeout error message.
     ///
-    /// The connection is a direct one rather than out of a pool: the caller
-    /// runs a single query per wiki, at most once per pass over the wiki list,
-    /// so a pool per wiki would only hold connections the Toolforge
-    /// [connection handling policy](https://wikitech.wikimedia.org/wiki/Help:Wiki_Replicas#Connection_handling_policy)
-    /// wants released. That also means [`crate::database_pool::DatabasePool`]'s
-    /// timeout does not cover it, so the whole connect-and-query chain is
-    /// bounded here by the configured `db_query_timeout`.
+    /// [`crate::database_pool::DatabasePool`]'s timeout does not cover this
+    /// pool, so the whole connect-and-query chain is bounded here by the
+    /// configured `db_query_timeout`. The pool also sets it as the server's
+    /// `max_statement_time`, so a query given up on here does not keep
+    /// running on the replica.
+    ///
+    /// # Errors
+    ///
+    /// Fails if the tables are spread over several databases, which no single
+    /// connection can join, if `wiki` is not a known database, and if the
+    /// tool's credentials cannot be found.
     pub async fn exec<P, T>(
         &self,
         wiki: &str,
@@ -94,10 +106,12 @@ impl ReplicaDb {
         P: Into<Params> + Send,
         T: FromRow + Send + 'static,
     {
-        let opts = self.opts_for_tables(wiki, tables)?;
+        let wiki = self.config.fix_wiki_name(wiki);
         let timeout = self.config.db_query_timeout();
         tokio::time::timeout(timeout, async move {
-            Conn::new(opts)
+            self.pool()
+                .await?
+                .connect_for_tables(&wiki, tables)
                 .await?
                 .exec_iter(sql, params)
                 .await?
@@ -114,176 +128,129 @@ impl ReplicaDb {
         })?
     }
 
-    /// Host and schema of the wiki's core cluster.
-    ///
-    /// Tables split off into an extension database are *not* readable there;
-    /// use [`Self::host_and_schema_for_tables`] to let the table list pick the
-    /// cluster.
-    pub fn host_and_schema(&self, wiki: &str) -> Result<HostSchema> {
-        self.host_and_schema_for_cluster(wiki, DbCluster::Core)
-    }
-
-    /// Host and schema of one named cluster of the wiki.
-    ///
-    /// Asking for a cluster the wiki has no split for falls back to
-    /// [`DbCluster::Core`], where those tables still live.
-    pub fn host_and_schema_for_cluster(
-        &self,
-        wiki: &str,
-        cluster: DbCluster,
-    ) -> Result<HostSchema> {
-        let wiki = self.config.fix_wiki_name(wiki);
-        Ok(HostSchema::new(
-            &Self::replica_host(self.local_host()?.as_deref(), &wiki, cluster),
-            &format!("{wiki}_p"),
-        ))
-    }
-
-    /// Host and schema of the cluster that can serve a query reading all of
-    /// `tables`.
-    ///
-    /// # Errors
-    ///
-    /// Fails if the tables are spread over several clusters, which no single
-    /// connection can join.
-    pub fn host_and_schema_for_tables(&self, wiki: &str, tables: &[&str]) -> Result<HostSchema> {
-        let wiki = self.config.fix_wiki_name(wiki);
-        let cluster = DbCluster::for_tables(&wiki, tables)?;
-        self.host_and_schema_for_cluster(&wiki, cluster)
-    }
-
-    /// Connection options for a query over `tables`.
-    fn opts_for_tables(&self, wiki: &str, tables: &[&str]) -> Result<Opts> {
-        let host_schema = self.host_and_schema_for_tables(wiki, tables)?;
-        let opts = OptsBuilder::default()
-            .ip_or_hostname(host_schema.host())
-            .db_name(Some(host_schema.schema()))
-            .user(Some(self.config_string("user")?))
-            .pass(Some(self.config_string("password")?))
-            .tcp_port(self.port(host_schema.host()))
-            .into();
-        Ok(opts)
-    }
-
-    /// Builds the replica host name for one cluster of a wiki, or returns the
-    /// tunnel host when there is one. `wiki` must already be normalised to its
-    /// database name.
-    fn replica_host(local_host: Option<&str>, wiki: &str, cluster: DbCluster) -> String {
-        if let Some(host) = local_host {
-            // Off Toolforge every cluster is reached through the same tunnel.
-            return host.to_string();
-        }
-        // A wiki without this split keeps serving those tables from its core
-        // cluster, which has no host prefix.
-        let prefix = match cluster.applies_to_wiki(wiki) {
-            true => cluster.host_prefix(),
-            false => "",
-        };
-        format!("{prefix}{wiki}.{REPLICA_SERVICE}.{REPLICA_DOMAIN}")
-    }
-
-    /// `Some(host)` when the configuration points at a local tunnel rather
-    /// than at Toolforge, in which case that one host serves every wiki and
-    /// cluster.
-    fn local_host(&self) -> Result<Option<String>> {
-        match self.config.mysql("host").as_str() {
-            Some(LOCAL_HOST) => Ok(Some(LOCAL_HOST.to_string())),
-            Some(_) => Ok(None),
-            None => Err(anyhow!("No host for MySQL")),
-        }
-    }
-
-    /// The port for `host`: the tunnel's when running locally, otherwise the
-    /// configured one, which every Toolforge database service has at 3306.
-    fn port(&self, host: &str) -> u16 {
-        if host == LOCAL_HOST {
-            return LOCAL_TUNNEL_PORT;
-        }
-        self.config
-            .mysql("port")
-            .as_u64()
-            .and_then(|port| port.try_into().ok())
-            .unwrap_or(DEFAULT_PORT)
-    }
-
-    /// A string value from the `mysql` config object.
-    fn config_string(&self, key: &str) -> Result<String> {
-        self.config
-            .mysql(key)
-            .as_str()
-            .ok_or_else(|| anyhow!("No MySQL {key} set"))
-            .map(ToString::to_string)
+    /// The connection pool, built on first use.
+    async fn pool(&self) -> Result<&WikiPool> {
+        let pool = self
+            .pool
+            .get_or_try_init(|| async {
+                WikiPool::builder(REPLICA_CLUSTER)
+                    .max_statement_time(self.config.db_query_timeout())
+                    .build()
+            })
+            .await?;
+        Ok(pool)
     }
 }
 
+/// Live tests against the Wiki Replicas. They need the tool's replica
+/// credentials and, locally, `toolforge-tunnel` running for sections `s1`,
+/// `s3` and `s7` and for `links.commonswiki` (see the module documentation).
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Tables of the query in `WikiApis::get_current_pages_on_wiki` — the one
-    /// the Commons split actually moved.
-    const PAGE_TEMPLATE_TABLES: &[&str] = &["page", "templatelinks", "linktarget"];
+    /// The tables of `WikiApis::get_current_pages_on_wiki`.
+    const TABLES: &[&str] = &["page", "templatelinks", "linktarget"];
 
-    #[test]
-    fn test_replica_host_on_toolforge_uses_core_cluster_by_default() {
-        assert_eq!(
-            ReplicaDb::replica_host(None, "enwiki", DbCluster::Core),
-            "enwiki.web.db.svc.wikimedia.cloud"
-        );
+    /// A few pages that transclude `Template:{template}`, over the same
+    /// tables as `WikiApis::get_current_pages_on_wiki`.
+    const SQL: &str = "SELECT page_namespace,page_title
+        FROM page,templatelinks,linktarget
+        WHERE page_id=tl_from AND tl_target_id=lt_id AND lt_namespace=10 AND lt_title=?
+        LIMIT 3";
+
+    fn replica_db() -> ReplicaDb {
+        let config = Configuration::default().with_db_query_timeout_sec(30);
+        ReplicaDb::new(Arc::new(config))
     }
 
-    #[test]
-    fn test_replica_host_prefixes_the_links_cluster_for_commons() {
-        assert_eq!(
-            ReplicaDb::replica_host(None, "commonswiki", DbCluster::Links),
-            "links.commonswiki.web.db.svc.wikimedia.cloud"
-        );
-        assert_eq!(
-            ReplicaDb::replica_host(None, "testcommonswiki", DbCluster::Links),
-            "links.testcommonswiki.web.db.svc.wikimedia.cloud"
-        );
+    async fn pages_with_template(
+        replica_db: &ReplicaDb,
+        wiki: &str,
+        template: &str,
+    ) -> Result<Vec<(i64, String)>> {
+        replica_db
+            .exec(wiki, TABLES, "test", SQL, (template,))
+            .await
     }
 
-    /// The split is Commons-only: asking for the links cluster of any other
-    /// wiki must still resolve to that wiki's core host, so callers can name
-    /// the cluster unconditionally.
-    #[test]
-    fn test_replica_host_ignores_links_cluster_for_unsplit_wiki() {
-        assert_eq!(
-            ReplicaDb::replica_host(None, "dewiki", DbCluster::Links),
-            "dewiki.web.db.svc.wikimedia.cloud"
-        );
+    #[tokio::test]
+    #[ignore = "requires Wiki Replica access"]
+    async fn test_live_core_database() {
+        let pages = pages_with_template(&replica_db(), "enwiki", "Wikidata_list")
+            .await
+            .unwrap();
+        assert_eq!(pages.len(), 3);
     }
 
-    #[test]
-    fn test_replica_host_uses_the_tunnel_for_every_cluster() {
-        for cluster in [DbCluster::Core, DbCluster::Links] {
-            assert_eq!(
-                ReplicaDb::replica_host(Some(LOCAL_HOST), "commonswiki", cluster),
-                LOCAL_HOST
+    /// Commons' links tables are only up to date in its `links` extension
+    /// database.
+    #[tokio::test]
+    #[ignore = "requires Wiki Replica access"]
+    async fn test_live_links_extension_database() {
+        let pages = pages_with_template(&replica_db(), "commonswiki", "Information")
+            .await
+            .unwrap();
+        assert_eq!(pages.len(), 3);
+    }
+
+    /// Wiki names are normalised before the lookup: `be-taraskwiki` lives in
+    /// the `be_x_oldwiki` database. One pool serves all wikis.
+    #[tokio::test]
+    #[ignore = "requires Wiki Replica access"]
+    async fn test_live_wiki_name_is_normalised() {
+        let replica_db = replica_db();
+        let sql = "SELECT page_title FROM page WHERE page_namespace=0 ORDER BY page_id LIMIT 3";
+        let mut results = Vec::new();
+        for wiki in ["be-taraskwiki", "be_x_oldwiki"] {
+            let titles: Vec<String> = replica_db
+                .exec(wiki, &["page"], "test", sql, ())
+                .await
+                .unwrap();
+            assert_eq!(titles.len(), 3, "{wiki}");
+            results.push(titles);
+        }
+        assert_eq!(results[0], results[1]);
+    }
+
+    /// Names that are not a known database are refused before any query.
+    #[tokio::test]
+    #[ignore = "requires Wiki Replica access"]
+    async fn test_live_unknown_wiki_is_rejected() {
+        let replica_db = replica_db();
+        for wiki in ["nosuchwiki", "enwiki.evil.example", "enwiki;DROP"] {
+            let err = pages_with_template(&replica_db, wiki, "Wikidata_list")
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(
+                    err.downcast_ref::<wikimisc::toolforge::Error>(),
+                    Some(wikimisc::toolforge::Error::UnknownDatabase(_))
+                ),
+                "{wiki}: {err}"
             );
         }
     }
 
-    /// The page-finding query lands on the links cluster for Commons and on
-    /// the core cluster everywhere else. `page` exists on both clusters, which
-    /// is what keeps this a single-connection join after the split.
-    #[test]
-    fn test_page_template_query_cluster_per_wiki() {
-        assert_eq!(
-            DbCluster::for_tables("commonswiki", PAGE_TEMPLATE_TABLES).unwrap(),
-            DbCluster::Links
+    #[tokio::test]
+    #[ignore = "requires Wiki Replica access"]
+    async fn test_live_tables_spanning_databases_are_rejected() {
+        let result: Result<Vec<u64>> = replica_db()
+            .exec(
+                "commonswiki",
+                &["actor", "templatelinks"],
+                "test",
+                "SELECT 1",
+                (),
+            )
+            .await;
+        let err = result.unwrap_err();
+        assert!(
+            matches!(
+                err.downcast_ref::<wikimisc::toolforge::Error>(),
+                Some(wikimisc::toolforge::Error::TablesSpanDatabases { .. })
+            ),
+            "{err}"
         );
-        assert_eq!(
-            DbCluster::for_tables("enwiki", PAGE_TEMPLATE_TABLES).unwrap(),
-            DbCluster::Core
-        );
-    }
-
-    /// A join that reaches across the split cannot be served at all, and must
-    /// surface as an error rather than as a silently missing table.
-    #[test]
-    fn test_query_spanning_clusters_is_rejected() {
-        assert!(DbCluster::for_tables("commonswiki", &["actor", "templatelinks"]).is_err());
     }
 }

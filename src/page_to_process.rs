@@ -1,6 +1,6 @@
 //! Represents a page queued for processing.
 
-use mysql_async::from_row;
+use wikimisc::mysql_async::from_row;
 
 #[derive(Debug, Clone, Default)]
 pub struct PageToProcess {
@@ -20,7 +20,7 @@ impl PageToProcess {
         }
     }
 
-    pub fn from_row(row: mysql_async::Row) -> Self {
+    pub fn from_row(row: wikimisc::mysql_async::Row) -> Self {
         let parts = from_row::<(u64, String, String, String)>(row);
         Self::from_parts(parts)
     }

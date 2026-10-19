@@ -25,7 +25,6 @@ wikimisc = { git = "https://github.com/magnusmanske/wikimisc", features = [
 ] }
 tokio = { version = "^1", features = ["full", "rt-multi-thread"] }
 futures = "0.3"
-mysql_async = "0.36"
 blake3 = "1"
 tempfile = "3"
 anyhow = "^1"
