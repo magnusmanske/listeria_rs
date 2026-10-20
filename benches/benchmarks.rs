@@ -355,7 +355,7 @@ fn bench_reference_from_snaks(c: &mut Criterion) {
         let snaks = vec![
             Snak::new_string("P854", "https://example.com/article/12345"),
             Snak::new_item("P248", "Q36578"),
-            Snak::new_monolingual_text("P1476", "Example Article Title", "en"),
+            Snak::new_monolingual_text("P1476", "en", "Example Article Title"),
             Snak::new_time("P813", "+2025-06-15T00:00:00Z", 11),
         ];
         b.iter(|| Reference::new_from_snaks(black_box(&snaks), "en"));
@@ -376,7 +376,7 @@ fn bench_reference_from_snaks(c: &mut Criterion) {
         let mut snaks = vec![
             Snak::new_string("P854", "https://example.com"),
             Snak::new_item("P248", "Q36578"),
-            Snak::new_monolingual_text("P1476", "Title", "en"),
+            Snak::new_monolingual_text("P1476", "en", "Title"),
             Snak::new_time("P813", "+2025-01-01T00:00:00Z", 11),
         ];
         // Add extra irrelevant snaks
@@ -528,7 +528,7 @@ fn bench_reference_serialization(c: &mut Criterion) {
     let snaks = vec![
         Snak::new_string("P854", "https://example.com/article"),
         Snak::new_item("P248", "Q36578"),
-        Snak::new_monolingual_text("P1476", "Example Title", "en"),
+        Snak::new_monolingual_text("P1476", "en", "Example Title"),
         Snak::new_time("P813", "+2025-06-15T00:00:00Z", 11),
     ];
     let reference = Reference::new_from_snaks(&snaks, "en").unwrap();

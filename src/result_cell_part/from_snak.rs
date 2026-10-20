@@ -232,7 +232,7 @@ mod tests {
     fn test_from_snak_monolingual_text() {
         let snak = Snak::new_monolingual_text("P1476", "en", "Hello World");
         let part = ResultCellPart::from_snak(&snak);
-        assert_eq!(part, ResultCellPart::Text("Hello World:en".to_string()));
+        assert_eq!(part, ResultCellPart::Text("en:Hello World".to_string()));
     }
 
     #[test]

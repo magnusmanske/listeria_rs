@@ -384,10 +384,7 @@ mod tests {
 
     #[test]
     fn test_extract_title_matching_language() {
-        // Note: Snak::new_monolingual_text passes (language, value) to
-        // MonoLingualText::new(text, language), so args are swapped internally.
-        // We pass ("Test Title", "en") so that text="Test Title", language="en".
-        let snak = Snak::new_monolingual_text("P1476", "Test Title", "en");
+        let snak = Snak::new_monolingual_text("P1476", "en", "Test Title");
         let mut reference = Reference::default();
         Reference::extract_title(&snak, "en", &mut reference);
         assert_eq!(reference.title, Some("Test Title".to_string()));
@@ -395,7 +392,7 @@ mod tests {
 
     #[test]
     fn test_extract_title_non_matching_language() {
-        let snak = Snak::new_monolingual_text("P1476", "Testtitel", "de");
+        let snak = Snak::new_monolingual_text("P1476", "de", "Testtitel");
         let mut reference = Reference::default();
         Reference::extract_title(&snak, "en", &mut reference);
         assert_eq!(reference.title, None);
@@ -491,7 +488,7 @@ mod tests {
         let snaks = vec![
             Snak::new_string("P854", "https://example.com"),
             Snak::new_item("P248", "Q36578"),
-            Snak::new_monolingual_text("P1476", "Test Title", "en"),
+            Snak::new_monolingual_text("P1476", "en", "Test Title"),
         ];
         let reference = Reference::new_from_snaks(&snaks, "en");
         assert!(reference.is_some());
@@ -569,7 +566,7 @@ mod tests {
     #[test]
     fn test_new_from_snaks_with_only_title_returns_none() {
         // Title alone (no URL, no stated_in) → is_empty() = true → None
-        let snaks = vec![Snak::new_monolingual_text("P1476", "Some Title", "en")];
+        let snaks = vec![Snak::new_monolingual_text("P1476", "en", "Some Title")];
         let reference = Reference::new_from_snaks(&snaks, "en");
         assert!(reference.is_none());
     }
@@ -662,7 +659,7 @@ mod tests {
     fn test_new_from_snaks_with_archive_url_and_date() {
         let snaks = vec![
             Snak::new_string("P854", "https://example.com"),
-            Snak::new_monolingual_text("P1476", "Test Title", "en"),
+            Snak::new_monolingual_text("P1476", "en", "Test Title"),
             Snak::new_string("P1065", "https://web.archive.org/web/2020/x"),
             Snak::new_time("P2960", "+2024-03-15T00:00:00Z", 11),
         ];
