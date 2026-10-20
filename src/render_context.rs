@@ -92,6 +92,9 @@ pub trait RenderContext {
 /// leading character must be left alone; uppercasing here would mis-identify
 /// row links and silently break self-link detection.
 ///
+/// Uppercasing follows MediaWiki (`wikimisc::title::ucfirst`): a letter whose
+/// uppercase form is more than one character (`ß`) stays as it is.
+///
 /// Strings shorter than two bytes are returned unchanged — avoids
 /// uppercasing a lone ASCII punctuation char or a single combining code
 /// point.
@@ -99,10 +102,7 @@ pub(crate) fn normalize_page_title(s: &str, case_sensitive: bool) -> String {
     if case_sensitive || s.len() < 2 {
         return s.to_string();
     }
-    let mut c = s.chars();
-    c.next()
-        .map(|f| f.to_uppercase().collect::<String>() + c.as_str())
-        .unwrap_or_default()
+    wikimisc::title::ucfirst(s).into_owned()
 }
 
 #[cfg(test)]
@@ -156,6 +156,12 @@ mod tests {
     #[test]
     fn test_already_uppercase_unicode() {
         assert_eq!(normalize_page_title("Über etwas", false), "Über etwas");
+    }
+
+    #[test]
+    fn test_sharp_s_stays_as_mediawiki_keeps_it() {
+        // "ß".to_uppercase() is "SS"; MediaWiki leaves the title alone.
+        assert_eq!(normalize_page_title("ßa", false), "ßa");
     }
 
     #[test]

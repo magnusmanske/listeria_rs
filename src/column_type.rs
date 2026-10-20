@@ -11,7 +11,8 @@ use crate::render_context::RenderContext;
 use crate::result_cell_part::{
     AutoDesc, EntityInfo, LinkTarget, LocalLinkInfo, PartWithReference, ResultCellPart,
 };
-use crate::template_params::ReferencesParameter;
+use crate::template_params::{ReferencesParameter, parse_param_id};
+use wikimisc::entity_id::EntityKind;
 use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::{Statement, entity::EntityTrait};
 
@@ -33,26 +34,6 @@ pub enum ColumnType {
 }
 
 impl ColumnType {
-    /// Check if a string matches `[PpQq]\d+` pattern and return the uppercase form.
-    fn parse_pq_id(s: &str, prefix: u8) -> Option<String> {
-        let bytes = s.as_bytes();
-        if bytes.is_empty() {
-            return None;
-        }
-        let first = bytes[0];
-        if first != prefix && first != (prefix ^ 0x20) {
-            return None;
-        }
-        if bytes.len() < 2 {
-            return None;
-        }
-        if bytes[1..].iter().all(|b| b.is_ascii_digit()) {
-            Some(s.to_uppercase())
-        } else {
-            None
-        }
-    }
-
     /// Try to parse a slash-separated compound like "P31/P580" or "P39/Q41582/P580"
     /// from already-trimmed parts.
     fn parse_slash_compound(s: &str) -> Option<Self> {
@@ -61,14 +42,14 @@ impl ColumnType {
         let parts: Vec<&str> = trimmed.split('/').map(|p| p.trim()).collect();
         match parts.len() {
             2 => {
-                let p1 = Self::parse_pq_id(parts[0], b'P')?;
-                let p2 = Self::parse_pq_id(parts[1], b'P')?;
+                let p1 = parse_param_id(parts[0], EntityKind::Property)?;
+                let p2 = parse_param_id(parts[1], EntityKind::Property)?;
                 Some(ColumnType::PropertyQualifier((p1, p2)))
             }
             3 => {
-                let p1 = Self::parse_pq_id(parts[0], b'P')?;
-                let q1 = Self::parse_pq_id(parts[1], b'Q')?;
-                let p2 = Self::parse_pq_id(parts[2], b'P')?;
+                let p1 = parse_param_id(parts[0], EntityKind::Property)?;
+                let q1 = parse_param_id(parts[1], EntityKind::Item)?;
+                let p2 = parse_param_id(parts[2], EntityKind::Property)?;
                 Some(ColumnType::PropertyQualifierValue((p1, q1, p2)))
             }
             _ => None,
@@ -98,7 +79,7 @@ impl ColumnType {
         let trimmed = s.trim();
 
         // Check for simple property: P\d+
-        if let Some(p) = Self::parse_pq_id(trimmed, b'P') {
+        if let Some(p) = parse_param_id(trimmed, EntityKind::Property) {
             return ColumnType::Property(p);
         }
 

@@ -12,6 +12,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 use wikimisc::{
+    entity_id::EntityId,
     sparql_table_vec::SparqlTableVec,
     wikibase::{Snak, SnakDataType, entity::EntityTrait},
 };
@@ -223,10 +224,11 @@ impl ResultRow {
         }
     }
 
+    /// Orders rows by the number of their entity ID (`Q2` before `Q10`); a
+    /// row whose ID does not parse counts as 0.
     fn compare_entity_ids(&self, other: &ResultRow) -> Ordering {
-        let id1 = self.entity_id[1..].parse::<usize>().unwrap_or(0);
-        let id2 = other.entity_id[1..].parse::<usize>().unwrap_or(0);
-        id1.cmp(&id2)
+        let number = |id: &str| EntityId::parse_lenient(id).map_or(0, EntityId::number);
+        number(&self.entity_id).cmp(&number(&other.entity_id))
     }
 
     pub fn compare_to(&self, other: &ResultRow, datatype: &SnakDataType) -> Ordering {
@@ -402,6 +404,17 @@ mod tests {
         let r1 = ResultRow::new("Q500");
         let r2 = ResultRow::new("Q10");
         assert_eq!(r1.compare_entity_ids(&r2), Ordering::Greater);
+    }
+
+    #[test]
+    fn test_compare_entity_ids_empty_or_invalid_counts_as_zero() {
+        let r1 = ResultRow::new("");
+        let r2 = ResultRow::new("Q1");
+        assert_eq!(r1.compare_entity_ids(&r2), Ordering::Less);
+        assert_eq!(
+            ResultRow::new("é").compare_entity_ids(&ResultRow::new("")),
+            Ordering::Equal
+        );
     }
 
     #[test]

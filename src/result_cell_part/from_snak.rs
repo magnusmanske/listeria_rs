@@ -7,6 +7,8 @@
 
 use super::{EntityInfo, ExternalIdInfo, LocationInfo, ResultCellPart};
 use era_date::{Era, Precision};
+use wikimisc::date::{Date, PRECISION_YEAR};
+use wikimisc::entity_id::{EntityId, EntityKind};
 use wikimisc::sparql_value::SparqlValue;
 use wikimisc::wikibase::{Snak, SnakDataType, TimeValue, Value};
 
@@ -63,30 +65,20 @@ impl ResultCellPart {
         }
     }
 
+    /// The item (or property) a quantity's unit URI names; `None` for `1`
+    /// (no unit) and anything that is not an entity URI.
     fn unit_entity_id_from_url(unit: &str) -> Option<String> {
-        if unit == "1" {
-            return None;
-        }
-        unit.rsplit('/')
-            .next()
-            .filter(|s| s.starts_with('Q') || s.starts_with('P'))
-            .map(str::to_string)
+        EntityId::from_uri(unit)
+            .ok()
+            .filter(|id| matches!(id.kind(), EntityKind::Item | EntityKind::Property))
+            .map(|id| id.to_string())
     }
 
     /// Extracts the year from a Wikidata ISO time string like `+1900-00-00T00:00:00Z`.
     /// Returns `None` if the string cannot be parsed.
     pub fn time_sort_year(time_str: &str) -> Option<i32> {
-        let s = time_str.strip_prefix('+').unwrap_or(time_str);
-        let t_pos = s.find('T')?;
-        let date_part = &s[..t_pos];
-        let year_str = if let Some(after_sign) = date_part.strip_prefix('-') {
-            let dash = after_sign.find('-')?;
-            &date_part[..dash + 1]
-        } else {
-            let dash = date_part.find('-')?;
-            &date_part[..dash]
-        };
-        year_str.parse::<i32>().ok()
+        let date = Date::from_wikibase(time_str, PRECISION_YEAR).ok()?;
+        i32::try_from(date.year()).ok()
     }
 
     /// Returns `(display_string, sort_year)` for a Wikidata time value.

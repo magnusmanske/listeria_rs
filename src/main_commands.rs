@@ -128,6 +128,7 @@ impl MainCommands {
     /// Processes a single page and updates it with generated list content.
     async fn update_page(&self, page_title: &str, api_url: &str) -> Result<String> {
         let mut mw_api = wikimisc::mediawiki::api::Api::new(api_url).await?;
+        mw_api.set_user_agent(crate::LISTERIA_USER_AGENT);
         mw_api.set_oauth2(self.config.oauth2_token());
 
         let mw_api = Arc::new(mw_api);

@@ -17,11 +17,19 @@ serde_json = "^1"
 percent-encoding = "2"
 wikimisc = { git = "https://github.com/magnusmanske/wikimisc", features = [
 	"database",
+	"date",
+	"entity-id",
+	"escape",
+	"http",
+	"labels",
+	"logging",
+	"retry",
 	"seppuku",
 	"site-matrix",
 	"sparql-client",
 	"sparql-table",
 	"telemetry",
+	"title",
 ] }
 tokio = { version = "^1", features = ["full", "rt-multi-thread"] }
 futures = "0.3"
@@ -41,8 +49,6 @@ axum = { version = "0.8", features = [
 ] }
 tower-http = { version = "0.6", features = ["full"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-tracing-log = "0.2"
 
 [dev-dependencies]
 wiremock = "0.6"

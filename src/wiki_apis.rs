@@ -166,32 +166,25 @@ impl WikiApis {
         })
     }
 
-    /// Creates a MediaWiki API instance for the given wiki
+    /// Creates the bot's (logged-in, editing) MediaWiki API instance for the
+    /// given wiki.
     async fn create_wiki_api(&self, wiki: &str) -> Result<ApiArc> {
-        let api_url = format!(
-            "{}/w/api.php",
-            self.site_matrix.get_server_url_for_wiki(wiki)?
-        );
-        self.create_wiki_api_from_api_url(&api_url, self.config.oauth2_token())
-            .await
-    }
-
-    pub async fn create_wiki_api_from_api_url(
-        &self,
-        api_url: &str,
-        oauth2_token: &str,
-    ) -> Result<ApiArc> {
         let builder = wikimisc::mediawiki::reqwest::Client::builder()
             .timeout(self.config.api_timeout())
             .user_agent(crate::LISTERIA_USER_AGENT)
             .gzip(true)
             .deflate(true)
             .brotli(true);
-        let mut mw_api = Api::new_from_builder(api_url, builder).await?;
-        mw_api.set_oauth2(oauth2_token);
+        let mut mw_api = self
+            .site_matrix
+            .get_api_for_wiki_with_builder(wiki, builder)
+            .await?;
+        // The `Api` sends its own user agent with every request, whatever
+        // the client was built with.
+        mw_api.set_user_agent(crate::LISTERIA_USER_AGENT);
+        mw_api.set_oauth2(self.config.oauth2_token());
         mw_api.set_edit_delay(self.config.ms_delay_after_edit()); // Slow down editing a bit
-        let mw_api = Arc::new(mw_api);
-        Ok(mw_api)
+        Ok(Arc::new(mw_api))
     }
 
     /// Updates the database to contain all wikis that have a Listeria start template
@@ -262,8 +255,9 @@ impl WikiApis {
     }
 
     async fn get_current_pages_on_wiki(&self, wiki: &str) -> Result<Vec<String>> {
-        let api_url = self.site_matrix.get_server_url_for_wiki(wiki)? + "/w/api.php";
-        let mw_api = Api::new(&api_url).await?;
+        // Only for the wiki's namespace names, so the shared read-only `Api`
+        // will do.
+        let mw_api = self.site_matrix.cached_api_for_wiki(wiki).await?;
         let template_start = self
             .config
             .get_local_template_title_start(wiki)?

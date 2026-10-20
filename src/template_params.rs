@@ -3,6 +3,20 @@
 use crate::{configuration::Configuration, template::Template};
 use regex::Regex;
 use std::sync::LazyLock;
+use wikimisc::entity_id::{EntityId, EntityKind, PropertyId};
+
+/// Parses an ID of `kind` as written in a template parameter: its prefix
+/// letter in either case, then digits (`P31`, `p31`, `P031`). Returns the
+/// canonical form (`P31`).
+pub(crate) fn parse_param_id(s: &str, kind: EntityKind) -> Option<String> {
+    if s.chars().next()?.to_ascii_uppercase() != kind.prefix() {
+        return None;
+    }
+    EntityId::parse_lenient(s)
+        .ok()
+        .filter(|id| id.kind() == kind)
+        .map(|id| id.to_string())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum LinksType {
@@ -39,8 +53,6 @@ pub enum SortMode {
 impl SortMode {
     #[must_use]
     pub fn new(os: Option<&String>) -> Self {
-        static RE_PROP: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"^P\d+$").expect("RE_PROP does not parse"));
         static RE_SPARQL: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r"^\?\S+$").expect("RE_SPARQL does not parse"));
         let os = os.map(|s| s.trim().to_uppercase());
@@ -49,8 +61,8 @@ impl SortMode {
                 "LABEL" => Self::Label,
                 "FAMILY_NAME" => Self::FamilyName,
                 other => {
-                    if RE_PROP.is_match(other) {
-                        Self::Property(other.to_string())
+                    if let Some(property) = parse_param_id(other, EntityKind::Property) {
+                        Self::Property(property)
                     } else if RE_SPARQL.is_match(other) {
                         Self::SparqlVariable(other[1..].to_string())
                     } else {
@@ -115,10 +127,6 @@ pub enum SectionType {
 
 impl SectionType {
     pub fn new_from_string_option(s: Option<&String>) -> Self {
-        static RE_PROP: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"^[Pp]\d+$").expect("RE_PROP does not parse"));
-        static RE_PROP_NUM: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"^\d+$").expect("RE_PROP_NUM does not parse")); // Yes people do that!
         static RE_SPARQL: LazyLock<Regex> =
             LazyLock::new(|| Regex::new(r"^@.+$").expect("RE_SPARQL does not parse"));
         let s = match s {
@@ -126,11 +134,14 @@ impl SectionType {
             None => return Self::None,
         };
         let s = s.trim();
-        if RE_PROP.is_match(s) {
-            return Self::Property(s.to_uppercase());
+        if let Some(property) = parse_param_id(s, EntityKind::Property) {
+            return Self::Property(property);
         }
-        if RE_PROP_NUM.is_match(s) {
-            return Self::Property(format!("P{}", &s));
+        // A bare number: yes, people do that!
+        if s.bytes().all(|b| b.is_ascii_digit())
+            && let Ok(property) = PropertyId::parse_lenient(s)
+        {
+            return Self::Property(property.to_string());
         }
         if RE_SPARQL.is_match(s) {
             return Self::SparqlVariable(s.to_uppercase());
@@ -391,6 +402,23 @@ impl TemplateParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_param_id() {
+        let p = |s| parse_param_id(s, EntityKind::Property);
+        assert_eq!(p("P31").as_deref(), Some("P31"));
+        assert_eq!(p("p31").as_deref(), Some("P31"));
+        assert_eq!(p("P031").as_deref(), Some("P31"));
+        assert_eq!(p("Q31"), None);
+        assert_eq!(p("31"), None);
+        assert_eq!(p("wd:P31"), None);
+        assert_eq!(p("P0"), None);
+        assert_eq!(p(""), None);
+        assert_eq!(
+            parse_param_id("q41582", EntityKind::Item).as_deref(),
+            Some("Q41582")
+        );
+    }
 
     #[test]
     fn test_links_type_new_from_string() {

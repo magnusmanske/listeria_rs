@@ -11,7 +11,7 @@
 use crate::configuration::Configuration;
 use std::time::Duration;
 use wikimisc::metrics::{counter, gauge, histogram};
-use wikimisc::telemetry::{ExitReason, Telemetry, TelemetryError};
+use wikimisc::telemetry::{ExitReason, Telemetry};
 
 /// Status of a page whose processing returned an error instead of a result.
 pub const STATUS_ERROR: &str = "ERROR";
@@ -36,15 +36,10 @@ pub const BREAKER_MW_API: &str = "mw_api";
 /// stops the bot: without a token, or on any other error, it is logged and
 /// the bot runs without it.
 pub fn install(component: &str, config: &Configuration) {
-    let result = Telemetry::builder(component)
+    Telemetry::builder(component)
         .config(config.telemetry())
         .version(env!("CARGO_PKG_VERSION"))
-        .install();
-    match result {
-        Ok(_) => log::info!("telemetry enabled as '{component}'"),
-        Err(TelemetryError::NoToken) => log::info!("telemetry disabled: no token configured"),
-        Err(e) => log::warn!("telemetry disabled: {e}"),
-    }
+        .install_or_log();
 }
 
 /// Sends the final push, reporting how the run ended; a no-op without

@@ -290,7 +290,8 @@ impl SparqlResults {
     }
 }
 
-/// Logs a SPARQL retry, as `retry::retry_with_backoff` logs its own.
+/// Logs a SPARQL retry with the same fields as the MediaWiki API retries
+/// (`page_operations`).
 fn log_retry(retry: &Retry<'_>) {
     tracing::warn!(
         operation = "sparql_query",

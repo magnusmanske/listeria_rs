@@ -3,7 +3,6 @@
 use crate::wiki_page_result::WikiPageResult;
 use anyhow::Result;
 use axum::{Router, extract::State, response::Html, routing::get};
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use std::{
     collections::HashMap,
     net::SocketAddr,
@@ -13,22 +12,8 @@ use std::{
 use tokio::sync::RwLock;
 use tower_http::compression::CompressionLayer;
 use tower_http::services::ServeDir;
-
-/// Escapes `&`, `<`, `>`, `"`, and `'` so text is safe to embed in HTML.
-fn escape_html(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&#39;"),
-            other => out.push(other),
-        }
-    }
-    out
-}
+use wikimisc::escape;
+use wikimisc::title::wiki_urlencode;
 
 /// Shared state for the HTTP status server.
 ///
@@ -130,21 +115,17 @@ impl StatusServer {
                     Some(pattern) => {
                         format!(
                             "<a target=\"_blank\" href=\"{}\">{}</a>",
-                            pattern.replace(
-                                "$1",
-                                &utf8_percent_encode(&page.replace(' ', "_"), NON_ALPHANUMERIC)
-                                    .to_string()
-                            ),
-                            escape_html(page)
+                            pattern.replace("$1", &wiki_urlencode(page)),
+                            escape::html(page)
                         )
                     }
-                    None => escape_html(page),
+                    None => escape::html(page).into_owned(),
                 };
                 html += &format!(
                     "<tr><td>{}</td><td>{}</td><td>{}</td></tr>",
                     link,
-                    escape_html(result.result()),
-                    escape_html(result.message())
+                    escape::html(result.result()),
+                    escape::html(result.message())
                 );
             }
             html += "</tbody></table></p></div></div>";
@@ -209,53 +190,6 @@ impl StatusServer {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // ── escape_html ────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_escape_html_no_special_chars() {
-        assert_eq!(escape_html("hello world"), "hello world");
-    }
-
-    #[test]
-    fn test_escape_html_empty() {
-        assert_eq!(escape_html(""), "");
-    }
-
-    #[test]
-    fn test_escape_html_ampersand() {
-        assert_eq!(escape_html("foo & bar"), "foo &amp; bar");
-    }
-
-    #[test]
-    fn test_escape_html_less_than_greater_than() {
-        assert_eq!(escape_html("<script>"), "&lt;script&gt;");
-    }
-
-    #[test]
-    fn test_escape_html_double_quote() {
-        assert_eq!(escape_html(r#"say "hi""#), "say &quot;hi&quot;");
-    }
-
-    #[test]
-    fn test_escape_html_apostrophe() {
-        assert_eq!(escape_html("it's"), "it&#39;s");
-    }
-
-    #[test]
-    fn test_escape_html_all_special_chars() {
-        assert_eq!(escape_html("<>&\"'"), "&lt;&gt;&amp;&quot;&#39;");
-    }
-
-    #[test]
-    fn test_escape_html_xss_attempt() {
-        let input = r#"<img src=x onerror="alert('xss')">"#;
-        let escaped = escape_html(input);
-        assert!(!escaped.contains('<'));
-        assert!(!escaped.contains('>'));
-        assert!(!escaped.contains('"'));
-        assert!(!escaped.contains('\''));
-    }
 
     // ── build_html_header ──────────────────────────────────────────────────
 
@@ -373,6 +307,22 @@ mod tests {
         );
         assert!(html.contains("<a "), "expected hyperlink");
         assert!(html.contains("href="), "expected href attribute");
+    }
+
+    #[test]
+    fn test_build_problems_table_link_encodes_title_like_mediawiki() {
+        let problems = vec![(
+            "User:Foo/Bär & \"co\"".to_string(),
+            WikiPageResult::new("enwiki", "page", "FAIL", "error".to_string()),
+        )];
+        let html = StatusServer::build_problems_table(
+            &problems,
+            &Some("https://en.wikipedia.org/wiki/$1".to_string()),
+        );
+        assert!(
+            html.contains(r#"href="https://en.wikipedia.org/wiki/User:Foo/B%C3%A4r_%26_%22co%22""#),
+            "{html}"
+        );
     }
 
     #[test]

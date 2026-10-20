@@ -2,7 +2,9 @@
 
 use crate::render_context::RenderContext;
 use serde::{Deserialize, Serialize};
+use wikimisc::date::Date;
 use wikimisc::wikibase::Snak;
+use wikimisc::wikibase::TimeValue;
 use wikimisc::wikibase::Value;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -142,12 +144,8 @@ impl Reference {
     fn extract_archive_date(snak: &Snak, ret: &mut Reference) {
         if let Some(dv) = snak.data_value()
             && let Value::Time(tv) = dv.value()
-            && let Some(pos_t) = tv.time().find('T')
         {
-            let (date, _) = tv.time().split_at(pos_t);
-            let date = date.replace('+', "");
-            let year = Self::parse_year(&date);
-            ret.archive_date = Some(Self::format_date_by_precision(date, year, *tv.precision()));
+            ret.archive_date = Some(Self::describe_time(tv));
         }
     }
 
@@ -165,97 +163,24 @@ impl Reference {
     fn extract_timestamp(snak: &Snak, ret: &mut Reference) {
         if let Some(dv) = snak.data_value()
             && let Value::Time(tv) = dv.value()
-            && let Some(pos_t) = tv.time().find('T')
         {
-            let (date, _) = tv.time().split_at(pos_t);
-            let date = date.replace('+', "");
-            let year = Self::parse_year(&date);
-
-            ret.date = Some(Self::format_date_by_precision(date, year, *tv.precision()));
+            ret.date = Some(Self::describe_time(tv));
         }
     }
 
-    /// Parses just the year component from a string of the form `YYYY-MM-DD`
-    /// or `-YYYY-MM-DD` (negative years), tolerating year-only or year-month
-    /// inputs.
-    fn parse_year(date: &str) -> Option<i32> {
-        if let Some(rest) = date.strip_prefix('-') {
-            let year_part = rest.split_once('-').map_or(rest, |(y, _)| y);
-            format!("-{year_part}").parse::<i32>().ok()
-        } else {
-            date.split_once('-')
-                .map_or(date, |(y, _)| y)
-                .parse::<i32>()
-                .ok()
-        }
-    }
-
-    /// Trims a `YYYY-MM-DD` style date to just its year component, preserving
-    /// any leading minus sign for negative years.
-    fn trim_to_year(date: &str) -> String {
-        if let Some(rest) = date.strip_prefix('-') {
-            match rest.find('-') {
-                Some(pos) => format!("-{}", &rest[..pos]),
-                None => date.to_string(),
-            }
-        } else {
-            match date.find('-') {
-                Some(pos) => date[..pos].to_string(),
-                None => date.to_string(),
-            }
-        }
-    }
-
-    fn format_date_by_precision(date: String, year: Option<i32>, precision: u64) -> String {
-        match precision {
-            // Day precision or finer: keep full date.
-            p if p >= 11 => date,
-            // Month precision: drop the day.
-            10 => match date.rfind('-') {
-                Some(p) => date[..p].to_string(),
-                None => date,
+    /// A time value as precise as it is, in English: `2025-06-15`, `2025-06`,
+    /// `2025`, `1990s`, `19th century`, `2nd millennium`, with a minus sign
+    /// before the common era. A value Wikibase would not store (such as
+    /// day 0 at day precision) is shown as it is, without the time of day.
+    fn describe_time(tv: &TimeValue) -> String {
+        let time = tv.time();
+        Date::from_wikibase(time, *tv.precision()).map_or_else(
+            |_| {
+                let date = time.split_once('T').map_or(time, |(date, _)| date);
+                date.strip_prefix('+').unwrap_or(date).to_string()
             },
-            // Year precision.
-            9 => Self::trim_to_year(&date),
-            // Decade precision: "1990s".
-            8 => year.map_or(date, |y| format!("{}0s", y / 10)),
-            // Century precision: "20th century".
-            7 => year.map_or(date, |y| {
-                let century = if y > 0 {
-                    (y - 1) / 100 + 1
-                } else {
-                    y / 100 - 1
-                };
-                format!("{} century", Self::ordinal_suffix(century))
-            }),
-            // Millennium precision.
-            6 => year.map_or(date, |y| {
-                let millennium = if y > 0 {
-                    (y - 1) / 1000 + 1
-                } else {
-                    y / 1000 - 1
-                };
-                format!("{} millennium", Self::ordinal_suffix(millennium))
-            }),
-            // Lower precisions: fall back to year only.
-            _ => Self::trim_to_year(&date),
-        }
-    }
-
-    /// Converts a number to its ordinal form (e.g., 1 -> "1st", 21 -> "21st")
-    fn ordinal_suffix(n: i32) -> String {
-        let abs_n = n.abs();
-        let suffix = if (abs_n % 100) >= 11 && (abs_n % 100) <= 13 {
-            "th"
-        } else {
-            match abs_n % 10 {
-                1 => "st",
-                2 => "nd",
-                3 => "rd",
-                _ => "th",
-            }
-        };
-        format!("{}{}", n, suffix)
+            |date| date.describe(),
+        )
     }
 
     /// Extracts the title from a snak
@@ -416,49 +341,6 @@ mod tests {
     fn test_stated_in_getter_none() {
         let reference = Reference::default();
         assert_eq!(reference.stated_in(), &None);
-    }
-
-    #[test]
-    fn test_ordinal_suffix_basic() {
-        assert_eq!(Reference::ordinal_suffix(1), "1st");
-        assert_eq!(Reference::ordinal_suffix(2), "2nd");
-        assert_eq!(Reference::ordinal_suffix(3), "3rd");
-        assert_eq!(Reference::ordinal_suffix(4), "4th");
-        assert_eq!(Reference::ordinal_suffix(5), "5th");
-    }
-
-    #[test]
-    fn test_ordinal_suffix_teens() {
-        assert_eq!(Reference::ordinal_suffix(11), "11th");
-        assert_eq!(Reference::ordinal_suffix(12), "12th");
-        assert_eq!(Reference::ordinal_suffix(13), "13th");
-    }
-
-    #[test]
-    fn test_ordinal_suffix_twenties() {
-        assert_eq!(Reference::ordinal_suffix(21), "21st");
-        assert_eq!(Reference::ordinal_suffix(22), "22nd");
-        assert_eq!(Reference::ordinal_suffix(23), "23rd");
-        assert_eq!(Reference::ordinal_suffix(24), "24th");
-    }
-
-    #[test]
-    fn test_ordinal_suffix_hundreds() {
-        assert_eq!(Reference::ordinal_suffix(101), "101st");
-        assert_eq!(Reference::ordinal_suffix(111), "111th");
-        assert_eq!(Reference::ordinal_suffix(121), "121st");
-    }
-
-    #[test]
-    fn test_ordinal_suffix_negative() {
-        assert_eq!(Reference::ordinal_suffix(-1), "-1st");
-        assert_eq!(Reference::ordinal_suffix(-2), "-2nd");
-        assert_eq!(Reference::ordinal_suffix(-11), "-11th");
-    }
-
-    #[test]
-    fn test_ordinal_suffix_zero() {
-        assert_eq!(Reference::ordinal_suffix(0), "0th");
     }
 
     // --- extract_reference_url ---
@@ -640,7 +522,7 @@ mod tests {
 
     #[test]
     fn test_extract_timestamp_negative_year_century() {
-        // Year -99 → century = -99/100 - 1 = -1, ordinal_suffix(-1) = "-1st"
+        // Year -99 → century -99/100 - 1 = -1 → "-1st"
         let snak = Snak::new_time("P813", "-0099-01-01T00:00:00Z", 7);
         let mut reference = Reference::default();
         Reference::extract_timestamp(&snak, &mut reference);
@@ -649,7 +531,7 @@ mod tests {
 
     #[test]
     fn test_extract_timestamp_negative_year_millennium() {
-        // Year -999 → millennium = -999/1000 - 1 = -1, ordinal_suffix(-1) = "-1st"
+        // Year -999 → millennium -999/1000 - 1 = -1 → "-1st"
         let snak = Snak::new_time("P813", "-0999-01-01T00:00:00Z", 6);
         let mut reference = Reference::default();
         Reference::extract_timestamp(&snak, &mut reference);
@@ -663,6 +545,23 @@ mod tests {
         let mut reference = Reference::default();
         Reference::extract_timestamp(&snak, &mut reference);
         assert_eq!(reference.date, Some("1980s".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_negative_year_precision() {
+        let snak = Snak::new_time("P813", "-0500-00-00T00:00:00Z", 9);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("-0500".to_string()));
+    }
+
+    #[test]
+    fn test_extract_timestamp_invalid_date_is_shown_as_it_is() {
+        // Day 0 at day precision is not a date; show what Wikidata has.
+        let snak = Snak::new_time("P813", "+2025-06-00T00:00:00Z", 11);
+        let mut reference = Reference::default();
+        Reference::extract_timestamp(&snak, &mut reference);
+        assert_eq!(reference.date, Some("2025-06-00".to_string()));
     }
 
     // --- new_from_snaks edge cases ---

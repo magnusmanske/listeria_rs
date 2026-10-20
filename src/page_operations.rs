@@ -1,12 +1,13 @@
 use crate::circuit_breaker::with_breaker;
 use crate::listeria_page::ListeriaPage;
 use crate::page_element::PageElement;
-use crate::retry::retry_with_backoff;
 use crate::telemetry;
 use crate::wiki_page_result::WikiPageResult;
 use anyhow::{Result, anyhow};
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::time::Duration;
+use wikimisc::retry::{Retry, RetryPolicy};
 
 /// Max MediaWiki API attempts per request (1 initial + retries).
 ///
@@ -17,6 +18,27 @@ use std::time::Duration;
 const MW_API_MAX_ATTEMPTS: u32 = 3;
 /// Initial backoff between MediaWiki API retries; doubles each attempt.
 const MW_API_INITIAL_BACKOFF_MS: u64 = 250;
+/// The retry policy for MediaWiki API calls: [`MW_API_MAX_ATTEMPTS`] attempts,
+/// waiting [`MW_API_INITIAL_BACKOFF_MS`] and doubling, every retry logged.
+/// Callers retry every error (`run_if(…, |_| true, …)`).
+fn mw_api_retry_policy<E: Display + 'static>() -> RetryPolicy<E> {
+    RetryPolicy::new(MW_API_MAX_ATTEMPTS - 1)
+        .with_initial_backoff(Duration::from_millis(MW_API_INITIAL_BACKOFF_MS))
+        .on_retry(log_mw_api_retry)
+}
+
+/// Logs a retry with the `operation`, `attempt`, `backoff_ms` and `error`
+/// fields, so that the retry behaviour is observable in production.
+fn log_mw_api_retry<E: Display>(retry: &Retry<'_, E>) {
+    tracing::warn!(
+        operation = retry.endpoint,
+        attempt = retry.retry,
+        backoff_ms = u64::try_from(retry.wait.as_millis()).unwrap_or(u64::MAX),
+        error = %retry.error,
+        "external call failed; retrying"
+    );
+}
+
 /// MediaWiki's default `$wgMaxArticleSize` (2048 KiB). Edits above this are
 /// rejected by the API with an opaque error, and historically the page could
 /// end up truncated mid-wikitext, destroying content after
@@ -91,19 +113,19 @@ impl PageOperations {
             &breaker,
             || anyhow!("MW API circuit open for {wiki}"),
             || async {
-                retry_with_backoff(
-                    "load_page_as",
-                    MW_API_MAX_ATTEMPTS,
-                    Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
-                    || async {
-                        page.page_params()
-                            .mw_api()
-                            .post_query_api_json(&params)
-                            .await
-                    },
-                )
-                .await
-                .map_err(anyhow::Error::from)
+                mw_api_retry_policy()
+                    .run_if(
+                        "load_page_as",
+                        |_| true,
+                        || async {
+                            page.page_params()
+                                .mw_api()
+                                .post_query_api_json(&params)
+                                .await
+                        },
+                    )
+                    .await
+                    .map_err(anyhow::Error::from)
             },
         )
         .await
@@ -200,18 +222,22 @@ impl PageOperations {
         if let Some(ts) = basetimestamp {
             params.insert("basetimestamp".to_string(), ts.to_string());
         }
+        // Retries on every error, like the other MediaWiki API calls, although
+        // an edit is not idempotent: a POST that landed but whose response was
+        // lost is sent again. When `basetimestamp` is set (above), such a
+        // repeat becomes an edit conflict rather than a duplicate edit.
         let j = with_breaker(
             &breaker,
             || anyhow!("MW API circuit open for {wiki}"),
             || async {
-                retry_with_backoff(
-                    "save_wikitext_to_page",
-                    MW_API_MAX_ATTEMPTS,
-                    Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
-                    || async { api.post_query_api_json(&params).await },
-                )
-                .await
-                .map_err(anyhow::Error::from)
+                mw_api_retry_policy()
+                    .run_if(
+                        "save_wikitext_to_page",
+                        |_| true,
+                        || async { api.post_query_api_json(&params).await },
+                    )
+                    .await
+                    .map_err(anyhow::Error::from)
             },
         )
         .await?;
@@ -292,9 +318,9 @@ impl PageOperations {
     /// Manual exponential-backoff retry for `Api::get_edit_token`.
     ///
     /// `get_edit_token` borrows `&mut Api`, so it cannot be expressed as an
-    /// `FnMut`-returning-async closure for the generic [`retry_with_backoff`]
-    /// helper without hitting "captured variable cannot escape FnMut closure
-    /// body". Mirrors the same policy: `MW_API_MAX_ATTEMPTS` total tries with
+    /// `FnMut`-returning-async closure for [`RetryPolicy::run_if`] without
+    /// hitting "captured variable cannot escape FnMut closure body". Mirrors
+    /// [`mw_api_retry_policy`]: `MW_API_MAX_ATTEMPTS` total tries with
     /// `MW_API_INITIAL_BACKOFF_MS` doubling each retry.
     async fn get_edit_token_with_retries(
         api: &mut wikimisc::mediawiki::api::Api,
@@ -342,19 +368,19 @@ impl PageOperations {
             &breaker,
             || anyhow!("MW API circuit open for {wiki}"),
             || async {
-                retry_with_backoff(
-                    "purge_page",
-                    MW_API_MAX_ATTEMPTS,
-                    Duration::from_millis(MW_API_INITIAL_BACKOFF_MS),
-                    || async {
-                        page.page_params()
-                            .mw_api()
-                            .get_query_api_json(&params)
-                            .await
-                    },
-                )
-                .await
-                .map_err(anyhow::Error::from)
+                mw_api_retry_policy()
+                    .run_if(
+                        "purge_page",
+                        |_| true,
+                        || async {
+                            page.page_params()
+                                .mw_api()
+                                .get_query_api_json(&params)
+                                .await
+                        },
+                    )
+                    .await
+                    .map_err(anyhow::Error::from)
             },
         )
         .await?;

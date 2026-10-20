@@ -46,6 +46,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::sync::Arc;
 use tokio::sync::Semaphore;
+use wikimisc::labels;
 use wikimisc::mediawiki::api::Api;
 use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::Entity;
@@ -71,7 +72,7 @@ const LOAD_CHUNK_SIZE: usize = 20;
 const MAX_LOAD_RETRIES: usize = 3;
 /// Initial wait between retries — gives the upstream API a moment to recover
 /// from a transient overload. Doubles each attempt for consistency with the
-/// retry policy in `retry::retry_with_backoff`.
+/// MediaWiki API retry policy in `page_operations`.
 const RETRY_INITIAL_BACKOFF_MS: u64 = 200;
 /// Wikidata property holding a unit's symbol as monolingual text, e.g. "km"
 /// for kilometre (Q828224).
@@ -400,21 +401,11 @@ impl EntityContainerWrapper {
         language: &str,
         entity_id: &str,
     ) -> String {
-        if let Some(label) = entity.label_in_locale(language) {
-            return label.to_string();
-        }
-
-        for lang in LABEL_FALLBACK_LANGUAGES {
-            if let Some(label) = entity.label_in_locale(lang) {
-                return label.to_string();
-            }
-        }
-
-        if let Some(label) = entity.labels().first() {
-            return label.value().to_string();
-        }
-
-        entity_id.to_string()
+        labels::label_in(&entity.0, &[language])
+            .or_else(|| labels::label_in(&entity.0, &LABEL_FALLBACK_LANGUAGES))
+            .or_else(|| entity.labels().first().map(|label| label.value()))
+            .unwrap_or(entity_id)
+            .to_string()
     }
 
     pub async fn entity_to_local_link(

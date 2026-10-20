@@ -88,7 +88,6 @@ pub mod result_cell;
 pub mod result_cell_part;
 pub mod result_generator;
 pub mod result_row;
-pub mod retry;
 pub mod sparql_results;
 pub mod status_server;
 pub mod telemetry;
@@ -107,4 +106,7 @@ use wikimisc::mediawiki::api::Api;
 
 type ApiArc = Arc<Api>;
 
-pub const LISTERIA_USER_AGENT: &str = "ListeriaBot/0.1.2 (https://listeria.toolforge.org/; magnusmanske@googlemail.com) reqwest/0.11.23";
+pub const LISTERIA_USER_AGENT: &str = wikimisc::user_agent!(
+    name = "ListeriaBot",
+    "https://listeria.toolforge.org/; magnusmanske@googlemail.com"
+);
