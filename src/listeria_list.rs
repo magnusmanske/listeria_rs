@@ -4,6 +4,7 @@
 
 use crate::column::Column;
 use crate::column_type::ColumnType;
+use crate::configuration::FeatureFlags;
 use crate::entity_container_wrapper::{EntityContainerWrapper, EntityEntry};
 use crate::entity_projection::EntityProjection;
 use crate::list_processor::ListProcessor;
@@ -585,6 +586,14 @@ impl ListeriaList {
         self.profile("AFTER list::process_results gather_and_load_items")
             .await;
         let flags = *self.page_params.config().feature_flags();
+        self.process_cells(flags).await?;
+        self.arrange_rows(flags).await?;
+        self.profile("END list::process_results").await;
+        Ok(())
+    }
+
+    /// Fills in and links the cells: descriptions, links, files, references.
+    async fn process_cells(&mut self, flags: FeatureFlags) -> Result<()> {
         if flags.enable_autodesc {
             ListProcessor::fill_autodesc(self).await?;
             self.profile("AFTER list::process_results fill_autodesc")
@@ -612,6 +621,12 @@ impl ListeriaList {
             self.profile("AFTER list::process_results process_reference_items")
                 .await;
         }
+        Ok(())
+    }
+
+    /// Sorts the rows, groups them into sections, and fills in what is left:
+    /// regions, location names, local links.
+    async fn arrange_rows(&mut self, flags: FeatureFlags) -> Result<()> {
         ListProcessor::process_sort_results(self).await?;
         self.profile("AFTER list::process_results process_sort_results")
             .await;
@@ -627,7 +642,6 @@ impl ListeriaList {
         ListProcessor::fix_local_links(self)?;
         self.profile("AFTER list::process_results fix_local_links")
             .await;
-        self.profile("END list::process_results").await;
         Ok(())
     }
 
