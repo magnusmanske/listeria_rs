@@ -83,12 +83,11 @@ impl ListeriaBotWiki {
                 }
             };
         if let Err(wpr) = listeria_page.run().await {
-            return wpr;
+            return *wpr;
         }
-        let _ = match listeria_page.update_source_page().await {
-            Ok(x) => x,
-            Err(wpr) => return wpr,
-        };
+        if let Err(wpr) = listeria_page.update_source_page().await {
+            return *wpr;
+        }
         WikiPageResult::new(&self.wiki, page, "OK", "".to_string())
     }
 }

@@ -84,7 +84,7 @@ impl ListeriaPage {
         }
     }
 
-    pub async fn run(&mut self) -> Result<(), WikiPageResult> {
+    pub async fn run(&mut self) -> Result<(), Box<WikiPageResult>> {
         self.check_namespace()
             .map_err(|e| self.fail(&e.to_string()))?;
         self.elements = PageOperations::load_page(self).await?;
@@ -99,11 +99,15 @@ impl ListeriaPage {
         Ok(())
     }
 
-    fn fail(&self, message: &str) -> WikiPageResult {
-        WikiPageResult::fail(self.wiki(), self.page_params.page(), message)
+    fn fail(&self, message: &str) -> Box<WikiPageResult> {
+        Box::new(WikiPageResult::fail(
+            self.wiki(),
+            self.page_params.page(),
+            message,
+        ))
     }
 
-    pub async fn load_page_as(&self, mode: &str) -> Result<String, WikiPageResult> {
+    pub async fn load_page_as(&self, mode: &str) -> Result<String, Box<WikiPageResult>> {
         PageOperations::load_page_as(self, mode).await
     }
 
@@ -144,7 +148,7 @@ impl ListeriaPage {
         Some(days)
     }
 
-    pub async fn update_source_page(&mut self) -> Result<bool, WikiPageResult> {
+    pub async fn update_source_page(&mut self) -> Result<bool, Box<WikiPageResult>> {
         let max_freq = self.max_freq();
         if max_freq > 0
             && !self.page_params.simulate()

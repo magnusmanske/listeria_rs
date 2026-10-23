@@ -52,7 +52,9 @@ pub struct PageOperations;
 
 impl PageOperations {
     /// Loads a page and extracts all Listeria template blocks.
-    pub async fn load_page(page: &mut ListeriaPage) -> Result<Vec<PageElement>, WikiPageResult> {
+    pub async fn load_page(
+        page: &mut ListeriaPage,
+    ) -> Result<Vec<PageElement>, Box<WikiPageResult>> {
         let mut text = Self::load_page_as(page, "wikitext").await?;
         let mut ret = Vec::new();
         let mut again: bool = true;
@@ -72,19 +74,22 @@ impl PageOperations {
             ret.push(element);
         }
         if ret.iter().any(|e| e.is_missing_end_template()) {
-            return Err(WikiPageResult::new(
+            return Err(Box::new(WikiPageResult::new(
                 page.page_params().wiki(),
                 page.page_params().page(),
                 "FAIL",
                 "{{Wikidata list end}} is missing; refusing to update to prevent list duplication (#108)".to_string(),
-            ));
+            )));
         }
 
         Ok(ret)
     }
 
     /// Loads page content via the MediaWiki API in the specified format.
-    pub async fn load_page_as(page: &ListeriaPage, mode: &str) -> Result<String, WikiPageResult> {
+    pub async fn load_page_as(
+        page: &ListeriaPage,
+        mode: &str,
+    ) -> Result<String, Box<WikiPageResult>> {
         // When wikitext is already available locally (simulate mode), skip the
         // action=parse round-trip — the API would return the same text unchanged.
         if mode == "wikitext"
@@ -133,28 +138,28 @@ impl PageOperations {
         if let Some(error) = result["error"]["code"].as_str() {
             match error {
                 "missingtitle" => {
-                    return Err(WikiPageResult::new(
+                    return Err(Box::new(WikiPageResult::new(
                         page.page_params().wiki(),
                         page.page_params().page(),
                         "DELETED",
                         "Wiki says this page is missing".to_string(),
-                    ));
+                    )));
                 }
                 "invalid" => {
-                    return Err(WikiPageResult::new(
+                    return Err(Box::new(WikiPageResult::new(
                         page.page_params().wiki(),
                         page.page_params().page(),
                         "INVALID",
                         "Wiki says this page has an invalid title".to_string(),
-                    ));
+                    )));
                 }
                 other => {
-                    return Err(WikiPageResult::new(
+                    return Err(Box::new(WikiPageResult::new(
                         page.page_params().wiki(),
                         page.page_params().page(),
                         "FAIL",
                         other.to_string(),
-                    ));
+                    )));
                 }
             }
         };
@@ -387,8 +392,12 @@ impl PageOperations {
         Ok(())
     }
 
-    fn fail(page: &ListeriaPage, message: &str) -> WikiPageResult {
-        WikiPageResult::fail(page.wiki(), page.page_params().page(), message)
+    fn fail(page: &ListeriaPage, message: &str) -> Box<WikiPageResult> {
+        Box::new(WikiPageResult::fail(
+            page.wiki(),
+            page.page_params().page(),
+            message,
+        ))
     }
 }
 
