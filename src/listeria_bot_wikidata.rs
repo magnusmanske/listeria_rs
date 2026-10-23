@@ -109,7 +109,7 @@ impl ListeriaBot for ListeriaBotWikidata {
             .find_priority_page(&ids, IGNORE_STATUS)
             .await?
         {
-            info!(target: "lock", "Found a priority page: {:?}", &page);
+            info!(target: "lock", "Found a priority page: {:?}", page);
             self.pagestatus
                 .update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
                 .await?;
@@ -123,7 +123,7 @@ impl ListeriaBot for ListeriaBotWikidata {
             .await?
             .ok_or_else(|| anyhow!("prepare_next_single_page: no page available"))?;
 
-        info!(target: "lock", "Found a page: {:?}", &page);
+        info!(target: "lock", "Found a page: {:?}", page);
         self.pagestatus
             .update_page_status(page.title(), page.wiki(), "RUNNING", "PREPARING")
             .await?;

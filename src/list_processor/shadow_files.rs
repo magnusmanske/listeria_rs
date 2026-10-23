@@ -121,7 +121,7 @@ impl super::ListProcessor {
                 let prefixed_filename = format!(
                     "{}:{}",
                     list.page_params().local_file_namespace_prefix(),
-                    &filename
+                    filename
                 );
                 [
                     ("action", "query"),

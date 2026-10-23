@@ -118,7 +118,7 @@ impl Reference {
             );
         }
         if let Some(date) = &self.date {
-            ret += &format!("|access-date={}", &date);
+            ret += &format!("|access-date={}", date);
         }
         if let Some(archive_url) = &self.archive_url {
             ret += &format!("|archive-url={archive_url}");

@@ -50,7 +50,7 @@ pub struct WikiApiHandle {
 
 impl WikiApiHandle {
     /// Borrow the API for the lifetime of this guard.
-    pub fn api(&self) -> &ApiArc {
+    pub const fn api(&self) -> &ApiArc {
         &self.api
     }
 }

@@ -9,24 +9,23 @@ use wikimisc::wikibase::SnakDataType;
 
 impl super::ListProcessor {
     pub async fn process_sort_results(list: &mut ListeriaList) -> Result<()> {
-        let sortkeys: Vec<String>;
         let mut datatype = SnakDataType::String;
         list.profile("BEFORE process_sort_results SORTKEYS").await;
-        match list.template_params().sort() {
+        let sortkeys: Vec<String> = match list.template_params().sort() {
             SortMode::Label => {
                 list.load_row_entities().await?;
                 let mut futures = Vec::with_capacity(list.results().len());
                 for row in list.results().iter() {
                     futures.push(row.get_sortkey_label(list));
                 }
-                sortkeys = join_all(futures).await.to_vec();
+                join_all(futures).await.to_vec()
             }
             SortMode::FamilyName => {
                 let mut futures = Vec::with_capacity(list.results().len());
                 for row in list.results().iter() {
                     futures.push(row.get_sortkey_family_name(list));
                 }
-                sortkeys = join_all(futures).await.to_vec();
+                join_all(futures).await.to_vec()
             }
             SortMode::Property(prop) => {
                 datatype = list.ecw().get_datatype_for_property(prop).await;
@@ -34,17 +33,15 @@ impl super::ListProcessor {
                 for row in list.results().iter() {
                     futures.push(row.get_sortkey_prop(prop, list, &datatype));
                 }
-                sortkeys = join_all(futures).await.to_vec();
+                join_all(futures).await.to_vec()
             }
-            SortMode::SparqlVariable(variable) => {
-                sortkeys = list
-                    .results()
-                    .iter()
-                    .map(|row| row.get_sortkey_sparql(variable, list))
-                    .collect();
-            }
+            SortMode::SparqlVariable(variable) => list
+                .results()
+                .iter()
+                .map(|row| row.get_sortkey_sparql(variable, list))
+                .collect(),
             SortMode::None => return Ok(()),
-        }
+        };
         list.profile("AFTER process_sort_results SORTKEYS").await;
 
         let descending = *list.template_params().sort_order() == SortOrder::Descending;

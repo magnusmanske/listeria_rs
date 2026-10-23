@@ -158,7 +158,7 @@ impl PageElement {
         let new_inside = self.new_inside().await?;
         Ok(format!(
             "{}{}\n{}\n{}{}",
-            &self.before, &self.template_start, &new_inside, &self.template_end, &self.after
+            self.before, self.template_start, new_inside, self.template_end, self.after
         ))
     }
 

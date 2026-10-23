@@ -303,9 +303,9 @@ impl ResultCellPart {
                 // MediaWiki determines blue vs. red based on page existence;
                 // we no longer synthesise a "(Q-id)" page that rarely exists (#137).
                 if use_label.contains(':') {
-                    format!("[[:{}|]]", &use_label)
+                    format!("[[:{}|]]", use_label)
                 } else {
-                    format!("[[{}]]", &use_label)
+                    format!("[[{}]]", use_label)
                 }
             }
             LinksType::Reasonator => {

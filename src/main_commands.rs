@@ -230,7 +230,7 @@ impl MainCommands {
     }
 
     pub async fn process_page(&self, server: &str, page: &str) -> Result<()> {
-        let wiki_api = format!("https://{}/w/api.php", &server);
+        let wiki_api = format!("https://{}/w/api.php", server);
         let message = match self.update_page(page, &wiki_api).await {
             Ok(m) => format!("OK: {m}"),
             Err(e) => format!("ERROR: {e}"),
