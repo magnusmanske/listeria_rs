@@ -22,6 +22,9 @@ const WATCHDOG_MARGIN: Duration = Duration::from_secs(120);
 /// Pause before asking the queue again after it failed to hand out a page, so
 /// a database problem does not turn into a tight loop hammering the database.
 const DISPATCH_RETRY_DELAY: Duration = Duration::from_secs(5);
+/// How often the Wikidata bot runs [`MainCommands::update_wikis`], which adds
+/// new wikis and newly tagged pages to the queue.
+const UPDATE_WIKIS_INTERVAL: Duration = Duration::from_secs(60 * 60);
 
 /// How long the inactivity watchdog waits for a page to start or finish.
 ///
@@ -106,6 +109,34 @@ where
         }
         // The task is never aborted, so this happens at runtime shutdown at most.
         Err(e) => PageOutcome::Failed(anyhow!("page task ended: {e}")),
+    }
+}
+
+/// Runs `job` every `period`, forever; the first time one period from now,
+/// so a bot that keeps restarting does not keep starting the job.
+///
+/// Each run is a task of its own, bounded by `period`: a run that fails,
+/// panics or hangs is logged, and the schedule carries on. Runs never
+/// overlap; one that takes longer than expected delays the next.
+async fn run_periodically<F, Fut>(name: &str, period: Duration, job: F)
+where
+    F: Fn() -> Fut,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + period, period);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        interval.tick().await;
+        log::info!("Starting {name}");
+        match tokio::spawn(tokio::time::timeout(period, job())).await {
+            Ok(Ok(Ok(()))) => log::info!("Finished {name}"),
+            Ok(Ok(Err(e))) => log::error!("{name} failed: {e}"),
+            Ok(Err(_elapsed)) => log::error!("{name} exceeded {}s", period.as_secs()),
+            Err(e) if e.is_panic() => {
+                log::error!("{name} panicked: {}", panic_message(&*e.into_panic()));
+            }
+            Err(e) => log::error!("{name} task ended: {e}"),
+        }
     }
 }
 
@@ -217,6 +248,16 @@ impl MainCommands {
         let _ = bot.clear_deleted().await;
         let _ = bot.clear_deferred().await;
         let _ = bot.clear_log_table().await;
+
+        let main = self.clone();
+        tokio::spawn(run_periodically(
+            "update_wikis",
+            UPDATE_WIKIS_INTERVAL,
+            move || {
+                let main = main.clone();
+                async move { main.update_wikis().await }
+            },
+        ));
 
         let bot = Arc::new(bot);
         static THREADS_SEMAPHORE: Semaphore = Semaphore::const_new(0);
@@ -368,6 +409,7 @@ impl MainCommands {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn test_watchdog_window_outlasts_the_longest_page() {
@@ -424,6 +466,73 @@ mod tests {
         let failed = run_page(NO_TIMEOUT, async { Err(anyhow!("nope")) }).await;
         assert!(matches!(failed, PageOutcome::Failed(e) if e.to_string() == "nope"));
     }
+    /// Starts `run_periodically` with an hourly `job` that records each run
+    /// and then does what `outcome` says for that run (0-based).
+    fn start_hourly(
+        outcome: fn(usize) -> Result<()>,
+    ) -> (tokio::task::JoinHandle<()>, Arc<AtomicUsize>) {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let counter = runs.clone();
+        let schedule = tokio::spawn(run_periodically(
+            "test job",
+            Duration::from_secs(3600),
+            move || {
+                let run = counter.fetch_add(1, Ordering::SeqCst);
+                async move { outcome(run) }
+            },
+        ));
+        (schedule, runs)
+    }
+
+    fn runs_after(runs: &AtomicUsize) -> usize {
+        runs.load(Ordering::SeqCst)
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_run_periodically_starts_after_one_period() {
+        let (schedule, runs) = start_hourly(|_| Ok(()));
+        tokio::time::sleep(Duration::from_secs(3599)).await;
+        assert_eq!(runs_after(&runs), 0);
+        tokio::time::sleep(Duration::from_secs(2 * 3600)).await;
+        assert_eq!(runs_after(&runs), 2);
+        schedule.abort();
+    }
+
+    /// A run that fails or panics must not end the schedule.
+    #[tokio::test(start_paused = true)]
+    async fn test_run_periodically_survives_failures_and_panics() {
+        let (schedule, runs) = start_hourly(|run| match run {
+            0 => Err(anyhow!("nope")),
+            1 => panic!("boom"),
+            _ => Ok(()),
+        });
+        tokio::time::sleep(Duration::from_secs(3 * 3600 + 1)).await;
+        assert_eq!(runs_after(&runs), 3);
+        assert!(!schedule.is_finished());
+        schedule.abort();
+    }
+
+    /// A hung run is given up on after one period, and runs never overlap.
+    #[tokio::test(start_paused = true)]
+    async fn test_run_periodically_times_out_hung_runs() {
+        let runs = Arc::new(AtomicUsize::new(0));
+        let counter = runs.clone();
+        let schedule = tokio::spawn(run_periodically(
+            "test job",
+            Duration::from_secs(3600),
+            move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                std::future::pending()
+            },
+        ));
+        // Run 1 starts at 1h and is given up on at 2h; run 2 starts then.
+        tokio::time::sleep(Duration::from_secs(3600 + 1)).await;
+        assert_eq!(runs_after(&runs), 1);
+        tokio::time::sleep(Duration::from_secs(3600)).await;
+        assert_eq!(runs_after(&runs), 2);
+        schedule.abort();
+    }
+
     use std::fs;
     use wiremock::matchers::{body_string_contains, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};

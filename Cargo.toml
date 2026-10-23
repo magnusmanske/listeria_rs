@@ -51,6 +51,8 @@ tower-http = { version = "0.6", features = ["full"] }
 tracing = "0.1"
 
 [dev-dependencies]
+# `test-util` for tests on a paused clock
+tokio = { version = "^1", features = ["test-util"] }
 wiremock = "0.6"
 http = "1"
 criterion = { version = "0.5", features = ["html_reports"] }
