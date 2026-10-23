@@ -1639,6 +1639,7 @@ version = "0.1.3"
 dependencies = [
  "anyhow",
  "axum",
+ "base64 0.22.1",
  "blake3",
  "chrono",
  "clap",
@@ -1646,6 +1647,7 @@ dependencies = [
  "dashmap",
  "era_date",
  "futures",
+ "hmac",
  "http",
  "log",
  "mimalloc",
@@ -1655,11 +1657,13 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "sha1",
+ "sha2",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
  "tower",
- "tower-http",
+ "tower-http 0.6.11",
  "tracing",
  "wikimisc",
  "wiremock",
@@ -2498,7 +2502,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower",
- "tower-http",
+ "tower-http 0.6.11",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -3295,6 +3299,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "tower-http"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08a05a66a4fdd61cbbe0a1d755ffe0ca6aba159dd4820936a0ff8a8278245b9c"
+dependencies = [
+ "async-compression",
+ "bitflags",
+ "bytes",
+ "futures-core",
+ "futures-util",
+ "http",
+ "http-body",
+ "http-body-util",
+ "percent-encoding",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+]
+
+[[package]]
 name = "tower-layer"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3627,6 +3654,7 @@ name = "wikimisc"
 version = "0.3.0"
 source = "git+https://github.com/magnusmanske/wikimisc#4a4a52270f80a658b565e6f03d4633aef4daf517"
 dependencies = [
+ "axum",
  "chrono",
  "csv",
  "httpdate",
@@ -3643,6 +3671,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "toolforge",
+ "tower-http 0.7.1",
  "tracing-log",
  "tracing-subscriber",
  "urlencoding",

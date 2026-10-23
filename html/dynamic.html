@@ -1,0 +1,1986 @@
+<!DOCTYPE HTML>
+<html><head>
+<meta name="robots" content="nofollow" />
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<link href="https://magnustools.toolforge.org/resources/dist3/css/bootstrap_spacelab.min.css" rel="stylesheet">
+<!-- <link rel="stylesheet" type="text/css" href="https://magnustools.toolforge.org/resources/css/common.css"> -->
+<!--<script type="text/javascript" src="https://magnustools.toolforge.org/resources/js/jquery/jquery-1.11.0.min.js"></script>-->
+<script type="text/javascript" src="https://magnustools.toolforge.org/resources/js/jquery/jquery-2.1.4.min.js"></script>
+<script type="text/javascript" src="https://magnustools.toolforge.org/resources/dist3/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="https://magnustools.toolforge.org/resources/js/jquery/jquery.tablesorter2.min.js"></script>
+<script type="text/javascript" src="https://magnustools.toolforge.org/resources/js/common.js"></script>
+<script type="text/javascript" src="https://magnustools.toolforge.org/resources/js/wikidata.js"></script>
+
+<style type="text/css">
+#loading {
+/*	float:right;
+	margin:2px;
+	padding:2px;
+	color:white;
+	background-color:red;*/
+	display:none;
+}
+#tab_header_links {
+	max-height:200px;
+	overflow-y:auto;
+	margin-bottom:10px;
+}
+td.thumb {
+	text-align:center;
+}
+div.listinfo_cell {
+	display:table-cell;
+	padding-right:15px;
+}
+
+#main table td > div:not(:first-child) {
+	border-top:1px dotted #DDD;
+}
+
+a.external {
+	color:#2DC800;
+}
+a.wikidata {
+}
+a.wiki {
+	color:#7BA7E1;
+}
+.column_label {
+	display:inline-block;
+	margin-right:20px;
+}
+
+#create_list {
+	display:none;
+}
+
+h1 {
+	margin-top:0px;
+}
+td.numeric {
+	text-align:right;
+	font-family:Courier;
+}
+</style>
+
+<script type='text/javascript'>
+
+"use strict";
+
+$.fn.is_on_screen = function(){
+    var win = $(window);
+    var viewport = {
+        top : win.scrollTop(),
+        left : win.scrollLeft()
+    };
+    viewport.right = viewport.left + win.width();
+    viewport.bottom = viewport.top + win.height();
+ 
+    var bounds = this.offset();
+    bounds.right = bounds.left + this.outerWidth();
+    bounds.bottom = bounds.top + this.outerHeight();
+ 
+    return (!(viewport.right < bounds.left || viewport.left > bounds.right || viewport.bottom < bounds.top || viewport.top > bounds.bottom));
+};
+
+
+var listeria = {
+
+	list : {} ,
+	language : 'en' ,
+	list : {} ,
+	wd : {} ,
+	wdl : {} ,
+	load_count : 0 ,
+	params : {} ,
+	sections : {} ,
+	update_items : {} ,
+	load_labels : {} ,
+	thumbs2load : [] ,
+	thumb_cache : {} ,
+	languages : {} ,
+	isChrome : false ,
+	list_options_is_expanded : false ,
+	column_types : [ 'item','label','description','property','prop_qual','prop_item_qual','sitelink' ] ,
+	section_types : [ 'property','prop_qual','prop_item_qual' ] ,
+	
+	init : function ( callback ) {
+		var me = this ;
+		me.isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+		me.list = me.getBlankList() ;
+		me.wd = new WikiData() ;
+		me.wdl = new WikiData() ; // Labels only
+		me.wdl.default_props = 'labels|sitelinks' ;
+		me.getParams() ;
+		if ( typeof me.params.lang != 'undefined' ) me.language = me.params.lang ;
+		me.updateChromeTranslations() ;
+		
+		$('a.navbar-brand').click ( function () {
+			me.run({}) ;
+			return false ;
+		} ) ;
+		
+		$('#create_list a').click ( function () {
+			me.createNewList() ;
+			return false ;
+		} ) ;
+		
+		$('#search_form').submit ( function () {
+			me.search() ;
+			return false ;
+		} ) ;
+
+		me.wd.loading_status_callback = function ( a , b ) { $('#loading_message').html(prettyNumber(b-a)+' items from Wikidata') ; } ;
+		me.wdl.loading_status_callback = function ( a , b ) { $('#loading_message').html(prettyNumber(b-a)+' labels from Wikidata') ; } ;
+		me.wd.getjson_error_handler = function () { alert ( "Wikidata has failed to respond with proper data. Reloading this page might fix the problem." ) } ;
+		me.wdl.getjson_error_handler = me.wd.getjson_error_handler ;
+
+		var running = 2 ;
+		function fin () {
+			running-- ;
+			if ( running > 0 ) return ;
+			callback() ;
+		}
+
+		me.checkWidar ( fin ) ;
+		$.getJSON ( 'https://www.wikidata.org/w/api.php?action=query&meta=siteinfo&siprop=languages&format=json&callback=?' , function ( d ) {
+			$.each ( d.query.languages , function ( k , v ) {
+				me.languages[v.code] = v['*'] ;
+			} ) ;
+			fin() ;
+		} ) ;
+
+		// Load thumbnails on demand
+		$(window).scroll(function(){
+			$('img.pre_thumb').each ( function () {
+				me.loadThumb ( $(this) ) ;
+			} ) ;
+		} ) ;
+
+	} ,
+	
+	getParams : function () {
+		var me = this ;
+		me.params = {} ;
+		if ( window.location.href.indexOf('#') == -1 ) return ;
+		var hashes = window.location.href.slice(window.location.href.indexOf('#') + 1).split('&');
+		$.each ( hashes , function ( i , j ) {
+			var hash = j.split('=');
+			hash[1] += '' ;
+			me.params[hash[0]] = decodeURI(hash[1]).replace(/_/g,' ');
+		} ) ;
+	} ,
+	
+	createNewList : function () {
+		var me = this ;
+		me.list = me.getBlankList() ;
+		if ( typeof me.username != '' ) me.list.owner = me.username ;
+		me.params = { lang : me.getLanguage() , list:'new' } ;
+
+		me.updateTitle() ;
+		me.loading ( true ) ;
+		me.list_options_is_expanded = true ;
+		me.loadListItems ( function () {
+			me.loading ( false ) ;
+			me.renderList ( function () {
+				$('#list_tab_header a[href="#lo_main"]').tab('show') ;
+			} ) ;
+		} ) ;
+	} ,
+	
+	getBlankList : function () {
+		var me = this ;
+		return {
+			name:'Unnamed list' ,
+			number_of_items:1,
+			wdq:'',
+			sparql:'',
+			owner:'',
+			last_update:'???',
+			items:['Q42'],
+			config : {
+				table:'tabbed',
+				sections:[],
+				columns:[
+					{ type:'label' }
+				]
+			}
+		} ;
+	} ,
+
+
+	listItems2Q : function () {
+		var me = this ;
+		$.each ( me.list.items , function ( k , v ) {
+			me.list.items[k] = 'Q'+v ;
+		} ) ;
+	} ,
+	
+	loading : function ( state ) {
+		var me = this ;
+		if ( state ) {
+			me.load_count++ ;
+			if ( me.load_count == 1 ) $('#loading').show() ;
+		} else {
+			me.load_count-- ;
+			if ( me.load_count == 0 ) {
+				$('#loading').hide() ;
+				$('#loading_message').html('') ;
+			}
+		}
+	} ,
+	
+	addAuxItems : function ( tmp ) {
+		var me = this ;
+		
+		function addProps ( v ) {
+			if(v.type=='property') {
+				v.p = 'P'+me.num(v.p) ;
+				tmp.push(v.p) ;
+			} else if(v.type=='prop_qual') {
+				v.p = 'P'+me.num(v.p) ;
+				v.qual = 'P'+me.num(v.qual) ;
+				tmp.push(v.p) ;
+				tmp.push(v.qual) ;
+			} else if(v.type=='prop_item_qual') {
+				v.p = 'P'+me.num(v.p) ;
+				v.item = 'Q'+me.num(v.item) ;
+				v.qual = 'P'+me.num(v.qual) ;
+				tmp.push(v.p) ;
+				tmp.push(v.item) ;
+				tmp.push(v.qual) ;
+			}
+		}
+		
+		$.each ( (me.list.config.sections||[]) , function ( k , v ) {
+			addProps ( v )
+		} ) ;
+		$.each ( me.list.config.columns , function ( k , v ) {
+			v.num = k ;
+			addProps ( v ) ;
+		} ) ;
+	} ,
+
+	loadListItems : function ( callback ) {
+		var me = this ;
+		var tmp = [] ;
+		$.each ( me.list.items , function ( k , v ) { tmp.push(v) } ) ;
+		
+		
+		// Sanitise property names, and pre-cache for loading
+		me.addAuxItems ( tmp ) ;
+
+		$('#loading_message').html(prettyNumber(tmp.length)+' items from Wikidata') ;
+		me.wd.getItemBatch ( tmp , function () {
+			if ( typeof callback != 'undefined' ) callback() ;
+		} ) ;
+	} ,
+	
+	updateTitle : function () {
+		var me = this ;
+		var name = me.list.name ;
+		$('#title').text ( me.list.name ) ;
+	} ,
+
+	loadList : function ( list , callback ) {
+		var me = this ;
+		if ( list == 'new' ) {
+			if ( typeof callback != 'undefined' ) callback() ;
+			return ;
+		}
+		me.loading ( true ) ;
+		$('#loading_message').html('list info') ;
+		$.get ( './api.php' , {
+			query:'get_list',
+			list:list
+		} , function ( d ) {
+			me.list = d.data ;
+			me.list.items = me.list.items.replace(/^,/,'').replace(/,$/,'') ;
+			if ( me.list.items == '' ) me.list.items = [] ;
+			else me.list.items = me.list.items.split(',') ;
+			me.listItems2Q() ;
+			me.updateTitle() ;
+			me.loadListItems ( function () {
+				me.loading ( false ) ;
+				if ( typeof callback != 'undefined' ) callback() ;
+			} ) ;
+		} , 'json' ) ;
+	} ,
+	
+	loadSPARQL : function ( sparql , callback ) {
+		var me = this ;
+		me.loading ( true ) ;
+		$('#loading_message').html('SPARQL data') ;
+//		$.getJSON ( 'https://wdq.wmflabs.org/api?q='+encodeURIComponent(wdq)+'&callback=?' , function ( d ) {
+		$.get ( 'https://query.wikidata.org/sparql' , {
+			format:'json',
+			query:sparql
+		} , function ( d ) {
+			var items = [] ;
+			var varname = d.head.vars[0] ;
+			$.each ( d.results.bindings , function ( k , v ) {
+				items.push ( v[varname].value.replace(/^.+\/Q/) ) ;
+			} ) ;
+			me.list.items = items ;
+			me.listItems2Q() ;
+			me.loadListItems ( function () {
+				me.loading ( false ) ;
+				if ( typeof callback != 'undefined' ) callback() ;
+			} ) ;
+		} , 'json' ) ;
+	} ,
+	
+	
+	
+	num : function ( i ) { // Returns raw number string for P/Q
+		return (''+i).replace(/\D/g,'') ;
+	} ,
+	
+	mainsnak2text : function ( mainsnak , precision_override ) {
+		var me = this ;
+		var v = mainsnak.datavalue.value ;
+		if ( mainsnak.datatype == 'wikibase-item' ) {
+			return 'Q'+v['numeric-id'] ;
+		} else if ( mainsnak.datatype == 'quantity' ) {
+			var t = '' + (v.amount*1) ;
+			return t ;
+		} else if ( mainsnak.datatype == 'time' ) {
+			var t = v.time ;
+			var m = v.time.match ( /^([\+\-])0*(\d+)-(\d\d)-(\d\d)/ ) ;
+			if ( m != null ) {
+				var prefix = m[1] ;
+				var prec = v.precision ;
+				if ( typeof precision_override != 'undefined' && precision_override != '' && precision_override != 0 ) prec = precision_override ;
+				if ( prefix == '+' ) prefix = '' ;
+				if ( prec <= 8 ) {
+					var y = m[2] * 1 ;
+					if ( prec == 8 ) y -= y%10 ;
+					else if ( prec == 7 ) y -= y%100 ;
+					else if ( prec <= 6 ) y -= y%1000 ;
+					t = prefix+y+'s' ;
+				} else if ( prec ==  9 ) t = prefix+m[2] ;
+				else if ( prec == 10 ) t = prefix+m[2]+'-'+m[3] ;
+				else if ( prec >= 11 ) t = prefix+m[2]+'-'+m[3]+'-'+m[4] ;
+			}
+			return t ;
+		}
+		return ;
+	} ,
+	
+	claim2text : function ( claim , precision_override ) {
+		var me = this ;
+		if ( typeof claim == 'undefined' ) return ;
+		if ( typeof claim.mainsnak == 'undefined' ) return ;
+
+		return me.mainsnak2text ( claim.mainsnak , precision_override ) ;
+	} ,
+	
+
+	getSectionKey : function ( i , meta ) {
+		if ( typeof i == 'undefined' ) return ; // No item, no key
+		var me = this ;
+		var key ;
+
+		var claims = i.getClaimsForProperty(meta.p) ;
+		var fc = me.getColumnFilter ( meta , claims ) ;
+		var rc = me.getOnlyRankedClaims ( fc ) ;
+		if ( rc.length == 0 ) return key ; // No hope...
+
+		if ( meta.type == 'property' ) {
+
+			key = me.claim2text ( rc[0] , meta.precision ) ;
+
+		} else if ( meta.type == 'prop_qual' ) {
+
+			$.each ( rc , function ( dummy , claim ) {
+				$.each ( ((claim.qualifiers||{})[meta.qual]||[]) , function ( k , v ) {
+					key = me.claim2text ( claim , meta.precision ) + ': ' + me.mainsnak2text ( v , meta.precision ) ;
+					return true ;
+				} ) ;
+				if ( typeof key != 'undefined' ) return true ;
+			} ) ;
+
+		} else if ( meta.type == 'prop_item_qual' ) {
+
+			$.each ( rc , function ( dummy , claim ) {
+//				if ( (claim.mainsnak||{}).datatype != 'wikibase-item' ) return ;
+//				if ( claim.mainsnak.datavalue.value['numeric-id'] != meta.item.replace(/\D/g,'') ) return ;
+				$.each ( ((claim.qualifiers||{})[meta.qual]||[]) , function ( k , v ) {
+					key = me.mainsnak2text ( v , meta.precision ) ;
+					return true ;
+				} ) ;
+				if ( typeof key != 'undefined' ) return true ;
+			} ) ;
+
+		}
+
+		return key ;
+	} ,
+	
+	items2sections : function () {
+		var me = this ;
+		if ( me.list.config.sections.length == 0 ) return ;
+		
+		function getSectionSize ( root , sec ) {
+			if ( root.leaf ) return sec.qs.length ;
+			var ret = 0 ;
+			$.each ( (sec.sections||{}) , function(k,v) { ret += getSectionSize(sec,v) } ) ;
+			return ret ;
+		}
+		
+		function subSection ( num , items ) {
+			var meta = me.list.config.sections[num] ;
+			var misc_key = me.t('misc') ;
+			if ( typeof meta.labels == 'object' ) {
+				if ( typeof meta.labels[me.getLanguage()] != 'undefined' ) misc_key = meta.labels[me.getLanguage()] ;
+			}
+			var section = {
+				tag : 'h'+(num+2) ,
+				misc_key : misc_key ,
+				sections : {} ,
+				order : [] ,
+				meta : meta ,
+				leaf : num+1 == me.list.config.sections.length
+			} ;
+//			if ( meta.type == 'property' ) meta.p = 'P'+me.num(meta.p) ;
+			
+			var sec = {} ;
+			$.each ( items , function ( dummy , q ) {
+				var key = me.getSectionKey ( me.wd.getItem(q) , meta ) ;
+				if ( typeof key == 'undefined' ) key = misc_key ;
+				if ( typeof sec[key] == 'undefined' ) sec[key] = {qs:[]} ;
+				sec[key].qs.push ( q ) ;
+			} ) ;
+			
+			// Min filter
+			if ( typeof meta.min != 'undefined' ) {
+				var min = meta.min * 1 ;
+				$.each ( sec , function ( k , v ) {
+					if ( v.qs.length >= min ) return ; // Large enough
+					if ( k == misc_key ) return ; // Is misc section
+					if ( typeof sec[misc_key] == 'undefined' ) sec[misc_key] = {qs:[]} ;
+					$.each ( v.qs , function ( k1 , v1 ) {
+						sec[misc_key].qs.push ( v1 ) ;
+					} ) ;
+					delete sec[k] ;
+				} ) ;
+			}
+			
+			// Recurse into sub-sections
+			if ( section.leaf ) {
+				section.sections = sec ;
+			} else {
+				$.each ( sec , function ( k , v ) {
+					section.sections[k] = subSection ( num+1 , v.qs ) ;
+				} ) ;
+			}
+
+			// Order by descending section size
+			$.each ( section.sections , function ( k , v ) {
+				if ( k == misc_key ) return ;
+				section.order.push ( k ) ;
+				v.sectionSize = getSectionSize ( section , v ) ;
+//				console.log ( k , v.sectionSize ) ;
+			} ) ;
+			section.order = section.order.sort ( function ( a , b ) {
+//				console.log ( a , b , section.sections[b].sectionSize , section.sections[a].sectionSize ) ;
+				return section.sections[b].sectionSize - section.sections[a].sectionSize ;
+			} ) ;
+			if ( typeof section.sections[misc_key] != 'undefined' ) section.order.push ( misc_key ) ;
+
+			return section ;
+		}
+		
+		me.sections = subSection ( 0 , me.list.items ) ;
+	} ,
+	
+	getLanguage : function () {
+		return this.language ; //me.list.config.language ;
+	} ,
+	
+	
+	updateItems : function ( callback ) {
+		var me = this ;
+		var tmp = [] ;
+		$.each ( me.update_items , function ( k , v ) { tmp.push(k) } ) ;
+		me.update_items = {} ;
+
+		var running = 2 ;
+		var tmp2 = [] ;
+		$.each ( me.load_labels , function ( k , v ) {
+			if ( typeof me.wd.items[k] != 'undefined' ) return ;
+			tmp2.push(k) ;
+		} ) ;
+		me.load_labels = {} ;
+		
+		
+		function fin () {
+			running-- ;
+			if ( running > 0 ) return ;
+			var lang = me.getLanguage() ;
+			$.each ( tmp2 , function ( k , v ) { tmp.push ( v ) } ) ;
+			$.each ( tmp , function ( k , v ) {
+				var text = v ;
+				var i = me.wd.getItem(v) ;
+				if ( typeof i == 'undefined' ) i = me.wdl.getItem(v) ;
+				if ( typeof i != 'undefined' ) text = i.getLabel(lang) ;
+				var key = 'span.'+sanitizeID(v) ;
+				$(key).text ( text ) ;
+				key = 'a.'+sanitizeID(v) ;
+				$(key).each ( function () { me.updateItemLink(v,$(this)) } ) ;
+//				replaceWith ( me.getItemLink(v,{blank_fallback:true}) ) ; // TODO column
+			} ) ;
+			$('a.cleanup').remove() ;
+			$('td > div:empty').remove() ;
+			me.loading ( false ) ;
+			if ( typeof callback != 'undefined' ) callback() ;
+		}
+		
+		me.loading ( true ) ;
+		var num = prettyNumber ( tmp.length + tmp2.length ) ;
+		$('#loading_message').html ( num + " labels from Wikidata" ) ;
+		me.wd.getItemBatch ( tmp , function () { fin() } ) ;
+		me.wdl.getItemBatch ( tmp2 , function () { fin() } ) ;
+	} ,
+	
+	updateItemLink : function ( q , o ) {
+		var me = this ;
+		var col = o.attr('col') ;
+		col = $.extend ( {blank_fallback:true} , me.list.config.columns[col] ) ;
+		var h = me.getItemLink ( q , col ) ;
+		o.replaceWith(h).removeClass('cleanup') ;
+	} ,
+	
+	getItemLink : function ( q , c ) {
+		var me = this ;
+		var lang = me.getLanguage() ;
+		var url = "//www.wikidata.org/wiki/" + q ;
+		var text = q ;
+		var classname = 'wikidata' ;
+		if ( c.type == 'item' ) {
+			// Default
+		} else {
+			var i = me.wd.getItem(q) ;
+			if ( typeof i != 'undefined' ) {
+				var sl = i.getWikiLinks() ;
+				if ( typeof sl[lang+'wiki'] != 'undefined' ) {
+					url = '//' + lang + '.wikipedia.org/wiki/' + encodeURIComponent(sl[lang+'wiki'].title.replace(/ /g,'_')) ;
+					text = sl[lang+'wiki'].title.replace(/_/g,' ') ;
+					classname = 'wiki' ;
+				}
+			} else if ( typeof me.wdl.getItem(q) != 'undefined' ) {
+				i = me.wdl.getItem(q) ;
+				var sl = i.getWikiLinks() ;
+				if ( typeof sl[lang+'wiki'] != 'undefined' ) {
+					url = '//' + lang + '.wikipedia.org/wiki/' + encodeURIComponent(sl[lang+'wiki'].title.replace(/ /g,'_')) ;
+					text = sl[lang+'wiki'].title.replace(/_/g,' ') ;
+					classname = 'wiki' ;
+				}
+			} else {
+				if ( c.blank_fallback ) return '' ;
+				me.load_labels[q] = 1 ;
+				return "<a href='' target='_blank' col='" + c.num + "' class='cleanup " + sanitizeID(q) + "'>...</a>" ;
+			}
+			text = me.getAutoLabel ( q ) ;
+		}
+		var h = "<a href='" + url + "' class='" + classname + "' target='_blank'>" + text + "</a>" ;
+		return h ;
+	} ,
+
+
+//_________________________________________________________________________________________________________________________________________________________________________________________
+
+	renderMainSnak : function ( col , mainsnak ) {
+		var me = this ;
+		var h = '' ;
+		var dt = mainsnak.datatype ;
+		var v = mainsnak.datavalue.value ;
+		if ( dt == 'globe-coordinate' ) {
+			var lat = v.latitude > 0 ? v.latitude+'_N_' : (-v.latitude)+'_S_' ;
+			var lon = v.longitude > 0 ? v.longitude+'_E_' : (-v.longitude)+'_W_' ;
+			var url = 'https://tools.wmflabs.org/geohack/geohack.php?language='+me.getLanguage()+'&params='+lat+lon+'globe:earth' ;
+			h += "<a href='" + url + "' class='external' target='_blank'>" + v.latitude + '/' + v.longitude + "</a>" ;
+		} else if ( dt == 'string' ) {
+			if ( col.type == 'property' ) {
+				var i = me.wd.getItem(col.p) ;
+				if ( typeof i != 'undefined' && i.hasClaims('P1630') ) {
+					var pc = i.getClaimsForProperty('P1630') ;
+					var url = pc[0].mainsnak.datavalue.value ;
+					url = url.replace ( '$1' , v ) ;
+					h += "<a href='"+url+"' class='external' target='_blank'>"+v+"</a>" ;
+				} else {
+					h += v ;
+				}
+			} else {
+				h += v ;
+			}
+		} else if ( dt == 'wikibase-item' ) {
+			h += me.getItemLink ( 'Q'+v['numeric-id'] , col ) ;
+		} else if ( dt == 'time' ) {
+			h += me.mainsnak2text ( mainsnak ) ;
+		} else if ( dt == 'quantity' ) {
+			h += me.mainsnak2text ( mainsnak ) ;
+		} else {
+			console.log ( dt ) ;
+			h += "<i>CLAIMS</i>" ;
+		}
+		return h ;
+	} ,
+
+	renderRankedClaimList : function ( col , claims ) {
+		if ( claims.length == 0 ) return '' ;
+		var me = this ;
+		var p = col.p ;
+		var h = '' ;
+
+		if ( col.type == 'property' ) {
+			var dt = claims[0].mainsnak.datatype ;
+			if (dt == 'commonsMedia' ) {
+				var image = claims[0].mainsnak.datavalue.value ;
+				var id = 'thumb_' + me.thumbs2load.length ;
+				if ( typeof me.thumb_cache[image] == 'undefined' ) {
+					h = "<img class='pre_thumb' src='' id='" + id + "' />" ; // style='display:none' 
+					me.thumbs2load.push ( { image:image , id:id } ) ;
+				} else {
+					h = "<img class='thumb' src='" + me.thumb_cache[image] + "' />" ;
+				}
+				return h ;
+			}
+		}
+		
+		$.each ( claims , function ( k , claim ) {
+		
+			
+			if ( col.type == 'prop_qual' ) {
+				$.each ( claim.qualifiers[col.qual] , function ( k , v ) {
+					h += "<div>" ;
+					h += me.renderMainSnak ( col , claim.mainsnak ) ;
+					h += ": " ;
+					h += me.renderMainSnak ( col , v ) ;
+					h += "</div>" ;
+				} ) ;
+			} else if ( col.type == 'prop_item_qual' ) {
+				$.each ( claim.qualifiers[col.qual] , function ( k , v ) {
+					h += "<div>" ;
+					h += me.renderMainSnak ( col , v ) ;
+					h += "</div>" ;
+				} ) ;
+			} else if ( col.type == 'property' ) {
+				h += "<div>" ;
+				h += me.renderMainSnak ( col , claim.mainsnak ) ;
+				h += "</div>" ;
+			} else {
+				console.log ( "renderRankedClaimList problem" , col , claims ) ;
+			}
+		
+		} ) ;
+		
+		return h ;
+	} ,
+	
+	getRankedClaims : function ( claims ) {
+		var me = this ;
+		var ranked = { preferred:[] , normal:[] , deprecated:[] } ;
+		$.each ( claims , function ( k , c ) {
+			if ( typeof c.mainsnak == 'undefined' ) return ; // Paaaaa-ra-noia!
+			if ( typeof c.mainsnak.datavalue == 'undefined' ) return ; // Paaaaa-ra-noia!
+			if ( typeof c.mainsnak.datavalue.value == 'undefined' ) return ; // Paaaaa-ra-noia!
+			if ( typeof c.rank == 'undefined' ) return ;
+			ranked[c.rank].push ( c ) ;
+		} ) ;
+		return ranked ;
+	} ,
+	
+	getColumnFilter : function ( col , claims ) {
+		var me = this ;
+		var ret = [] ;
+		$.each ( claims , function ( k , v ) {
+			if ( col.type == 'prop_qual' ) {
+				if ( typeof v.qualifiers == 'undefined' ) return ; // Paaaaa-ra-noia!
+				if ( typeof v.qualifiers[col.qual] == 'undefined' ) return ; // Paaaaa-ra-noia!
+				
+			} else if ( col.type == 'prop_item_qual' ) {
+				if ( typeof v.mainsnak == 'undefined' ) return ; // Paaaaa-ra-noia!
+				if ( typeof v.mainsnak.datavalue == 'undefined' ) return ; // Paaaaa-ra-noia!
+				if ( typeof v.mainsnak.datavalue.value == 'undefined' ) return ; // Paaaaa-ra-noia!
+				if ( typeof v.mainsnak.datavalue.value['numeric-id'] == 'undefined' ) return ; // Paaaaa-ra-noia!
+				if ( col.item != 'Q'+v.mainsnak.datavalue.value['numeric-id'] ) return ;
+
+				if ( typeof v.qualifiers == 'undefined' ) return ; // Paaaaa-ra-noia!
+				if ( typeof v.qualifiers[col.qual] == 'undefined' ) return ; // Paaaaa-ra-noia!
+			}
+			// Still going, so...
+			ret.push ( v ) ;
+		} ) ;
+		return ret ;
+	} ,
+	
+	getOnlyRankedClaims : function ( claims ) {
+		var me = this ;
+		var ranked = me.getRankedClaims ( claims ) ;
+		// TODO parameter to force-show all
+		if ( ranked.preferred.length > 0 ) return ranked.preferred ;
+		else if ( ranked.normal.length > 0 ) return ranked.normal ;
+		else return ranked.deprecated ;
+	} ,
+	
+	renderClaimList : function ( col , claims ) {
+		if ( claims.length == 0 ) return '' ;
+		var me = this ;
+		if ( col.type != 'property' && col.type != 'prop_qual' && col.type != 'prop_item_qual' ) {
+			console.log ( "WRONG COL TYPE IN renderClaimList" , col ) ;
+			return '' ;
+		}
+		
+		var fc = me.getColumnFilter ( col , claims ) ;
+		var rc = me.getOnlyRankedClaims ( fc ) ;
+		return me.renderRankedClaimList ( col , rc ) ;
+	} ,
+	
+	renderListCell : function ( q , c ) {
+		var me = this ;
+		var h = '' ;
+		h = '<td' ;
+		if ( c.type == 'property' && c.p == 'P18' ) h += " class='thumb'" ;
+		h += '>' ;
+		
+		if ( c.type == 'property' ) {
+		
+			var claims = me.wd.getItem(q).getClaimsForProperty ( c.p ) ;
+			if ( claims.length > 0 ) {
+				h += me.renderClaimList ( c , claims ) ;
+			}
+		
+		} else if ( c.type == 'description' ) {
+			h += me.wd.getItem(q).getDesc(me.getLanguage()) ;
+		} else if ( c.type == 'label' ) {
+			h += me.getItemLink ( q , c ) ;
+		} else if ( c.type == 'item' ) {
+			h += me.getItemLink ( q , c ) ;
+		} else if ( c.type == 'prop_qual' ) {
+			var claims = me.wd.getItem(q).getClaimsForProperty ( c.p ) ;
+			if ( claims.length > 0 ) {
+				h += me.renderClaimList ( c , claims ) ;
+			}
+		} else if ( c.type == 'prop_item_qual' ) {
+			var claims = me.wd.getItem(q).getClaimsForProperty ( c.p ) ;
+			if ( claims.length > 0 ) {
+				h += me.renderClaimList ( c , claims ) ;
+			}
+		} else if ( c.type == 'sitelink' ) {
+			var sl = me.renderSitelink ( q , c.wiki ) ;
+			if ( sl != '' ) h += "<div>" + sl + "</div>" ;
+		} else {
+			h = '<s>' + c.type + '</s>' ;
+//			console.log ( "Unknown column type" , c ) ;
+		}
+
+		h += '</td>' ;
+		
+		return h ;
+	} ,
+	
+	wiki2server : function ( wiki ) {
+		var m = wiki.match ( /^(.+)(wik.+)$/ ) ;
+		if ( m[2] == 'wiki' ) m[2] = 'wikipedia' ;
+		var server = m[1] + "." + m[2] + ".org" ;
+		return server ;
+	} ,
+	
+	renderSitelink : function ( q , wiki ) {
+		var me = this ;
+		var h = '' ;
+		var i = me.wd.getItem(q) ;
+		if ( typeof i == 'undefined' ) i = me.wdl.getItem(q) ;
+		if ( typeof i == 'undefined' ) {
+			return "UNLOADED" ;
+		} else {
+			var sls = i.getWikiLinks() ;
+			if ( typeof sls[wiki] != 'undefined' ) {
+				var t = sls[wiki].title ;
+				var server = me.wiki2server ( wiki ) ;
+				h = "<a href='//"+server+"/wiki/" + escattr(encodeURIComponent(t)) + "' class='wiki' target='_blank'>" + t + "</a>" ;
+			}
+		}
+		return h ;
+	} ,
+	
+	getAutoLabel : function ( q ) {
+		if ( !(q||'').match(/^[pq]\d+/i) ) return q ; // Some label
+		var me = this ;
+		var h = '' ;
+		var lang = me.getLanguage() ;
+		var i = me.wd.getItem ( q ) ;
+		if ( typeof i == 'undefined' ) i = me.wdl.getItem ( q ) ;
+		if ( typeof i == 'undefined' ) {
+			h = "<span class='" + sanitizeID(q) + "'>" + q + "</span>" ;
+			me.load_labels[q] = 1 ;
+		} else {
+			h = i.getLabel ( lang ) ;
+		}
+		return h ;
+	} ,
+	
+	renderTableHeader : function ( striped ) {
+		var me = this ;
+		var h = '' ;
+		h += "<table class='table table-condensed table-bordered tablesorter " ;
+		if ( striped ) h += "table-striped" ;
+		h += "'>" ;
+		h += "<thead><tr>" ;
+		$.each ( me.list.config.columns , function ( k , c ) {
+			var h2 = '' ;
+			var style = '' ;
+			if ( typeof c.labels != 'undefined' && typeof c.labels[me.getLanguage()] != 'undefined' ) {
+				h2 = c.labels[me.getLanguage()] ;
+			} else if ( c.type == 'property' ) {
+				h2 = me.getAutoLabel ( c.p ) ;
+				if ( c.p == 'P18' ) style = "width:" + me.list.config.thumbsize + "px" ;
+			} else if ( c.type == 'prop_qual' ) {
+				h2 = me.getAutoLabel ( c.p ) + "/" + me.getAutoLabel ( c.qual ) ;
+			} else if ( c.type == 'prop_item_qual' ) {
+				h2 = me.getAutoLabel ( c.p ) + ":" + me.getAutoLabel ( c.item ) + "/" + me.getAutoLabel ( c.qual ) ;
+			} else if ( c.type == 'sitelink' ) {
+				h2 = c.wiki ;
+			} else h2 = ucFirst ( c.type ) ;
+			
+			h += "<th" ;
+			if ( style != '' ) h += " style='" + style + "'" ;
+			h += ">" + h2 + "</th>" ;
+		} ) ;
+		h += "</tr></thead><tbody>" ;
+		return h ;
+	} ,
+	
+	renderTableBody : function ( qs ) {
+		var me = this ;
+		var h = '' ;
+		$.each ( qs , function ( k1 , q ) {
+			h += "<tr>" ;
+			$.each ( me.list.config.columns , function ( k2 , c ) {
+				h += me.renderListCell ( q , c ) ;
+			} ) ;
+			h += "</tr>" ;
+		} ) ;
+		return h ;
+	} ,
+	
+	renderSublist : function ( qs ) {
+		var me = this ;
+		var h = '' ;
+		h += me.renderTableHeader(true) ;
+		h += me.renderTableBody(qs) ;
+		h += "</tbody></table>" ;
+		$('#main').append ( me.renderDivRow(h) ) ;
+	} ,
+	
+	renderSection : function ( sec ) {
+		var me = this ;
+		$.each ( sec.order , function ( k , v ) {
+			var cursec = sec.sections[v] ;
+			var h = "<" + sec.tag + ">" ;
+			h += me.getSectionHeading ( sec , v ) ;
+			h += "</" + sec.tag + ">" ;
+			$('#main').append ( me.renderDivRow(h) ) ;
+			if ( sec.leaf ) {
+				me.renderSublist ( cursec.qs ) ;
+			} else {
+				me.renderSection ( cursec ) ;
+			}
+		} ) ;
+	} ,
+	
+	renderJoinedSections : function ( sec ) {
+		var me = this ;
+		var h = '' ;
+		var is_root = false ;
+		
+		if ( typeof sec == 'undefined' ) {
+			is_root = true ;
+			h += me.renderTableHeader(false) ;
+			sec = me.sections ;
+		}
+	
+	
+		$.each ( sec.order , function ( k , v ) {
+			var cursec = sec.sections[v] ;
+			h += "<tr><th colspan='" + me.list.config.columns.length + "'>" ;
+			h += "<" + sec.tag + ">" ;
+			h += me.getSectionHeading ( sec , v ) ;
+			h += "</" + sec.tag + "></th></tr>" ;
+			if ( sec.leaf ) {
+				h += me.renderTableBody(cursec.qs) ;
+			} else {
+				h += me.renderJoinedSections ( cursec ) ;
+			}
+		} ) ;
+	
+	
+		if ( is_root ) {
+			h += "</tbody></table>" ;
+			$('#main').append ( me.renderDivRow(h) ) ;
+		} else return h ;
+	} ,
+	
+	getSectionHeading : function  ( sec , v ) {
+		var me = this ;
+		var h = 'Default section title' ;
+
+		if ( sec.meta.type == 'property' ) {
+			h = me.getAutoLabel ( v ) ;
+		} else if ( sec.meta.type == 'prop_qual' ) {
+			var parts = v.split(/:\s*/) ;
+			h = me.getAutoLabel ( parts[0] ) + ": " + me.getAutoLabel ( parts[1] ) ;
+			h = me.getAutoLabel ( parts[1] ) ;
+		} else {
+			h = me.getAutoLabel ( v ) ;
+			console.log ( "getSectionHeading: " , sec , v ) ;
+		}
+		return h ;
+	} ,
+
+	renderTabbedSections : function ( sec ) {
+		var me = this ;
+		var h = '' ;
+		var is_root = false ;
+		
+		if ( typeof sec == 'undefined' ) {
+			is_root = true ;
+			sec = me.sections ;
+
+			h += "<div>" ;
+			h += '<ul id="tab_header_links" class="nav nav-tabs" role="tablist">' ;
+			var cnt = 0 ;
+			$.each ( sec.order , function ( k , v ) {
+				var cursec = sec.sections[v] ;
+				cursec.tabkey = 'tab'+cnt ;
+				h += '<li role="presentation"' ;
+				if ( cnt == 0 ) h += ' class="active"' ;
+				h += '><a href="#'+cursec.tabkey+'" aria-controls="'+cursec.tabkey+'" role="tab" data-toggle="tab">'+me.getSectionHeading(sec,v)+'</a></li>' ;
+				cnt++ ;
+			} ) ;
+			h += "</ul>" ;
+			h += '<div class="tab-content">' ;
+		}
+	
+		var cnt = 0 ;
+		$.each ( sec.order , function ( k , v ) {
+			var cursec = sec.sections[v] ;
+			
+			h += '<div role="tabpanel" class="tab-pane' ;
+			if ( cnt == 0 ) h += ' active' ;
+			h += '" id="'+cursec.tabkey+'">' ;
+			
+			h += me.renderTableHeader(false) ;
+			if ( !is_root ) {
+				h += "<tr><th colspan='" + me.list.config.columns.length + "'>" ;
+				h += "<" + sec.tag + ">" ;
+				h += me.getSectionHeading ( sec , v ) ;
+				h += "</" + sec.tag + "></th></tr>" ;
+			}
+			if ( sec.leaf ) {
+				h += me.renderTableBody(cursec.qs) ;
+			} else {
+				h += me.renderJoinedSections ( cursec ) ;
+			}
+			h += "</tbody></table>" ;
+			h += "</div>" ;
+			cnt++ ;
+		} ) ;
+	
+	
+		if ( is_root ) {
+			h += "</div></div>" ;
+			$('#main').append ( me.renderDivRow(h) ) ;
+			$('#tab_header_links a').click ( function () {
+				me.pingThumbnails() ;
+			} ) ;
+		} else return h ;
+	} ,
+	
+	renderSingleSection : function () {
+		var me = this ;
+		var h = '' ;
+		h += me.renderTableHeader(true) ;
+		h += me.renderTableBody(me.list.items) ;
+		h += "</tbody></table>" ;
+		$('#main').append ( me.renderDivRow(h) ) ;
+	} ,
+
+
+	pingThumbnails : function () {
+		setTimeout ( function () {
+			$(window).scroll() ;
+		} , 10 ) ;
+	} ,
+	
+	renderDivRow : function ( h ) {
+		return "<div class='row'><div class='col-md-12'>" + h + "</div></div>" ;
+	} ,
+
+	i18n : {
+		last_update : { en:'Last update: $1' , de:'Letztes Update: $1' } ,
+		list_by : { en:'by <a href="//www.wikidata.org/wiki/User:$1" target="_blank" class="wikidata">$2</a>' , de:'von <a href="//www.wikidata.org/wiki/User:$1" target="_blank" class="wikidata">$2</a>' } ,
+		find_images : { en:'Find images' , de:'Suche Bilder' } ,
+		title_list_options_toggle : { en:'Show/hide list view options' , de:'Einstellungen anzeigen/verbergen' } ,
+		items_total : { en:'$1 items in list' , de:'$1 Einträge in der Liste' } ,
+		lo_table : { en:'Sectioning:' , de:'Sektionen:' } ,
+		lo_table_sectioned : { en:'one table per section' , de:'Eine Tabelle pro Sektion' } ,
+		lo_table_joined : { en:'one big table' , de:'Eine große Tabelle' } ,
+		lo_table_tabbed : { en:'tabbed' , de:'Mit Tab-Köpfen' } ,
+		add_new_section : { en:'Add new section' , de:'Neue Sektion hinzufügen' } ,
+		sections : { en:'Sections' , de:'Sektionen' } ,
+		misc : { en:'Other' , de:'Andere' } ,
+		data : { en:'Data' , de:'Daten' } ,
+		view : { en:'View' , de:'Ansicht' } ,
+		columns : { en:'Columns' , de:'Spalten' } ,
+		update : { en:'Update' , de:'Aktuakisieren' } ,
+		col_type : { en:'Type' , de:'Typ' } ,
+		col_parameters : { en:'Parameters' , de:'Parameter' } ,
+		col_labels : { en:'Static headings' , de:'Feste Überschriften' } ,
+		sec_labels : { en:'Misc label' , de:'Überschrift für "sonstige" Sektion' } ,
+		autolist : { en:'AutoList' } ,
+		add_lang_title : { en:'Add label in language:' , de:'Sprach-Code für Überschrift:' } ,
+		language : { en:'Language' , de:'Sprache' } ,
+		name_prop_qual : { en:'Property with Qualifier' } ,
+		name_prop_item_qual : { en:'Property with Item/Qualifier' } ,
+		name_sitelink : { en:'Sitelink' } ,
+		update_list_items : { en:'Force list update' , de:'Liste aktualisieren' } ,
+		login1 : { en:'Log in' , de:'Einloggen' } ,
+		login2 : { en:'to create your own lists!' , de:'um eigene Listen zu erstellen!' } ,
+		logged_in_as : { en:'Logged in as' , de:'Eingeloggt als' } ,
+		save_list : { en:'Save list' , de:'Liste speichern' } ,
+		save_list_as : { en:'Save list as' , de:'Liste speichern unter' } ,
+		sparql_caution : { en:'you will need to save and force-update the list for changes to take effect' , de:'Du musst die Liste speichern und aktualisieren, um die Änderungen zu sehen' } ,
+		section_threshold : { en:'Threshold' , de:'Schwellwert' } ,
+		last_lists_created : { en:'Latest lists' , de:'Neueste Listen' } ,
+		your_lists : { en:'Your lists' , de:'Deine Listen' } ,
+		list_name : { en:'List name' , de:'Name der Liste' } ,
+		list_owner : { en:'Owner' , de:'Erstellt von' } ,
+		items_in_list : { en:'Items in list' , de:'Einträge in der Liste' } ,
+		list_created : { en:'List created on' , de:'List erstellt am' } ,
+		about_this_tool : { en:'About this tool' , de:'Über dieses Tool' } ,
+		create_new_list : { en:'Create new list' , de:'Neue Liste erstellen' } ,
+		precision : { en:'Precision' , de:'Präzision' } ,
+		search_placeholder : { en:'Text or Q number(s)' , de:'Text oder Q-Nummer(n)' } ,
+		search_button : { en:'Find' , de:'Finden' } ,
+		search_results : { en:'Search results' , de:'Suchergebnisse' } ,
+		no_search_results : { en:'No results found.' , de:'Keine Suchergebnisse gefunden.' } ,
+	} ,
+
+	t : function () {
+		var me = this ;
+		var key = arguments[0] ;
+		if ( typeof me.i18n[key] == 'undefined' ) return "<i>UNDEFINED I18N KEY "+key+"</i>" ;
+		var lang = me.getLanguage() ;
+		if ( typeof me.i18n[key][lang] == 'undefined' ) lang = 'en' ; // FALLBACK
+		if ( typeof me.i18n[key][lang] == 'undefined' ) return "<i>NO SUITABLE VALUE FOR I18N KEY "+key+"</i>" ;
+		var ret = me.i18n[key][lang] ;
+		$.each ( arguments , function ( k , v ) {
+			if ( k == 0 ) return ;
+			ret = ret.replace ( '$'+k , v ) ;
+		} ) ;
+		return ret ;
+	} ,
+	
+	
+	generateLanguageDropdown : function ( id ) {
+		var me = this ;
+		var h = '' ;
+		h += "<select id='" + id + "'>" ;
+		var lk = [] ;
+		$.each ( me.languages , function ( code , name ) { lk.push(code) } ) ;
+		lk = lk.sort ( function ( a , b ) {
+			if ( me.languages[a].toLowerCase() < me.languages[b].toLowerCase() ) return -1 ;
+			if ( me.languages[a].toLowerCase() > me.languages[b].toLowerCase() ) return 1 ;
+			return 0 ;
+		} ) ;
+		
+		$.each ( lk , function ( dummy , code ) {
+			h += "<option value='" + code + "'" ;
+			h += code==me.language?'selected':'' ;
+			h += ">" + me.languages[code] + " [" + code + "]</option>" ;
+		} ) ;
+		h += "</select>" ;
+		return h ;
+	} ,
+	
+
+	showListOptions : function ( callback ) {
+		
+		function renderColumnSettings ( num , c ) {
+		
+			var colsec = c.is_section ? 'section' : 'column' ;
+
+			function render_ig ( num , classname , p , pq ) {
+				var input_type = 'number' ;
+				var width = 80 ;
+				var placeholder = pq ;
+				var value = (''+p).replace(/\D/g,'') ;
+
+				if ( pq == 'Q' ) width = 120 ;
+				if ( pq == 'P' || pq == 'Q' ) placeholder += ' number' ;
+
+				if ( pq.toLowerCase() == 'wiki' ) {
+					width = 160 ;
+					input_type = 'text' ;
+					value = (p||'') ;
+				}
+				
+				if ( classname == 'section_precision' ) {
+					width = 150 ;
+				}
+
+				var h = '' ;
+				h += '<div class="input-group" style="margin-right:5px;">' ;
+				h += '<span class="input-group-addon">'+pq+'</span>' ;
+				h += '<input type="'+input_type+'" type2="'+colsec+'" class="form-control '+classname+'" placeholder="'+placeholder+'" value="' + value + '" style="text-align:right;width:'+width+'px;" />' ;
+				h += '</div>' ;
+				return h ;
+			}
+
+			var h = '' ;
+			h += "<tr col='"+num+"' style='margin-bottom:5px;'>" ;
+			h += "<td nowrap style='text-align:right;font-family:Courier'>" + (num+1) + "</td>" ;
+			
+			
+//			h += "<div style='display:inline-block'>" ;
+			h += "<td nowrap>" ;
+			h += '<select class="form-control column_type" type="'+colsec+'">' ;
+			$.each ( c.is_section ? me.section_types : me.column_types , function ( k , v ) {
+				var name = ucFirst ( v ) ;
+				if ( typeof me.i18n['name_'+v] != 'undefined' ) name = me.t('name_'+v) ;
+				h += "<option value='" + v + "'" ;
+				if ( v == c.type ) h += " selected" ;
+				h += ">" + name ;
+				h += "</option>" ;
+			} ) ;
+			h += '</select> ' ;
+			h += "</td>" ;
+
+
+			h += "<td nowrap>" ;
+			if ( c.type == 'property' ) {
+				h += render_ig ( num , 'col_prop' , c.p , 'P' ) ;
+			} else if ( c.type == 'prop_qual' ) {
+				h += render_ig ( num , 'col_prop' , c.p , 'P' ) ;
+				h += render_ig ( num , 'col_qual' , c.qual , 'P' ) ;
+			} else if ( c.type == 'prop_item_qual' ) {
+				h += render_ig ( num , 'col_prop' , c.p , 'P' ) ;
+				h += render_ig ( num , 'col_item' , c.item , 'Q' ) ;
+				h += render_ig ( num , 'col_qual' , c.qual , 'P' ) ;
+			} else if ( c.type == 'sitelink' ) {
+				h += render_ig ( num , 'col_wiki' , c.wiki , 'Wiki' ) ;
+			}
+
+			if ( c.is_section ) {
+				h += render_ig ( num , 'section_threshold' , c.min , me.t('section_threshold') ) ;
+				var pi ;
+				if ( c.type == 'property' ) pi = me.wd.getItem(c.p) ;
+				if ( typeof pi != 'undefined' && pi.raw.datatype == 'time' ) {
+					h += render_ig ( num , 'section_precision' , (c.precision||'') , me.t('precision') ) ;
+				}
+			}
+			
+			h += "</td>" ;
+			
+			var base = c.is_section ? me.list.config.sections : me.list.config.columns ;
+
+			h += "<td style='min-width:200px;' nowrap>" ;
+			h += '<div class="btn-group" role="group">' ;
+			if ( base.length > 1 || c.is_section ) h += "<button class='btn btn-danger remove_column' type='"+colsec+"'><span class='glyphicon glyphicon-remove' aria-hidden='true'></span></button>" ;
+			h += "<button class='btn btn-success add_column' type='"+colsec+"'><span class='glyphicon glyphicon-plus' aria-hidden='true'></span></button>" ;
+			if ( c.num > 0 ) h += "<button class='btn btn-default column_up' type='"+colsec+"'><span class='glyphicon glyphicon-triangle-top' aria-hidden='true'></span></button>" ;
+			if ( c.num+1 < base.length ) h += "<button class='btn btn-default column_down' type='"+colsec+"'><span class='glyphicon glyphicon-triangle-bottom' aria-hidden='true'></span></button>" ;
+			h += "</div>" ;
+			h += "</td>" ;
+			
+
+			// Static translations/default section names
+			h += "<td style='width:100%'>" ;
+			$.each ( (c.labels||[]) , function ( k , v ) {
+				h += "<div class='column_label'>" ;
+				h += '<div class="input-group">' ;
+				h += '<span class="input-group-addon">'+k+'</span>' ;
+				h += '<input type="text" class="form-control col_header" lang="'+k+'" type2="'+colsec+'" placeholder="translation" value="' + escattr(v) + '" style="width:100px;" />' ;
+				h += '<span class="input-group-addon remove_lang" lang="'+k+'" col="'+num+'"><span class="glyphicon glyphicon-remove" aria-hidden="true"></span></span>' ;
+				h += '</div>' ;
+				h += '</div>' ;
+			} ) ;
+			h += "<div class='column_label'>" ;
+			h += '<button class="btn btn-default add_lang" type="'+colsec+'" col="'+num+'"><span class="glyphicon glyphicon-plus" aria-hidden="true"></span></button>' ;
+			h += "</div>" ;
+			h += "</td>" ;
+						
+			h += "</tr>" ;
+
+			return h ;
+		}
+	
+		var me = this ;
+		var h = '' ;
+		h += '<div id="list_tab_header">' ;
+		h += '<ul class="nav nav-tabs" role="tablist">' ;
+		h += '<li role="presentation"><a href="#lo_main" aria-controls="lo_main" role="tab" data-toggle="tab">'+me.t('data')+'</a></li>' ;
+		h += '<li role="presentation"><a href="#lo_view" aria-controls="lo_view" role="tab" data-toggle="tab">'+me.t('view')+'</a></li>' ; ///  
+		h += '<li role="presentation"><a href="#lo_columns" aria-controls="lo_columns" role="tab" data-toggle="tab">'+me.t('columns')+'</a></li>' ;
+		h += '<li role="presentation"><a href="#lo_sections" aria-controls="lo_sections" role="tab" data-toggle="tab">'+me.t('sections')+'</a></li>' ;
+		h += '</ul>' ;
+		h += '<div class="tab-content">' ;
+		
+		h += '<div role="tabpanel" class="tab-pane" id="lo_main">' ;
+		h += "<div style='display:table'>" ;
+		h += "<div>Name : <input type='text' id='listname' style='width:300px' /></div>" ;
+		h += "<div>SPARQL: <small>(<i>" + me.t('sparql_caution') + "</i>)</small></div>" ;
+		h += "<br/><textarea rows=3 id='sparql' style='width:300px'></textarea>" ;
+		h += '</div>' ;
+		h += '</div>' ;
+		
+		if ( typeof me.list.config.table == 'undefined' ) me.list.config.table = 'sectioned' ;
+		h += '<div role="tabpanel" class="tab-pane" id="lo_view">' ;
+		h += "<div style='display:table'>" ;
+		h += "<div>" + me.t('language') + " : " + me.generateLanguageDropdown('lo_view_lang') + "</div>" ;
+		h += "<div>" ;
+		h += me.t('lo_table') + ' ' ;
+		$.each ( ['sectioned','joined','tabbed'] , function ( k , v ) {
+			h += "<label style='margin-right:5px'><input type='radio' name='lo_table' value='" + v + "'" ;
+			if ( v == me.list.config.table ) h += ' checked' ;
+			h += "> " + me.t('lo_table_'+v) + "</label>" ;
+		} ) ;
+		h += "</div>" ;
+		h += '</div>' ;
+		h += '</div>' ;
+
+		// Columns
+		h += '<div role="tabpanel" class="tab-pane" id="lo_columns">' ;
+		h += "<form class='form form-inline'>" ;
+		h += "<table class='table table-condensed'>" ;
+		h += "<thead><tr><th>#</th><th>"+me.t('col_type')+"</th><th>"+me.t('col_parameters')+"</th><th></th><th>"+me.t('col_labels')+"</th></tr></thead>" ;
+		h += "<tbody>" ;
+		$.each ( me.list.config.columns , function ( num , c ) {
+			h += renderColumnSettings ( num , c ) ;
+		} ) ;
+		h += "</tbody></table>" ;
+		h += "</form>" ;
+		h += '</div>' ;
+
+
+		// Sections
+		h += '<div role="tabpanel" class="tab-pane" id="lo_sections">' ;
+		h += "<form class='form form-inline'>" ;
+		h += "<table class='table table-condensed'>" ;
+		h += "<thead><tr><th>#</th><th>"+me.t('col_type')+"</th><th>"+me.t('col_parameters')+"</th><th></th><th>"+me.t('sec_labels')+"</th></tr></thead>" ;
+		h += "<tbody>" ;
+		$.each ( me.list.config.sections , function ( num , c ) {
+			c.is_section = true ;
+			h += renderColumnSettings ( num , c ) ;
+		} ) ;
+		h += "</tbody></table>" ;
+		if ( me.list.config.sections.length == 0 ) {
+			h += "<div><button class='btn btn-large btn-ok' id='add_section'>" + me.t('add_new_section') + "</button></div>" ;
+		}
+		h += "</form>" ;
+		h += '</div>' ;
+
+
+		h += "<div style='margin-top:10px;margin-bottom:10px;'>" ;
+		h += "<button class='disabled btn btn-large btn-primary' id='col_changed_update'>" + me.t('update') + "</button>" ;
+		if ( typeof me.username != 'undefined' && me.username != '' ) {
+			if ( me.list.owner == me.username && typeof me.list.id != 'undefined' ) h += " <button class='disabled btn btn-large btn-default' id='save_list'>" + me.t('save_list') + "</button>" ;
+			h += " <button class='disabled btn btn-large btn-default' id='save_list_as'>" + me.t('save_list_as') + "</button>" ;
+		}
+		h += '</div>' ;
+
+		h += '</div>' ;
+		h += '</div>' ;
+		
+		$('#list_options').html(h).show() ;
+		
+		// HANDLERS
+		
+		if ( me.list.changed ) {
+			$('#save_list').prop('disabled', false).removeClass('disabled').css('cursor','pointer') ;
+			$('#save_list_as').prop('disabled', false).removeClass('disabled').css('cursor','pointer') ;
+		}
+		
+		$('#add_section').click ( function () {
+			var base = me.list.config.sections ;
+			base.push({type:'property',p:'P31',min:5}) ;
+			$.each ( base , function ( k , v ) { v.num = k ; } ) ;
+			refreshAndShowCurrentTab() ;
+		} ) ;
+		
+		$('span.remove_lang').css('cursor','pointer').click ( function () {
+			var o = $(this) ;
+			var col = o.attr('col') ;
+			var lang = o.attr('lang') ;
+			delete me.list.config.columns[col].labels[lang] ;
+			$(o.parents('div.column_label').get(0)).remove() ;
+			enableColumnUpdateButton() ;
+		} ) ;
+
+		$('input[name="lo_table"]').change ( function () {
+			var v = $('input[name="lo_table"]:checked').val() ;
+			me.list.config.table = v ;
+			me.renderList() ;
+		} ) ;
+		
+		$('button.add_lang').css('cursor','pointer').click ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') * 1 ;
+			var lang = prompt ( me.t('add_lang_title') ) ;
+			var type = o.attr('type') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			if ( lang === null || lang == '' ) return ;
+			if ( typeof base[col].labels == 'undefined' ) base[col].labels = {} ;
+			if ( typeof base[col].labels[lang] == 'undefined' ) {
+				base[col].labels[lang] = '' ;
+			}
+			refreshAndShowCurrentTab() ;
+		} ) ;
+		
+		
+		
+		function refreshAndShowCurrentTab () {
+			var id = $('#list_tab_header div.tab-pane.active').attr('id') ;
+			me.showListOptions ( function(){
+				$('#list_tab_header a[href="#'+id+'"]').tab('show') ;
+				enableColumnUpdateButton();
+			} ) ;
+		}
+		
+		
+		$('button.add_column').css('cursor','pointer').click ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') * 1 ;
+			var type = o.attr('type') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			var n = {type:'property',p:'P31'} ;
+			if ( type == 'section' ) n.min = 5 ;
+			base.splice(col+1,0,n) ;
+			$.each ( base , function ( k , v ) { v.num = k ; } ) ;
+			refreshAndShowCurrentTab() ;
+		} ) ;
+		
+		$('button.remove_column').css('cursor','pointer').click ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') * 1 ;
+			var type = o.attr('type') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			base.splice(col,1) ;
+			$.each ( base , function ( k , v ) { v.num = k ; } ) ;
+			refreshAndShowCurrentTab() ;
+		} ) ;
+
+		$('button.column_up').css('cursor','pointer').click ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') * 1 ;
+			var tmp = me.list.config.columns[col] ;
+			var type = o.attr('type') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			base.splice(col,1) ;
+			base.splice(col-1,0,tmp) ;
+			$.each ( base , function ( k , v ) { v.num = k ; } ) ;
+			refreshAndShowCurrentTab() ;
+		} ) ;
+
+		$('button.column_down').css('cursor','pointer').click ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') * 1 ;
+			var tmp = me.list.config.columns[col] ;
+			var type = o.attr('type') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			base.splice(col,1) ;
+			base.splice(col+1,0,tmp) ;
+			$.each ( base , function ( k , v ) { v.num = k ; } ) ;
+			refreshAndShowCurrentTab() ;
+		} ) ;
+		
+		
+		
+		$('#lo_view_lang').change ( function () {
+			var v = $('#lo_view_lang').val() ;
+			me.language = v ;
+			if ( typeof me.list.id != 'undefined' ) {
+				window.location.hash = "list="+me.list.id+"&lang="+v ;
+			}
+			me.renderList() ;
+		} ) ;
+		
+		$('#col_changed_update').click ( function () {
+			var id = $('#list_tab_header div.tab-pane.active').attr('id') ;
+			var tmp = [] ;
+			me.addAuxItems ( tmp ) ;
+			me.wd.getItemBatch ( tmp , function () {
+				me.renderList(function(){
+					$('#list_tab_header a[href="#'+id+'"]').tab('show') ;
+				}) ;
+			} ) ;
+		} ) ;
+		
+		function saveList ( new_list ) {
+			me.list.changed = false ;
+			$('#save_list').prop('disabled', true).addClass('disabled') ;
+			$('#save_list_as').prop('disabled', true).addClass('disabled') ;
+			if ( new_list && typeof me.list.id != 'undefined' ) delete me.list.id ;
+			if ( new_list ) {
+				var s = prompt ( "List name" , me.list.name ) ;
+				if ( s !== null && s != '' ) me.list.name = s ;
+			}
+			me.list.owner = me.username ;
+			me.loading ( true ) ;
+			$.post ( './api.php' , {
+				query:'set_list',
+				list:JSON.stringify(me.list)
+			} , function ( d ) {
+				me.loading ( false ) ;
+				if ( d.status != 'OK' ) {
+					alert ( d.status ) ;
+					return ;
+				}
+				if ( typeof me.list.id == 'undefined' ) {
+					me.run ( { list:d.id , lang:me.getLanguage() } ) ;
+				} else {
+					me.loadList ( d.id ) ;
+				}
+//				me.renderList () ;
+//				me.run ( { list:d.id , lang:me.getLanguage() } ) ;
+			} , 'json' ) ;
+		}
+		
+		$('#save_list').click ( function () {
+			saveList ( false ) ;
+		} ) ;
+
+		$('#save_list_as').click ( function () {
+			saveList ( true ) ;
+		} ) ;
+
+		
+		function enableColumnUpdateButton() {
+			$('#col_changed_update').prop('disabled', false).removeClass('disabled') ;
+			me.list.changed = true ;
+			$('#save_list').prop('disabled', false).removeClass('disabled') ;
+			$('#save_list_as').prop('disabled', false).removeClass('disabled') ;
+		}
+		
+		
+		
+		
+		$('input.section_precision').keyup ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') ;
+			var precision = o.val() * 1 ;
+			if ( precision == 0 ) precision = undefined ;
+			var type = o.attr('type2') ;
+			var base = me.list.config.sections ;
+			if ( base[col].precision == precision ) return ; // No change
+			base[col].precision = precision ;
+			enableColumnUpdateButton() ;
+		} ) ;
+		
+		$('input.section_threshold').keyup ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') ;
+			var min = o.val() * 1 ;
+			var type = o.attr('type2') ;
+			var base = me.list.config.sections ;
+			if ( base[col].min == min ) return ; // No change
+			base[col].min = min ;
+			enableColumnUpdateButton() ;
+		} ) ;
+		
+		$('input.col_header').keyup ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') ;
+			var lang = o.attr('lang') ;
+			var v = o.val() ;
+			var type = o.attr('type2') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			if ( base[col].labels[lang] == v ) return ;
+			base[col].labels[lang] = v ;
+			enableColumnUpdateButton() ;
+		} ) ;
+
+	
+		$('input.col_wiki').keyup ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') ;
+			var wiki = $.trim ( o.val().toLowerCase() ) ;
+			var base = me.list.config.columns ;
+			if ( base[col].wiki == wiki ) return ; // No change
+			base[col].wiki = wiki ;
+			enableColumnUpdateButton() ;
+		} ) ;
+		$('input.col_prop').keyup ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') ;
+			var p = 'P' + o.val().replace(/\D/g,'') ;
+			var type = o.attr('type2') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			if ( base[col].p == p ) return ; // No change
+			base[col].p = p ;
+			enableColumnUpdateButton() ;
+		} ) ;
+		$('input.col_item').keyup ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') ;
+			var q = 'P' + o.val().replace(/\D/g,'') ;
+			var type = o.attr('type2') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			if ( base[col].item == q ) return ; // No change
+			base[col].item = q ;
+			enableColumnUpdateButton() ;
+		} ) ;
+		$('input.col_qual').keyup ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') ;
+			var qual = 'P' + o.val().replace(/\D/g,'') ;
+			var type = o.attr('type2') ;
+			var base = type == 'column' ? me.list.config.columns : me.list.config.sections ;
+			if ( base[col].qual == qual ) return ; // No change
+			base[col].qual = qual ;
+			enableColumnUpdateButton() ;
+		} ) ;
+
+		$('input.section_threshold').change ( function () { $(this).keyup() } ) ;
+		$('input.col_header').change ( function () { $(this).keyup() } ) ;
+		$('input.col_prop').change ( function () { $(this).keyup() } ) ;
+		$('input.col_item').change ( function () { $(this).keyup() } ) ;
+		$('input.col_qual').change ( function () { $(this).keyup() } ) ;
+
+		
+		$('select.column_type').change ( function () {
+			var o = $(this) ;
+			var col = $(o.parents('tr').get(0)).attr('col') ;
+			var type = $(o.find(':selected')).val() ;
+			var type2 = o.attr('type') ;
+			var base = type2 == 'column' ? me.list.config.columns : me.list.config.sections ;
+			base[col].type = type ;
+			refreshAndShowCurrentTab() ;
+		} ) ;
+		
+		$('col_changed_update').prop('disabled', true);
+
+		$('#listname').val ( me.list.name ) ;
+		$('#sparql').val ( me.list.sparql ) ;
+		$('#listname').keyup ( function () {
+			var o = $(this) ;
+			me.list.name = o.val() ;
+			$('#title').text ( me.list.name ) ;
+			enableColumnUpdateButton() ;
+		} ) ;
+		$('#sparql').keyup ( function () {
+			var o = $(this) ;
+			me.list.sparql = o.val() ;
+			$('#title').text ( me.list.name ) ;
+			enableColumnUpdateButton() ;
+		} ) ;
+
+		
+//		$('#list_tab_header li > a:last').tab('show') ; // TESTING
+		$('#list_tab_header a[href="#lo_view"]').tab('show') ;
+		
+		if ( typeof callback != 'undefined' ) callback() ;
+	} ,
+
+	updateListInfo : function () {
+		var me = this ;
+		var h = '' ;
+		
+		h += "<div class='listinfo_cell'>" ;
+		h += '<button id="list_options_toggle" type="button" class="btn btn-default btn-md" title="'+me.t('title_list_options_toggle')+'"><span class="glyphicon glyphicon-triangle-'+(me.list_options_is_expanded?'bottom':'right')+'" aria-hidden="true"></span></button>' ;
+		h += "</div>" ;
+		
+
+		h += "<div class='listinfo_cell'>" ;
+		h += me.t('list_by' , escattr(me.list.owner.replace(/ /g,'_')) , me.list.owner ) ;
+		h += "</div>" ;
+
+		h += "<div class='listinfo_cell'>" ;
+		h += me.t('items_total',me.list.items.length) ;
+		h += "</div>" ;
+
+		h += "<div class='listinfo_cell'>" ;
+		h += me.t('last_update' , me.list.last_update.replace(/[T\+]/g,' ') ) ;
+		h += "</div>" ;
+
+		h += "<div class='listinfo_cell'>" ;
+		h += "<a href='#' class='update_list_items'>" + me.t('update_list_items' ) + "</a>" ;
+		h += "</div>" ;
+
+		h += "<div class='listinfo_cell'>" ;
+		h += "<a href='https://tools.wmflabs.org/fist/wdfist/?remove_used=1&no_images_only=1&prefilled=1&sparql=" + escattr(encodeURIComponent(me.list.sparql)) + "' class='external' target='_blank'>" + me.t('find_images' ) + "</a>" ;
+		h += "</div>" ;
+		
+		h += "<div class='listinfo_cell'>" ;
+		h += "<a href='https://tools.wmflabs.org/autolist/?sparql="+escattr(encodeURIComponent(me.list.sparql))+"&run=Run' class='external' target='_blank'>" + me.t('autolist' ) + "</a>" ;
+		h += "</div>" ;
+
+		
+		$('#list_info').html ( h ) ;
+		$('#list_options_toggle').click ( function () {
+			me.list_options_is_expanded = !me.list_options_is_expanded ;
+			me.updateListInfo() ;
+		} ) ;
+		
+		$('a.update_list_items').click ( function () {
+			me.loading ( true ) ;
+			$.get ( './api.php?query=update_list&list='+me.list.id , function ( d ) {
+				me.loading ( false ) ;
+				me.loadAndRenderList ( me.list.id ) ;
+			} , 'json' ) ;
+			return false ;
+		} ) ;
+		
+		$('#list_options').hide() ;
+		if ( me.list_options_is_expanded ) me.showListOptions() ;
+	} ,
+
+	loadThumb : function ( img ) {
+		var me = this ;
+//		if ( img.css('display') === 'none' ) return ; // Hacking around Chrome bug; should be: 
+		if ( !me.isChrome && !img.is(':visible') ) return ;
+//		if ( img.is(':hidden') ) return ;
+
+		if ( !img.is_on_screen() ) return ;
+		
+		img.addClass('thumb').removeClass('pre_thumb') ;
+		
+		var filename ;
+		$.each ( me.thumbs2load , function ( k , v ) {
+			if ( v.id != img.attr('id') ) return ;
+			filename = v.image ;
+			return false ;
+		} ) ;
+		if ( typeof filename == 'undefined' ) { // Paranoia
+			console.log ( "FAILED to load " + img.attr('id') ) ;
+			return ;
+		}
+		
+		$.getJSON ( 'https://commons.wikimedia.org/w/api.php?callback=?' , {
+			action:'query',
+			titles:'File:'+filename,
+			prop:'imageinfo',
+			iiprop:'url|size',
+			iiurlwidth:(me.list.config.thumbsize||120),
+			iiurlheight:(me.list.config.thumbsize||120),
+			format:'json'
+		} , function ( d ) {
+			$.each ( d.query.pages , function ( k1 , v1 ) {
+				var url = v1.imageinfo[0].thumburl ;
+				me.thumb_cache[filename] = url ;
+				img.attr ( { src:url } ) .show() ;
+			} ) ;
+		} ) ;
+	} ,
+	
+	updateChromeTranslations : function () {
+		var me = this ;
+		$('#about').html ( me.t('about_this_tool') ) ;
+		$('#create_list a').html ( me.t('create_new_list') ) ;
+		$('#search_form input').attr( { 'placeholder' : me.t('search_placeholder') } ) ;
+		$('#search_form button').html( me.t('search_button') ) ;
+	} ,
+	
+	renderList : function ( callback ) {
+		var me = this ;
+		me.updateChromeTranslations() ;
+		$('#main').html ( '' ) ;
+		$('#table_info_row').show() ;
+		me.items2sections () ;
+		me.update_items = {} ;
+		me.load_labels = {} ;
+		me.thumbs2load = [] ;
+
+		if ( me.list.items.length == 0 ) {
+			me.updateListInfo() ;
+			var h = "This list is empty, maybe <a href='./api.php?query=update_list&list=" + me.list.id + "' target='_blank'>update it</a>." ;
+			$('#main').html ( h ) ;
+			return ;
+		}
+
+		if ( (me.list.config.sections||[]).length == 0 ) me.renderSingleSection() ;
+		else if ( me.list.config.table == 'joined' ) me.renderJoinedSections() ;
+		else if ( me.list.config.table == 'sectioned' ) me.renderSection ( me.sections ) ;
+		else me.renderTabbedSections() ; // tabbed
+		
+		$('table.tablesorter').tablesorter() ;
+		$('table.tablesorter').bind("sortEnd",function(e, table) { me.pingThumbnails() } ) ;
+		
+		me.updateListInfo() ;
+//		$('#list_tab_header a[href="#lo_view"]').tab('show') ;
+		
+		if ( !me.isChrome ) me.pingThumbnails() ;
+		
+		me.updateItems ( function () {
+			if ( me.isChrome ) me.pingThumbnails() ;
+			if ( typeof callback == 'undefined' ) callback = function () {} ;
+			callback() ;
+		} ) ;
+	} ,
+	
+	loadAndRenderList : function ( id ) {
+		var me = this ;
+		me.loadList ( id , function () {
+			me.renderList() ;
+		} ) ;
+	} ,
+	
+	checkWidar : function ( callback ) {
+		var me = this ;
+		$.get ( '/api.php?action=get_rights&botmode=1' , function ( d ) {
+			if ( typeof ((d.result.query||{}).userinfo||{}).name == 'undefined' ) {
+				$('#widar').html ( "<a href='/api.php?action=authorize'>"+me.t('login1')+"</a> "+me.t('login2') ) ;
+				// Not logged in
+			} else {
+				me.username = d.result.query.userinfo.name ;
+				$('#widar').html ( me.t('logged_in_as') + ' ' + me.username ) ;
+				$('#create_list').show() ;
+			}
+			callback() ;
+		} , 'json' ) ;
+	} ,
+	
+	generic_counter : 0 ,
+	
+	showListOfLists : function ( header , data ) {
+		var me = this ;
+		var id = 'panel_' + me.generic_counter ;
+		me.generic_counter++ ;
+		var h = '' ;
+		h += "<div style='max-width:960px;margin-left:auto;margin-right:auto;'>" ;
+		h += '<div class="panel panel-primary" id="'+id+'">' ;
+		h += '<div class="panel-heading">'+header+'</div>' ;
+		h += "<div class=''>" ;
+		h += '<table class="table">' ;
+		h += "<thead><tr><th>"+me.t('list_name')+"</th><th>"+me.t('list_owner')+"</th><th style='text-align:right'>"+me.t('items_in_list')+"</th><th style='text-align:right'>"+me.t('list_created')+"</th></tr></thead><tbody>" ;
+		$.each ( data , function ( k , v ) {
+			h += "<tr>" ;
+			h += "<td><a class='load_list' list='" + v.id + "' href='#'>" + v.name + "</a></td>" ;
+			h += "<td nowrap><a target='_blank' class='wikidata' href='//www.wikidata.org/wiki/User:" + escattr(encodeURIComponent(v.owner)) + "'>" + v.owner + "</a></td>" ;
+			h += "<td nowrap class='numeric'>" + prettyNumber(v.number_of_items) + "</td>" ;
+			h += "<td nowrap class='numeric'>" + v.created.replace(/[^0-9:\-]/g,' ') + "</td>" ;
+			h += "</tr>" ;
+		} ) ;
+		h += "</tbody></table>" ;
+		h += "</div>" ;
+		h += '</div>' ;
+		h += '</div>' ;
+		$('#main').append ( h ) ;
+		$('#'+id+' a.load_list').click ( function () {
+			var o = $(this) ;
+			var list_id = o.attr('list') ;
+			me.run ( { list:list_id } ) ;
+			return false ;
+		} ) ;
+	} ,
+	
+	showLists : function () {
+		var me = this ;
+		var lists = {} ;
+		
+		me.list_options_is_expanded = false ;
+
+		$('#main').html ( '' ) ;
+		$('#table_info_row').hide() ;
+		me.loading(true) ;
+		
+		var running = 1 ;
+		function fin () {
+			running-- ;
+			if ( running > 0 ) return ;
+			me.loading(false) ;
+			me.showListOfLists ( me.t('last_lists_created') , lists.last ) ;
+			if ( typeof lists.user != 'undefined' && lists.user.length > 0 ) me.showListOfLists ( me.t('your_lists') , lists.user ) ;
+		}
+
+		if ( typeof me.username != 'undefined' ) {
+			running++ ;
+			$.get('./api.php',{
+				query:'get_user_lists',
+				user:me.username ,
+				limit : 20
+			} , function ( d ) {
+				lists.user = d.data ;
+				fin() ;
+			} , 'json' ) ;
+		}
+		
+		$.get('./api.php',{
+			query:'get_last_lists' ,
+			limit : 20
+		} , function ( d ) {
+			lists.last = d.data ;
+			fin() ;
+		} , 'json' ) ;
+
+		
+	} ,
+	
+	run : function ( o ) {
+		var me = this ;
+		$('#main').html ( '' ) ;
+		$('#title').html ( '' ) ;
+		if ( typeof o != 'undefined' ) {
+			me.params = o ;
+		}
+
+		var hash = [] ;
+		$.each ( me.params , function ( k , v ) {
+			if ( k == '' || typeof v == 'undefined' ) return ;
+			hash.push ( k + '=' + encodeURIComponent(v) ) ;
+		} ) ;
+		window.location.hash = hash.join('&') ;
+		
+/*		if ( me.params.list == 'new' ) {
+			delete me.params.list ;
+			me.createNewList() ;
+		} else*/
+		if ( typeof me.params.list != 'undefined' ) { //&& me.params.list != (me.list||{}).id ) {
+			me.loadAndRenderList ( me.params.list ) ;
+		} else {
+			me.showLists() ;
+		}
+	} ,
+
+	search : function () {
+		var me = this ;
+		var text = $('#search_form input').val() ;
+		$('#main').html ( '' ) ;
+		$.get ( './api.php' , {
+			query:'search',
+			text:text
+		} , function ( d ) {
+			if ( d.data.length == 0 ) {
+				$('#main').html ( me.t('no_search_results') ) ;
+			} else {
+				me.showListOfLists ( me.t('search_results') , d.data ) ;
+			}
+		} , 'json' ) ;
+	} ,
+	
+	
+	hashHasChanged : function () {
+/*		var me = this ;
+		me.getParams() ;
+		if ( typeof me.params.lang != 'undefined' ) me.language = me.params.lang ;
+		me.run() ;*/
+	} ,
+	
+	fin : 1
+} ;
+
+</script>
+
+</head>
+
+<body>
+
+<nav class="navbar navbar-default" style='margin-bottom:2px'>
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#bs-example-navbar-collapse-1" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+      <a class="navbar-brand" href="#">Dynamic Wikidata Lists</a>
+    </div>
+
+    <!-- Collect the nav links, forms, and other content for toggling -->
+    <div class="collapse navbar-collapse" id="bs-example-navbar-collapse-1">
+      <ul class="nav navbar-nav">
+        <li id='create_list'><a href="#">Create new list</span></a></li>
+        <li><a id='about' class='wikidata' target='_blank' href="//www.wikidata.org/wiki/Wikidata:Dynamic lists tool">About this tool</span></a></li>
+
+<!--
+        <li class="active"><a href="#">Link <span class="sr-only">(current)</span></a></li>
+        <li><a href="#">Link</a></li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Dropdown <span class="caret"></span></a>
+          <ul class="dropdown-menu">
+            <li><a href="#">Action</a></li>
+            <li><a href="#">Another action</a></li>
+            <li><a href="#">Something else here</a></li>
+            <li role="separator" class="divider"></li>
+            <li><a href="#">Separated link</a></li>
+            <li role="separator" class="divider"></li>
+            <li><a href="#">One more separated link</a></li>
+          </ul>
+        </li>
+-->
+      </ul>
+
+
+      <form class="navbar-form navbar-left" role="search" id='search_form'>
+        <div class="form-group">
+          <input type="text" class="form-control" placeholder="Search" ACCESSKEY='F' >
+        </div>
+        <button type="submit" class="btn btn-default">Find</button>
+      </form>
+
+
+      <ul class="nav navbar-nav navbar-right">
+      	<li style='text-align:right'>
+      	<div id='widar'></div>
+		<div id='loading'><span class="label label-primary">Loading <span id='loading_message'></span>...</span></div>
+      	</li>
+<!--
+        <li><a href="#">Link</a></li>
+        <li class="dropdown">
+          <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Dropdown <span class="caret"></span></a>
+          <ul class="dropdown-menu">
+            <li><a href="#">Action</a></li>
+            <li><a href="#">Another action</a></li>
+            <li><a href="#">Something else here</a></li>
+            <li role="separator" class="divider"></li>
+            <li><a href="#">Separated link</a></li>
+          </ul>
+        </li>
+-->
+      </ul>
+
+
+
+    </div><!-- /.navbar-collapse -->
+  </div><!-- /.container-fluid -->
+</nav>
+
+
+<div class="container-fluid">
+
+<div class='row'>
+<div class='col-md-12' id='head'>
+<h1 id='title'></h1>
+</div>
+</div>
+
+<div class='row' id='table_info_row' style='padding-bottom:10px;margin-bottom:10px;border-bottom:5px solid #99C7FF;display:none'>
+<div class='col-md-12'><div style='display:table' id='list_info'></div></div>
+<div class='col-md-12'><div id='list_options'></div></div>
+</div>
+
+<div class='row'>
+<div class='col-md-12' id='main'></div>
+</div>
+
+</div>
+
+<script>
+"use strict";
+
+$(document).ready ( function () {
+	listeria.init ( function () {
+	
+		listeria.run () ;
+		window.onhashchange = function () { listeria.hashHasChanged() } ;
+	
+	} ) ;
+} ) ;
+</script>
+
+</body>
+</html>

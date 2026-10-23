@@ -93,6 +93,7 @@ pub mod status_server;
 pub mod telemetry;
 pub mod template;
 pub mod template_params;
+pub mod webserver;
 pub mod wiki;
 pub mod wiki_apis;
 pub mod wiki_page_result;

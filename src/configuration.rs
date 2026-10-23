@@ -6,6 +6,7 @@
 use crate::circuit_breaker::CircuitBreaker;
 use crate::database_pool::DatabasePool;
 use crate::telemetry;
+use crate::webserver::WebserverConfig;
 use crate::wiki::Wiki;
 use anyhow::{Result, anyhow};
 use dashmap::DashMap;
@@ -216,6 +217,8 @@ pub struct Configuration {
     /// Where to push service-dashboard telemetry, from the optional
     /// `telemetry` block (`{"url": …, "token": …}`, both optional).
     telemetry: TelemetryConfig,
+    /// The website's settings, from the optional `webserver` block.
+    webserver: Option<WebserverConfig>,
 }
 
 impl Default for Configuration {
@@ -273,6 +276,7 @@ impl Default for Configuration {
             case_sensitive_wikis: HashSet::new(),
             feature_flags: FeatureFlags::default(),
             telemetry: TelemetryConfig::default(),
+            webserver: None,
         }
     }
 }
@@ -371,6 +375,9 @@ impl Configuration {
         ret.new_from_json_start_end_tempate_mappings(&j).await?;
         if j["mysql"].as_object().is_some() {
             ret.pool = Some(Arc::new(DatabasePool::new(&ret)?));
+        }
+        if j["webserver"].is_object() {
+            ret.webserver = Some(serde_json::from_value(j["webserver"].clone())?);
         }
         ret.validate()?;
         Ok(ret)
@@ -800,6 +807,11 @@ impl Configuration {
 
     pub const fn telemetry(&self) -> &TelemetryConfig {
         &self.telemetry
+    }
+
+    /// The website's settings; `None` without a `webserver` block.
+    pub const fn webserver(&self) -> Option<&WebserverConfig> {
+        self.webserver.as_ref()
     }
 
     pub fn wiki_page_pattern(&self) -> Option<String> {

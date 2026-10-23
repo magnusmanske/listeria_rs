@@ -60,5 +60,13 @@
     "case_sensitive_wikis" : [],
     "telemetry" : {
         "token" : "XXX"
+    },
+    "webserver" : {
+        "dynamic_lists_schema" : "XXX__listeria_p",
+        "max_connections" : 2,
+        "oauth" : {
+            "consumer_key" : "XXX",
+            "consumer_secret" : "XXX"
+        }
     }
 }

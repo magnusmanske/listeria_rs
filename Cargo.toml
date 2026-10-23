@@ -25,6 +25,7 @@ wikimisc = { git = "https://github.com/magnusmanske/wikimisc", features = [
 	"logging",
 	"retry",
 	"seppuku",
+	"server",
 	"site-matrix",
 	"sparql-client",
 	"sparql-table",
@@ -49,6 +50,11 @@ axum = { version = "0.8", features = [
 ] }
 tower-http = { version = "0.6", features = ["full"] }
 tracing = "0.1"
+# OAuth 1.0a signatures and the website's signed login cookie
+hmac = "0.12"
+sha1 = "0.10"
+sha2 = "0.10"
+base64 = "0.22"
 
 [dev-dependencies]
 # `test-util` for tests on a paused clock

@@ -34,10 +34,12 @@ pub const BREAKER_MW_API: &str = "mw_api";
 
 /// Starts pushing to the service dashboard as `component`. Telemetry never
 /// stops the bot: without a token, or on any other error, it is logged and
-/// the bot runs without it.
-pub fn install(component: &str, config: &Configuration) {
+/// the bot runs without it. Without `handle_signals`, the process sends the
+/// final push on SIGTERM or SIGINT itself.
+pub fn install(component: &str, config: &Configuration, handle_signals: bool) {
     Telemetry::builder(component)
         .config(config.telemetry())
+        .handle_signals(handle_signals)
         .version(env!("CARGO_PKG_VERSION"))
         .install_or_log();
 }

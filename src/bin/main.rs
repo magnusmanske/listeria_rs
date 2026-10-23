@@ -29,6 +29,8 @@ enum Commands {
         #[arg(short, long, default_value = "false")]
         once: bool,
     },
+    /// The tool's website, for the multi-wiki bot (on `PORT`, default 8000)
+    Webserver,
 }
 
 impl Commands {
@@ -37,6 +39,7 @@ impl Commands {
         match self {
             Self::Wikidata => Some("bot"),
             Self::SingleWiki { .. } => Some("single-wiki"),
+            Self::Webserver => Some("web"),
             Self::UpdateWikis | Self::LoadTestEntities | Self::Page { .. } => None,
         }
     }
@@ -54,7 +57,9 @@ async fn main() -> Result<()> {
 
     let config = match cli.cmd.service_component() {
         Some(component) => {
-            telemetry::install(component, &config);
+            // The website shuts down gracefully, and sends the final push itself
+            let handle_signals = !matches!(cli.cmd, Commands::Webserver);
+            telemetry::install(component, &config, handle_signals);
             config
         }
         // Enable profiling for single-use commands (page, update-wikis, load-test-entities).
@@ -72,6 +77,7 @@ async fn main() -> Result<()> {
         Commands::Page { server, page } => main.process_page(&server, &page).await,
         Commands::Wikidata => main.run_wikidata_bot().await,
         Commands::SingleWiki { once } => main.run_single_wiki_bot(once).await,
+        Commands::Webserver => main.run_webserver().await,
     };
     telemetry::shutdown(&result).await;
     result

@@ -143,6 +143,25 @@ impl PageStatusRepository {
             .await
     }
 
+    /// Queues a page for an update ahead of the others (the website's
+    /// "update" links): WAITING with priority, added to the queue if it is
+    /// not there yet.
+    pub async fn request_update(&self, wiki_id: u64, page: &str) -> Result<()> {
+        self.pool
+            .with_timeout("request_update", || async {
+                let sql = "INSERT INTO `pagestatus` (`wiki`,`page`,`status`,`query_sparql`,`message`,`priority`) \
+                    VALUES (:wiki_id,:page,'WAITING','','',1) \
+                    ON DUPLICATE KEY UPDATE `status`='WAITING',`priority`=1";
+                self.pool
+                    .get_conn()
+                    .await?
+                    .exec_drop(sql, params! {wiki_id, page})
+                    .await?;
+                Ok(())
+            })
+            .await
+    }
+
     /// Returns the highest-priority waiting page, if any.
     pub async fn find_priority_page(
         &self,

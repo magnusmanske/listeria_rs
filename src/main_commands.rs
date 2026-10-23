@@ -331,6 +331,14 @@ impl MainCommands {
         }
     }
 
+    /// Serves the tool's website (multi-wiki mode only).
+    pub async fn run_webserver(&self) -> Result<()> {
+        if self.config.is_single_wiki() {
+            return Err(anyhow!("The website is for the multi-wiki bot only"));
+        }
+        crate::webserver::run(self.config.clone()).await
+    }
+
     pub async fn run_single_wiki_bot(&self, once: bool) -> Result<()> {
         let state = AppState {
             pages: Arc::new(RwLock::new(HashMap::new())),
