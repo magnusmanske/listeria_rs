@@ -15,7 +15,7 @@ const ABOUT: &str = "<div style='float:right'>
 <p><a href='https://www.wikidata.org/wiki/User:ListeriaBot'>This bot</a> can generate and update lists on Wikipedia, based on <a href='https://query.wikidata.org/'>Wikidata queries</a>.</p>
 <p>Check out <a href='http://magnusmanske.de/wordpress/?p=301'>my original blog post</a> explaining how this works, and the <a href='http://magnusmanske.de/wordpress/?p=650'>blog post for the current version 2</a>.</p>
 <p><a href='botstatus.php'>Bot status</a> overview</p>
-<p><a href='dynamic.html'>Dynamic version</a></p>
+<!--<p><a href='dynamic.html'>Dynamic version</a></p>-->
 </div>";
 
 pub(super) async fn index(State(state): State<WebState>, params: Params) -> PageResult {
