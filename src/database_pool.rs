@@ -19,8 +19,28 @@ pub struct DatabasePool {
 impl DatabasePool {
     /// Creates a new connection pool from configuration settings.
     pub fn new(config: &Configuration) -> Result<Self> {
+        let schema = config
+            .mysql("schema")
+            .as_str()
+            .ok_or(anyhow!("No schema in config"))?
+            .to_string();
+        let max_connections = config
+            .mysql("max_connections")
+            .as_u64()
+            .and_then(|u| u.try_into().ok())
+            .unwrap_or(DEFAULT_MAX_CONNECTIONS);
+        Self::for_schema(config, &schema, max_connections)
+    }
+
+    /// A pool on another database of the `mysql` server, with the same
+    /// account (e.g. the website's dynamic lists).
+    pub fn for_schema(
+        config: &Configuration,
+        schema: &str,
+        max_connections: usize,
+    ) -> Result<Self> {
         Ok(Self {
-            pool: Self::pool_from_config(config)?,
+            pool: Self::pool_from_config(config, schema, max_connections)?,
             query_timeout: config.db_query_timeout(),
         })
     }
@@ -58,16 +78,15 @@ impl DatabasePool {
     /// Toolforge's own lookup, so the same config works on Toolforge and
     /// through a local SSH tunnel (`host` `127.0.0.1` with the tunnel's
     /// `port`).
-    fn pool_from_config(config: &Configuration) -> Result<CustomPool> {
+    fn pool_from_config(
+        config: &Configuration,
+        schema: &str,
+        max_connections: usize,
+    ) -> Result<CustomPool> {
         let host = config
             .mysql("host")
             .as_str()
             .ok_or(anyhow!("No host in config"))?
-            .to_string();
-        let schema = config
-            .mysql("schema")
-            .as_str()
-            .ok_or(anyhow!("No schema in config"))?
             .to_string();
         let port = config
             .mysql("port")
@@ -85,11 +104,6 @@ impl DatabasePool {
             .as_str()
             .ok_or(anyhow!("No password in config"))?
             .to_string();
-        let max_connections = config
-            .mysql("max_connections")
-            .as_u64()
-            .and_then(|u| u.try_into().ok())
-            .unwrap_or(DEFAULT_MAX_CONNECTIONS);
 
         let pool = CustomPool::builder(host, user, password)
             .port(port)
