@@ -27,7 +27,7 @@
 //!
 //! ## Connections, credentials and local development
 //!
-//! Connections come from one `toolforge` [`WikiPool`], which validates the
+//! Connections come from one shared replica pool, which validates the
 //! database name against `meta_p`, shares connections between the wikis on
 //! one database section, and releases idle ones as the Toolforge
 //! [connection handling policy](https://wikitech.wikimedia.org/wiki/Help:Wiki_Replicas#Connection_handling_policy)
@@ -50,8 +50,8 @@ use anyhow::{Result, anyhow};
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 use wikimisc::mysql_async::{Params, from_row, prelude::*};
+use wikimisc::replicas::Replicas;
 use wikimisc::toolforge::db::Cluster;
-use wikimisc::toolforge::pool::WikiPool;
 
 /// The replica service to connect to. `web` kills a query after five
 /// minutes, which is ample for the one query Listeria runs against the
@@ -67,14 +67,14 @@ pub struct ReplicaDb {
     config: Arc<Configuration>,
     /// Built on first use, so that work not touching the replicas does not
     /// depend on finding their credentials. Shared by all clones.
-    pool: Arc<OnceCell<WikiPool>>,
+    replicas: Arc<OnceCell<Replicas>>,
 }
 
 impl ReplicaDb {
     pub fn new(config: Arc<Configuration>) -> Self {
         Self {
             config,
-            pool: Arc::new(OnceCell::new()),
+            replicas: Arc::new(OnceCell::new()),
         }
     }
 
@@ -109,9 +109,9 @@ impl ReplicaDb {
         let wiki = self.config.fix_wiki_name(wiki);
         let timeout = self.config.db_query_timeout();
         tokio::time::timeout(timeout, async move {
-            self.pool()
+            self.replicas()
                 .await?
-                .connect_for_tables(&wiki, tables)
+                .conn_for_dbname(&wiki, tables)
                 .await?
                 .exec_iter(sql, params)
                 .await?
@@ -129,16 +129,16 @@ impl ReplicaDb {
     }
 
     /// The connection pool, built on first use.
-    async fn pool(&self) -> Result<&WikiPool> {
-        let pool = self
-            .pool
+    async fn replicas(&self) -> Result<&Replicas> {
+        let replicas = self
+            .replicas
             .get_or_try_init(|| async {
-                WikiPool::builder(REPLICA_CLUSTER)
+                Replicas::builder(REPLICA_CLUSTER)
                     .max_statement_time(self.config.db_query_timeout())
                     .build()
             })
             .await?;
-        Ok(pool)
+        Ok(replicas)
     }
 }
 

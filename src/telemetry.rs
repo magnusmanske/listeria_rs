@@ -11,7 +11,7 @@
 use crate::configuration::Configuration;
 use std::time::Duration;
 use wikimisc::metrics::{counter, gauge, histogram};
-use wikimisc::telemetry::{ExitReason, Telemetry};
+use wikimisc::telemetry::{self, ExitReason};
 
 /// Status of a page whose processing returned an error instead of a result.
 pub const STATUS_ERROR: &str = "ERROR";
@@ -37,11 +37,12 @@ pub const BREAKER_MW_API: &str = "mw_api";
 /// the bot runs without it. Without `handle_signals`, the process sends the
 /// final push on SIGTERM or SIGINT itself.
 pub fn install(component: &str, config: &Configuration, handle_signals: bool) {
-    Telemetry::builder(component)
-        .config(config.telemetry())
-        .handle_signals(handle_signals)
-        .version(env!("CARGO_PKG_VERSION"))
-        .install_or_log();
+    telemetry::install(
+        component,
+        env!("CARGO_PKG_VERSION"),
+        Some(config.telemetry()),
+        handle_signals,
+    );
 }
 
 /// Sends the final push, reporting how the run ended; a no-op without
