@@ -2,8 +2,11 @@
 //! (`index.php?action=update&lang=de&page=…`).
 
 use super::params::Params;
-use super::{PageResult, WebState, bot_status, html};
+use super::{PageResult, WebError, WebState, bot_status, html};
+use crate::wiki_repository::WikiNotRegistered;
+use anyhow::anyhow;
 use axum::extract::State;
+use axum::http::StatusCode;
 use wikimisc::escape;
 use wikimisc::title::page_url;
 
@@ -27,7 +30,10 @@ pub(super) async fn index(State(state): State<WebState>, params: Params) -> Page
 }
 
 /// Moves a page to the front of the queue.
-async fn request_update(state: &WebState, params: &Params) -> anyhow::Result<String> {
+async fn request_update(
+    state: &WebState,
+    params: &Params,
+) -> std::result::Result<String, WebError> {
     let project = params.get_or("project", "wikipedia");
     let language = params.get_or("lang", project);
     let page = params
@@ -41,9 +47,14 @@ async fn request_update(state: &WebState, params: &Params) -> anyhow::Result<Str
     let Some(wiki) = wiki_for_language_project(language, project, |url| {
         state.site_matrix.get_wiki_for_server_url(url)
     }) else {
-        return Ok(alert(&format!("Unknown wiki: {language}.{project}")));
+        return Err(unknown_wiki_error(language, project));
     };
-    let wiki_id = state.wikis.get_wiki_id(&wiki).await?;
+    let template_q = state.config.get_template_start_q();
+    let wiki_id = state
+        .wikis
+        .get_wiki_id(&wiki)
+        .await
+        .map_err(|error| wiki_lookup_error(error, &template_q))?;
     state.queue.request_update(wiki_id, &page).await?;
 
     let title = page.replace('_', " ");
@@ -69,6 +80,33 @@ fn alert(message: &str) -> String {
     format!(
         "<div class='alert alert-warning'>{}</div>",
         escape::html(message)
+    )
+}
+
+/// A `lang`/`project` pair SiteMatrix cannot resolve names no wiki at all:
+/// a 404, like a wiki the bot has no lists on.
+fn unknown_wiki_error(language: &str, project: &str) -> WebError {
+    WebError::with_status(
+        StatusCode::NOT_FOUND,
+        anyhow!("Unknown wiki: {language}.{project}"),
+    )
+}
+
+/// A failed `wikis` lookup as the page answers it. SiteMatrix knows the wiki,
+/// so one without a row in the bot's `wikis` table has simply no list enrolled
+/// yet: that is a 404 for the user, not a 500 for the bot's monitoring.
+fn wiki_lookup_error(error: anyhow::Error, template_q: &str) -> WebError {
+    let Some(not_registered) = error.downcast_ref::<WikiNotRegistered>() else {
+        return error.into();
+    };
+    WebError::with_status(
+        StatusCode::NOT_FOUND,
+        anyhow!(
+            "The wiki '{}' is not registered with Listeria, so there is no list to update. \
+             The bot registers a wiki automatically when its local 'Wikidata list' template \
+             is linked to the template's Wikidata item ({template_q}).",
+            not_registered.wiki()
+        ),
     )
 }
 
@@ -121,5 +159,35 @@ mod tests {
         assert_eq!(wiki("meta", "wikimedia").as_deref(), Some("metawiki"));
         assert_eq!(wiki("species", "wikimedia").as_deref(), Some("specieswiki"));
         assert_eq!(wiki("xx", "wikipedia"), None);
+    }
+
+    /// A valid wiki without a `wikis` row is the user's answer to see (404),
+    /// with a message that says what is missing; the failure is not reported
+    /// as the bot's own.
+    #[test]
+    fn test_unregistered_wiki_is_not_found() {
+        let error = anyhow::Error::new(WikiNotRegistered::new("tswiki"));
+        let page_error = wiki_lookup_error(error, "Q19860885");
+        assert_eq!(page_error.status(), StatusCode::NOT_FOUND);
+        let message = format!("{:#}", page_error.error);
+        assert!(message.contains("'tswiki'"), "{message}");
+        assert!(message.contains("Q19860885"), "{message}");
+    }
+
+    /// A `lang`/`project` pair SiteMatrix knows nothing about is a 404 as
+    /// well; the "update" links of copied list pages can name anything.
+    #[test]
+    fn test_unknown_wiki_is_not_found() {
+        let page_error = unknown_wiki_error("xx", "wikipedia");
+        assert_eq!(page_error.status(), StatusCode::NOT_FOUND);
+        let message = format!("{:#}", page_error.error);
+        assert!(message.contains("Unknown wiki: xx.wikipedia"), "{message}");
+    }
+
+    /// Any other database failure stays a 500.
+    #[test]
+    fn test_other_lookup_errors_stay_500() {
+        let page_error = wiki_lookup_error(anyhow!("database went away"), "Q19860885");
+        assert_eq!(page_error.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }

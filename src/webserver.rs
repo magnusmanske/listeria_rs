@@ -166,31 +166,65 @@ async fn dynamic_lists_page() -> Html<&'static str> {
     Html(include_str!("../html/dynamic.html"))
 }
 
-/// The error of an HTML page handler: logged, and shown on a page with
-/// status 500.
+/// The error of an HTML page handler: logged, and shown on a page with the
+/// status it carries — 500 unless the handler chose another, e.g. a 404 for a
+/// request that names something the bot does not have.
 #[derive(Debug)]
-struct WebError(anyhow::Error);
+struct WebError {
+    status: StatusCode,
+    error: anyhow::Error,
+}
+
+impl WebError {
+    fn with_status(status: StatusCode, error: impl Into<anyhow::Error>) -> Self {
+        Self {
+            status,
+            error: error.into(),
+        }
+    }
+
+    #[cfg(test)]
+    const fn status(&self) -> StatusCode {
+        self.status
+    }
+}
 
 impl<E: Into<anyhow::Error>> From<E> for WebError {
     fn from(error: E) -> Self {
-        Self(error.into())
+        Self::with_status(StatusCode::INTERNAL_SERVER_ERROR, error)
     }
 }
 
 impl IntoResponse for WebError {
     fn into_response(self) -> Response {
-        let message = format!("{:#}", self.0);
-        log::error!("Website: {message}");
+        let message = format!("{:#}", self.error);
+        // A 4xx is an answer to a request the user can fix; a 5xx is the
+        // website's own failure and is what monitoring alerts on.
+        if self.status.is_client_error() {
+            log::warn!("Website: {message}");
+        } else {
+            log::error!("Website: {message}");
+        }
         let body = format!(
             "<div class='alert alert-danger'>{}</div>",
             escape::html(&message)
         );
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            html::page("Listeria", "/", &body),
-        )
-            .into_response()
+        (self.status, html::page("Listeria", "/", &body)).into_response()
     }
 }
 
 type PageResult = std::result::Result<Html<String>, WebError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_web_error_status() {
+        let error: WebError = anyhow!("database down").into();
+        assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+        let not_found = WebError::with_status(StatusCode::NOT_FOUND, anyhow!("no such wiki"));
+        assert_eq!(not_found.status(), StatusCode::NOT_FOUND);
+    }
+}

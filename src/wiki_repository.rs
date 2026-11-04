@@ -12,9 +12,33 @@
 
 use crate::database_pool::DatabasePool;
 use crate::wiki::Wiki;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::collections::HashMap;
+use thiserror::Error;
 use wikimisc::mysql_async::{from_row, prelude::*};
+
+/// A wiki that has no row in the bot's `wikis` table: the wiki itself may be
+/// perfectly valid (SiteMatrix resolves it), but nothing on it is enrolled, so
+/// there is no queue entry to work with.
+///
+/// The website answers this with a 404 rather than a 500; a caller that only
+/// logs or reports the message needs nothing else.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("Wiki '{0}' is not registered in the bot's wikis table")]
+pub struct WikiNotRegistered(String);
+
+impl WikiNotRegistered {
+    #[must_use]
+    pub fn new(wiki: impl Into<String>) -> Self {
+        Self(wiki.into())
+    }
+
+    /// The wiki that has no row.
+    #[must_use]
+    pub fn wiki(&self) -> &str {
+        &self.0
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct WikiRepository {
@@ -79,7 +103,10 @@ impl WikiRepository {
             .await
     }
 
-    /// Returns the numeric `wikis.id` for a wiki name, or an error if absent.
+    /// Returns the numeric `wikis.id` for a wiki name.
+    ///
+    /// A wiki without a row fails with [`WikiNotRegistered`], which callers
+    /// that face users can tell apart from a database error.
     pub async fn get_wiki_id(&self, wiki: &str) -> Result<u64> {
         self.pool
             .with_timeout("get_wiki_id", || async {
@@ -92,7 +119,7 @@ impl WikiRepository {
                     .await?
                     .into_iter()
                     .next()
-                    .ok_or_else(|| anyhow!("Wiki {wiki} not known"))
+                    .ok_or_else(|| anyhow::Error::new(WikiNotRegistered::new(wiki)))
             })
             .await
     }
@@ -162,5 +189,20 @@ mod tests {
     fn test_repository_is_clone_and_debug() {
         fn assert_clone_debug<T: Clone + std::fmt::Debug>() {}
         assert_clone_debug::<WikiRepository>();
+    }
+
+    /// The website tells a missing `wikis` row apart from a database failure
+    /// by downcasting; `get_wiki_id` must keep the type through `anyhow`.
+    #[test]
+    fn test_wiki_not_registered_survives_anyhow() {
+        let error = anyhow::Error::new(WikiNotRegistered::new("tswiki"));
+        assert_eq!(
+            error.to_string(),
+            "Wiki 'tswiki' is not registered in the bot's wikis table"
+        );
+        let not_registered = error
+            .downcast_ref::<WikiNotRegistered>()
+            .expect("typed error is kept in the chain");
+        assert_eq!(not_registered.wiki(), "tswiki");
     }
 }
