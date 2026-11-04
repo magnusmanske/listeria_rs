@@ -1,6 +1,6 @@
 #!/bin/bash
 toolforge jobs delete rustbot
-toolforge jobs run --mem 5000Mi --cpu 3 --continuous --mount=all \
+toolforge jobs run --mem 1024Mi --cpu 0.5 --continuous --mount=all \
 --image tool-listeria/tool-listeria:latest \
 --command "target/release/main --config /data/project/listeria/listeria_rs/config.json wikidata" \
 rustbot
