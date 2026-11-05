@@ -1,10 +1,12 @@
 //! Result sorting.
 
+use crate::coop::ITEMS_PER_YIELD;
 use crate::listeria_list::ListeriaList;
 use crate::result_row::ResultRow;
 use crate::template_params::{SortMode, SortOrder};
 use anyhow::{Result, anyhow};
 use futures::future::join_all;
+use std::future::Future;
 use wikimisc::wikibase::SnakDataType;
 
 impl super::ListProcessor {
@@ -14,26 +16,15 @@ impl super::ListProcessor {
         let sortkeys: Vec<String> = match list.template_params().sort() {
             SortMode::Label => {
                 list.load_row_entities().await?;
-                let mut futures = Vec::with_capacity(list.results().len());
-                for row in list.results().iter() {
-                    futures.push(row.get_sortkey_label(list));
-                }
-                join_all(futures).await.to_vec()
+                Self::collect_sortkeys(list, |row| row.get_sortkey_label(list)).await
             }
             SortMode::FamilyName => {
-                let mut futures = Vec::with_capacity(list.results().len());
-                for row in list.results().iter() {
-                    futures.push(row.get_sortkey_family_name(list));
-                }
-                join_all(futures).await.to_vec()
+                Self::collect_sortkeys(list, |row| row.get_sortkey_family_name(list)).await
             }
             SortMode::Property(prop) => {
                 datatype = list.ecw().get_datatype_for_property(prop).await;
-                let mut futures = Vec::with_capacity(list.results().len());
-                for row in list.results().iter() {
-                    futures.push(row.get_sortkey_prop(prop, list, &datatype));
-                }
-                join_all(futures).await.to_vec()
+                Self::collect_sortkeys(list, |row| row.get_sortkey_prop(prop, list, &datatype))
+                    .await
             }
             SortMode::SparqlVariable(variable) => list
                 .results()
@@ -51,6 +42,24 @@ impl super::ListProcessor {
         list.profile("AFTER process_sort_results_finish sort").await;
 
         Ok(())
+    }
+
+    /// The sort key of every row, built in chunks with a yield between them.
+    ///
+    /// Building a key reads the entity cache and formats strings, so it is
+    /// CPU work with no real await point: one `join_all` over every row would
+    /// hold a runtime worker (and the telemetry push) for the whole list.
+    async fn collect_sortkeys<'a, F, Fut>(list: &'a ListeriaList, build: F) -> Vec<String>
+    where
+        F: Fn(&'a ResultRow) -> Fut,
+        Fut: Future<Output = String> + 'a,
+    {
+        let mut sortkeys = Vec::with_capacity(list.results().len());
+        for chunk in list.results().chunks(ITEMS_PER_YIELD) {
+            sortkeys.extend(join_all(chunk.iter().map(&build)).await);
+            tokio::task::yield_now().await;
+        }
+        sortkeys
     }
 
     /// Applies sort keys and order to a result set — no list dependency.

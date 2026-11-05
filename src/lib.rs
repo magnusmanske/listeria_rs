@@ -59,6 +59,7 @@ pub mod circuit_breaker;
 pub mod column;
 pub mod column_type;
 pub mod configuration;
+mod coop;
 pub mod database_pool;
 pub mod entity_container_wrapper;
 pub mod entity_projection;

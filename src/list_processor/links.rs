@@ -1,5 +1,6 @@
 //! Redlink, local-link, and link-fixing processing.
 
+use crate::coop::ITEMS_PER_YIELD;
 use crate::listeria_list::ListeriaList;
 use crate::result_cell::ResultCell;
 use crate::result_cell_part::{LinkTarget, ResultCellPart};
@@ -18,12 +19,17 @@ impl super::ListProcessor {
         let language = list.language().to_owned();
         let ecw = list.ecw().clone();
 
-        let futures: Vec<_> = list
-            .results_mut()
-            .iter_mut()
-            .map(|row| Self::process_items_to_local_links_row(&wiki, &language, &ecw, row))
-            .collect();
-        join_all(futures).await;
+        // Chunked, yielding in between: localizing a row is CPU work once its
+        // entities are cached, so one `join_all` over every row would keep a
+        // runtime worker from serving timers and the telemetry push.
+        for chunk in list.results_mut().chunks_mut(ITEMS_PER_YIELD) {
+            let futures: Vec<_> = chunk
+                .iter_mut()
+                .map(|row| Self::process_items_to_local_links_row(&wiki, &language, &ecw, row))
+                .collect();
+            join_all(futures).await;
+            tokio::task::yield_now().await;
+        }
         Ok(())
     }
 

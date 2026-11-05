@@ -1,6 +1,9 @@
 //! Renders results as MediaWiki wikitext tables.
 
-use crate::{listeria_page::ListeriaPage, render_context::RenderContext, renderer::Renderer};
+use crate::{
+    coop::ITEMS_PER_YIELD, listeria_page::ListeriaPage, render_context::RenderContext,
+    renderer::Renderer,
+};
 use anyhow::Result;
 use futures::future::join_all;
 
@@ -160,12 +163,21 @@ impl RendererWikitext {
             .filter(|(_, row)| row.section() == section_id)
             .collect();
 
-        // Render all rows for this section in parallel.
-        let futures: Vec<_> = section_rows
-            .iter()
-            .map(|(global_idx, row)| row.as_wikitext(list, *global_idx))
-            .collect();
-        let rows = join_all(futures).await;
+        // Render in chunks, yielding between them. Rendering a row is pure
+        // CPU work with no await point, so one `join_all` over the whole
+        // section would hold the runtime worker for the entire table: on a
+        // small CPU quota (often a single worker thread) that starves timers
+        // and the telemetry push for minutes, and a page shows as "stale".
+        // Chunking also keeps only one chunk's strings alive at a time.
+        let mut rows = Vec::with_capacity(section_rows.len());
+        for chunk in section_rows.chunks(ITEMS_PER_YIELD) {
+            let futures: Vec<_> = chunk
+                .iter()
+                .map(|(global_idx, row)| row.as_wikitext(list, *global_idx))
+                .collect();
+            rows.extend(join_all(futures).await);
+            tokio::task::yield_now().await;
+        }
 
         if list.skip_table() {
             *wt += &rows.join("\n");

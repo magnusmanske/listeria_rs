@@ -1,7 +1,7 @@
 //! Generates result tables from SPARQL query results.
 
 use crate::{
-    column_type::ColumnType, listeria_error::ListeriaError, listeria_list::ListeriaList,
+    column_type::ColumnType, coop, listeria_error::ListeriaError, listeria_list::ListeriaList,
     result_row::ResultRow,
 };
 use anyhow::Result;
@@ -30,6 +30,7 @@ impl ResultGenerator {
     ) -> Result<()> {
         let var_index = Self::get_var_index(list)?;
         for row_id in 0..list.sparql_table().len() {
+            coop::yield_every(row_id).await;
             let row = match list.sparql_table().get(row_id) {
                 Some(row) => row,
                 None => {
@@ -67,7 +68,8 @@ impl ResultGenerator {
                 id2rows.entry(id.to_string()).or_default().push(row_id);
             };
         }
-        for id in &sparql_row_ids {
+        for (index, id) in sparql_row_ids.iter().enumerate() {
+            coop::yield_every(index).await;
             let tmp_rows = Self::get_tmp_rows(list.sparql_table(), &id2rows, id)?;
             if let Some(row) = list.ecw().get_result_row(id, &tmp_rows, list).await {
                 tmp_results.push(row);

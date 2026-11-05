@@ -1,5 +1,6 @@
 //! Section assignment for result rows.
 
+use crate::coop;
 use crate::listeria_list::ListeriaList;
 use crate::template_params::SectionType;
 use anyhow::{Result, anyhow};
@@ -51,7 +52,8 @@ impl super::ListProcessor {
         datatype: &SnakDataType,
     ) -> Result<Vec<String>> {
         let mut section_names_q: Vec<String> = Vec::with_capacity(list.results().len());
-        for row in list.results().iter() {
+        for (index, row) in list.results().iter().enumerate() {
+            coop::yield_every(index).await;
             section_names_q.push(row.get_sortkey_prop(section_property, list, datatype).await);
         }
         list.profile("AFTER list::process_assign_sections 2").await;
@@ -65,7 +67,8 @@ impl super::ListProcessor {
             .await;
 
         let mut section_names = Vec::with_capacity(section_names_q.len());
-        for q in section_names_q {
+        for (index, q) in section_names_q.into_iter().enumerate() {
+            coop::yield_every(index).await;
             let label = list.get_label_with_fallback(&q).await;
             section_names.push(label);
         }
