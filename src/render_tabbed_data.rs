@@ -1,6 +1,6 @@
 //! Renders results as tabbed data stored in database tables.
 
-use crate::{listeria_page::ListeriaPage, render_context::RenderContext, renderer::Renderer};
+use crate::{coop, listeria_page::ListeriaPage, render_context::RenderContext, renderer::Renderer};
 use anyhow::{Result, anyhow};
 use regex::{Regex, RegexBuilder};
 use serde_json::Value;
@@ -55,6 +55,7 @@ impl Renderer for RendererTabbedData {
         });
         let mut ret_data = Vec::with_capacity(list.results().len());
         for rownum in 0..list.results().len() {
+            coop::yield_every(rownum).await;
             if let Some(row) = list.results().get(rownum) {
                 ret_data.push(row.as_tabbed_data(list, rownum).await);
             }
