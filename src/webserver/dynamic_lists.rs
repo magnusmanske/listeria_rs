@@ -12,6 +12,12 @@ use wikimisc::mysql_async::{self, from_row, prelude::*};
 
 const COLUMNS: &str = "id,name,owner,wdq,config,items,number_of_items,\
     CAST(created AS CHAR),CAST(last_update AS CHAR),sparql";
+/// The columns of a list as the lists of lists show it (`get_last_lists`,
+/// `search`, `get_user_lists`): everything but the items, whose column can be
+/// megabytes per list. `dynamic.html` shows only these there, and reading all
+/// items of up to 500 lists at once (the API's `MAX_LIMIT`) is what once took
+/// the service past its memory limit.
+const SUMMARY_COLUMNS: &str = "id,name,owner,number_of_items,CAST(created AS CHAR)";
 
 static RE_ITEM: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^[qQ](\d+)$").expect("valid regex"));
@@ -42,6 +48,37 @@ impl DynamicList {
 
     pub(super) fn sparql(&self) -> &str {
         &self.sparql
+    }
+}
+
+/// A list in a list of lists, without its items (see [`SUMMARY_COLUMNS`]).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub(super) struct DynamicListSummary {
+    id: u64,
+    name: String,
+    owner: String,
+    number_of_items: u64,
+    created: String,
+}
+
+type SummaryRow = (
+    u64,
+    Option<String>,
+    Option<String>,
+    Option<u64>,
+    Option<String>,
+);
+
+impl From<SummaryRow> for DynamicListSummary {
+    fn from(row: SummaryRow) -> Self {
+        let (id, name, owner, number_of_items, created) = row;
+        Self {
+            id,
+            name: name.unwrap_or_default(),
+            owner: owner.unwrap_or_default(),
+            number_of_items: number_of_items.unwrap_or_default(),
+            created: created.unwrap_or_default(),
+        }
     }
 }
 
@@ -122,8 +159,8 @@ impl DynamicListRepository {
     }
 
     /// The `limit` lists created (or saved) last.
-    pub(super) async fn latest(&self, limit: u64) -> Result<Vec<DynamicList>> {
-        self.select(
+    pub(super) async fn latest(&self, limit: u64) -> Result<Vec<DynamicListSummary>> {
+        self.select_summaries(
             "latest_lists",
             "ORDER BY created DESC LIMIT ?",
             vec![limit.into()],
@@ -131,24 +168,28 @@ impl DynamicListRepository {
         .await
     }
 
-    /// The lists of a user, the latest first.
-    pub(super) async fn of_owner(&self, owner: &str) -> Result<Vec<DynamicList>> {
-        self.select(
+    /// The `limit` latest lists of a user.
+    pub(super) async fn of_owner(
+        &self,
+        owner: &str,
+        limit: u64,
+    ) -> Result<Vec<DynamicListSummary>> {
+        self.select_summaries(
             "lists_of_owner",
-            "WHERE owner=? ORDER BY created DESC",
-            vec![owner.into()],
+            "WHERE owner=? ORDER BY created DESC LIMIT ?",
+            vec![owner.into(), limit.into()],
         )
         .await
     }
 
     /// Up to `limit` lists matching each word of `text`: in their name or
     /// owner, or as an item (`Q42`) in them.
-    pub(super) async fn search(&self, text: &str, limit: u64) -> Result<Vec<DynamicList>> {
+    pub(super) async fn search(&self, text: &str, limit: u64) -> Result<Vec<DynamicListSummary>> {
         let Some((condition, mut params)) = search_condition(text) else {
             return Ok(vec![]);
         };
         params.push(limit.into());
-        self.select(
+        self.select_summaries(
             "search_lists",
             &format!("WHERE {condition} LIMIT ?"),
             params,
@@ -230,6 +271,29 @@ impl DynamicListRepository {
                     .map_and_drop(from_row::<Row>)
                     .await?;
                 Ok(rows.into_iter().map(DynamicList::from).collect())
+            })
+            .await
+    }
+
+    /// [`Self::select`] for lists of lists, which leave the items out.
+    async fn select_summaries(
+        &self,
+        operation: &str,
+        clauses: &str,
+        params: Vec<mysql_async::Value>,
+    ) -> Result<Vec<DynamicListSummary>> {
+        self.pool
+            .with_timeout(operation, || async {
+                let sql = format!("SELECT {SUMMARY_COLUMNS} FROM list {clauses}");
+                let rows = self
+                    .pool
+                    .get_conn()
+                    .await?
+                    .exec_iter(sql, params)
+                    .await?
+                    .map_and_drop(from_row::<SummaryRow>)
+                    .await?;
+                Ok(rows.into_iter().map(DynamicListSummary::from).collect())
             })
             .await
     }
@@ -353,5 +417,24 @@ mod tests {
         assert_eq!(json["wdq"], "");
         assert_eq!(json["last_update"], "");
         assert_eq!(list.owner(), "Dnshitobu");
+    }
+
+    /// Lists of lists carry no items: that column can be megabytes per list.
+    #[test]
+    fn test_summary_leaves_out_items() {
+        let row: SummaryRow = (
+            419,
+            Some("Science".to_string()),
+            Some("Dnshitobu".to_string()),
+            Some(2),
+            Some("2023-03-31T09:10:08+".to_string()),
+        );
+        let json = serde_json::to_value(DynamicListSummary::from(row)).unwrap();
+        assert_eq!(json["id"], 419);
+        assert_eq!(json["name"], "Science");
+        assert_eq!(json["owner"], "Dnshitobu");
+        assert_eq!(json["number_of_items"], 2);
+        assert_eq!(json["created"], "2023-03-31T09:10:08+");
+        assert!(json.get("items").is_none());
     }
 }

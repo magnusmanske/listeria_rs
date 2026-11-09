@@ -36,6 +36,11 @@ const LOGIN_COOKIE: &str = "listeria_login";
 const LOGIN_COOKIE_LIFETIME: Duration = Duration::from_secs(60 * 60);
 const DEFAULT_LIMIT: u64 = 10;
 const MAX_LIMIT: u64 = 500;
+/// Largest SPARQL result a dynamic list's update reads. The bot's 50 MiB
+/// default is for its own 1 GiB; here a result that size parses into several
+/// hundred megabytes, and a list of that many items is not showable in a
+/// browser table anyway.
+const MAX_DYNAMIC_LIST_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
 
 pub(super) async fn api(
     State(state): State<WebState>,
@@ -95,16 +100,16 @@ async fn lists_query(
             None => Ok(Map::new()),
         },
         "update_list" => {
-            update_items(&state.config, lists, list_id, now).await?;
+            update_items(state, lists, list_id, now).await?;
             Ok(Map::new())
         }
         "get_last_lists" => data(lists.latest(limit).await?),
         "search" => data(lists.search(params.get_or("text", ""), limit).await?),
-        "get_user_lists" => data(lists.of_owner(params.get_or("user", "")).await?),
+        "get_user_lists" => data(lists.of_owner(params.get_or("user", ""), limit).await?),
         "set_list" => {
             let user = user.ok_or_else(|| anyhow!("Not logged in"))?;
             let input: ListInput = serde_json::from_str(params.get_or("list", "{}"))?;
-            let id = save_list(&state.config, lists, &input, user, now).await?;
+            let id = save_list(state, lists, &input, user, now).await?;
             Ok(Map::from_iter([("id".to_string(), id.into())]))
         }
         _ => Ok(Map::new()),
@@ -120,7 +125,7 @@ fn data(data: impl Serialize) -> Result<Map<String, Value>> {
 
 /// Saves a list of `user`, new or their own; returns its ID.
 async fn save_list(
-    config: &Configuration,
+    state: &WebState,
     lists: &DynamicListRepository,
     input: &ListInput,
     user: &str,
@@ -139,7 +144,7 @@ async fn save_list(
     }
     let id = lists.create(input, user, now).await?;
     // The list is saved even if its query fails; its items can be updated later
-    if let Err(e) = update_items(config, lists, id, now).await {
+    if let Err(e) = update_items(state, lists, id, now).await {
         log::warn!("Initial update of dynamic list {id}: {e:#}");
     }
     Ok(id)
@@ -147,18 +152,25 @@ async fn save_list(
 
 /// Sets the items of list `id` to those its query returns now.
 async fn update_items(
-    config: &Configuration,
+    state: &WebState,
     lists: &DynamicListRepository,
     id: u64,
     now: DateTime<Utc>,
 ) -> Result<()> {
+    // Held across the query and its parse, so no more than
+    // `MAX_CONCURRENT_UPDATES` results are in memory at once.
+    let _slot = state
+        .update_slots
+        .acquire()
+        .await
+        .map_err(|e| anyhow!("Dynamic list updates are unavailable: {e}"))?;
     let list = lists
         .get(id)
         .await?
         .ok_or_else(|| anyhow!("Wrong list ID: {id}"))?;
     let items = match list.sparql().trim() {
         "" => vec![],
-        sparql => query_items(config, sparql).await?,
+        sparql => query_items(&state.config, sparql).await?,
     };
     lists.set_items(id, &items, now).await
 }
@@ -168,7 +180,11 @@ async fn update_items(
 async fn query_items(config: &Configuration, sparql: &str) -> Result<Vec<u64>> {
     let client =
         SparqlClient::with_client(SparqlEndpoint::wdqs(), config.sparql_http_client(WDQS_URL)?)
-            .with_max_response_bytes(config.max_sparql_response_bytes());
+            .with_max_response_bytes(
+                config
+                    .max_sparql_response_bytes()
+                    .min(MAX_DYNAMIC_LIST_RESPONSE_BYTES),
+            );
     Ok(items_of_first_variable(&client.query(sparql).await?))
 }
 

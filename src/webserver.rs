@@ -39,6 +39,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
+use tokio::sync::Semaphore;
 use wikimisc::escape;
 use wikimisc::server::{self, health};
 use wikimisc::site_matrix::SiteMatrix;
@@ -52,6 +53,10 @@ const DEFAULT_MAX_CONNECTIONS: usize = 2;
 /// Requests taking longer are answered with a 504. Updating a dynamic list
 /// runs its SPARQL query, which WDQS allows a minute.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+/// Dynamic-list updates running at once. Each reads and parses a whole SPARQL
+/// result, which can take tens of megabytes; the service's memory limit does
+/// not allow many of those at once.
+const MAX_CONCURRENT_UPDATES: usize = 2;
 
 /// The `webserver` block of the config.
 #[derive(Debug, Clone, Deserialize)]
@@ -77,13 +82,17 @@ const fn default_max_connections() -> usize {
 #[derive(Debug, Clone)]
 struct WebState {
     config: Arc<Configuration>,
-    site_matrix: SiteMatrix,
+    /// Shared, as cloning a `SiteMatrix` deep-copies the whole sitematrix JSON
+    /// and `WebState` is cloned once per request.
+    site_matrix: Arc<SiteMatrix>,
     wikis: WikiRepository,
     queue: PageStatusRepository,
     bot_status: BotStatusRepository,
     dynamic_lists: Option<DynamicListRepository>,
     oauth: Option<Arc<OAuthClient>>,
     session: Option<SessionKey>,
+    /// Permits for [`MAX_CONCURRENT_UPDATES`] dynamic-list updates at once.
+    update_slots: Arc<Semaphore>,
 }
 
 impl WebState {
@@ -114,13 +123,14 @@ impl WebState {
             .as_ref()
             .map(|consumer| SessionKey::derive(consumer.secret()));
         Ok(Self {
-            site_matrix: SiteMatrix::new(config.get_default_wbapi()?).await?,
+            site_matrix: Arc::new(SiteMatrix::new(config.get_default_wbapi()?).await?),
             wikis: WikiRepository::new(pool.clone()),
             queue: PageStatusRepository::new(pool.clone()),
             bot_status: BotStatusRepository::new(pool),
             dynamic_lists,
             oauth,
             session,
+            update_slots: Arc::new(Semaphore::new(MAX_CONCURRENT_UPDATES)),
             config,
         })
     }
