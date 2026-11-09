@@ -61,6 +61,16 @@ impl Renderer for RendererWikitext {
             wt += format!("\n----\n&sum; {} {label}.", list.results().len()).as_str();
         }
 
+        // Optional user-supplied class on a wrapper around the complete list
+        // output. Opt-in only, so existing pages are byte-identical.
+        if let Some(classes) = list
+            .template_params()
+            .list_class()
+            .and_then(Self::sanitize_classes)
+        {
+            wt = format!("<div class=\"{classes}\">\n{wt}\n</div>");
+        }
+
         Ok(wt)
     }
 
@@ -105,6 +115,11 @@ impl RendererWikitext {
             wt += "\n|}";
         }
 
+        if let Some(footer) = list.footer_template() {
+            wt += "\n";
+            wt += &Self::render_template_value(footer);
+        }
+
         wt
     }
 
@@ -112,15 +127,24 @@ impl RendererWikitext {
         let mut wt = String::new();
         match &list.header_template() {
             Some(t) => {
-                wt += "{{";
-                wt += t;
-                wt += "}}\n";
+                wt += &Self::render_template_value(t);
+                wt += "\n";
             }
             None => {
                 if !list.skip_table() {
                     wt += "{| class='wikitable sortable";
                     if list.template_params().wdedit() {
                         wt += " wd_can_edit";
+                    }
+                    // Optional extra classes (`tableclass=`), filtered to safe
+                    // class-name tokens so the attribute cannot be broken out of.
+                    if let Some(classes) = list
+                        .template_params()
+                        .table_class()
+                        .and_then(Self::sanitize_classes)
+                    {
+                        wt += " ";
+                        wt += &classes;
                     }
                     wt += "'";
                     // Optional `width=` attribute, set via `tablewidth=` template
@@ -139,6 +163,42 @@ impl RendererWikitext {
             }
         }
         wt
+    }
+
+    /// Renders a `header_template`/`footer_template` value as a template
+    /// invocation.
+    ///
+    /// A bare template name (`My template`) is wrapped as `{{My template}}`,
+    /// preserving the historic behaviour. A value that already looks like a
+    /// complete invocation (`{{My template|class=x}}`) is emitted verbatim, so
+    /// callers can pass parameters — including CSS classes — without having to
+    /// create a wrapper template.
+    fn render_template_value(value: &str) -> String {
+        let value = value.trim();
+        if value.starts_with("{{") && value.ends_with("}}") {
+            value.to_string()
+        } else {
+            format!("{{{{{value}}}}}")
+        }
+    }
+
+    /// Keeps only whitespace-separated class-name tokens made of ASCII
+    /// alphanumerics, `-` and `_`, so a user-supplied `tableclass`/`listclass`
+    /// cannot break out of the HTML attribute it is placed in.
+    fn sanitize_classes(value: &str) -> Option<String> {
+        let classes: Vec<&str> = value
+            .split_whitespace()
+            .filter(|c| {
+                !c.is_empty()
+                    && c.chars()
+                        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+            })
+            .collect();
+        if classes.is_empty() {
+            None
+        } else {
+            Some(classes.join(" "))
+        }
     }
 
     fn render_header(name: &str) -> String {
@@ -307,6 +367,136 @@ mod tests {
             !wt.contains("{| class='wikitable"),
             "skip_table must not emit a wikitable even on empty results, got: {wt:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_footer_template_appended_after_table() {
+        // The closing counterpart must land after the automatic table close,
+        // i.e. outside the table / full width.
+        let list = create_test_list_with_template(
+            "Wikidata list|columns=item|footer_template=My footer|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }",
+        )
+        .await;
+        let mut renderer = RendererWikitext::new();
+        let wt = renderer.render(&list).await.expect("render succeeds");
+        assert!(
+            wt.trim_end().ends_with("|}\n{{My footer}}"),
+            "footer must follow the table close, got: {wt:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_footer_template_brackets_rows_with_skip_table() {
+        // `header_template` + rows + `footer_template` + `skip_table` is the
+        // generic envelope mode (e.g. card lists).
+        let mut list = create_test_list_with_template(
+            "Wikidata list|columns=item|header_template=Open|footer_template=Close|skip_table=yes|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }",
+        )
+        .await;
+        list.results_mut()
+            .push(crate::result_row::ResultRow::new("Q42"));
+        let mut renderer = RendererWikitext::new();
+        let wt = renderer.render(&list).await.expect("render succeeds");
+        assert_eq!(wt.trim(), "{{Open}}\n|\n{{Close}}");
+    }
+
+    #[tokio::test]
+    async fn test_header_and_footer_accept_full_invocations() {
+        // A value that already looks like a full invocation is emitted as-is,
+        // so users can pass template parameters (e.g. CSS classes).
+        let list = create_test_list_with_template(
+            "Wikidata list|columns=item|header_template={{Open|class=top}}|footer_template={{Close|class=bottom}}|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }",
+        )
+        .await;
+        let mut renderer = RendererWikitext::new();
+        let wt = renderer.render(&list).await.expect("render succeeds");
+        assert!(wt.contains("{{Open|class=top}}"), "got: {wt:?}");
+        assert!(wt.contains("{{Close|class=bottom}}"), "got: {wt:?}");
+        assert!(!wt.contains("{{{{"), "must not double-wrap, got: {wt:?}");
+    }
+
+    #[tokio::test]
+    async fn test_bare_template_names_are_still_wrapped() {
+        let list = create_test_list_with_template(
+            "Wikidata list|columns=item|header_template=My header|footer_template=My footer|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }",
+        )
+        .await;
+        let mut renderer = RendererWikitext::new();
+        let wt = renderer.render(&list).await.expect("render succeeds");
+        assert!(wt.contains("{{My header}}"), "got: {wt:?}");
+        assert!(wt.contains("{{My footer}}"), "got: {wt:?}");
+    }
+
+    #[tokio::test]
+    async fn test_table_class_is_added_to_opener() {
+        let list = create_test_list_with_template(
+            "Wikidata list|columns=item|tableclass=glam striped|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }",
+        )
+        .await;
+        let mut renderer = RendererWikitext::new();
+        let wt = renderer.render(&list).await.expect("render succeeds");
+        assert!(
+            wt.contains("{| class='wikitable sortable glam striped'"),
+            "got: {wt:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_table_class_cannot_break_out_of_attribute() {
+        // Quotes are balanced in the template (the parser rejects unclosed
+        // ones), but a quoted token would still break the HTML attribute.
+        let list = create_test_list_with_template(
+            "Wikidata list|columns=item|tableclass=ok'x'|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }",
+        )
+        .await;
+        let mut renderer = RendererWikitext::new();
+        let wt = renderer.render(&list).await.expect("render succeeds");
+        assert!(!wt.contains("ok'x'"), "got: {wt:?}");
+        assert!(wt.contains("{| class='wikitable sortable'"), "got: {wt:?}");
+    }
+
+    #[tokio::test]
+    async fn test_list_class_wraps_whole_output() {
+        let list = create_test_list_with_template(
+            "Wikidata list|columns=item|listclass=glam-block|sparql=SELECT ?item WHERE { ?item wdt:P31 wd:Q5 }",
+        )
+        .await;
+        let mut renderer = RendererWikitext::new();
+        let wt = renderer.render(&list).await.expect("render succeeds");
+        assert!(
+            wt.starts_with("<div class=\"glam-block\">\n"),
+            "got: {wt:?}"
+        );
+        assert!(wt.trim_end().ends_with("</div>"), "got: {wt:?}");
+    }
+
+    #[test]
+    fn test_render_template_value() {
+        assert_eq!(
+            RendererWikitext::render_template_value("My template"),
+            "{{My template}}"
+        );
+        assert_eq!(
+            RendererWikitext::render_template_value("{{My template|class=x}}"),
+            "{{My template|class=x}}"
+        );
+        assert_eq!(
+            RendererWikitext::render_template_value("  My template  "),
+            "{{My template}}"
+        );
+    }
+
+    #[test]
+    fn test_sanitize_classes() {
+        assert_eq!(
+            RendererWikitext::sanitize_classes("glam  striped").as_deref(),
+            Some("glam striped")
+        );
+        assert_eq!(
+            RendererWikitext::sanitize_classes("ok'onmouseover=evil"),
+            None
+        );
+        assert_eq!(RendererWikitext::sanitize_classes("   "), None);
     }
 
     #[test]

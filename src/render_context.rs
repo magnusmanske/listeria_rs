@@ -36,6 +36,7 @@ pub trait RenderContext {
     // ── link / rendering preferences ─────────────────────────────────────
     fn get_links_type(&self) -> &LinksType;
     fn header_template(&self) -> &Option<String>;
+    fn footer_template(&self) -> &Option<String>;
     fn template_params(&self) -> &TemplateParams;
     fn get_reference_parameter(&self) -> &ReferencesParameter;
     fn thumbnail_size(&self) -> u64;

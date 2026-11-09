@@ -317,6 +317,11 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn footer_row_template() {
+        check_fixture_file(PathBuf::from("test_data/footer_row_template.fixture")).await;
+    }
+
+    #[tokio::test]
     async fn row_template_table() {
         check_fixture_file(PathBuf::from("test_data/row_template_table.fixture")).await;
     }

@@ -158,6 +158,10 @@ pub struct TemplateParams {
     min_section: u64,
     row_template: Option<String>,
     header_template: Option<String>,
+    /// Closing counterpart to `header_template`, rendered after the rows of
+    /// each section (after the automatic `|}` in table mode). `None` keeps the
+    /// historic output unchanged.
+    footer_template: Option<String>,
     autodesc: Option<String>,
     summary: Option<String>,
     summary_label: Option<String>,
@@ -187,6 +191,14 @@ pub struct TemplateParams {
     /// (`sparql_endpoint=qlever`), instead of the wikibase's default. Only
     /// names from the bot's configuration are accepted, never URLs.
     sparql_endpoint: Option<String>,
+    /// Extra CSS classes for the auto-generated wikitable (`tableclass=`),
+    /// appended to the historic `wikitable sortable` classes. Ignored when a
+    /// `header_template` supplies its own table opener.
+    table_class: Option<String>,
+    /// Extra CSS classes for a `<div>` wrapped around the whole rendered list
+    /// (`listclass=`), giving users a stable handle to style or hide the block.
+    /// `None` emits no wrapper, preserving the historic output.
+    list_class: Option<String>,
 }
 
 impl Default for TemplateParams {
@@ -204,6 +216,7 @@ impl TemplateParams {
             min_section: 2,
             row_template: None,
             header_template: None,
+            footer_template: None,
             autodesc: None,
             summary: None,
             summary_label: None,
@@ -218,6 +231,8 @@ impl TemplateParams {
             table_width: None,
             allow_empty: false,
             sparql_endpoint: None,
+            table_class: None,
+            list_class: None,
         }
     }
 
@@ -235,6 +250,7 @@ impl TemplateParams {
                 .params()
                 .get("header_template")
                 .map(|s| s.trim().to_string()),
+            footer_template: Self::parse_optional_string(template, "footer_template"),
             autodesc: Self::parse_autodesc(template),
             summary: template
                 .params()
@@ -260,6 +276,8 @@ impl TemplateParams {
             allow_empty: Self::parse_flag_yes(template, "allow_empty"),
             sparql_endpoint: Self::parse_optional_string(template, "sparql_endpoint")
                 .map(|s| s.to_lowercase()),
+            table_class: Self::parse_optional_string(template, "tableclass"),
+            list_class: Self::parse_optional_string(template, "listclass"),
         }
     }
 
@@ -368,6 +386,20 @@ impl TemplateParams {
 
     pub const fn header_template(&self) -> &Option<String> {
         &self.header_template
+    }
+
+    pub const fn footer_template(&self) -> &Option<String> {
+        &self.footer_template
+    }
+
+    /// Extra classes for the auto-generated table opener, or `None`.
+    pub fn table_class(&self) -> Option<&str> {
+        self.table_class.as_deref()
+    }
+
+    /// Classes for the wrapper `<div>` around the whole list, or `None`.
+    pub fn list_class(&self) -> Option<&str> {
+        self.list_class.as_deref()
     }
 
     pub const fn references(&self) -> &ReferencesParameter {
@@ -680,6 +712,9 @@ mod tests {
         assert_eq!(params.min_section(), 2);
         assert_eq!(params.row_template(), &None);
         assert_eq!(params.header_template(), &None);
+        assert_eq!(params.footer_template(), &None);
+        assert!(params.table_class().is_none());
+        assert!(params.list_class().is_none());
         assert_eq!(params.autodesc(), None);
         assert_eq!(params.summary(), &None);
         assert!(!params.skip_table());
@@ -755,6 +790,53 @@ mod tests {
         let config = crate::configuration::Configuration::default();
         let params = TemplateParams::new_from_params(&template, &config);
         assert_eq!(params.misc_section_name(), "Misc");
+    }
+
+    #[test]
+    fn test_footer_template_defaults_to_none() {
+        assert!(TemplateParams::new().footer_template().is_none());
+        let config = crate::configuration::Configuration::default();
+        for src in ["foo", "foo|footer_template=  "] {
+            let template =
+                crate::template::Template::new_from_params(src).expect("template parses");
+            assert!(
+                TemplateParams::new_from_params(&template, &config)
+                    .footer_template()
+                    .is_none(),
+                "{src}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_footer_template_custom() {
+        let template = crate::template::Template::new_from_params("foo|footer_template=My footer")
+            .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        let params = TemplateParams::new_from_params(&template, &config);
+        assert_eq!(params.footer_template().as_deref(), Some("My footer"));
+    }
+
+    #[test]
+    fn test_table_and_list_class_are_parsed() {
+        let template = crate::template::Template::new_from_params(
+            "foo|tableclass=glam striped|listclass=glam-block",
+        )
+        .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        let params = TemplateParams::new_from_params(&template, &config);
+        assert_eq!(params.table_class(), Some("glam striped"));
+        assert_eq!(params.list_class(), Some("glam-block"));
+    }
+
+    #[test]
+    fn test_table_and_list_class_empty_are_none() {
+        let template = crate::template::Template::new_from_params("foo|tableclass=|listclass= ")
+            .expect("template parses");
+        let config = crate::configuration::Configuration::default();
+        let params = TemplateParams::new_from_params(&template, &config);
+        assert!(params.table_class().is_none());
+        assert!(params.list_class().is_none());
     }
 
     #[test]

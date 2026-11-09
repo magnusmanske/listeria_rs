@@ -783,6 +783,10 @@ impl ListeriaList {
         self.params.header_template()
     }
 
+    pub const fn footer_template(&self) -> &Option<String> {
+        self.params.footer_template()
+    }
+
     pub async fn get_label_with_fallback(&self, entity_id: &str) -> String {
         self.ecw
             .get_entity_label_with_fallback(entity_id, self.language())
@@ -917,6 +921,10 @@ impl crate::render_context::RenderContext for ListeriaList {
 
     fn header_template(&self) -> &Option<String> {
         ListeriaList::header_template(self)
+    }
+
+    fn footer_template(&self) -> &Option<String> {
+        ListeriaList::footer_template(self)
     }
 
     fn template_params(&self) -> &crate::template_params::TemplateParams {
