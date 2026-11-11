@@ -563,10 +563,10 @@ impl ListeriaList {
         let api = self.page_params.mw_api();
         let body = api.query_raw(&url, &api.no_params(), "GET").await?;
         let json: Value = serde_json::from_str(&body)?;
-        json["result"]
+        let raw = json["result"]
             .as_str()
-            .map(|s| s.to_string())
-            .ok_or_else(|| anyhow!("Not a valid autodesc result"))
+            .ok_or_else(|| anyhow!("Not a valid autodesc result"))?;
+        Ok(sanitize_autodesc(raw))
     }
 
     pub async fn load_row_entities(&mut self) -> Result<()> {
@@ -1405,3 +1405,37 @@ mod tests {
         }
     }
 }
+
+/// Autodesc sometimes prefixes its text with a template (issue #144). Templates
+/// are not meaningful in a table cell, so drop them and keep the prose.
+fn sanitize_autodesc(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut depth = 0_usize;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if c == '{' && text[i..].starts_with("{{") {
+            depth += 1;
+            chars.next();
+        } else if c == '}' && depth > 0 && text[i..].starts_with("}}") {
+            depth -= 1;
+            chars.next();
+        } else if depth == 0 {
+            out.push(c);
+        }
+    }
+    out.trim().to_string()
+}
+
+#[cfg(test)]
+mod autodesc_tests {
+    use super::sanitize_autodesc;
+
+    #[test]
+    fn strips_templates_and_keeps_prose() {
+        assert_eq!(sanitize_autodesc("{{Infobox person}}\nA person."), "A person.");
+        assert_eq!(sanitize_autodesc("{{a|{{b}}}}text"), "text");
+        assert_eq!(sanitize_autodesc("plain text"), "plain text");
+        assert_eq!(sanitize_autodesc("{{unclosed"), "");
+    }
+}
+
