@@ -1,5 +1,8 @@
 //! The about page, and the update requests of the lists' "update" links
 //! (`index.php?action=update&lang=de&page=…`).
+//!
+//! Only pages the bot has a list on are queued: the links on list pages
+//! re-queue an existing entry, they do not enroll arbitrary page names.
 
 use super::params::Params;
 use super::{PageResult, WebError, WebState, bot_status, html};
@@ -55,6 +58,12 @@ async fn request_update(
         .get_wiki_id(&wiki)
         .await
         .map_err(|error| wiki_lookup_error(error, &template_q))?;
+    // Only a page the bot already has a list on can be updated. Without this,
+    // anyone could queue any page name, and their junk ended up in the bot's
+    // logs as a failed page.
+    if !state.queue.has_page(wiki_id, &page).await? {
+        return Err(page_not_queued_error(&page));
+    }
     state.queue.request_update(wiki_id, &page).await?;
 
     let title = page.replace('_', " ");
@@ -80,6 +89,21 @@ fn alert(message: &str) -> String {
     format!(
         "<div class='alert alert-warning'>{}</div>",
         escape::html(message)
+    )
+}
+
+/// A page that is not in the queue has no list to update: a 404, like a wiki
+/// without a `wikis` row. The bot queues a page when it finds a list on it,
+/// which happens within an hour of the list being added.
+fn page_not_queued_error(page: &str) -> WebError {
+    WebError::with_status(
+        StatusCode::NOT_FOUND,
+        anyhow!(
+            "The page '{}' is not in Listeria's queue, so there is no list to update. \
+             The bot queues a page when it finds a Wikidata list on it, which happens \
+             within an hour of the list being added.",
+            page.replace('_', " ")
+        ),
     )
 }
 
@@ -182,6 +206,18 @@ mod tests {
         assert_eq!(page_error.status(), StatusCode::NOT_FOUND);
         let message = format!("{:#}", page_error.error);
         assert!(message.contains("Unknown wiki: xx.wikipedia"), "{message}");
+    }
+
+    /// A page outside the queue has no list to update: a 404, and no new entry
+    /// in the bot's logs. The message shows the title with spaces, as a user
+    /// reads it.
+    #[test]
+    fn test_unqueued_page_is_not_found() {
+        let page_error = page_not_queued_error("User:Someone/Nope_x");
+        assert_eq!(page_error.status(), StatusCode::NOT_FOUND);
+        let message = format!("{:#}", page_error.error);
+        assert!(message.contains("'User:Someone/Nope x'"), "{message}");
+        assert!(message.contains("not in Listeria's queue"), "{message}");
     }
 
     /// Any other database failure stays a 500.

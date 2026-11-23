@@ -3,7 +3,7 @@
 //! link there:
 //!
 //! - `/`, `/index.php`: the about page; `?action=update&lang=…&page=…` moves
-//!   a page to the front of the queue (the "update" link of each list)
+//!   a queued page to the front of the queue (the "update" link of each list)
 //! - `/botstatus.php`: the queue, by group of wikis, wiki, status and page
 //! - `/api.php`: the JSON API of the dynamic lists, and their login
 //! - `/dynamic.html`: the dynamic lists, a page that runs in the browser

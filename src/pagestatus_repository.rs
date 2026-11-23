@@ -143,6 +143,28 @@ impl PageStatusRepository {
             .await
     }
 
+    /// Whether `page` is queued for `wiki_id`. Only pages the bot found a
+    /// list on are queued, so this tells a genuine "update" link apart from a
+    /// request that names any page at all.
+    pub async fn has_page(&self, wiki_id: u64, page: &str) -> Result<bool> {
+        self.pool
+            .with_timeout("has_page", || async {
+                let pages = self
+                    .pool
+                    .get_conn()
+                    .await?
+                    .exec_iter(
+                        "SELECT `page` FROM `pagestatus` WHERE `wiki`=:wiki_id AND `page`=:page LIMIT 1",
+                        params! {wiki_id, page},
+                    )
+                    .await?
+                    .map_and_drop(from_row::<String>)
+                    .await?;
+                Ok(!pages.is_empty())
+            })
+            .await
+    }
+
     /// Queues a page for an update ahead of the others (the website's
     /// "update" links): WAITING with priority, added to the queue if it is
     /// not there yet.
