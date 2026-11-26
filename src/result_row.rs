@@ -232,13 +232,17 @@ impl ResultRow {
 
     pub fn compare_to(&self, other: &ResultRow, datatype: &SnakDataType) -> Ordering {
         match datatype {
+            // Quantity sort keys are amounts and can be fractional ("2327.8"),
+            // so compare them as floats; an integer parse would fail on the
+            // fraction and lump every decimal value together (issue #182).
+            // Keys that do not parse (no value) count as 0, as before.
             SnakDataType::Quantity => {
-                let va = self.sortkey.parse::<u64>().unwrap_or(0);
-                let vb = other.sortkey.parse::<u64>().unwrap_or(0);
-                if va == 0 && vb == 0 {
-                    self.compare_entity_ids(other)
-                } else {
-                    va.cmp(&vb)
+                let parse = |s: &str| s.parse::<f64>().unwrap_or(0.0);
+                let va = parse(&self.sortkey);
+                let vb = parse(&other.sortkey);
+                match va.total_cmp(&vb) {
+                    Ordering::Equal => self.compare_entity_ids(other),
+                    ordering => ordering,
                 }
             }
             // Time sort keys are numeric years (can be negative for BC dates).
@@ -480,6 +484,38 @@ mod tests {
         let mut r2 = ResultRow::new("Q2");
         r2.set_sortkey("also_not".to_string());
         // Both parse to 0, so falls back to entity id comparison
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_quantity_decimals() {
+        // Issue #182: fractional amounts must sort numerically, not as 0
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("2327.8".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("2518.4".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
+        assert_eq!(
+            r2.compare_to(&r1, &SnakDataType::Quantity),
+            Ordering::Greater
+        );
+    }
+
+    #[test]
+    fn test_compare_to_quantity_decimal_vs_integer() {
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("2327.8".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("2328".to_string());
+        assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
+    }
+
+    #[test]
+    fn test_compare_to_quantity_negative_decimals() {
+        let mut r1 = ResultRow::new("Q1");
+        r1.set_sortkey("-3.5".to_string());
+        let mut r2 = ResultRow::new("Q2");
+        r2.set_sortkey("-2".to_string());
         assert_eq!(r1.compare_to(&r2, &SnakDataType::Quantity), Ordering::Less);
     }
 

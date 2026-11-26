@@ -171,6 +171,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_apply_sort_quantity_decimals() {
+        // Issue #182: fractional amounts ("2327.8") used to fail the integer
+        // parse and ended up in arbitrary order at the end of a descending sort.
+        let keys: Vec<String> = ["3073", "2327.8", "3143.45", "2518.4"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let mut results = rows_with_keys(&["3073", "2327.8", "3143.45", "2518.4"]);
+        super::super::ListProcessor::apply_sort(&mut results, keys, true, SnakDataType::Quantity)
+            .await
+            .unwrap();
+        let sorted: Vec<&str> = results.iter().map(|r| r.sortkey()).collect();
+        assert_eq!(sorted, ["3143.45", "3073", "2518.4", "2327.8"]);
+    }
+
+    #[tokio::test]
     async fn test_apply_sort_time_numeric() {
         let keys = vec!["1900".to_string(), "33".to_string()];
         let mut results = rows_with_keys(&["1900", "33"]);
