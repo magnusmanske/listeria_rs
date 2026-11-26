@@ -302,6 +302,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn file_column() {
+        check_fixture_file(PathBuf::from("test_data/file_column.fixture")).await;
+    }
+
+    #[tokio::test]
+    async fn file_property() {
+        check_fixture_file(PathBuf::from("test_data/file_property.fixture")).await;
+    }
+
+    #[tokio::test]
     async fn sitelink_column() {
         check_fixture_file(PathBuf::from("test_data/sitelink_column.fixture")).await;
     }

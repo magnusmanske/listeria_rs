@@ -16,6 +16,15 @@ use wikimisc::entity_id::EntityKind;
 use wikimisc::sparql_table_vec::SparqlTableVec;
 use wikimisc::wikibase::{Statement, entity::EntityTrait};
 
+/// Where a raw filename column reads its file value from.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FileSource {
+    /// A SPARQL result variable, like `?image`.
+    Field(String),
+    /// A Wikidata property, like `P18`.
+    Property(String),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ColumnType {
     Number,
@@ -30,6 +39,10 @@ pub enum ColumnType {
     PropertyQualifierValue((String, String, String)),
     Field(String),
     Sitelink(String),
+    /// A Commons file name, without the `[[File:…]]` markup. Renders like
+    /// [`Self::Field`] or [`Self::Property`], but a file value is shown as
+    /// the bare filename, so it can be passed to a `row_template` parameter.
+    File(FileSource),
     Unknown,
 }
 
@@ -101,6 +114,19 @@ impl ColumnType {
     }
 
     fn parse_from_lowercase_prefix(lower_trimmed: &str) -> Option<Self> {
+        if let Some(rest) = lower_trimmed.strip_prefix("file/") {
+            let rest = rest.trim();
+            if let Some(variable) = rest
+                .strip_prefix('?')
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+            {
+                return Some(ColumnType::File(FileSource::Field(variable.to_uppercase())));
+            }
+            if let Some(property) = parse_param_id(rest, EntityKind::Property) {
+                return Some(ColumnType::File(FileSource::Property(property)));
+            }
+        }
         if let Some(rest) = lower_trimmed.strip_prefix("description/") {
             let langs = rest
                 .split('/')
@@ -151,7 +177,18 @@ impl ColumnType {
             }
             Self::Field(f) => f.to_lowercase(),
             Self::Sitelink(wiki) => format!("sitelink/{wiki}"),
+            Self::File(FileSource::Field(f)) => f.to_lowercase(),
+            Self::File(FileSource::Property(p)) => p.to_lowercase(),
             Self::Unknown => "unknown".to_string(),
+        }
+    }
+
+    /// The SPARQL result variable this column reads, if any.
+    #[must_use]
+    pub fn field_variable(&self) -> Option<&str> {
+        match self {
+            Self::Field(variable) | Self::File(FileSource::Field(variable)) => Some(variable),
+            _ => None,
         }
     }
 
@@ -187,13 +224,13 @@ impl ColumnType {
             Self::Description(langs) => {
                 Self::render_description(&entity, list, langs, &mut parts, &mut wdedit_class);
             }
-            Self::Field(varname) => {
+            Self::Field(varname) | Self::File(FileSource::Field(varname)) => {
                 let Some(var_index) = sparql_table.get_var_index(varname) else {
                     return (parts, wdedit_class);
                 };
                 Self::render_field(var_index, sparql_table, &mut parts);
             }
-            Self::Property(property) => {
+            Self::Property(property) | Self::File(FileSource::Property(property)) => {
                 Self::render_property(&entity, list, property, &mut parts, &mut wdedit_class);
             }
             Self::PropertyQualifier((p1, p2)) => {

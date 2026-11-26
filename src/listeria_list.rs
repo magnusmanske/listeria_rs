@@ -3,7 +3,7 @@
 //! Handles the full pipeline from SPARQL query execution to rendered output.
 
 use crate::column::Column;
-use crate::column_type::ColumnType;
+use crate::column_type::{ColumnType, FileSource};
 use crate::configuration::FeatureFlags;
 use crate::entity_container_wrapper::{EntityContainerWrapper, EntityEntry};
 use crate::entity_projection::EntityProjection;
@@ -297,7 +297,8 @@ impl ListeriaList {
         let columns = self.columns.iter().filter_map(|c| match c.obj() {
             ColumnType::Property(p)
             | ColumnType::PropertyQualifier((p, _))
-            | ColumnType::PropertyQualifierValue((p, _, _)) => Some(p.clone()),
+            | ColumnType::PropertyQualifierValue((p, _, _))
+            | ColumnType::File(FileSource::Property(p)) => Some(p.clone()),
             _ => None,
         });
         let sort = match self.params.sort() {
@@ -435,10 +436,10 @@ impl ListeriaList {
     /// The SPARQL result variables this list reads by name: `?var` columns,
     /// `sort=?var` and `section=@var`.
     fn sparql_variables_used(&self) -> HashSet<String> {
-        let columns = self.columns.iter().filter_map(|c| match c.obj() {
-            ColumnType::Field(variable) => Some(variable.clone()),
-            _ => None,
-        });
+        let columns = self
+            .columns
+            .iter()
+            .filter_map(|c| c.obj().field_variable().map(str::to_string));
         let sort = match self.params.sort() {
             SortMode::SparqlVariable(variable) => Some(variable.clone()),
             _ => None,
@@ -501,7 +502,10 @@ impl ListeriaList {
         let needs_for_columns = columns.iter().any(|c| {
             !matches!(
                 c.obj(),
-                ColumnType::Number | ColumnType::Item | ColumnType::Field(_)
+                ColumnType::Number
+                    | ColumnType::Item
+                    | ColumnType::Field(_)
+                    | ColumnType::File(FileSource::Field(_))
             )
         });
         let needs_for_links = matches!(links, LinksType::Local | LinksType::RedOnly);
@@ -1173,6 +1177,19 @@ mod tests {
     }
 
     #[test]
+    fn test_needs_entity_loading_raw_file_columns() {
+        // A file name from the SPARQL result needs no entity data; one from a
+        // property does.
+        let field = vec![col("file/?image")];
+        assert!(!ListeriaList::needs_entity_loading(&field, &LinksType::All));
+        let property = vec![col("file/P18")];
+        assert!(ListeriaList::needs_entity_loading(
+            &property,
+            &LinksType::All
+        ));
+    }
+
+    #[test]
     fn test_needs_entity_loading_empty_columns_with_local_links_forces_load() {
         // Edge case: no columns at all but links=Local still needs the cache
         // to make a row-keep decision in use_local_links.
@@ -1432,10 +1449,12 @@ mod autodesc_tests {
 
     #[test]
     fn strips_templates_and_keeps_prose() {
-        assert_eq!(sanitize_autodesc("{{Infobox person}}\nA person."), "A person.");
+        assert_eq!(
+            sanitize_autodesc("{{Infobox person}}\nA person."),
+            "A person."
+        );
         assert_eq!(sanitize_autodesc("{{a|{{b}}}}text"), "text");
         assert_eq!(sanitize_autodesc("plain text"), "plain text");
         assert_eq!(sanitize_autodesc("{{unclosed"), "");
     }
 }
-

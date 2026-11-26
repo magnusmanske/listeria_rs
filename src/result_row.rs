@@ -1,8 +1,7 @@
 //! Table rows containing cells with formatted data.
 
 use crate::{
-    column_type::ColumnType, render_context::RenderContext, result_cell::ResultCell,
-    result_cell_part::ResultCellPart,
+    render_context::RenderContext, result_cell::ResultCell, result_cell_part::ResultCellPart,
 };
 use futures::future::join_all;
 use regex::Regex;
@@ -173,16 +172,16 @@ impl ResultRow {
 
     /// Get the sortkey for a sparql value
     pub fn get_sortkey_sparql(&self, variable: &str, list: &impl RenderContext) -> String {
-        // ColumnType::Field stores its variable name upper-cased (see
-        // ColumnType::new), and SortMode::SparqlVariable does the same when
-        // parsing \`sort=?foo\`. Match the two representations so that
-        // \`sort=?variable\` actually lines up with the matching column.
-        let obj = ColumnType::Field(variable.to_uppercase());
+        // `Field` and `file/?…` columns store their variable name upper-cased
+        // (see `ColumnType::new`), and `SortMode::SparqlVariable` does the same
+        // when parsing `sort=?foo`. Match the two representations so that
+        // `sort=?variable` lines up with either kind of column.
+        let variable = variable.to_uppercase();
         match list
             .columns()
             .iter()
             .enumerate()
-            .find(|(_colnum, col)| *col.obj() == obj)
+            .find(|(_colnum, col)| col.obj().field_variable() == Some(variable.as_str()))
         {
             Some((colnum, _col)) => match self.cells.get(colnum) {
                 Some(cell) => cell.get_sortkey(),

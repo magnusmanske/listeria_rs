@@ -1,7 +1,10 @@
 //! Generates result tables from SPARQL query results.
 
 use crate::{
-    column_type::ColumnType, coop, listeria_error::ListeriaError, listeria_list::ListeriaList,
+    column_type::{ColumnType, FileSource},
+    coop,
+    listeria_error::ListeriaError,
+    listeria_list::ListeriaList,
     result_row::ResultRow,
 };
 use anyhow::Result;
@@ -85,7 +88,7 @@ impl ResultGenerator {
 
         // Column headers
         list.columns().iter().for_each(|c| match c.obj() {
-            ColumnType::Property(prop) => {
+            ColumnType::Property(prop) | ColumnType::File(FileSource::Property(prop)) => {
                 ids.push(prop.to_owned());
             }
             ColumnType::PropertyQualifier((prop, qual)) => {

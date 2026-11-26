@@ -1,6 +1,9 @@
 //! Column definitions for result tables.
 
-use crate::{column_type::ColumnType, listeria_list::ListeriaList};
+use crate::{
+    column_type::{ColumnType, FileSource},
+    listeria_list::ListeriaList,
+};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -61,6 +64,9 @@ impl Column {
             }
             ColumnType::Sitelink(wiki) => {
                 self.label = wiki.clone();
+            }
+            ColumnType::File(FileSource::Property(prop)) => {
+                self.label = list.get_label_with_fallback(prop).await;
             }
             // All other variants keep the label that was parsed from the column spec.
             _ => {}
@@ -230,6 +236,28 @@ mod tests {
     }
 
     #[test]
+    fn test_column_type_new_file() {
+        assert_eq!(
+            ColumnType::new("file/P18"),
+            ColumnType::File(FileSource::Property("P18".to_string()))
+        );
+        assert_eq!(
+            ColumnType::new("FILE/p18"),
+            ColumnType::File(FileSource::Property("P18".to_string()))
+        );
+        assert_eq!(
+            ColumnType::new("file/?image"),
+            ColumnType::File(FileSource::Field("IMAGE".to_string()))
+        );
+        let col = Column::new("file/?image:image").unwrap();
+        assert_eq!(
+            col.obj(),
+            &ColumnType::File(FileSource::Field("IMAGE".to_string()))
+        );
+        assert_eq!(col.label(), "image");
+    }
+
+    #[test]
     fn test_column_type_new_unknown() {
         assert_eq!(ColumnType::new("invalid"), ColumnType::Unknown);
         assert_eq!(ColumnType::new("Q123"), ColumnType::Unknown);
@@ -263,6 +291,14 @@ mod tests {
             "p39_q41582_p580"
         );
         assert_eq!(ColumnType::Field("NAME".to_string()).as_key(), "name");
+        assert_eq!(
+            ColumnType::File(FileSource::Property("P18".to_string())).as_key(),
+            "p18"
+        );
+        assert_eq!(
+            ColumnType::File(FileSource::Field("IMAGE".to_string())).as_key(),
+            "image"
+        );
         assert_eq!(
             ColumnType::Sitelink("enwiki".to_string()).as_key(),
             "sitelink/enwiki"

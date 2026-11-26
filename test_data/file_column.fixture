@@ -1,0 +1,32 @@
+$$$$ API
+
+https://en.wikipedia.org/w/api.php
+
+$$$$ PAGETITLE
+
+Irrelevant
+
+$$$$ WIKITEXT
+
+{{Wikidata list
+|sparql=SELECT ?item ?image { VALUES ?item { wd:Q1 } }
+|columns=item,file/?image:image
+|row_template=Wikidata list/Simple gallery item
+}}
+{{Wikidata list end}}
+
+$$$$ EXPECTED
+
+{| class='wikitable sortable'
+! item
+! image
+|-
+{{Wikidata list/Simple gallery item
+| item = [[:d:Q1|Q1]]
+| image = Biblioteca Municipal Jesus Delgado Valhondo.jpg
+}}
+|}
+
+$$$$ SPARQL_RESULTS
+
+{"head":{"vars":["item","image"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q1"},"image":{"type":"uri","value":"http://commons.wikimedia.org/wiki/Special:FilePath/Biblioteca%20Municipal%20Jesus%20Delgado%20Valhondo.jpg"}}]}}

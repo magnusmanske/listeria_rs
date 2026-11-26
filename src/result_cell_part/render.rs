@@ -126,7 +126,15 @@ impl ResultCellPart {
         )
     }
 
-    fn as_wikitext_file(list: &impl RenderContext, file: &str) -> String {
+    fn as_wikitext_file(list: &impl RenderContext, file: &str, colnum: usize) -> String {
+        // A `file/…` column deliberately exposes the bare Commons filename so a
+        // `row_template` can wrap it itself (issue #183).
+        if list
+            .column(colnum)
+            .is_some_and(|col| matches!(col.obj(), ColumnType::File(_)))
+        {
+            return file.to_string();
+        }
         let thumb = list.thumbnail_size();
         format!(
             "[[{}:{}|center|{}px]]",
@@ -239,7 +247,7 @@ impl ResultCellPart {
             ResultCellPart::Location(loc_info) => {
                 Self::as_wikitext_location(list, loc_info, rownum).await
             }
-            ResultCellPart::File(file) => Self::as_wikitext_file(list, file),
+            ResultCellPart::File(file) => Self::as_wikitext_file(list, file, colnum),
             ResultCellPart::Uri(url) => Self::uri_to_wikitext(url),
             ResultCellPart::ExternalId(ext_id_info) => {
                 Self::as_wikitext_external_id(list, &ext_id_info.property, &ext_id_info.id).await
