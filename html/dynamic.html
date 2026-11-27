@@ -1730,9 +1730,9 @@ var listeria = {
 	
 	checkWidar : function ( callback ) {
 		var me = this ;
-		$.get ( '/api.php?action=get_rights&botmode=1' , function ( d ) {
+		$.get ( './api.php?action=get_rights&botmode=1' , function ( d ) {
 			if ( typeof ((d.result.query||{}).userinfo||{}).name == 'undefined' ) {
-				$('#widar').html ( "<a href='/api.php?action=authorize'>"+me.t('login1')+"</a> "+me.t('login2') ) ;
+				$('#widar').html ( "<a href='./api.php?action=authorize'>"+me.t('login1')+"</a> "+me.t('login2') ) ;
 				// Not logged in
 			} else {
 				me.username = d.result.query.userinfo.name ;

@@ -151,6 +151,13 @@ pub async fn run(config: Arc<Configuration>) -> Result<()> {
     Ok(())
 }
 
+/// Builds the website's router for embedding in another server (the
+/// cloud_tools bundle). It serves the same paths as [`run`].
+pub async fn build_router(config: Arc<Configuration>) -> Result<Router> {
+    let state = WebState::new(config).await?;
+    Ok(router(state))
+}
+
 fn port_from_env() -> u16 {
     std::env::var("PORT")
         .ok()
