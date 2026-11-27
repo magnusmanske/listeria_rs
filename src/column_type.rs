@@ -41,7 +41,8 @@ pub enum ColumnType {
     Sitelink(String),
     /// A Commons file name, without the `[[File:…]]` markup. Renders like
     /// [`Self::Field`] or [`Self::Property`], but a file value is shown as
-    /// the bare filename, so it can be passed to a `row_template` parameter.
+    /// the bare filename, so it can be passed to a `row_template` parameter
+    /// (which always receives bare filenames, see `ResultCellPart::as_wikitext`).
     File(FileSource),
     Unknown,
 }
@@ -110,7 +111,26 @@ impl ColumnType {
             return ColumnType::Field(rest.to_uppercase());
         }
 
+        // A bare SPARQL variable name (`image` for `?image`). The documented
+        // form is `?image`, but pages in the wild (e.g. the Commons gallery in
+        // issue #184) use the bare name. Treating it as an unknown column used
+        // to render nothing at all, silently producing rows without the
+        // parameter the page's row template expected. If the query does not
+        // return that variable, the column still renders empty, so the only
+        // change is for names the query actually provides.
+        if Self::is_variable_name(trimmed) {
+            return ColumnType::Field(trimmed.to_uppercase());
+        }
+
         ColumnType::Unknown
+    }
+
+    /// Can `s` name a SPARQL result variable? Excludes entity IDs (`Q…`/`P…`),
+    /// which are handled by other branches (or are an outright typo).
+    fn is_variable_name(s: &str) -> bool {
+        !s.is_empty()
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && parse_param_id(s, EntityKind::Item).is_none()
     }
 
     fn parse_from_lowercase_prefix(lower_trimmed: &str) -> Option<Self> {

@@ -9,8 +9,8 @@ Irrelevant
 $$$$ WIKITEXT
 
 {{Wikidata list
-|sparql=SELECT ?item ?image { VALUES ?item { wd:Q1 } }
-|columns=item,file/?image:image
+|sparql=SELECT ?item ?image ?image2 { VALUES ?item { wd:Q1 } }
+|columns=item,file/?image:image,image2:image2
 |row_template=Wikidata list/Simple gallery item
 }}
 {{Wikidata list end}}
@@ -20,13 +20,15 @@ $$$$ EXPECTED
 {| class='wikitable sortable'
 ! item
 ! image
+! image2
 |-
 {{Wikidata list/Simple gallery item
 | item = [[:d:Q1|Q1]]
 | image = Biblioteca Municipal Jesus Delgado Valhondo.jpg
+| image2 = Example image.jpg
 }}
 |}
 
 $$$$ SPARQL_RESULTS
 
-{"head":{"vars":["item","image"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q1"},"image":{"type":"uri","value":"http://commons.wikimedia.org/wiki/Special:FilePath/Biblioteca%20Municipal%20Jesus%20Delgado%20Valhondo.jpg"}}]}}
+{"head":{"vars":["item","image","image2"]},"results":{"bindings":[{"item":{"type":"uri","value":"http://www.wikidata.org/entity/Q1"},"image":{"type":"uri","value":"http://commons.wikimedia.org/wiki/Special:FilePath/Biblioteca%20Municipal%20Jesus%20Delgado%20Valhondo.jpg"},"image2":{"type":"uri","value":"http://commons.wikimedia.org/wiki/Special:FilePath/Example%20image.jpg"}}]}}

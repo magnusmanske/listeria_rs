@@ -258,10 +258,34 @@ mod tests {
     }
 
     #[test]
+    fn test_column_type_new_bare_variable() {
+        // Undocumented but widespread: a SPARQL result variable without the `?`
+        // (issue #184).
+        assert_eq!(
+            ColumnType::new("image"),
+            ColumnType::Field("IMAGE".to_string())
+        );
+        assert_eq!(
+            ColumnType::new("IMAGE"),
+            ColumnType::Field("IMAGE".to_string())
+        );
+        assert_eq!(
+            ColumnType::new("street_number"),
+            ColumnType::Field("STREET_NUMBER".to_string())
+        );
+        let col = Column::new("image:Image").unwrap();
+        assert_eq!(col.obj(), &ColumnType::Field("IMAGE".to_string()));
+        assert_eq!(col.label(), "Image");
+    }
+
+    #[test]
     fn test_column_type_new_unknown() {
-        assert_eq!(ColumnType::new("invalid"), ColumnType::Unknown);
         assert_eq!(ColumnType::new("Q123"), ColumnType::Unknown);
+        assert_eq!(ColumnType::new("q123"), ColumnType::Unknown);
         assert_eq!(ColumnType::new(""), ColumnType::Unknown);
+        // Not a valid SPARQL variable name
+        assert_eq!(ColumnType::new("not a variable"), ColumnType::Unknown);
+        assert_eq!(ColumnType::new("some/thing/else"), ColumnType::Unknown);
     }
 
     #[test]

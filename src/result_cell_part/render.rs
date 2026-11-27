@@ -128,11 +128,15 @@ impl ResultCellPart {
 
     fn as_wikitext_file(list: &impl RenderContext, file: &str, colnum: usize) -> String {
         // A `file/…` column deliberately exposes the bare Commons filename so a
-        // `row_template` can wrap it itself (issue #183).
-        if list
-            .column(colnum)
-            .is_some_and(|col| matches!(col.obj(), ColumnType::File(_)))
-        {
+        // `row_template` can wrap it itself (issue #183). A row template needs
+        // the bare filename in any case: `[[File:…]]` markup is not a usable
+        // template parameter (and e.g. `{{Gallery}}` wants the filename), so
+        // passing it to a template only ever produced broken rows (issue #184).
+        let wants_raw_filename = list.get_row_template().is_some()
+            || list
+                .column(colnum)
+                .is_some_and(|col| matches!(col.obj(), ColumnType::File(_)));
+        if wants_raw_filename {
             return file.to_string();
         }
         let thumb = list.thumbnail_size();
